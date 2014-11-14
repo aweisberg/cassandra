@@ -32,6 +32,30 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
 
+/*
+ * DirectFileChannel wraps a file channel object that is used as a delegate for IO requests. It uses the provided
+ * FileDescriptor to enable O_DIRECT for the FileChannel via JNA and the fcntl system call. The DFC doesn't take
+ * ownership of the underlying FileChannel and closing the DFC will not close the channel and the FD will continue
+ * to have O_DIRECT enabled.
+ *
+ * Concurrency wise the DFS is not as concurrent as a FileChannel and uses the intrinsic lock for all read operations
+ * to protect access to the internal buffers used to emit IOs and fill incoming read buffers. This holds even for
+ * absolute reads (unlike FileChannel). The intrinsic lock also protects a few other operations like truncate
+ * and position that might might interfere with each other or read operations.
+ *
+ * Write operations that can't be delegated to the FileChannel throw UnsupportedOperationException. Operations that
+ * are delegated to the FileChannel like transferTo, transferFrom, map, lock, tryLock don't lock the intrinsic lock.
+ *
+ * Generally speaking don't use this class to do anything other than read from a file sequentially from a single
+ * thread. If you have multiple threads then use multiple DFC instances with the same FD. Non-sequential access works
+ * but the IOs may be too large if you ware doing small reads.
+ *
+ * The file cursor intrinsic to the FD is used for an initial position, but after that the DFC maintains its own
+ * internal cursor to track position in the internal buffer and for subsequent reads. Changes to position
+ * will be forwarded to the delegate in addition to changing the internal position.
+ *
+ * A finalizer is implemented as a last ditch attempt to reclaim the memory allocated for the internal buffer.
+ */
 public class DirectFileChannel extends FileChannel
 {
 
@@ -71,6 +95,13 @@ public class DirectFileChannel extends FileChannel
     long bufferEndPosition = POSITION_INVALID;
 
 
+    /*
+     * FileChannel and FD should be the same file descriptor. Nothing breaks, but you won't
+     * get the FD changed to use O_DIRECT if they aren't matched.
+     *
+     * If enabling O_DIRECT fails a warning is logged and the DFC continues to work albeit
+     * inefficiently since it still does its own buffering.
+     */
     public DirectFileChannel(FileChannel fc, FileDescriptor fd) throws IOException {
         this.fc = fc;
 
@@ -178,7 +209,7 @@ public class DirectFileChannel extends FileChannel
     @Override
     public synchronized int read(ByteBuffer dst, long position) throws IOException
     {
-        Preconditions.checkArgument(position > 0);
+        Preconditions.checkArgument(position >= 0);
         Preconditions.checkNotNull(dst);
 
         if (dst.remaining() == 0) return 0;
@@ -186,6 +217,7 @@ public class DirectFileChannel extends FileChannel
         int read = 0;
         while (dst.hasRemaining())
         {
+
             /*
              * Is there no data in the buffer?
              * Is the position being read from outside the buffer?
@@ -200,24 +232,30 @@ public class DirectFileChannel extends FileChannel
 
                 //Prep for an aligned IO
                 buffer.clear();
-                final int headSlack = (int)position % NativeAllocator.pageSize();
+                final int pageSize = NativeAllocator.pageSize();
+                final int headSlack = (int)position % pageSize;
                 final long ioStart = position - headSlack;
 
+                //Both begin and end of the IO should be aligned
+                //The end should be implicitly aligned due to the buffer being aligned
+                assert(ioStart % pageSize== 0);
+                assert((ioStart + buffer.remaining()) % pageSize == 0);
+
                 final int readThisTime = fc.read(buffer, ioStart);
+
                 buffer.flip();
 
                 //Note exactly how much was read and what the buffer covers
                 if (readThisTime > 0) {
                     bufferStartPosition = ioStart;
                     bufferEndPosition = ioStart + readThisTime;
-                    position += readThisTime;
                 }
 
                 //Adjust for the slack that was added so a legitimate answer is given
                 //for whether any data was available
                 buffer.position(Math.min(buffer.remaining(), headSlack));
 
-                if (!buffer.hasRemaining() && readThisTime == -1)
+                if (!buffer.hasRemaining() || readThisTime == -1)
                     break;
             }
 
@@ -232,6 +270,7 @@ public class DirectFileChannel extends FileChannel
                 buffer.limit(Math.min(buffer.position() + dst.remaining(), buffer.limit()));
 
                 read += buffer.remaining();
+                position += read;
                 dst.put(buffer);
             }
             finally
@@ -240,7 +279,7 @@ public class DirectFileChannel extends FileChannel
             }
         }
 
-        return read == 0 ? -1 : 0;
+        return read == 0 ? -1 : read;
     }
 
     @Override
