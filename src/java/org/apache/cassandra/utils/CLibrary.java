@@ -210,6 +210,16 @@ public final class CLibrary
         return result;
     }
 
+    public static boolean tryEnableODIRECT(FileDescriptor filedescriptor)
+    {
+        int fd = getfd(filedescriptor);
+        if (fd == -1) return false;
+
+        if (tryFcntl(fd, F_SETFL, O_DIRECT) == 0)
+            return true;
+        return false;
+    }
+
     public static int tryOpenDirectory(String path)
     {
         int fd = -1;
