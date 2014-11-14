@@ -63,6 +63,11 @@ public class Memory
         return new Memory(bytes);
     }
 
+    public static Memory allocateAlignable(long bytes)
+    {
+        return allocate(bytes + NativeAllocator.pageSize());
+    }
+
     public void setByte(long offset, byte b)
     {
         checkPosition(offset);
@@ -335,5 +340,33 @@ public class Memory
         }
         result[result.length - 1] = MemoryUtil.getByteBuffer(peer + offset, (int) (size() - offset));
         return result;
+    }
+
+    /*
+     * Return a page aligned pointer as close to the beginning of this allocation
+     * as possible.  Assumes this Memory is large enough to guarantee at least one
+     * aligned page is returned.
+     */
+    public ByteBuffer asAlignedByteBuffer()
+    {
+        final long pageSize = NativeAllocator.pageSize();
+        final long size = size();
+        if (size < (pageSize + (pageSize - 1)))
+        {
+            throw new RuntimeException("Can't guarantee alignment of allocation size " +
+                                       size() + " when page size is " + pageSize);
+        }
+
+        //Slack at the beginning of the allocation, need to move the start forward
+        //until page aligned
+        long headSlack = (pageSize - (peer % pageSize));
+
+        //New aligned starting address
+        long newPeer = peer + headSlack;
+
+        //Slack at the end of the allocation, a partial page due to the extra allocation is expected
+        long tailSlack = (peer + size) % pageSize;
+
+        return MemoryUtil.getByteBuffer(newPeer, (int)(size - (headSlack + tailSlack)));
     }
 }
