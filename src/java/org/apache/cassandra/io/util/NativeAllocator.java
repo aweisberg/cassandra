@@ -48,4 +48,13 @@ public class NativeAllocator implements IAllocator
         unsafe.freeMemory(peer);
     }
 
+    private static int pageSize = -1;
+
+    public static int pageSize()
+    {
+        if (pageSize == -1)
+            pageSize = unsafe.pageSize();
+        return pageSize;
+    }
+
 }
