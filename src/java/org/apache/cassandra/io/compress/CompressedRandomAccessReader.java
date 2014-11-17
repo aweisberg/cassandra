@@ -43,7 +43,7 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     {
         try
         {
-            return new CompressedRandomAccessReader(path, metadata, owner, null);
+            return new CompressedRandomAccessReader(path, metadata, owner, null, false);
         }
         catch (FileNotFoundException e)
         {
@@ -55,7 +55,7 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     {
         try
         {
-            return new CompressedRandomAccessReader(dataFilePath, metadata, null, null);
+            return new CompressedRandomAccessReader(dataFilePath, metadata, null, null, false);
         }
         catch (FileNotFoundException e)
         {
@@ -63,11 +63,23 @@ public class CompressedRandomAccessReader extends RandomAccessReader
         }
     }
 
-    public static CompressedRandomAccessReader open(String dataFilePath, CompressionMetadata metadata, RateLimiter limiter)
+    public static CompressedRandomAccessReader openDirect(String dataFilePath, CompressionMetadata metadata)
     {
         try
         {
-            return new CompressedRandomAccessReader(dataFilePath, metadata, null, limiter);
+            return new CompressedRandomAccessReader(dataFilePath, metadata, null, null, true);
+        }
+        catch (FileNotFoundException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public static CompressedRandomAccessReader openDirect(String dataFilePath, CompressionMetadata metadata, RateLimiter limiter)
+    {
+        try
+        {
+            return new CompressedRandomAccessReader(dataFilePath, metadata, null, limiter, true);
         }
         catch (FileNotFoundException e)
         {
@@ -85,9 +97,13 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     // raw checksum bytes
     private final ByteBuffer checksumBytes = ByteBuffer.wrap(new byte[4]);
 
-    protected CompressedRandomAccessReader(String dataFilePath, CompressionMetadata metadata, PoolingSegmentedFile owner, RateLimiter limiter) throws FileNotFoundException
+    protected CompressedRandomAccessReader(String dataFilePath,
+                                           CompressionMetadata metadata,
+                                           PoolingSegmentedFile owner,
+                                           RateLimiter limiter,
+                                           boolean tryDirectIO) throws FileNotFoundException
     {
-        super(new File(dataFilePath), metadata.chunkLength(), owner, limiter);
+        super(new File(dataFilePath), metadata.chunkLength(), owner, limiter, tryDirectIO);
         this.metadata = metadata;
         checksum = metadata.hasPostCompressionAdlerChecksums ? new Adler32() : new CRC32();
         compressed = ByteBuffer.wrap(new byte[metadata.compressor().initialCompressedBufferLength(metadata.chunkLength())]);
