@@ -49,7 +49,6 @@ import org.apache.cassandra.db.filter.ColumnSlice;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.io.compress.CompressedRandomAccessReader;
-import org.apache.cassandra.io.compress.CompressedThrottledReader;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.*;
 import org.apache.cassandra.io.sstable.metadata.*;
@@ -1706,8 +1705,8 @@ public abstract class SSTableReader extends SSTable
     {
         assert limiter != null;
         return compression
-                ? CompressedThrottledReader.open(getFilename(), getCompressionMetadata(), limiter)
-                : ThrottledReader.open(new File(getFilename()), limiter);
+                ? CompressedRandomAccessReader.open(getFilename(), getCompressionMetadata(), limiter)
+                : RandomAccessReader.open(new File(getFilename()), limiter);
     }
 
     public RandomAccessReader openDataReader()

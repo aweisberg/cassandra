@@ -20,17 +20,14 @@ package org.apache.cassandra.io.util;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.WritableByteChannel;
 
 import org.apache.cassandra.utils.CLibrary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.RateLimiter;
 
 /*
  * DirectFileChannel wraps a file channel object that is used as a delegate for IO requests. It uses the provided
@@ -56,18 +53,12 @@ import com.google.common.base.Preconditions;
  *
  * A finalizer is implemented as a last ditch attempt to reclaim the memory allocated for the internal buffer.
  */
-public class DirectFileChannel extends FileChannel
+public class DirectFileChannel extends DelegatingFileChannel
 {
 
     private static final Logger logger = LoggerFactory.getLogger(DirectFileChannel.class);
 
     static final long POSITION_INVALID = -1;
-
-
-    /*
-     * File channel to delegate IO operations to
-     */
-    final FileChannel fc;
 
     /*
      * Unligned memory allocation backing the page aligned buffer
@@ -94,6 +85,7 @@ public class DirectFileChannel extends FileChannel
      */
     long bufferEndPosition = POSITION_INVALID;
 
+    final RateLimiter limiter;
 
     /*
      * FileChannel and FD should be the same file descriptor. Nothing breaks, but you won't
@@ -102,8 +94,8 @@ public class DirectFileChannel extends FileChannel
      * If enabling O_DIRECT fails a warning is logged and the DFC continues to work albeit
      * inefficiently since it still does its own buffering.
      */
-    public DirectFileChannel(FileChannel fc, FileDescriptor fd) throws IOException {
-        this.fc = fc;
+    public DirectFileChannel(FileChannel fc, FileDescriptor fd, RateLimiter limiter) throws IOException {
+        super(fc);
 
         if (!CLibrary.tryEnableODIRECT(fd))
         {
@@ -112,6 +104,7 @@ public class DirectFileChannel extends FileChannel
 
         origin = Memory.allocateAlignable(1024 * 1024 * 2);
         buffer = origin.asAlignedByteBuffer();
+        this.limiter = limiter;
     }
 
     @Override
@@ -173,12 +166,6 @@ public class DirectFileChannel extends FileChannel
     }
 
     @Override
-    public long size() throws IOException
-    {
-        return fc.size();
-    }
-
-    @Override
     public synchronized FileChannel truncate(long size) throws IOException
     {
         bufferStartPosition = POSITION_INVALID;
@@ -186,24 +173,6 @@ public class DirectFileChannel extends FileChannel
         fc.truncate(size);
         filePosition = fc.position();
         return this;
-    }
-
-    @Override
-    public void force(boolean metaData) throws IOException
-    {
-        fc.force(metaData);
-    }
-
-    @Override
-    public long transferTo(long position, long count, WritableByteChannel target) throws IOException
-    {
-        return fc.transferTo(position, count, target);
-    }
-
-    @Override
-    public long transferFrom(ReadableByteChannel src, long position, long count) throws IOException
-    {
-        return fc.transferFrom(src, position, count);
     }
 
     @Override
@@ -249,6 +218,9 @@ public class DirectFileChannel extends FileChannel
                 if (readThisTime > 0) {
                     bufferStartPosition = ioStart;
                     bufferEndPosition = ioStart + readThisTime;
+                    if (limiter != null) {
+                        limiter.acquire(readThisTime);
+                    }
                 }
 
                 //Adjust for the slack that was added so a legitimate answer is given
@@ -289,28 +261,17 @@ public class DirectFileChannel extends FileChannel
     }
 
     @Override
-    public MappedByteBuffer map(MapMode mode, long position, long size) throws IOException
-    {
-        return fc.map(mode, position, size);
-    }
-
-    @Override
-    public FileLock lock(long position, long size, boolean shared) throws IOException
-    {
-        return fc.lock();
-    }
-
-    @Override
-    public FileLock tryLock(long position, long size, boolean shared) throws IOException
-    {
-        return fc.tryLock(position, size, shared);
-    }
-
-    @Override
     protected synchronized void implCloseChannel() throws IOException
     {
-        //implCloseChannel is protected by FileChannel from being called twice
-        origin.free();
+        try
+        {
+            super.implCloseChannel();
+        }
+        finally
+        {
+            //implCloseChannel is protected by FileChannel from being called twice
+            origin.free();
+        }
     }
 
     @Override

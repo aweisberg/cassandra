@@ -67,7 +67,7 @@ public class CompressedSegmentedFile extends SegmentedFile implements ICompresse
 
     public FileDataInput getSegment(long position)
     {
-        RandomAccessReader reader = CompressedRandomAccessReader.open(path, metadata, null);
+        RandomAccessReader reader = CompressedRandomAccessReader.open(path, metadata);
         reader.seek(position);
         return reader;
     }
