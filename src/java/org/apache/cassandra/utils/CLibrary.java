@@ -239,6 +239,10 @@ public final class CLibrary
 
     public static boolean tryEnableODIRECT(FileDescriptor filedescriptor)
     {
+        //Setting the flag on an unsupported platform might set some other random flag
+        //Better to bail out
+        if (!PLATFORM.directIOSupported) return false;
+
         int fd = getfd(filedescriptor);
         if (fd == -1) return false;
 
