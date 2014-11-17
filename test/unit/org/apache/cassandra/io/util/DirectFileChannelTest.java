@@ -92,7 +92,9 @@ public class DirectFileChannelTest
         System.out.println("Seed for random reads is " + seed);
         Random r = new Random();
 
-        for (int ii = 0; ii < 10000; ii++) {
+        //On Linux each random read of 2 megabytes is pretty slow, especially on spinning disk
+        //So only test 100 iterations
+        for (int ii = 0; ii < 100; ii++) {
             final int readAt = r.nextInt(length);
             final int expectedBytes = Math.min(42, length - readAt);
             buf.clear();
