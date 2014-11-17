@@ -344,7 +344,7 @@ public class BufferedRandomAccessFileTest
             for (final int offset : Arrays.asList(0, 8))
             {
                 File file1 = writeTemporaryFile(new byte[16]);
-                try (final RandomAccessReader file = RandomAccessReader.open(file1, bufferSize, null, null))
+                try (final RandomAccessReader file = RandomAccessReader.open(file1, bufferSize, null, null, false))
                 {
                     expectEOF(new Callable<Object>()
                     {
@@ -361,7 +361,7 @@ public class BufferedRandomAccessFileTest
             for (final int n : Arrays.asList(1, 2, 4, 8))
             {
                 File file1 = writeTemporaryFile(new byte[16]);
-                try (final RandomAccessReader file = RandomAccessReader.open(file1, bufferSize, null, null))
+                try (final RandomAccessReader file = RandomAccessReader.open(file1, bufferSize, null, null, false))
                 {
                     expectEOF(new Callable<Object>()
                     {
