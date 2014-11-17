@@ -61,10 +61,13 @@ public class DirectFileChannelTest
     {
         final int length = 1024 * 1024 * 16 - 42;
         FileInputStream fis = new FileInputStream(createTempFile(length));
-        DirectFileChannel dfc = new DirectFileChannel(fis.getChannel(), fis.getFD());
+        DirectFileChannel dfc = new DirectFileChannel(fis.getChannel(), fis.getFD(), null);
 
         ByteBuffer buf = ByteBuffer.allocate(42);
 
+        /*
+         * Test reading sequentially
+         */
         while (contents.hasRemaining())
         {
            buf.clear();
@@ -81,6 +84,57 @@ public class DirectFileChannelTest
         }
         buf.clear();
         assertTrue(dfc.read(buf) == -1);
+
+        /*
+         * Test reading randomly
+         */
+        final long seed = System.nanoTime();
+        System.out.println("Seed for random reads is " + seed);
+        Random r = new Random();
+
+        for (int ii = 0; ii < 10000; ii++) {
+            final int readAt = r.nextInt(length);
+            final int expectedBytes = Math.min(42, length - readAt);
+            buf.clear();
+            final int read = dfc.read(buf, readAt);
+            assertEquals(read, expectedBytes);
+            buf.flip();
+
+            int index = readAt;
+            while (buf.hasRemaining()) {
+                final byte found = buf.get();
+                final byte expected = contents.get(index);
+                assertEquals(found, expected);
+                index++;
+            }
+        }
+
+        /*
+         * Reading at the end should return -1
+         */
+        buf.clear();
+        assertEquals( -1, dfc.read(buf, length));
+        assertEquals(0, buf.position());
+
+        fis.close();
+        dfc.close();
+    }
+
+    @Test
+    public void testEmpty() throws Exception {
+        FileInputStream fis = new FileInputStream(createTempFile(0));
+        DirectFileChannel dfc = new DirectFileChannel(fis.getChannel(), fis.getFD(), null);
+
+        ByteBuffer buf = ByteBuffer.allocate(42);
+
+        assertEquals(-1, dfc.read(buf));
+        assertEquals(0, buf.position());
+
+        assertEquals(-1, dfc.read(buf, 0));
+        assertEquals(0, buf.position());
+
+        assertEquals(-1, dfc.read(buf, 1));
+        assertEquals(0, buf.position());
 
         fis.close();
         dfc.close();

@@ -31,6 +31,8 @@ import org.apache.cassandra.io.util.PoolingSegmentedFile;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.utils.FBUtilities;
 
+import com.google.common.util.concurrent.RateLimiter;
+
 /**
  * CRAR extends RAR to transparently uncompress blocks from the file into RAR.buffer.  Most of the RAR
  * "read bytes from the buffer, rebuffering when necessary" machinery works unchanged after that.
@@ -41,7 +43,7 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     {
         try
         {
-            return new CompressedRandomAccessReader(path, metadata, owner);
+            return new CompressedRandomAccessReader(path, metadata, owner, null);
         }
         catch (FileNotFoundException e)
         {
@@ -53,7 +55,7 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     {
         try
         {
-            return new CompressedRandomAccessReader(dataFilePath, metadata, null);
+            return new CompressedRandomAccessReader(dataFilePath, metadata, null, null);
         }
         catch (FileNotFoundException e)
         {
@@ -61,6 +63,17 @@ public class CompressedRandomAccessReader extends RandomAccessReader
         }
     }
 
+    public static CompressedRandomAccessReader open(String dataFilePath, CompressionMetadata metadata, RateLimiter limiter)
+    {
+        try
+        {
+            return new CompressedRandomAccessReader(dataFilePath, metadata, null, limiter);
+        }
+        catch (FileNotFoundException e)
+        {
+            throw new RuntimeException(e);
+        }
+    }
     private final CompressionMetadata metadata;
 
     // we read the raw compressed bytes into this buffer, then move the uncompressed ones into super.buffer.
@@ -72,9 +85,9 @@ public class CompressedRandomAccessReader extends RandomAccessReader
     // raw checksum bytes
     private final ByteBuffer checksumBytes = ByteBuffer.wrap(new byte[4]);
 
-    protected CompressedRandomAccessReader(String dataFilePath, CompressionMetadata metadata, PoolingSegmentedFile owner) throws FileNotFoundException
+    protected CompressedRandomAccessReader(String dataFilePath, CompressionMetadata metadata, PoolingSegmentedFile owner, RateLimiter limiter) throws FileNotFoundException
     {
-        super(new File(dataFilePath), metadata.chunkLength(), owner);
+        super(new File(dataFilePath), metadata.chunkLength(), owner, limiter);
         this.metadata = metadata;
         checksum = metadata.hasPostCompressionAdlerChecksums ? new Adler32() : new CRC32();
         compressed = ByteBuffer.wrap(new byte[metadata.compressor().initialCompressedBufferLength(metadata.chunkLength())]);

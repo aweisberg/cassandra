@@ -23,13 +23,14 @@ import java.nio.channels.FileChannel;
 import java.nio.file.StandardOpenOption;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.util.concurrent.RateLimiter;
 
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class RandomAccessReader extends AbstractDataInput implements FileDataInput
 {
-    public static final long CACHE_FLUSH_INTERVAL_IN_BYTES = (long) Math.pow(2, 27); // 128mb
+    public static final boolean USE_DIRECT_IO = Boolean.getBoolean("cassandra.use_direct_io");
 
     // default buffer size, 64Kb
     public static final int DEFAULT_BUFFER_SIZE = 65536;
@@ -51,7 +52,9 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
     protected final PoolingSegmentedFile owner;
 
-    protected RandomAccessReader(File file, int bufferSize, PoolingSegmentedFile owner) throws FileNotFoundException
+
+
+    protected RandomAccessReader(File file, int bufferSize, PoolingSegmentedFile owner, RateLimiter limiter) throws FileNotFoundException
     {
         this.owner = owner;
 
@@ -59,7 +62,12 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
         try
         {
-            channel = FileChannel.open(file.toPath(), StandardOpenOption.READ);
+            final FileChannel delegate = FileChannel.open(file.toPath(), StandardOpenOption.READ);
+            if (limiter != null) {
+                channel = new ThrottledFileChannel(delegate, limiter);
+            } else {
+                channel = delegate;
+            }
         }
         catch (IOException e)
         {
@@ -90,20 +98,25 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
     public static RandomAccessReader open(File file, PoolingSegmentedFile owner)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, owner);
+        return open(file, DEFAULT_BUFFER_SIZE, owner, null);
     }
 
     public static RandomAccessReader open(File file)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, null);
+        return open(file, DEFAULT_BUFFER_SIZE, null, null);
+    }
+
+    public static RandomAccessReader open(File file, RateLimiter limiter)
+    {
+        return open(file, DEFAULT_BUFFER_SIZE, null, limiter);
     }
 
     @VisibleForTesting
-    static RandomAccessReader open(File file, int bufferSize, PoolingSegmentedFile owner)
+    static RandomAccessReader open(File file, int bufferSize, PoolingSegmentedFile owner, RateLimiter limiter)
     {
         try
         {
-            return new RandomAccessReader(file, bufferSize, owner);
+            return new RandomAccessReader(file, bufferSize, owner, limiter);
         }
         catch (IOException e)
         {
@@ -114,7 +127,7 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
     @VisibleForTesting
     static RandomAccessReader open(SequentialWriter writer)
     {
-        return open(new File(writer.getPath()), DEFAULT_BUFFER_SIZE, null);
+        return open(new File(writer.getPath()), DEFAULT_BUFFER_SIZE, null, null);
     }
 
     // channel extends FileChannel, impl SeekableByteChannel.  Safe to cast.
