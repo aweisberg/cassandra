@@ -31,4 +31,5 @@ public class StorageMetrics
     public static final Counter exceptions = Metrics.newCounter(factory.createMetricName("Exceptions"));
     public static final Counter totalHintsInProgress  = Metrics.newCounter(factory.createMetricName("TotalHintsInProgress"));
     public static final Counter totalHints = Metrics.newCounter(factory.createMetricName("TotalHints"));
+    public static final Counter totalDirectFileChannels = Metrics.newCounter(factory.createMetricName("TotalDirectFileChannels"));
 }
