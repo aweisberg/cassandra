@@ -25,6 +25,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.RateLimiter;
 
 import org.apache.cassandra.io.FSReadError;
+import org.apache.cassandra.metrics.StorageMetrics;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.CLibrary;
 
@@ -75,7 +76,7 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
             @SuppressWarnings("resource")
             final FileInputStream fis = new FileInputStream(file);
             final FileChannel delegate = fis.getChannel();
-            if (tryDirectIO && USE_DIRECT_IO && DirectFileChannel.NUM_DFCS.get() <= MAX_DFCS) {
+            if (tryDirectIO && USE_DIRECT_IO && StorageMetrics.totalDirectFileChannels.count() <= MAX_DFCS) {
                 channel = new DirectFileChannel(delegate, fis.getFD(), limiter);
             } else if (limiter != null) {
                 channel = new ThrottledFileChannel(delegate, limiter);
