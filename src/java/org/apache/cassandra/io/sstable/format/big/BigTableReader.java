@@ -85,9 +85,9 @@ public class BigTableReader extends SSTableReader
      * @param dataRange filter to use when reading the columns
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public ISSTableScanner getScanner(DataRange dataRange, RateLimiter limiter)
+    public ISSTableScanner getScanner(DataRange dataRange, RateLimiter limiter, boolean tryDirect)
     {
-        return BigTableScanner.getScanner(this, dataRange, limiter);
+        return BigTableScanner.getScanner(this, dataRange, limiter, tryDirect);
     }
 
 
@@ -97,9 +97,9 @@ public class BigTableReader extends SSTableReader
      * @param ranges the range of keys to cover
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public ISSTableScanner getScanner(Collection<Range<Token>> ranges, RateLimiter limiter)
+    public ISSTableScanner getScanner(Collection<Range<Token>> ranges, RateLimiter limiter, boolean tryDirect)
     {
-        return BigTableScanner.getScanner(this, ranges, limiter);
+        return BigTableScanner.getScanner(this, ranges, limiter, tryDirect);
     }
 
 

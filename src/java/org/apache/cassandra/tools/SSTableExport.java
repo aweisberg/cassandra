@@ -261,7 +261,7 @@ public class SSTableExport
     public static void export(Descriptor desc, PrintStream outs, Collection<String> toExport, String[] excludes, CFMetaData metadata) throws IOException
     {
         SSTableReader sstable = SSTableReader.open(desc);
-        RandomAccessReader dfile = sstable.openDataReader();
+        RandomAccessReader dfile = sstable.openDataReader(true);
         try
         {
             IPartitioner partitioner = sstable.partitioner;
@@ -321,7 +321,7 @@ public class SSTableExport
             excludeSet = new HashSet<>(Arrays.asList(excludes));
 
         SSTableIdentityIterator row;
-        ISSTableScanner scanner = reader.getScanner();
+        ISSTableScanner scanner = reader.getScanner(true);
         try
         {
             outs.println("[");

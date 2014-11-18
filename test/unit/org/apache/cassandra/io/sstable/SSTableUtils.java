@@ -83,8 +83,8 @@ public class SSTableUtils
 
     public static void assertContentEquals(SSTableReader lhs, SSTableReader rhs)
     {
-        ISSTableScanner slhs = lhs.getScanner();
-        ISSTableScanner srhs = rhs.getScanner();
+        ISSTableScanner slhs = lhs.getScanner(false);
+        ISSTableScanner srhs = rhs.getScanner(false);
         while (slhs.hasNext())
         {
             OnDiskAtomIterator ilhs = slhs.next();

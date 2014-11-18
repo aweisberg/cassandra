@@ -235,7 +235,7 @@ public class CommitLogReplayer
                     file.getPath(),
                     desc.version,
                     desc.getMessagingVersion());
-        RandomAccessReader reader = RandomAccessReader.open(new File(file.getAbsolutePath()));
+        RandomAccessReader reader = RandomAccessReader.open(new File(file.getAbsolutePath()), true);
 
         try
         {

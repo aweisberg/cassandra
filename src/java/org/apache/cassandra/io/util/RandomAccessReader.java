@@ -118,24 +118,19 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
                 : ByteBuffer.allocateDirect(size);
     }
 
-    public static RandomAccessReader open(File file, PoolingSegmentedFile owner)
+    public static RandomAccessReader open(File file, PoolingSegmentedFile owner, boolean tryDirect)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, owner, null, false);
+        return open(file, DEFAULT_BUFFER_SIZE, owner, null, tryDirect);
     }
 
-    public static RandomAccessReader open(File file)
+    public static RandomAccessReader open(File file, RateLimiter limiter, boolean tryDirect)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, null, null, false);
+        return open(file, DEFAULT_BUFFER_SIZE, null, limiter, tryDirect);
     }
 
-    public static RandomAccessReader openDirect(File file)
+    public static RandomAccessReader open(File file, boolean tryDirect)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, null, null, true);
-    }
-
-    public static RandomAccessReader openDirect(File file, RateLimiter limiter)
-    {
-        return open(file, DEFAULT_BUFFER_SIZE, null, limiter, true);
+        return open(file, DEFAULT_BUFFER_SIZE, null, null, tryDirect);
     }
 
     @VisibleForTesting

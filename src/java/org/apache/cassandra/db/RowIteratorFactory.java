@@ -65,7 +65,7 @@ public class RowIteratorFactory
             iterators.add(new ConvertToColumnIterator(range, memtable.getEntryIterator(range.startKey(), range.stopKey())));
 
         for (SSTableReader sstable : sstables)
-            iterators.add(sstable.getScanner(range));
+            iterators.add(sstable.getScanner(range, false));
 
         // reduce rows from all sources into a single row
         return MergeIterator.get(iterators, COMPARE_BY_KEY, new MergeIterator.Reducer<OnDiskAtomIterator, Row>()

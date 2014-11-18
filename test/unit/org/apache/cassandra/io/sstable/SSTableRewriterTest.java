@@ -257,7 +257,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ISSTableScanner scanner = s.getScanner();
+        try (ISSTableScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -306,7 +306,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ISSTableScanner scanner = s.getScanner();
+        try (ISSTableScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -349,7 +349,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ISSTableScanner scanner = s.getScanner();
+        try (ISSTableScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -392,7 +392,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ISSTableScanner scanner = s.getScanner();
+        try (ISSTableScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -437,7 +437,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ISSTableScanner scanner = s.getScanner();
+        try (ISSTableScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -480,7 +480,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ISSTableScanner scanner = s.getScanner();
+        try (ISSTableScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -519,7 +519,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ISSTableScanner scanner = s.getScanner();
+        try (ISSTableScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -597,7 +597,7 @@ public class SSTableRewriterTest extends SchemaLoader
         SSTableRewriter rewriter = new SSTableRewriter(cfs, compacting, 1000, offline);
         SSTableWriter w = getWriter(cfs, s.descriptor.directory);
         rewriter.switchWriter(w);
-        try (ISSTableScanner scanner = compacting.iterator().next().getScanner();
+        try (ISSTableScanner scanner = compacting.iterator().next().getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while (scanner.hasNext())
@@ -672,7 +672,7 @@ public class SSTableRewriterTest extends SchemaLoader
         SSTableWriter w = getWriter(cfs, s.descriptor.directory);
         rewriter.switchWriter(w);
         int keyCount = 0;
-        try (ISSTableScanner scanner = compacting.iterator().next().getScanner();
+        try (ISSTableScanner scanner = compacting.iterator().next().getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while (scanner.hasNext())

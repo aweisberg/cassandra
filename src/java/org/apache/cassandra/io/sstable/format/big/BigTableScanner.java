@@ -57,30 +57,31 @@ public class BigTableScanner implements ISSTableScanner
 
     protected Iterator<OnDiskAtomIterator> iterator;
 
-    public static ISSTableScanner getScanner(SSTableReader sstable, DataRange dataRange, RateLimiter limiter)
+    public static ISSTableScanner getScanner(SSTableReader sstable, DataRange dataRange, RateLimiter limiter, boolean tryDirect)
     {
-        return new BigTableScanner(sstable, dataRange, limiter);
+        return new BigTableScanner(sstable, dataRange, limiter, tryDirect);
     }
-    public static ISSTableScanner getScanner(SSTableReader sstable, Collection<Range<Token>> tokenRanges, RateLimiter limiter)
+    public static ISSTableScanner getScanner(SSTableReader sstable, Collection<Range<Token>> tokenRanges, RateLimiter limiter, boolean tryDirect)
     {
         // We want to avoid allocating a SSTableScanner if the range don't overlap the sstable (#5249)
         List<Pair<Long, Long>> positions = sstable.getPositionsForRanges(Range.normalize(tokenRanges));
         if (positions.isEmpty())
             return new EmptySSTableScanner(sstable.getFilename());
 
-        return new BigTableScanner(sstable, tokenRanges, limiter);
+        return new BigTableScanner(sstable, tokenRanges, limiter, tryDirect);
     }
 
     /**
      * @param sstable SSTable to scan; must not be null
      * @param dataRange a single range to scan; must not be null
      * @param limiter background i/o RateLimiter; may be null
+     * @param tryDirect Use O_DIRECT if possible when reading
      */
-    private BigTableScanner(SSTableReader sstable, DataRange dataRange, RateLimiter limiter)
+    private BigTableScanner(SSTableReader sstable, DataRange dataRange, RateLimiter limiter, boolean tryDirect)
     {
         assert sstable != null;
 
-        this.dfile = limiter == null ? sstable.openDataReader() : sstable.openDataReader(limiter);
+        this.dfile = limiter == null ? sstable.openDataReader(tryDirect) : sstable.openDataReader(limiter, tryDirect);
         this.ifile = sstable.openIndexReader();
         this.sstable = sstable;
         this.dataRange = dataRange;
@@ -105,12 +106,13 @@ public class BigTableScanner implements ISSTableScanner
      * @param sstable SSTable to scan; must not be null
      * @param tokenRanges A set of token ranges to scan
      * @param limiter background i/o RateLimiter; may be null
+     * @param tryDirect Use O_DIRECT if possible when reading
      */
-    private BigTableScanner(SSTableReader sstable, Collection<Range<Token>> tokenRanges, RateLimiter limiter)
+    private BigTableScanner(SSTableReader sstable, Collection<Range<Token>> tokenRanges, RateLimiter limiter, boolean tryDirect)
     {
         assert sstable != null;
 
-        this.dfile = limiter == null ? sstable.openDataReader() : sstable.openDataReader(limiter);
+        this.dfile = limiter == null ? sstable.openDataReader(tryDirect) : sstable.openDataReader(limiter, tryDirect);
         this.ifile = sstable.openIndexReader();
         this.sstable = sstable;
         this.dataRange = null;

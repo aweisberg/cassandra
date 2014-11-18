@@ -91,7 +91,7 @@ public class SSTableScannerTest
 
     private static void assertScanMatches(SSTableReader sstable, int scanStart, int scanEnd, int expectedStart, int expectedEnd)
     {
-        ISSTableScanner scanner = sstable.getScanner(new DataRange(boundsFor(scanStart, scanEnd), new IdentityQueryFilter()));
+        ISSTableScanner scanner = sstable.getScanner(new DataRange(boundsFor(scanStart, scanEnd), new IdentityQueryFilter()), false);
         for (int i = expectedStart; i <= expectedEnd; i++)
             assertEquals(toKey(i), new String(scanner.next().getKey().getKey().array()));
         assertFalse(scanner.hasNext());
@@ -99,7 +99,7 @@ public class SSTableScannerTest
 
     private static void assertScanEmpty(SSTableReader sstable, int scanStart, int scanEnd)
     {
-        ISSTableScanner scanner = sstable.getScanner(new DataRange(boundsFor(scanStart, scanEnd), new IdentityQueryFilter()));
+        ISSTableScanner scanner = sstable.getScanner(new DataRange(boundsFor(scanStart, scanEnd), new IdentityQueryFilter()), false);
         assertFalse(String.format("scan of (%03d, %03d] should be empty", scanStart, scanEnd), scanner.hasNext());
     }
 
@@ -121,7 +121,7 @@ public class SSTableScannerTest
         SSTableReader sstable = store.getSSTables().iterator().next();
 
         // full range scan
-        ISSTableScanner scanner = sstable.getScanner();
+        ISSTableScanner scanner = sstable.getScanner(true);
         for (int i = 2; i < 10; i++)
             assertEquals(toKey(i), new String(scanner.next().getKey().getKey().array()));
 
@@ -185,7 +185,7 @@ public class SSTableScannerTest
         SSTableReader sstable = store.getSSTables().iterator().next();
 
         // full range scan
-        ISSTableScanner fullScanner = sstable.getScanner();
+        ISSTableScanner fullScanner = sstable.getScanner(true);
         assertScanContainsRanges(fullScanner,
                                  2, 9,
                                  102, 109,
@@ -196,7 +196,8 @@ public class SSTableScannerTest
         ISSTableScanner scanner = sstable.getScanner(makeRanges(1, 9,
                                                                    101, 109,
                                                                    201, 209),
-                                                        null);
+                                                        null,
+                                                        false);
         assertScanContainsRanges(scanner,
                                  2, 9,
                                  102, 109,
@@ -205,7 +206,8 @@ public class SSTableScannerTest
         // skip the first range
         scanner = sstable.getScanner(makeRanges(101, 109,
                                                 201, 209),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  102, 109,
                                  202, 209);
@@ -213,7 +215,8 @@ public class SSTableScannerTest
         // skip the second range
         scanner = sstable.getScanner(makeRanges(1, 9,
                                                 201, 209),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  2, 9,
                                  202, 209);
@@ -222,7 +225,8 @@ public class SSTableScannerTest
         // skip the last range
         scanner = sstable.getScanner(makeRanges(1, 9,
                                                 101, 109),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  2, 9,
                                  102, 109);
@@ -231,7 +235,8 @@ public class SSTableScannerTest
         scanner = sstable.getScanner(makeRanges(1, 5,
                                                 101, 109,
                                                 201, 209),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  2, 5,
                                  102, 109,
@@ -241,7 +246,8 @@ public class SSTableScannerTest
         scanner = sstable.getScanner(makeRanges(1, 20,
                                                 101, 109,
                                                 201, 209),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  2, 9,
                                  102, 109,
@@ -252,7 +258,8 @@ public class SSTableScannerTest
         scanner = sstable.getScanner(makeRanges(1, 5,
                                                 6, 205,
                                                 206, 209),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  2, 5,
                                  7, 9,
@@ -267,7 +274,8 @@ public class SSTableScannerTest
                                                 150, 159,
                                                 201, 209,
                                                 1000, 1001),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  3, 9,
                                  102, 109,
@@ -280,7 +288,8 @@ public class SSTableScannerTest
                                                 101, 109,
                                                 1000, 1001,
                                                 150, 159),
-                                     null);
+                                     null,
+                                     false);
         assertScanContainsRanges(scanner,
                                  2, 9,
                                  102, 109,
@@ -290,11 +299,12 @@ public class SSTableScannerTest
         scanner = sstable.getScanner(makeRanges(0, 1,
                                                 150, 159,
                                                 250, 259),
-                                     null);
+                                     null,
+                                     false);
         assertFalse(scanner.hasNext());
 
         // no ranges is equivalent to a full scan
-        scanner = sstable.getScanner(new ArrayList<Range<Token>>(), null);
+        scanner = sstable.getScanner(new ArrayList<Range<Token>>(), null, true);
         assertFalse(scanner.hasNext());
     }
 
@@ -315,12 +325,12 @@ public class SSTableScannerTest
         SSTableReader sstable = store.getSSTables().iterator().next();
 
         // full range scan
-        ISSTableScanner fullScanner = sstable.getScanner();
+        ISSTableScanner fullScanner = sstable.getScanner(true);
         assertScanContainsRanges(fullScanner, 205, 205);
 
         // scan three ranges separately
         ISSTableScanner scanner = sstable.getScanner(makeRanges(101, 109,
-                                                                   201, 209), null);
+                                                                   201, 209), null, false);
 
         // this will currently fail
         assertScanContainsRanges(scanner, 205, 205);

@@ -49,11 +49,11 @@ public class CompressedRandomAccessReader extends RandomAccessReader
 {
     private static final boolean useMmap = DatabaseDescriptor.getDiskAccessMode() == Config.DiskAccessMode.mmap;
 
-    public static CompressedRandomAccessReader open(String path, CompressionMetadata metadata, CompressedPoolingSegmentedFile owner)
+    public static CompressedRandomAccessReader open(String path, CompressionMetadata metadata, CompressedPoolingSegmentedFile owner, boolean tryDirect)
     {
         try
         {
-            return new CompressedRandomAccessReader(path, metadata, owner, null, false);
+            return new CompressedRandomAccessReader(path, metadata, owner, null, tryDirect);
         }
         catch (FileNotFoundException e)
         {
@@ -61,11 +61,11 @@ public class CompressedRandomAccessReader extends RandomAccessReader
         }
     }
 
-    public static CompressedRandomAccessReader open(String dataFilePath, CompressionMetadata metadata)
+    public static CompressedRandomAccessReader open(String dataFilePath, CompressionMetadata metadata, boolean tryDirect)
     {
         try
         {
-            return new CompressedRandomAccessReader(dataFilePath, metadata, null, null, false);
+            return new CompressedRandomAccessReader(dataFilePath, metadata, null, null, tryDirect);
         }
         catch (FileNotFoundException e)
         {
@@ -73,11 +73,11 @@ public class CompressedRandomAccessReader extends RandomAccessReader
         }
     }
 
-    public static CompressedRandomAccessReader openDirect(String dataFilePath, CompressionMetadata metadata)
+    public static CompressedRandomAccessReader open(String dataFilePath, CompressionMetadata metadata, RateLimiter limiter, boolean tryDirect)
     {
         try
         {
-            return new CompressedRandomAccessReader(dataFilePath, metadata, null, null, true);
+            return new CompressedRandomAccessReader(dataFilePath, metadata, null, limiter, tryDirect);
         }
         catch (FileNotFoundException e)
         {
