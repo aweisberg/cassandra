@@ -29,7 +29,14 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class RandomAccessReader extends AbstractDataInput implements FileDataInput
 {
-    public static final boolean USE_DIRECT_IO = true;//Boolean.getBoolean("cassandra.use_direct_io");
+    public static final boolean USE_DIRECT_IO = Boolean.valueOf(System.getProperty("cassandra.use_direct_io", "true"));
+
+    /*
+     * Direct file channel allocates a lot of memory and also doesn't emulate page cache like
+     * behavior so it's not the best idea to have an unlimited number of them. Bound the
+     * maximum number of active instances to this tunable.
+     */
+    public static final int MAX_DFCS = Integer.getInteger("cassandra.max_direct_file_channels", 64);
 
     // default buffer size, 64Kb
     public static final int DEFAULT_BUFFER_SIZE = 65536;
@@ -61,10 +68,12 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
         try
         {
+            //Should be safe to ignore since the FileChannel can be used to close it.
+            //FileChannelImpl also retains a reference to the FIS so finalization is also not an issue
             @SuppressWarnings("resource")
             final FileInputStream fis = new FileInputStream(file);
             final FileChannel delegate = fis.getChannel();
-            if (tryDirectIO && USE_DIRECT_IO) {
+            if (tryDirectIO && USE_DIRECT_IO && DirectFileChannel.NUM_DFCS.get() <= MAX_DFCS) {
                 channel = new DirectFileChannel(delegate, fis.getFD(), limiter);
             } else if (limiter != null) {
                 channel = new ThrottledFileChannel(delegate, limiter);
