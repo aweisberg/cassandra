@@ -26,10 +26,12 @@ import com.google.common.util.concurrent.RateLimiter;
 
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.CLibrary;
 
 public class RandomAccessReader extends AbstractDataInput implements FileDataInput
 {
-    public static final boolean USE_DIRECT_IO = Boolean.valueOf(System.getProperty("cassandra.use_direct_io", "true"));
+    public static final boolean USE_DIRECT_IO =
+            Boolean.valueOf(System.getProperty("cassandra.use_direct_io", CLibrary.PLATFORM.directIOSupported ? "true" : "false"));
 
     /*
      * Direct file channel allocates a lot of memory and also doesn't emulate page cache like

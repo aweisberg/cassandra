@@ -37,7 +37,7 @@ import com.google.common.util.concurrent.RateLimiter;
  * to have O_DIRECT enabled.
  *
  * Concurrency wise the DFS is not as concurrent as a FileChannel and uses the intrinsic lock for all read operations
- * to protect access to the internal buffers used to emit IOs and fill incoming read buffers. This holds even for
+ * to protect access to the internal buffer used to emit IOs and fill incoming read buffers. This holds even for
  * absolute reads (unlike FileChannel). The intrinsic lock also protects a few other operations like truncate
  * and position that might might interfere with each other or read operations.
  *
@@ -46,13 +46,17 @@ import com.google.common.util.concurrent.RateLimiter;
  *
  * Generally speaking don't use this class to do anything other than read from a file sequentially from a single
  * thread. If you have multiple threads then use multiple DFC instances with the same FD. Non-sequential access works
- * but the IOs may be too large if you ware doing small reads.
+ * but the IOs may be too large if you are doing small reads.
  *
  * The file cursor intrinsic to the FD is used for an initial position, but after that the DFC maintains its own
- * internal cursor to track position in the internal buffer and for subsequent reads. Changes to position
- * will be forwarded to the delegate in addition to changing the internal position.
+ * internal cursor to track position in the internal buffer and for subsequent reads. Changes to position via explicit
+ * calls to position will be forwarded to the delegate in addition to changing the internal position.
  *
  * A finalizer is implemented as a last ditch attempt to reclaim the memory allocated for the internal buffer.
+ *
+ * On platforms other then Linux where direct IO is not supported this class will silently fall back to doing
+ * regular IO although all the additional buffering and alignment will still be done. On Linux if fcntl fails
+ * to enable O_DIRECT a warning is logged.
  */
 public class DirectFileChannel extends DelegatingFileChannel
 {
@@ -98,13 +102,13 @@ public class DirectFileChannel extends DelegatingFileChannel
      * FileChannel and FD should be the same file descriptor. Nothing breaks, but you won't
      * get the FD changed to use O_DIRECT if they aren't matched.
      *
-     * If enabling O_DIRECT fails a warning is logged and the DFC continues to work albeit
+     * If enabling O_DIRECT fails on Linux a warning is logged and the DFC continues to work albeit
      * inefficiently since it still does its own buffering.
      */
     public DirectFileChannel(FileChannel fc, FileDescriptor fd, RateLimiter limiter) throws IOException {
         super(fc);
         NUM_DFCS.incrementAndGet();
-        if (!CLibrary.tryEnableODIRECT(fd))
+        if (!CLibrary.tryEnableODIRECT(fd) && CLibrary.PLATFORM.directIOSupported)
         {
             logger.warn("Unable to enable O_DIRECT in DirectFileChannel");
         }
@@ -284,7 +288,7 @@ public class DirectFileChannel extends DelegatingFileChannel
 
     @Override
     public void finalize() {
-        //Have to handle any exception here because the finalizer can't do anything
+        //Have to handle any exceptions here because the finalizer can't do anything
         //useful with them
         try
         {
