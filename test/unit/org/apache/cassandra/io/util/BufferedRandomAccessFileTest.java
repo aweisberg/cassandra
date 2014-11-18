@@ -182,7 +182,7 @@ public class BufferedRandomAccessFileTest
         w.close();
 
         // will use cachedlength
-        RandomAccessReader r = RandomAccessReader.open(tmpFile);
+        RandomAccessReader r = RandomAccessReader.open(tmpFile, false);
         assertEquals(lessThenBuffer.length + biggerThenBuffer.length, r.length());
         r.close();
     }
@@ -379,7 +379,7 @@ public class BufferedRandomAccessFileTest
     @Test
     public void testNotEOF() throws IOException
     {
-        assertEquals(1, RandomAccessReader.open(writeTemporaryFile(new byte[1])).read(new byte[2]));
+        assertEquals(1, RandomAccessReader.open(writeTemporaryFile(new byte[1]), false).read(new byte[2]));
     }
 
     @Test
@@ -418,7 +418,7 @@ public class BufferedRandomAccessFileTest
         tmpFile.deleteOnExit();
 
         // Create the BRAF by filename instead of by file.
-        try (final RandomAccessReader r = RandomAccessReader.open(new File(tmpFile.getPath())))
+        try (final RandomAccessReader r = RandomAccessReader.open(new File(tmpFile.getPath()), false))
         {
             assert tmpFile.getPath().equals(r.getPath());
 
@@ -441,7 +441,7 @@ public class BufferedRandomAccessFileTest
         w.write(data);
         w.close(); // will flush
 
-        final RandomAccessReader r = RandomAccessReader.open(new File(w.getPath()));
+        final RandomAccessReader r = RandomAccessReader.open(new File(w.getPath()), false);
 
         r.close(); // closing to test read after close
 
@@ -462,7 +462,7 @@ public class BufferedRandomAccessFileTest
             }
         }, ClosedChannelException.class);
 
-        try (RandomAccessReader copy = RandomAccessReader.open(new File(r.getPath())))
+        try (RandomAccessReader copy = RandomAccessReader.open(new File(r.getPath()), false))
         {
             ByteBuffer contents = copy.readBytes((int) copy.length());
 
@@ -603,7 +603,7 @@ public class BufferedRandomAccessFileTest
         file.sync(); // flushing file to the disk
 
         // read-only copy of the file, with fixed file length
-        final RandomAccessReader copy = RandomAccessReader.open(new File(file.getPath()));
+        final RandomAccessReader copy = RandomAccessReader.open(new File(file.getPath()), false);
 
         copy.seek(copy.length());
         assertTrue(copy.bytesRemaining() == 0 && copy.isEOF());
