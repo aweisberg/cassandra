@@ -53,19 +53,21 @@ public final class CLibrary
     static boolean jnaLockable = false;
 
     public static enum Platform {
-        LINUX(true), OTHER(false);
+        LINUX(true, true), OTHER(false, false);
 
-        Platform(boolean supportsDirectIO)
+        Platform(boolean supportsDirectIO, boolean shouldFADVISEDONTNEED)
         {
             directIOSupported = supportsDirectIO;
+            this.shouldFADVISEDONTNEED = shouldFADVISEDONTNEED;
         }
 
-        public final boolean supportsDirectIO()
+        public boolean isLinux()
         {
-            return directIOSupported;
+            return this == LINUX;
         }
 
         public final boolean directIOSupported;
+        public final boolean shouldFADVISEDONTNEED;
     }
 
     public static final Platform PLATFORM;
@@ -153,7 +155,7 @@ public final class CLibrary
             if (!(e instanceof LastErrorException))
                 throw e;
 
-            if (errno(e) == ENOMEM && System.getProperty("os.name").toLowerCase().contains("linux"))
+            if (errno(e) == ENOMEM && PLATFORM.isLinux())
             {
                 logger.warn("Unable to lock JVM memory (ENOMEM)."
                         + " This can result in part of the JVM being swapped out, especially with mmapped I/O enabled."
@@ -193,7 +195,7 @@ public final class CLibrary
 
         try
         {
-            if (System.getProperty("os.name").toLowerCase().contains("linux"))
+            if (PLATFORM.shouldFADVISEDONTNEED)
             {
                 posix_fadvise(fd, offset, len, POSIX_FADV_DONTNEED);
             }
