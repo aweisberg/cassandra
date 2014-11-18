@@ -52,7 +52,7 @@ public class DataIntegrityMetadata
         {
             this.descriptor = descriptor;
             checksum = descriptor.version.hasAllAdlerChecksums() ? new Adler32() : new PureJavaCrc32();
-            reader = RandomAccessReader.open(new File(descriptor.filenameFor(Component.CRC)));
+            reader = RandomAccessReader.open(new File(descriptor.filenameFor(Component.CRC)), true);
             chunkSize = reader.readInt();
         }
 

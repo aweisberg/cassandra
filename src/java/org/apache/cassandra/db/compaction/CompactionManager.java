@@ -772,7 +772,7 @@ public class CompactionManager implements CompactionManagerMBean
             @Override
             public ICompactionScanner getScanner(SSTableReader sstable, RateLimiter limiter)
             {
-                return sstable.getScanner(ranges, limiter);
+                return sstable.getScanner(ranges, limiter, true);
             }
 
             @Override
@@ -798,7 +798,7 @@ public class CompactionManager implements CompactionManagerMBean
             @Override
             public ICompactionScanner getScanner(SSTableReader sstable, RateLimiter limiter)
             {
-                return sstable.getScanner(limiter);
+                return sstable.getScanner(limiter, true);
             }
 
             @Override
@@ -1053,7 +1053,7 @@ public class CompactionManager implements CompactionManagerMBean
                 groupMaxDataAge = sstable.maxDataAge;
         }
 
-     
+
         if (anticompactionGroup.size() == 0)
         {
             logger.info("No valid anticompactions for this group, All sstables were compacted and are no longer available");
@@ -1256,7 +1256,7 @@ public class CompactionManager implements CompactionManagerMBean
         public void afterExecute(Runnable r, Throwable t)
         {
             DebuggableThreadPoolExecutor.maybeResetTraceSessionWrapper(r);
-    
+
             if (t == null)
                 t = DebuggableThreadPoolExecutor.extractThrowable(r);
 

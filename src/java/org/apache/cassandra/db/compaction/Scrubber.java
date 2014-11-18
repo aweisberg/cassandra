@@ -104,9 +104,9 @@ public class Scrubber implements Closeable
         // row header (key or data size) is corrupt. (This means our position in the index file will be one row
         // "ahead" of the data file.)
         this.dataFile = isOffline
-                        ? sstable.openDataReader()
-                        : sstable.openDataReader(CompactionManager.instance.getRateLimiter());
-        this.indexFile = RandomAccessReader.open(new File(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX)));
+                        ? sstable.openDataReader(true)
+                        : sstable.openDataReader(CompactionManager.instance.getRateLimiter(), true);
+        this.indexFile = RandomAccessReader.open(new File(sstable.descriptor.filenameFor(Component.PRIMARY_INDEX)), true);
         this.scrubInfo = new ScrubInfo(dataFile, sstable);
     }
 

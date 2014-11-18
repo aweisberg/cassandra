@@ -85,9 +85,9 @@ public class BigTableReader extends SSTableReader
      * @param dataRange filter to use when reading the columns
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public ICompactionScanner getScanner(DataRange dataRange, RateLimiter limiter)
+    public ICompactionScanner getScanner(DataRange dataRange, RateLimiter limiter, boolean tryDirect)
     {
-        return new BigTableScanner(this, dataRange, limiter);
+        return new BigTableScanner(this, dataRange, limiter, tryDirect);
     }
 
 
@@ -97,14 +97,14 @@ public class BigTableReader extends SSTableReader
      * @param ranges the range of keys to cover
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public ICompactionScanner getScanner(Collection<Range<Token>> ranges, RateLimiter limiter)
+    public ICompactionScanner getScanner(Collection<Range<Token>> ranges, RateLimiter limiter, boolean tryDirect)
     {
         // We want to avoid allocating a SSTableScanner if the range don't overlap the sstable (#5249)
         List<Pair<Long, Long>> positions = getPositionsForRanges(Range.normalize(ranges));
         if (positions.isEmpty())
             return new EmptyCompactionScanner(getFilename());
         else
-            return new BigTableScanner(this, ranges, limiter);
+            return new BigTableScanner(this, ranges, limiter, tryDirect);
     }
 
 

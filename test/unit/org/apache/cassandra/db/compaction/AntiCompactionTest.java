@@ -119,7 +119,7 @@ public class AntiCompactionTest
         int nonRepairedKeys = 0;
         for (SSTableReader sstable : store.getSSTables())
         {
-            ICompactionScanner scanner = sstable.getScanner();
+            ICompactionScanner scanner = sstable.getScanner(true);
             while (scanner.hasNext())
             {
                 SSTableIdentityIterator row = (SSTableIdentityIterator) scanner.next();
@@ -232,7 +232,7 @@ public class AntiCompactionTest
         int nonRepairedKeys = 0;
         for (SSTableReader sstable : store.getSSTables())
         {
-            ICompactionScanner scanner = sstable.getScanner();
+            ICompactionScanner scanner = sstable.getScanner(true);
             while (scanner.hasNext())
             {
                 SSTableIdentityIterator row = (SSTableIdentityIterator) scanner.next();
@@ -266,7 +266,7 @@ public class AntiCompactionTest
         }
         Collection<SSTableReader> sstables = store.getUnrepairedSSTables();
         assertEquals(store.getSSTables().size(), sstables.size());
-        
+
         Range<Token> range = new Range<Token>(new BytesToken("-10".getBytes()), new BytesToken("-1".getBytes()));
         List<Range<Token>> ranges = Arrays.asList(range);
 

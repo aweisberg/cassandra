@@ -716,7 +716,7 @@ public abstract class SSTableReader extends SSTable
     private void buildSummary(boolean recreateBloomFilter, SegmentedFile.Builder ibuilder, SegmentedFile.Builder dbuilder, boolean summaryLoaded, int samplingLevel) throws IOException
     {
         // we read the positions in a BRAF so we don't have to worry about an entry spanning a mmap boundary.
-        RandomAccessReader primaryIndex = RandomAccessReader.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)));
+        RandomAccessReader primaryIndex = RandomAccessReader.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)), true);
 
         try
         {
@@ -976,7 +976,7 @@ public abstract class SSTableReader extends SSTable
     private IndexSummary buildSummaryAtLevel(int newSamplingLevel) throws IOException
     {
         // we read the positions in a BRAF so we don't have to worry about an entry spanning a mmap boundary.
-        RandomAccessReader primaryIndex = RandomAccessReader.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)));
+        RandomAccessReader primaryIndex = RandomAccessReader.open(new File(descriptor.filenameFor(Component.PRIMARY_INDEX)), true);
         try
         {
             long indexSize = primaryIndex.length();
@@ -1472,14 +1472,14 @@ public abstract class SSTableReader extends SSTable
      * I/O SSTableScanner
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public ICompactionScanner getScanner()
+    public ICompactionScanner getScanner(boolean tryDirect)
     {
-        return getScanner((RateLimiter) null);
+        return getScanner((RateLimiter) null, tryDirect);
     }
 
-    public ICompactionScanner getScanner(RateLimiter limiter)
+    public ICompactionScanner getScanner(RateLimiter limiter, boolean tryDirect)
     {
-        return getScanner(DataRange.allData(partitioner), limiter);
+        return getScanner(DataRange.allData(partitioner), limiter, tryDirect);
     }
 
     /**
@@ -1487,9 +1487,9 @@ public abstract class SSTableReader extends SSTable
      * @param dataRange filter to use when reading the columns
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public ICompactionScanner getScanner(DataRange dataRange)
+    public ICompactionScanner getScanner(DataRange dataRange, boolean tryDirect)
     {
-        return getScanner(dataRange, null);
+        return getScanner(dataRange, null, tryDirect);
     }
 
     /**
@@ -1498,11 +1498,11 @@ public abstract class SSTableReader extends SSTable
      * @param range the range of keys to cover
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public ICompactionScanner getScanner(Range<Token> range, RateLimiter limiter)
+    public ICompactionScanner getScanner(Range<Token> range, RateLimiter limiter, boolean tryDirect)
     {
         if (range == null)
-            return getScanner(limiter);
-        return getScanner(Collections.singletonList(range), limiter);
+            return getScanner(limiter, tryDirect);
+        return getScanner(Collections.singletonList(range), limiter, tryDirect);
     }
 
     /**
@@ -1511,14 +1511,14 @@ public abstract class SSTableReader extends SSTable
      * @param ranges the range of keys to cover
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public abstract ICompactionScanner getScanner(Collection<Range<Token>> ranges, RateLimiter limiter);
+    public abstract ICompactionScanner getScanner(Collection<Range<Token>> ranges, RateLimiter limiter, boolean tryDirect);
 
     /**
      *
      * @param dataRange filter to use when reading the columns
      * @return A Scanner for seeking over the rows of the SSTable.
      */
-    public abstract ICompactionScanner getScanner(DataRange dataRange, RateLimiter limiter);
+    public abstract ICompactionScanner getScanner(DataRange dataRange, RateLimiter limiter, boolean tryDirect);
 
 
 
@@ -1701,24 +1701,24 @@ public abstract class SSTableReader extends SSTable
         return sstableMetadata;
     }
 
-    public RandomAccessReader openDataReader(RateLimiter limiter)
+    public RandomAccessReader openDataReader(RateLimiter limiter, boolean tryDirect)
     {
         assert limiter != null;
         return compression
-                ? CompressedRandomAccessReader.openDirect(getFilename(), getCompressionMetadata(), limiter)
-                : RandomAccessReader.openDirect(new File(getFilename()), limiter);
+                ? CompressedRandomAccessReader.open(getFilename(), getCompressionMetadata(), limiter, tryDirect)
+                : RandomAccessReader.open(new File(getFilename()), limiter, tryDirect);
     }
 
-    public RandomAccessReader openDataReader()
+    public RandomAccessReader openDataReader(boolean tryDirect)
     {
         return compression
-                ? CompressedRandomAccessReader.openDirect(getFilename(), getCompressionMetadata())
-                : RandomAccessReader.openDirect(new File(getFilename()));
+                ? CompressedRandomAccessReader.open(getFilename(), getCompressionMetadata(), tryDirect)
+                : RandomAccessReader.open(new File(getFilename()), tryDirect);
     }
 
     public RandomAccessReader openIndexReader()
     {
-        return RandomAccessReader.open(new File(getIndexFilename()));
+        return RandomAccessReader.open(new File(getIndexFilename()), false);
     }
 
     /**

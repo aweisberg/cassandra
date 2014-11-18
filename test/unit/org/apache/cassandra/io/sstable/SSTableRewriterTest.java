@@ -185,7 +185,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ICompactionScanner scanner = s.getScanner();
+        try (ICompactionScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -234,7 +234,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ICompactionScanner scanner = s.getScanner();
+        try (ICompactionScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -277,7 +277,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ICompactionScanner scanner = s.getScanner();
+        try (ICompactionScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -320,7 +320,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ICompactionScanner scanner = s.getScanner();
+        try (ICompactionScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -365,7 +365,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ICompactionScanner scanner = s.getScanner();
+        try (ICompactionScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -408,7 +408,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ICompactionScanner scanner = s.getScanner();
+        try (ICompactionScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())
@@ -447,7 +447,7 @@ public class SSTableRewriterTest extends SchemaLoader
         rewriter.switchWriter(getWriter(cfs, s.descriptor.directory));
 
         int files = 1;
-        try (ICompactionScanner scanner = s.getScanner();
+        try (ICompactionScanner scanner = s.getScanner(true);
              CompactionController controller = new CompactionController(cfs, compacting, 0))
         {
             while(scanner.hasNext())

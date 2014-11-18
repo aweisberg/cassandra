@@ -79,7 +79,7 @@ public class MmappedSegmentedFile extends SegmentedFile
 
         // not mmap'd: open a braf covering the segment
         // FIXME: brafs are unbounded, so this segment will cover the rest of the file, rather than just the row
-        RandomAccessReader file = RandomAccessReader.open(new File(path));
+        RandomAccessReader file = RandomAccessReader.open(new File(path), false);
         file.seek(position);
         return file;
     }
@@ -232,7 +232,7 @@ public class MmappedSegmentedFile extends SegmentedFile
 
             int size = in.readInt();
             List<Long> temp = new ArrayList<>(size);
-            
+
             for (int i = 0; i < size; i++)
                 temp.add(in.readLong());
 
