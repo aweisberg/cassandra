@@ -21,6 +21,7 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.cassandra.utils.CLibrary;
 import org.slf4j.Logger;
@@ -58,6 +59,12 @@ public class DirectFileChannel extends DelegatingFileChannel
 
     private static final Logger logger = LoggerFactory.getLogger(DirectFileChannel.class);
 
+    private static final int DFC_BUFFER_SIZE = Integer.getInteger("cassandra.dfc_buffer_size", 1024 * 1024 * 2);
+
+    //Track total number of active DFCs
+    static final AtomicLong NUM_DFCS = new AtomicLong(0);
+
+    //Sentinel value fo the internal buffer position indicating the buffer has no usable data
     static final long POSITION_INVALID = -1;
 
     /*
@@ -96,13 +103,13 @@ public class DirectFileChannel extends DelegatingFileChannel
      */
     public DirectFileChannel(FileChannel fc, FileDescriptor fd, RateLimiter limiter) throws IOException {
         super(fc);
-
+        NUM_DFCS.incrementAndGet();
         if (!CLibrary.tryEnableODIRECT(fd))
         {
             logger.warn("Unable to enable O_DIRECT in DirectFileChannel");
         }
 
-        origin = Memory.allocateAlignable(1024 * 1024 * 2);
+        origin = Memory.allocateAlignable(DFC_BUFFER_SIZE);
         buffer = origin.asAlignedByteBuffer();
         this.limiter = limiter;
     }
@@ -263,6 +270,7 @@ public class DirectFileChannel extends DelegatingFileChannel
     @Override
     protected synchronized void implCloseChannel() throws IOException
     {
+        NUM_DFCS.decrementAndGet();
         try
         {
             super.implCloseChannel();
@@ -276,6 +284,8 @@ public class DirectFileChannel extends DelegatingFileChannel
 
     @Override
     public void finalize() {
+        //Have to handle any exception here because the finalizer can't do anything
+        //useful with them
         try
         {
             close();
