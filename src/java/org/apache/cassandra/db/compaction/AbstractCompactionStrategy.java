@@ -272,7 +272,7 @@ public abstract class AbstractCompactionStrategy
         try
         {
             for (SSTableReader sstable : sstables)
-                scanners.add(sstable.getScanner(range, limiter));
+                scanners.add(sstable.getScanner(range, limiter, true));
         }
         catch (Throwable t)
         {

@@ -63,13 +63,14 @@ public class BigTableScanner implements ICompactionScanner
      * @param sstable SSTable to scan; must not be null
      * @param dataRange a single range to scan; must not be null
      * @param limiter background i/o RateLimiter; may be null
+     * @param tryDirect Use O_DIRECT if possible when reading
      */
-    public BigTableScanner(SSTableReader sstable, DataRange dataRange, RateLimiter limiter)
+    public BigTableScanner(SSTableReader sstable, DataRange dataRange, RateLimiter limiter, boolean tryDirect)
     {
         assert sstable != null;
         sstable.acquireReference();
 
-        this.dfile = limiter == null ? sstable.openDataReader() : sstable.openDataReader(limiter);
+        this.dfile = limiter == null ? sstable.openDataReader(tryDirect) : sstable.openDataReader(limiter, tryDirect);
         this.ifile = sstable.openIndexReader();
         this.sstable = sstable;
         this.dataRange = dataRange;
@@ -94,13 +95,14 @@ public class BigTableScanner implements ICompactionScanner
      * @param sstable SSTable to scan; must not be null
      * @param tokenRanges A set of token ranges to scan
      * @param limiter background i/o RateLimiter; may be null
+     * @param tryDirect Use O_DIRECT if possible when reading
      */
-    public BigTableScanner(SSTableReader sstable, Collection<Range<Token>> tokenRanges, RateLimiter limiter)
+    public BigTableScanner(SSTableReader sstable, Collection<Range<Token>> tokenRanges, RateLimiter limiter, boolean tryDirect)
     {
         assert sstable != null;
         sstable.acquireReference();
 
-        this.dfile = limiter == null ? sstable.openDataReader() : sstable.openDataReader(limiter);
+        this.dfile = limiter == null ? sstable.openDataReader(tryDirect) : sstable.openDataReader(limiter, tryDirect);
         this.ifile = sstable.openIndexReader();
         this.sstable = sstable;
         this.dataRange = null;

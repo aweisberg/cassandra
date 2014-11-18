@@ -76,7 +76,7 @@ public class MetadataSerializerTest
         }
 
         Descriptor desc = new Descriptor( statsFile.getParentFile(), "", "", 0, Descriptor.Type.FINAL);
-        try (RandomAccessReader in = RandomAccessReader.open(statsFile))
+        try (RandomAccessReader in = RandomAccessReader.open(statsFile, false))
         {
             Map<MetadataType, MetadataComponent> deserialized = serializer.deserialize(desc, in, EnumSet.allOf(MetadataType.class));
 

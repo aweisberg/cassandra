@@ -538,7 +538,7 @@ public class RangeTombstoneTest
 
         // test the physical structure of the sstable i.e. rt & columns on disk
         SSTableReader sstable = cfs.getSSTables().iterator().next();
-        OnDiskAtomIterator iter = sstable.getScanner().next();
+        OnDiskAtomIterator iter = sstable.getScanner(true).next();
         int cnt = 0;
         // after compaction, the first element should be an RT followed by the remaining non-deleted columns
         while(iter.hasNext())

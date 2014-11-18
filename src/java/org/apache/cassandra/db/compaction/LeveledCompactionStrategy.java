@@ -60,16 +60,16 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
         int configuredMaxSSTableSize = 160;
         SizeTieredCompactionStrategyOptions localOptions = new SizeTieredCompactionStrategyOptions(options);
         if (options != null)
-        {             
-            if (options.containsKey(SSTABLE_SIZE_OPTION))             
-            {                 
-                configuredMaxSSTableSize = Integer.parseInt(options.get(SSTABLE_SIZE_OPTION));                 
-                if (!Boolean.getBoolean("cassandra.tolerate_sstable_size"))                 
-                {                     
+        {
+            if (options.containsKey(SSTABLE_SIZE_OPTION))
+            {
+                configuredMaxSSTableSize = Integer.parseInt(options.get(SSTABLE_SIZE_OPTION));
+                if (!Boolean.getBoolean("cassandra.tolerate_sstable_size"))
+                {
                     if (configuredMaxSSTableSize >= 1000)
                         logger.warn("Max sstable size of {}MB is configured for {}.{}; having a unit of compaction this large is probably a bad idea",
                                 configuredMaxSSTableSize, cfs.name, cfs.getColumnFamilyName());
-                    if (configuredMaxSSTableSize < 50)  
+                    if (configuredMaxSSTableSize < 50)
                         logger.warn("Max sstable size of {}MB is configured for {}.{}.  Testing done for CASSANDRA-5727 indicates that performance improves up to 160MB",
                                 configuredMaxSSTableSize, cfs.name, cfs.getColumnFamilyName());
                 }
@@ -234,7 +234,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
                 {
                     // L0 makes no guarantees about overlapping-ness.  Just create a direct scanner for each
                     for (SSTableReader sstable : byLevel.get(level))
-                        scanners.add(sstable.getScanner(range, CompactionManager.instance.getRateLimiter()));
+                        scanners.add(sstable.getScanner(range, CompactionManager.instance.getRateLimiter(), true));
                 }
                 else
                 {
@@ -308,7 +308,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
             Collections.sort(this.sstables, SSTableReader.sstableComparator);
             sstableIterator = this.sstables.iterator();
             assert sstableIterator.hasNext(); // caller should check intersecting first
-            currentScanner = sstableIterator.next().getScanner(range, CompactionManager.instance.getRateLimiter());
+            currentScanner = sstableIterator.next().getScanner(range, CompactionManager.instance.getRateLimiter(), true);
         }
 
         public static List<SSTableReader> intersecting(Collection<SSTableReader> sstables, Range<Token> range)
@@ -343,7 +343,7 @@ public class LeveledCompactionStrategy extends AbstractCompactionStrategy
                         currentScanner = null;
                         return endOfData();
                     }
-                    currentScanner = sstableIterator.next().getScanner(range, CompactionManager.instance.getRateLimiter());
+                    currentScanner = sstableIterator.next().getScanner(range, CompactionManager.instance.getRateLimiter(), true);
                 }
             }
             catch (IOException e)

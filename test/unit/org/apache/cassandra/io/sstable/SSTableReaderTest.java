@@ -370,7 +370,7 @@ public class SSTableReaderTest
         boolean foundScanner = false;
         for (SSTableReader s : store.getSSTables())
         {
-            ICompactionScanner scanner = s.getScanner(new Range<Token>(t(0), t(1)), null);
+            ICompactionScanner scanner = s.getScanner(new Range<Token>(t(0), t(1)), null, false);
             scanner.next(); // throws exception pre 5407
             foundScanner = true;
         }
