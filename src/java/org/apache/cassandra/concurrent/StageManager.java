@@ -57,6 +57,7 @@ public class StageManager
         stages.put(Stage.MISC, new JMXEnabledThreadPoolExecutor(Stage.MISC));
         stages.put(Stage.READ_REPAIR, multiThreadedStage(Stage.READ_REPAIR, FBUtilities.getAvailableProcessors()));
         stages.put(Stage.TRACING, tracingExecutor());
+        stages.put(Stage.NETWORK_WRITE, multiThreadedLowSignalStage(Stage.NETWORK_WRITE, 4000));
     }
 
     private static ExecuteOnlyExecutor tracingExecutor()

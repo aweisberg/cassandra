@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.net;
 
+import io.netty.util.internal.PlatformDependent;
+
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutput;
@@ -31,10 +33,13 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.zip.Checksum;
 
 import org.slf4j.Logger;
@@ -44,6 +49,7 @@ import net.jpountz.lz4.LZ4BlockOutputStream;
 import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
+
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
@@ -51,17 +57,39 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.UUIDGen;
 import org.xerial.snappy.SnappyOutputStream;
-
+import org.apache.cassandra.concurrent.Stage;
+import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
+import sun.misc.Contended;
+
 import com.google.common.util.concurrent.Uninterruptibles;
 
-public class OutboundTcpConnection extends Thread
+public class OutboundTcpConnection
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundTcpConnection.class);
 
+    private static final int TRUE = 1;
+    private static final int FALSE = 0;
+
+    private static final Executor executor = StageManager.getStage(Stage.NETWORK_WRITE);
+
+    private static final AtomicIntegerFieldUpdater<OutboundTcpConnection> needsWakeupUpdater =
+            PlatformDependent.newAtomicIntegerFieldUpdater(OutboundTcpConnection.class, "needsWakeup");
+
+    private static final AtomicLongFieldUpdater<OutboundTcpConnection> droppedUpdater  =
+            PlatformDependent.newAtomicLongFieldUpdater(OutboundTcpConnection.class, "dropped");
+
+    private static final AtomicLongFieldUpdater<OutboundTcpConnection> completedUpdater  =
+            PlatformDependent.newAtomicLongFieldUpdater(OutboundTcpConnection.class, "completed");
+
+    private static final AtomicIntegerFieldUpdater<OutboundTcpConnection> currentMsgBufferCountUpdater  =
+            PlatformDependent.newAtomicIntegerFieldUpdater(OutboundTcpConnection.class, "currentMsgBufferCount");
+
+    @SuppressWarnings("rawtypes")
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
+
     private volatile boolean isStopped = false;
 
     private static final int OPEN_RETRY_DELAY = 100; // ms between retries
@@ -70,20 +98,28 @@ public class OutboundTcpConnection extends Thread
 
     static final int LZ4_HASH_SEED = 0x9747b28c;
 
-    private final BlockingQueue<QueuedMessage> backlog = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<QueuedMessage> backlog = new LinkedBlockingQueue<>();
 
     private final OutboundTcpConnectionPool poolReference;
 
     private DataOutputStreamPlus out;
     private Socket socket;
+    @Contended("Dispatcher")
     private volatile long completed;
-    private final AtomicLong dropped = new AtomicLong();
+    @Contended("Dispatcher")
     private volatile int currentMsgBufferCount = 0;
     private int targetVersion;
 
+    private final String threadName;
+
+    @Contended("Producer")
+    private volatile long dropped = 0;
+    @Contended("Producer")
+    private volatile int needsWakeup = TRUE;
+
     public OutboundTcpConnection(OutboundTcpConnectionPool pool)
     {
-        super("WRITE-" + pool.endPoint());
+        threadName = "WRITE-" + pool.endPoint();
         this.poolReference = pool;
     }
 
@@ -106,6 +142,10 @@ public class OutboundTcpConnection extends Thread
         {
             throw new AssertionError(e);
         }
+
+        if (needsWakeup == TRUE && needsWakeupUpdater.compareAndSet(this, TRUE, FALSE)) {
+            executor.execute(dispatchTask);
+        }
     }
 
     void closeSocket(boolean destroyThread)
@@ -125,26 +165,20 @@ public class OutboundTcpConnection extends Thread
         return targetVersion;
     }
 
-    public void run()
-    {
-        // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
-        final List<QueuedMessage> drainedMessages = new ArrayList<>(128);
-        outer:
-        while (true)
-        {
-            if (backlog.drainTo(drainedMessages, drainedMessages.size()) == 0)
-            {
-                try
-                {
-                    drainedMessages.add(backlog.take());
-                }
-                catch (InterruptedException e)
-                {
-                    throw new AssertionError(e);
-                }
+    private static final int DRAINED_MESSAGES_CAPACITY = 128;
+    private final List<QueuedMessage> drainedMessages = new ArrayList<>(DRAINED_MESSAGES_CAPACITY);
+    private Runnable dispatchTask = new Runnable() {
+        @Override
+        public void run() {
+            dispatchQueue();
+            needsWakeupUpdater.lazySet(OutboundTcpConnection.this, TRUE);
+            dispatchQueue();
+        }
+    };
 
-            }
-            currentMsgBufferCount = drainedMessages.size();
+    private void dispatchQueue() {
+        if (backlog.drainTo(drainedMessages, DRAINED_MESSAGES_CAPACITY) > 0) {
+            currentMsgBufferCountUpdater.lazySet(this, drainedMessages.size());
 
             int count = drainedMessages.size();
             for (QueuedMessage qm : drainedMessages)
@@ -156,11 +190,11 @@ public class OutboundTcpConnection extends Thread
                     {
                         disconnect();
                         if (isStopped)
-                            break outer;
+                            return;
                         continue;
                     }
                     if (qm.isTimedOut(m.getTimeout()))
-                        dropped.incrementAndGet();
+                        droppedUpdater.incrementAndGet(this);
                     else if (socket != null || connect())
                         writeConnected(qm, count == 1 && backlog.size() == 0);
                     else
@@ -174,7 +208,7 @@ public class OutboundTcpConnection extends Thread
                     // but we want to catch anything bad we don't drop the messages in the current batch
                     logger.error("error processing a message intended for {}", poolReference.endPoint(), e);
                 }
-                currentMsgBufferCount = --count;
+                currentMsgBufferCountUpdater.lazySet(this, --count);
             }
             drainedMessages.clear();
         }
@@ -192,7 +226,7 @@ public class OutboundTcpConnection extends Thread
 
     public long getDroppedMessages()
     {
-        return dropped.get();
+        return dropped;
     }
 
     private boolean shouldCompressConnection()
@@ -229,7 +263,7 @@ public class OutboundTcpConnection extends Thread
 
             writeInternal(qm.message, qm.id, qm.timestamp);
 
-            completed++;
+            completedUpdater.lazySet(this, completed + 1);
             if (flush)
                 out.flush();
         }
@@ -344,7 +378,7 @@ public class OutboundTcpConnection extends Thread
                         logger.warn("Failed to set send buffer size on internode socket.", se);
                     }
                 }
-                out = new DataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream(), 4096));
+                out = new DataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream(), 1024 * 32));
 
                 out.writeInt(MessagingService.PROTOCOL_MAGIC);
                 writeHeader(out, targetVersion, shouldCompressConnection());
@@ -416,7 +450,7 @@ public class OutboundTcpConnection extends Thread
         }
         return false;
     }
-    
+
     private int handshakeVersion(final DataInputStream inputStream)
     {
         final AtomicInteger version = new AtomicInteger(NO_VERSION);
@@ -431,7 +465,7 @@ public class OutboundTcpConnection extends Thread
                     logger.info("Handshaking version with {}", poolReference.endPoint());
                     version.set(inputStream.readInt());
                 }
-                catch (IOException ex) 
+                catch (IOException ex)
                 {
                     final String msg = "Cannot handshake version with " + poolReference.endPoint();
                     if (logger.isTraceEnabled())
@@ -467,7 +501,7 @@ public class OutboundTcpConnection extends Thread
             if (qm.timestamp >= System.currentTimeMillis() - qm.message.getTimeout())
                 return;
             iter.remove();
-            dropped.incrementAndGet();
+            droppedUpdater.decrementAndGet(this);
         }
     }
 

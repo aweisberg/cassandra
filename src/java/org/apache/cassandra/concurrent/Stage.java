@@ -29,7 +29,8 @@ public enum Stage
     MISC,
     TRACING,
     INTERNAL_RESPONSE,
-    READ_REPAIR;
+    READ_REPAIR,
+    NETWORK_WRITE;
 
     public String getJmxType()
     {
@@ -47,6 +48,7 @@ public enum Stage
             case READ:
             case REQUEST_RESPONSE:
             case READ_REPAIR:
+            case NETWORK_WRITE:
                 return "request";
             default:
                 throw new AssertionError("Unknown stage " + this);
