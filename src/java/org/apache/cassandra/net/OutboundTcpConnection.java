@@ -167,17 +167,21 @@ public class OutboundTcpConnection
 
     private static final int DRAINED_MESSAGES_CAPACITY = 128;
     private final List<QueuedMessage> drainedMessages = new ArrayList<>(DRAINED_MESSAGES_CAPACITY);
-    private Runnable dispatchTask = new Runnable() {
+    private Runnable dispatchTask = new Runnable()
+    {
         @Override
-        public void run() {
+        public void run()
+        {
             dispatchQueue();
             needsWakeupUpdater.lazySet(OutboundTcpConnection.this, TRUE);
             dispatchQueue();
         }
     };
 
-    private void dispatchQueue() {
-        if (backlog.drainTo(drainedMessages, DRAINED_MESSAGES_CAPACITY) > 0) {
+    private void dispatchQueue()
+    {
+        if (backlog.drainTo(drainedMessages, DRAINED_MESSAGES_CAPACITY) > 0)
+        {
             currentMsgBufferCountUpdater.lazySet(this, drainedMessages.size());
 
             int count = drainedMessages.size();
