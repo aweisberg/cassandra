@@ -170,7 +170,7 @@ public class OutboundTcpConnection
     private Runnable dispatchTask = new Runnable()
     {
         @Override
-        public void run()
+        public synchronized void run()
         {
             dispatchQueue();
             needsWakeupUpdater.lazySet(OutboundTcpConnection.this, TRUE);
