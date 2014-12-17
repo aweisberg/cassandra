@@ -174,12 +174,9 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
             while (true) {
                 dispatchQueue();
 
-                //Not sure if this can be lazy set?
                 needsWakeup = TRUE;
 
-                if (!isEmpty() && needsWakeupUpdater.compareAndSet(OutboundTcpConnection.this, TRUE, FALSE))
-                    continue;
-                else
+                if (isEmpty() || needsWakeupUpdater.compareAndSet(OutboundTcpConnection.this, TRUE, FALSE))
                     return;
             }
         }
