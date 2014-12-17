@@ -32,6 +32,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -69,7 +70,7 @@ import sun.misc.Contended;
 
 import com.google.common.util.concurrent.Uninterruptibles;
 
-public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
+public class OutboundTcpConnection
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundTcpConnection.class);
 
@@ -77,12 +78,6 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
     private static final int FALSE = 0;
 
     private static final Executor executor = StageManager.getStage(Stage.NETWORK_WRITE);
-
-    private static final AtomicReferenceFieldUpdater<OutboundTcpConnection, MpscLinkedQueueNode<QueuedMessage>> headRefUpdater =
-            PlatformDependent.newAtomicReferenceFieldUpdater(OutboundTcpConnection.class, "headRef");
-
-    private static final AtomicReferenceFieldUpdater<OutboundTcpConnection, MpscLinkedQueueNode<QueuedMessage>> tailRefUpdater =
-            PlatformDependent.newAtomicReferenceFieldUpdater(OutboundTcpConnection.class, "tailRef");
 
     private static final AtomicIntegerFieldUpdater<OutboundTcpConnection> needsWakeupUpdater =
             PlatformDependent.newAtomicIntegerFieldUpdater(OutboundTcpConnection.class, "needsWakeup");
@@ -106,12 +101,11 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
 
     private final OutboundTcpConnectionPool poolReference;
 
+    private final ConcurrentLinkedQueue<QueuedMessage> backlog = new ConcurrentLinkedQueue<QueuedMessage>();
     private DataOutputStreamPlus out;
     private Socket socket;
     @Contended("Dispatcher")
     private volatile long completed;
-    @Contended("Dispatcher")
-    private volatile MpscLinkedQueueNode<QueuedMessage> headRef;
 
     private int targetVersion;
 
@@ -121,8 +115,6 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
     private volatile long dropped = 0;
     @Contended("Producer")
     private volatile int needsWakeup = TRUE;
-    @Contended("Producer")
-    private volatile MpscLinkedQueueNode<QueuedMessage> tailRef;
 
     public OutboundTcpConnection(OutboundTcpConnectionPool pool)
     {
@@ -142,7 +134,7 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
     {
 //        if (backlog.size() > 1024)
 //            expireMessages();
-        offer(new QueuedMessage(message, id));
+        backlog.offer(new QueuedMessage(message, id));
 
         if (needsWakeup == TRUE && needsWakeupUpdater.compareAndSet(this, TRUE, FALSE)) {
             executor.execute(dispatchTask);
@@ -151,7 +143,7 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
 
     void closeSocket(boolean destroyThread)
     {
-        clear();
+        backlog.clear();
         isStopped = destroyThread; // Exit loop to stop the thread
         enqueue(CLOSE_SENTINEL, -1);
     }
@@ -176,7 +168,7 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
 
                 needsWakeup = TRUE;
 
-                if (isEmpty() || !needsWakeupUpdater.compareAndSet(OutboundTcpConnection.this, TRUE, FALSE))
+                if (backlog.isEmpty() || !needsWakeupUpdater.compareAndSet(OutboundTcpConnection.this, TRUE, FALSE))
                     return;
             }
         }
@@ -185,7 +177,7 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
     private void dispatchQueue()
     {
         QueuedMessage qm = null;
-        while ((qm = poll()) != null) {
+        while ((qm = backlog.poll()) != null) {
             try
             {
                 MessageOut<?> m = qm.message;
@@ -199,10 +191,10 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
                 if (qm.isTimedOut(m.getTimeout()))
                     droppedUpdater.incrementAndGet(this);
                 else if (socket != null || connect())
-                    writeConnected(qm, isEmpty());
+                    writeConnected(qm, backlog.isEmpty());
                 else
                     // clear out the queue, else gossip messages back up.
-                    clear();
+                    backlog.clear();
             }
             catch (Exception e)
             {
@@ -280,7 +272,7 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
                 // to retry after re-connecting.  See CASSANDRA-5393
                 if (qm.shouldRetry())
                 {
-                    offer(new RetriedQueuedMessage(qm));
+                    backlog.offer(new RetriedQueuedMessage(qm));
                 }
             }
             else
@@ -512,32 +504,5 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
         {
             return false;
         }
-    }
-
-    protected final MpscLinkedQueueNode<QueuedMessage> tailRef() {
-        return tailRef;
-    }
-
-    @Override
-    protected final void setTailRef(MpscLinkedQueueNode<QueuedMessage> tailRef) {
-        this.tailRef = tailRef;
-    }
-
-    @SuppressWarnings("unchecked")
-    protected final MpscLinkedQueueNode<QueuedMessage> getAndSetTailRef(MpscLinkedQueueNode<QueuedMessage> tailRef) {
-        // LOCK XCHG in JDK8, a CAS loop in JDK 7/6
-        return (MpscLinkedQueueNode<QueuedMessage>) tailRefUpdater.getAndSet(this, tailRef);
-    }
-
-    protected final MpscLinkedQueueNode<QueuedMessage> headRef() {
-        return headRef;
-    }
-
-    protected final void setHeadRef(MpscLinkedQueueNode<QueuedMessage> headRef) {
-        this.headRef = headRef;
-    }
-
-    protected final void lazySetHeadRef(MpscLinkedQueueNode<QueuedMessage> headRef) {
-        headRefUpdater.lazySet(this, headRef);
     }
 }

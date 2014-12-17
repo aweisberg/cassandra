@@ -17,10 +17,8 @@
  */
 package org.apache.cassandra.net;
 
-import org.apache.cassandra.utils.concurrent.MpscLinkedQueueNode;
-
 /** messages that have not been retried yet */
-class QueuedMessage extends MpscLinkedQueueNode<QueuedMessage>
+class QueuedMessage
 {
     final MessageOut<?> message;
     final int id;
@@ -46,8 +44,4 @@ class QueuedMessage extends MpscLinkedQueueNode<QueuedMessage>
         return !droppable;
     }
 
-    @Override
-    public QueuedMessage value() {
-        return this;
-    }
 }
