@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.zip.Checksum;
 
 import org.slf4j.Logger;
@@ -56,6 +57,8 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.UUIDGen;
+import org.apache.cassandra.utils.concurrent.MpscLinkedQueueBase;
+import org.apache.cassandra.utils.concurrent.MpscLinkedQueueNode;
 import org.xerial.snappy.SnappyOutputStream;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
@@ -66,7 +69,7 @@ import sun.misc.Contended;
 
 import com.google.common.util.concurrent.Uninterruptibles;
 
-public class OutboundTcpConnection
+public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundTcpConnection.class);
 
@@ -74,6 +77,12 @@ public class OutboundTcpConnection
     private static final int FALSE = 0;
 
     private static final Executor executor = StageManager.getStage(Stage.NETWORK_WRITE);
+
+    private static final AtomicReferenceFieldUpdater<OutboundTcpConnection, MpscLinkedQueueNode<QueuedMessage>> headRefUpdater =
+            PlatformDependent.newAtomicReferenceFieldUpdater(OutboundTcpConnection.class, "headRef");
+
+    private static final AtomicReferenceFieldUpdater<OutboundTcpConnection, MpscLinkedQueueNode<QueuedMessage>> tailRefUpdater =
+            PlatformDependent.newAtomicReferenceFieldUpdater(OutboundTcpConnection.class, "tailRef");
 
     private static final AtomicIntegerFieldUpdater<OutboundTcpConnection> needsWakeupUpdater =
             PlatformDependent.newAtomicIntegerFieldUpdater(OutboundTcpConnection.class, "needsWakeup");
@@ -83,9 +92,6 @@ public class OutboundTcpConnection
 
     private static final AtomicLongFieldUpdater<OutboundTcpConnection> completedUpdater  =
             PlatformDependent.newAtomicLongFieldUpdater(OutboundTcpConnection.class, "completed");
-
-    private static final AtomicIntegerFieldUpdater<OutboundTcpConnection> currentMsgBufferCountUpdater  =
-            PlatformDependent.newAtomicIntegerFieldUpdater(OutboundTcpConnection.class, "currentMsgBufferCount");
 
     @SuppressWarnings("rawtypes")
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
@@ -98,8 +104,6 @@ public class OutboundTcpConnection
 
     static final int LZ4_HASH_SEED = 0x9747b28c;
 
-    private final LinkedBlockingQueue<QueuedMessage> backlog = new LinkedBlockingQueue<>();
-
     private final OutboundTcpConnectionPool poolReference;
 
     private DataOutputStreamPlus out;
@@ -107,7 +111,8 @@ public class OutboundTcpConnection
     @Contended("Dispatcher")
     private volatile long completed;
     @Contended("Dispatcher")
-    private volatile int currentMsgBufferCount = 0;
+    private volatile MpscLinkedQueueNode<QueuedMessage> headRef;
+
     private int targetVersion;
 
     private final String threadName;
@@ -116,9 +121,12 @@ public class OutboundTcpConnection
     private volatile long dropped = 0;
     @Contended("Producer")
     private volatile int needsWakeup = TRUE;
+    @Contended("Producer")
+    private volatile MpscLinkedQueueNode<QueuedMessage> tailRef;
 
     public OutboundTcpConnection(OutboundTcpConnectionPool pool)
     {
+        super();
         threadName = "WRITE-" + pool.endPoint();
         this.poolReference = pool;
     }
@@ -132,16 +140,9 @@ public class OutboundTcpConnection
 
     public void enqueue(MessageOut<?> message, int id)
     {
-        if (backlog.size() > 1024)
-            expireMessages();
-        try
-        {
-            backlog.put(new QueuedMessage(message, id));
-        }
-        catch (InterruptedException e)
-        {
-            throw new AssertionError(e);
-        }
+//        if (backlog.size() > 1024)
+//            expireMessages();
+        offer(new QueuedMessage(message, id));
 
         if (needsWakeup == TRUE && needsWakeupUpdater.compareAndSet(this, TRUE, FALSE)) {
             executor.execute(dispatchTask);
@@ -150,7 +151,7 @@ public class OutboundTcpConnection
 
     void closeSocket(boolean destroyThread)
     {
-        backlog.clear();
+        clear();
         isStopped = destroyThread; // Exit loop to stop the thread
         enqueue(CLOSE_SENTINEL, -1);
     }
@@ -165,62 +166,61 @@ public class OutboundTcpConnection
         return targetVersion;
     }
 
-    private static final int DRAINED_MESSAGES_CAPACITY = 128;
-    private final List<QueuedMessage> drainedMessages = new ArrayList<>(DRAINED_MESSAGES_CAPACITY);
     private Runnable dispatchTask = new Runnable()
     {
         @Override
-        public synchronized void run()
+        public void run()
         {
-            dispatchQueue();
-            needsWakeupUpdater.lazySet(OutboundTcpConnection.this, TRUE);
-            dispatchQueue();
+            while (true) {
+                dispatchQueue();
+
+                //Not sure if this can be lazy set?
+                needsWakeup = TRUE;
+
+                if (!isEmpty() && needsWakeupUpdater.compareAndSet(OutboundTcpConnection.this, TRUE, FALSE))
+                    continue;
+                else
+                    return;
+            }
         }
     };
 
     private void dispatchQueue()
     {
-        if (backlog.drainTo(drainedMessages, DRAINED_MESSAGES_CAPACITY) > 0)
-        {
-            currentMsgBufferCountUpdater.lazySet(this, drainedMessages.size());
-
-            int count = drainedMessages.size();
-            for (QueuedMessage qm : drainedMessages)
+        QueuedMessage qm = null;
+        while ((qm = poll()) != null) {
+            try
             {
-                try
+                MessageOut<?> m = qm.message;
+                if (m == CLOSE_SENTINEL)
                 {
-                    MessageOut<?> m = qm.message;
-                    if (m == CLOSE_SENTINEL)
-                    {
-                        disconnect();
-                        if (isStopped)
-                            return;
-                        continue;
-                    }
-                    if (qm.isTimedOut(m.getTimeout()))
-                        droppedUpdater.incrementAndGet(this);
-                    else if (socket != null || connect())
-                        writeConnected(qm, count == 1 && backlog.size() == 0);
-                    else
-                        // clear out the queue, else gossip messages back up.
-                        backlog.clear();
+                    disconnect();
+                    if (isStopped)
+                        return;
+                    continue;
                 }
-                catch (Exception e)
-                {
-                    JVMStabilityInspector.inspectThrowable(e);
-                    // really shouldn't get here, as exception handling in writeConnected() is reasonably robust
-                    // but we want to catch anything bad we don't drop the messages in the current batch
-                    logger.error("error processing a message intended for {}", poolReference.endPoint(), e);
-                }
-                currentMsgBufferCountUpdater.lazySet(this, --count);
+                if (qm.isTimedOut(m.getTimeout()))
+                    droppedUpdater.incrementAndGet(this);
+                else if (socket != null || connect())
+                    writeConnected(qm, isEmpty());
+                else
+                    // clear out the queue, else gossip messages back up.
+                    clear();
             }
-            drainedMessages.clear();
+            catch (Exception e)
+            {
+                JVMStabilityInspector.inspectThrowable(e);
+                // really shouldn't get here, as exception handling in writeConnected() is reasonably robust
+                // but we want to catch anything bad we don't drop the messages in the current batch
+                logger.error("error processing a message intended for {}", poolReference.endPoint(), e);
+            }
         }
     }
 
     public int getPendingMessages()
     {
-        return backlog.size() + currentMsgBufferCount;
+        return 0;
+        //return size();
     }
 
     public long getCompletedMesssages()
@@ -283,14 +283,7 @@ public class OutboundTcpConnection
                 // to retry after re-connecting.  See CASSANDRA-5393
                 if (qm.shouldRetry())
                 {
-                    try
-                    {
-                        backlog.put(new RetriedQueuedMessage(qm));
-                    }
-                    catch (InterruptedException e1)
-                    {
-                        throw new AssertionError(e1);
-                    }
+                    offer(new RetriedQueuedMessage(qm));
                 }
             }
             else
@@ -496,46 +489,20 @@ public class OutboundTcpConnection
         return version.get();
     }
 
-    private void expireMessages()
-    {
-        Iterator<QueuedMessage> iter = backlog.iterator();
-        while (iter.hasNext())
-        {
-            QueuedMessage qm = iter.next();
-            if (qm.timestamp >= System.currentTimeMillis() - qm.message.getTimeout())
-                return;
-            iter.remove();
-            droppedUpdater.decrementAndGet(this);
-        }
-    }
+//    private void expireMessages()
+//    {
+//        Iterator<QueuedMessage> iter = backlog.iterator();
+//        while (iter.hasNext())
+//        {
+//            QueuedMessage qm = iter.next();
+//            if (qm.timestamp >= System.currentTimeMillis() - qm.message.getTimeout())
+//                return;
+//            iter.remove();
+//            droppedUpdater.incrementAndGet(this);
+//        }
+//    }
 
-    /** messages that have not been retried yet */
-    private static class QueuedMessage
-    {
-        final MessageOut<?> message;
-        final int id;
-        final long timestamp;
-        final boolean droppable;
 
-        QueuedMessage(MessageOut<?> message, int id)
-        {
-            this.message = message;
-            this.id = id;
-            this.timestamp = System.currentTimeMillis();
-            this.droppable = MessagingService.DROPPABLE_VERBS.contains(message.verb);
-        }
-
-        /** don't drop a non-droppable message just because it's timestamp is expired */
-        boolean isTimedOut(long maxTime)
-        {
-            return droppable && timestamp < System.currentTimeMillis() - maxTime;
-        }
-
-        boolean shouldRetry()
-        {
-            return !droppable;
-        }
-    }
 
     private static class RetriedQueuedMessage extends QueuedMessage
     {
@@ -548,5 +515,32 @@ public class OutboundTcpConnection
         {
             return false;
         }
+    }
+
+    protected final MpscLinkedQueueNode<QueuedMessage> tailRef() {
+        return tailRef;
+    }
+
+    @Override
+    protected final void setTailRef(MpscLinkedQueueNode<QueuedMessage> tailRef) {
+        this.tailRef = tailRef;
+    }
+
+    @SuppressWarnings("unchecked")
+    protected final MpscLinkedQueueNode<QueuedMessage> getAndSetTailRef(MpscLinkedQueueNode<QueuedMessage> tailRef) {
+        // LOCK XCHG in JDK8, a CAS loop in JDK 7/6
+        return (MpscLinkedQueueNode<QueuedMessage>) tailRefUpdater.getAndSet(this, tailRef);
+    }
+
+    protected final MpscLinkedQueueNode<QueuedMessage> headRef() {
+        return headRef;
+    }
+
+    protected final void setHeadRef(MpscLinkedQueueNode<QueuedMessage> headRef) {
+        this.headRef = headRef;
+    }
+
+    protected final void lazySetHeadRef(MpscLinkedQueueNode<QueuedMessage> headRef) {
+        headRefUpdater.lazySet(this, headRef);
     }
 }
