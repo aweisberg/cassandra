@@ -176,7 +176,7 @@ public class OutboundTcpConnection extends MpscLinkedQueueBase<QueuedMessage>
 
                 needsWakeup = TRUE;
 
-                if (isEmpty() || needsWakeupUpdater.compareAndSet(OutboundTcpConnection.this, TRUE, FALSE))
+                if (isEmpty() || !needsWakeupUpdater.compareAndSet(OutboundTcpConnection.this, TRUE, FALSE))
                     return;
             }
         }
