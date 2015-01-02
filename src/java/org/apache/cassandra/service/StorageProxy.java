@@ -24,6 +24,8 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
+
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
@@ -31,18 +33,17 @@ import com.google.common.base.Predicate;
 import com.google.common.cache.CacheLoader;
 import com.google.common.collect.*;
 import com.google.common.util.concurrent.Uninterruptibles;
+
 import org.apache.cassandra.metrics.*;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.*;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.index.SecondaryIndex;
 import org.apache.cassandra.db.index.SecondaryIndexSearcher;
 import org.apache.cassandra.db.marshal.UUIDType;
@@ -99,6 +100,24 @@ public class StorageProxy implements StorageProxyMBean
 
     static
     {
+        new Thread("inflight logger")
+        {
+            @Override
+            public void run() {
+                while (true) {
+                    try
+                    {
+                        Thread.sleep(2000);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                    logger.info("StorageProxy inflight " + inflight.longValue());
+                }
+            }
+        }.start();
         MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
         try
         {
@@ -1590,9 +1609,11 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
+    public static final LongAdder inflight = new LongAdder();
     public static List<Row> getRangeSlice(AbstractRangeCommand command, ConsistencyLevel consistency_level)
     throws UnavailableException, ReadTimeoutException
     {
+        inflight.increment();
         Tracing.trace("Computing ranges to query");
         long startTime = System.nanoTime();
 
@@ -1806,6 +1827,7 @@ public class StorageProxy implements StorageProxyMBean
         }
         finally
         {
+            inflight.decrement();
             long latency = System.nanoTime() - startTime;
             rangeMetrics.addNano(latency);
             Keyspace.open(command.keyspace).getColumnFamilyStore(command.columnFamily).metric.coordinatorScanLatency.update(latency, TimeUnit.NANOSECONDS);
@@ -2103,7 +2125,7 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         Set<InetAddress> allEndpoints = Gossiper.instance.getLiveTokenOwners();
-        
+
         int blockFor = allEndpoints.size();
         final TruncateResponseHandler responseHandler = new TruncateResponseHandler(blockFor);
 
@@ -2134,7 +2156,7 @@ public class StorageProxy implements StorageProxyMBean
     {
         return !Gossiper.instance.getUnreachableTokenOwners().isEmpty();
     }
-    
+
     public interface WritePerformer
     {
         public void apply(IMutation mutation,
@@ -2295,15 +2317,15 @@ public class StorageProxy implements StorageProxyMBean
     public void setTruncateRpcTimeout(Long timeoutInMillis) { DatabaseDescriptor.setTruncateRpcTimeout(timeoutInMillis); }
     public void reloadTriggerClasses() { TriggerExecutor.instance.reloadClasses(); }
 
-    
+
     public long getReadRepairAttempted() {
         return ReadRepairMetrics.attempted.count();
     }
-    
+
     public long getReadRepairRepairedBlocking() {
         return ReadRepairMetrics.repairedBlocking.count();
     }
-    
+
     public long getReadRepairRepairedBackground() {
         return ReadRepairMetrics.repairedBackground.count();
     }

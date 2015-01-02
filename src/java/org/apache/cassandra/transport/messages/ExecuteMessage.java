@@ -20,8 +20,10 @@ package org.apache.cassandra.transport.messages;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.LongAdder;
 
 import com.google.common.collect.ImmutableMap;
+
 import io.netty.buffer.ByteBuf;
 
 import org.apache.cassandra.cql3.CQLStatement;
@@ -90,6 +92,28 @@ public class ExecuteMessage extends Message.Request
     public final MD5Digest statementId;
     public final QueryOptions options;
 
+    public static final LongAdder inflight = new LongAdder();
+    static {
+        new Thread("inflight logger")
+        {
+            @Override
+            public void run() {
+                while (true) {
+                    try
+                    {
+                        Thread.sleep(2000);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                    logger.info("Execute inflight " + inflight.longValue());
+                }
+            }
+        }.start();
+    }
+
     public ExecuteMessage(MD5Digest statementId, QueryOptions options)
     {
         super(Message.Type.EXECUTE);
@@ -101,6 +125,7 @@ public class ExecuteMessage extends Message.Request
     {
         try
         {
+            inflight.increment();
             QueryHandler handler = state.getClientState().getCQLQueryHandler();
             ParsedStatement.Prepared prepared = handler.getPrepared(statementId);
             if (prepared == null)
@@ -147,6 +172,7 @@ public class ExecuteMessage extends Message.Request
         }
         finally
         {
+            inflight.decrement();
             Tracing.instance.stopSession();
         }
     }
