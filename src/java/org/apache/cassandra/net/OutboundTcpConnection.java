@@ -132,7 +132,7 @@ public class OutboundTcpConnection extends Thread
         outer:
         while (true)
         {
-            if (backlog.drainTo(drainedMessages, drainedMessages.size()) == 0)
+            if (backlog.drainTo(drainedMessages, 128) == 0)
             {
                 try
                 {
@@ -327,7 +327,7 @@ public class OutboundTcpConnection extends Thread
                 socket.setKeepAlive(true);
                 if (isLocalDC(poolReference.endPoint()))
                 {
-                    socket.setTcpNoDelay(true);
+                    socket.setTcpNoDelay(false);
                 }
                 else
                 {
@@ -344,7 +344,7 @@ public class OutboundTcpConnection extends Thread
                         logger.warn("Failed to set send buffer size on internode socket.", se);
                     }
                 }
-                out = new DataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream(), 4096));
+                out = new DataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream(), 1024 * 64));
 
                 out.writeInt(MessagingService.PROTOCOL_MAGIC);
                 writeHeader(out, targetVersion, shouldCompressConnection());
@@ -416,7 +416,7 @@ public class OutboundTcpConnection extends Thread
         }
         return false;
     }
-    
+
     private int handshakeVersion(final DataInputStream inputStream)
     {
         final AtomicInteger version = new AtomicInteger(NO_VERSION);
@@ -431,7 +431,7 @@ public class OutboundTcpConnection extends Thread
                     logger.info("Handshaking version with {}", poolReference.endPoint());
                     version.set(inputStream.readInt());
                 }
-                catch (IOException ex) 
+                catch (IOException ex)
                 {
                     final String msg = "Cannot handshake version with " + poolReference.endPoint();
                     if (logger.isTraceEnabled())
