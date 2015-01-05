@@ -347,7 +347,7 @@ public class OutboundTcpConnection
                 socket.setKeepAlive(true);
                 if (isLocalDC(poolReference.endPoint()))
                 {
-                    socket.setTcpNoDelay(true);
+                    socket.setTcpNoDelay(false);
                 }
                 else
                 {
