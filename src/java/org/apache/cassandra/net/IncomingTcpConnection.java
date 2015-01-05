@@ -132,7 +132,7 @@ public class IncomingTcpConnection extends Thread
         }
         else
         {
-            in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
+            in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 1024 * 64));
         }
 
         if (version > MessagingService.current_version)

@@ -35,6 +35,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import java.util.zip.Checksum;
 
 import org.slf4j.Logger;
@@ -44,6 +45,7 @@ import net.jpountz.lz4.LZ4BlockOutputStream;
 import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
+
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
@@ -51,7 +53,6 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.UUIDGen;
 import org.xerial.snappy.SnappyOutputStream;
-
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
@@ -125,10 +126,14 @@ public class OutboundTcpConnection extends Thread
         return targetVersion;
     }
 
+    public static final long OUT_BATCH_WINDOW = Long.getLong("OUT_BATCH_WINDOW", 100);
+
     public void run()
     {
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
         final List<QueuedMessage> drainedMessages = new ArrayList<>(128);
+
+        boolean skipTimer = false;
         outer:
         while (true)
         {
@@ -144,6 +149,21 @@ public class OutboundTcpConnection extends Thread
                 }
 
             }
+
+            if (!skipTimer) {
+                skipTimer = false;
+                final long timer = System.nanoTime() + TimeUnit.MICROSECONDS.toNanos(100);
+                long now = 0;
+                while ((now = System.nanoTime()) < timer) {
+                    LockSupport.parkNanos(timer - now);
+                }
+            }
+
+            int remainingSlots = 128 - drainedMessages.size();
+            if (backlog.drainTo(drainedMessages, remainingSlots) == remainingSlots) {
+                skipTimer = true;
+            }
+
             currentMsgBufferCount = drainedMessages.size();
 
             int count = drainedMessages.size();
@@ -327,7 +347,7 @@ public class OutboundTcpConnection extends Thread
                 socket.setKeepAlive(true);
                 if (isLocalDC(poolReference.endPoint()))
                 {
-                    socket.setTcpNoDelay(false);
+                    socket.setTcpNoDelay(true);
                 }
                 else
                 {
