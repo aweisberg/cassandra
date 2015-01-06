@@ -152,7 +152,7 @@ public class OutboundTcpConnection extends Thread
 
             if (!skipTimer) {
                 skipTimer = false;
-                final long timer = System.nanoTime() + TimeUnit.MICROSECONDS.toNanos(100);
+                final long timer = System.nanoTime() + TimeUnit.MICROSECONDS.toNanos(OUT_BATCH_WINDOW);
                 long now = 0;
                 while ((now = System.nanoTime()) < timer) {
                     LockSupport.parkNanos(timer - now);
