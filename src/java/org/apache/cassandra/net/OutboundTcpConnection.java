@@ -128,6 +128,10 @@ public class OutboundTcpConnection extends Thread
 
     public static final long OUT_BATCH_WINDOW = Long.getLong("OUT_BATCH_WINDOW", 100);
 
+    static {
+        logger.info("batch window is " + OUT_BATCH_WINDOW);
+    }
+
     public void run()
     {
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
@@ -139,6 +143,7 @@ public class OutboundTcpConnection extends Thread
         {
             if (backlog.drainTo(drainedMessages, 128) == 0)
             {
+                skipTimer = false;
                 try
                 {
                     drainedMessages.add(backlog.take());
@@ -152,11 +157,11 @@ public class OutboundTcpConnection extends Thread
 
             if (!skipTimer) {
                 skipTimer = false;
-                final long timer = System.nanoTime() + TimeUnit.MICROSECONDS.toNanos(OUT_BATCH_WINDOW);
-                long now = 0;
-                while ((now = System.nanoTime()) < timer) {
+                long now = System.nanoTime();
+                final long timer = now + TimeUnit.MICROSECONDS.toNanos(OUT_BATCH_WINDOW);
+                do {
                     LockSupport.parkNanos(timer - now);
-                }
+                } while ((now = System.nanoTime()) < timer);
             }
 
             int remainingSlots = 128 - drainedMessages.size();
