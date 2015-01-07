@@ -445,27 +445,28 @@ public abstract class Message
             {
                 JVMStabilityInspector.inspectThrowable(t);
                 UnexpectedChannelExceptionHandler handler = new UnexpectedChannelExceptionHandler(ctx.channel(), true);
-                flush(new FlushItem(ctx, ErrorMessage.fromException(t, handler).setStreamId(request.getStreamId()), request.getSourceFrame()));
+                EventLoop loop = ctx.channel().eventLoop();
+                loop.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        ctx.write(ErrorMessage.fromException(t, handler).setStreamId(request.getStreamId()), ctx.voidPromise());
+                        ctx.flush();
+                        request.getSourceFrame().release();
+                    }
+                });
                 return;
             }
 
             logger.debug("Responding: {}, v={}", response, connection.getVersion());
-            flush(new FlushItem(ctx, response, request.getSourceFrame()));
-        }
-
-        private void flush(FlushItem item)
-        {
-            EventLoop loop = item.ctx.channel().eventLoop();
-            Flusher flusher = flusherLookup.get(loop);
-            if (flusher == null)
-            {
-                Flusher alt = flusherLookup.putIfAbsent(loop, flusher = new Flusher(loop));
-                if (alt != null)
-                    flusher = alt;
-            }
-
-            flusher.queued.add(item);
-            flusher.start();
+            EventLoop loop = ctx.channel().eventLoop();
+            loop.execute(new Runnable() {
+                @Override
+                public void run() {
+                    ctx.write(response, ctx.voidPromise());
+                    ctx.flush();
+                    request.getSourceFrame().release();
+                }
+            });
         }
 
         @Override
