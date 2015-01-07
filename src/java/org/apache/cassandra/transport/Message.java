@@ -422,7 +422,7 @@ public abstract class Message
         }
 
         @Override
-        public void channelRead0(ChannelHandlerContext ctx, Request request)
+        public void channelRead0(final ChannelHandlerContext ctx, final Request request)
         {
 
             final Response response;
