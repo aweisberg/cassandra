@@ -441,7 +441,7 @@ public abstract class Message
                 response.attach(connection);
                 connection.applyStateTransition(request.type, response.type);
             }
-            catch (final Throwable t)
+            catch (Throwable t)
             {
                 JVMStabilityInspector.inspectThrowable(t);
                 final UnexpectedChannelExceptionHandler handler = new UnexpectedChannelExceptionHandler(ctx.channel(), true);
