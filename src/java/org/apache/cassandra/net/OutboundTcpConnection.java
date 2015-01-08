@@ -53,6 +53,7 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.UUIDGen;
 import org.xerial.snappy.SnappyOutputStream;
+import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
@@ -61,6 +62,31 @@ import com.google.common.util.concurrent.Uninterruptibles;
 public class OutboundTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundTcpConnection.class);
+
+    private static volatile long TIMESTAMP_BASE[] = new long[] { System.currentTimeMillis(), System.nanoTime() };
+
+    /*
+     * System.currentTimeMillis() is 25 nanoseconds. This is 2 nanoseconds (maybe) according to JMH.
+     * Faster than calling both currentTimeMillis() and nanoTime() for every outbound message.
+     */
+    private static final long convertNanoTimeToCurrentTimeMillis(long nanoTime) {
+        final long timestampBase[] = TIMESTAMP_BASE;
+        return timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
+    }
+
+    public static final long OUT_BATCH_WINDOW = Long.getLong("OUT_BATCH_WINDOW", 100);
+
+    static {
+        logger.info("batch window is " + OUT_BATCH_WINDOW);
+
+        //Pick up updates from NTP periodically
+        ScheduledExecutors.scheduledTasks.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                TIMESTAMP_BASE = new long[] {System.currentTimeMillis(), System.nanoTime() };
+            }
+        }, 0, 10, TimeUnit.SECONDS);
+    }
 
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
     private volatile boolean isStopped = false;
@@ -126,24 +152,81 @@ public class OutboundTcpConnection extends Thread
         return targetVersion;
     }
 
-    public static final long OUT_BATCH_WINDOW = Long.getLong("OUT_BATCH_WINDOW", 100);
+    public interface CoalescingStrategy {
+        /*
+         * Notify of a sample, but don't attempt to coalesce. Used when coalescing has already been done.
+         */
+        int notifyOfSample(long sample);
 
-    static {
-        logger.info("batch window is " + OUT_BATCH_WINDOW);
+        /*
+         * Notify of a sample, and sleep if it makes sense in order to allow coalescing to occur
+         *
+         * Returns true of a sleep occured and the task queue should be checked again.
+         */
+        boolean notifyAndSleep(long sample);
     }
+
+    /*
+     * Returns the wrong answer for the first N samples, but does it really matter?
+     */
+    public static class MovingAverageCoalescingStrategy implements CoalescingStrategy {
+        private final int samples[] = new int[16];
+        private long lastSample = 0;
+        private int index = 0;
+        private int sum = 0;
+
+        private final int maxCoalesceWindow;
+
+        public MovingAverageCoalescingStrategy(int maxCoalesceWindow) {
+            this.maxCoalesceWindow = maxCoalesceWindow;
+        }
+
+        private int logSample(int value) {
+            sum -= samples[index];
+            sum += value;
+            samples[index] = value;
+            index++;
+            index = index & ((1 << 4) - 1);
+            return sum / 8;
+        }
+
+        @Override
+        public int notifyOfSample(long sample)
+        {
+            final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
+            lastSample = sample;
+            return logSample(delta);
+        }
+
+        @Override
+        public boolean notifyAndSleep(long sample)
+        {
+            int average = notifyOfSample(sample);
+
+            if (average < maxCoalesceWindow) {
+                long now = System.nanoTime();
+                final long timer = now + TimeUnit.MICROSECONDS.toNanos(Math.min(maxCoalesceWindow, average * 2));
+                do {
+                    LockSupport.parkNanos(timer - now);
+                } while ((now = System.nanoTime()) < timer);
+                return true;
+            }
+            return false;
+        }
+    }
+
+    private final CoalescingStrategy cs = new MovingAverageCoalescingStrategy(Integer.getInteger("MAX_COALESCE_WINDOW", 200));
 
     public void run()
     {
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
         final List<QueuedMessage> drainedMessages = new ArrayList<>(128);
 
-        boolean skipTimer = false;
         outer:
         while (true)
         {
             if (backlog.drainTo(drainedMessages, 128) == 0)
             {
-                skipTimer = false;
                 try
                 {
                     drainedMessages.add(backlog.take());
@@ -155,23 +238,15 @@ public class OutboundTcpConnection extends Thread
 
             }
 
-            if (!skipTimer) {
-                skipTimer = false;
-                long now = System.nanoTime();
-                final long timer = now + TimeUnit.MICROSECONDS.toNanos(OUT_BATCH_WINDOW);
-                do {
-                    LockSupport.parkNanos(timer - now);
-                } while ((now = System.nanoTime()) < timer);
-            }
-
             int remainingSlots = 128 - drainedMessages.size();
-            if (backlog.drainTo(drainedMessages, remainingSlots) == remainingSlots) {
-                skipTimer = true;
+            if (cs.notifyAndSleep(drainedMessages.get(0).timestampNanos)) {
+                backlog.drainTo(drainedMessages, remainingSlots);
             }
 
             currentMsgBufferCount = drainedMessages.size();
 
             int count = drainedMessages.size();
+            boolean logTimestamp = false;
             for (QueuedMessage qm : drainedMessages)
             {
                 try
@@ -184,7 +259,13 @@ public class OutboundTcpConnection extends Thread
                             break outer;
                         continue;
                     }
-                    if (qm.isTimedOut(m.getTimeout()))
+
+                    if (logTimestamp) {
+                        cs.notifyOfSample(qm.timestampNanos);
+                    }
+                    logTimestamp = true;
+
+                    if (qm.isTimedOut(m.getTimeout(), System.nanoTime()))
                         dropped.incrementAndGet();
                     else if (socket != null || connect())
                         writeConnected(qm, count == 1 && backlog.isEmpty());
@@ -252,7 +333,7 @@ public class OutboundTcpConnection extends Thread
                 }
             }
 
-            writeInternal(qm.message, qm.id, qm.timestamp);
+            writeInternal(qm.message, qm.id, convertNanoTimeToCurrentTimeMillis(qm.timestampNanos));
 
             completed++;
             if (flush)
@@ -489,7 +570,7 @@ public class OutboundTcpConnection extends Thread
         while (iter.hasNext())
         {
             QueuedMessage qm = iter.next();
-            if (qm.timestamp >= System.currentTimeMillis() - qm.message.getTimeout())
+            if (qm.timestampNanos >= System.nanoTime() - qm.message.getTimeout())
                 return;
             iter.remove();
             dropped.incrementAndGet();
@@ -501,21 +582,21 @@ public class OutboundTcpConnection extends Thread
     {
         final MessageOut<?> message;
         final int id;
-        final long timestamp;
+        final long timestampNanos;
         final boolean droppable;
 
         QueuedMessage(MessageOut<?> message, int id)
         {
             this.message = message;
             this.id = id;
-            this.timestamp = System.currentTimeMillis();
+            this.timestampNanos = System.nanoTime();
             this.droppable = MessagingService.DROPPABLE_VERBS.contains(message.verb);
         }
 
         /** don't drop a non-droppable message just because it's timestamp is expired */
-        boolean isTimedOut(long maxTime)
+        boolean isTimedOut(long maxTimeNanos, long nowNanos)
         {
-            return droppable && timestamp < System.currentTimeMillis() - maxTime;
+            return droppable && timestampNanos < nowNanos - maxTimeNanos;
         }
 
         boolean shouldRetry()
