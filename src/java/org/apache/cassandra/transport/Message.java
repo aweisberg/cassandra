@@ -444,7 +444,7 @@ public abstract class Message
             catch (Throwable t)
             {
                 JVMStabilityInspector.inspectThrowable(t);
-                final UnexpectedChannelExceptionHandler handler = new UnexpectedChannelExceptionHandler(ctx.channel(), true);
+                UnexpectedChannelExceptionHandler handler = new UnexpectedChannelExceptionHandler(ctx.channel(), true);
                 EventLoop loop = ctx.channel().eventLoop();
                 loop.execute(new Runnable() {
                     @Override
