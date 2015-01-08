@@ -217,6 +217,8 @@ public class OutboundTcpConnection extends Thread
 
     private final CoalescingStrategy cs = new MovingAverageCoalescingStrategy(Integer.getInteger("MAX_COALESCE_WINDOW", 200));
 
+    private static final boolean DISABLE_COALESCING = Boolean.getBoolean("DISABLE_COALESCING");
+
     public void run()
     {
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
@@ -235,12 +237,16 @@ public class OutboundTcpConnection extends Thread
                 {
                     throw new AssertionError(e);
                 }
-
+                if (DISABLE_COALESCING) {
+                    backlog.drainTo(drainedMessages, 127);
+                }
             }
 
             int remainingSlots = 128 - drainedMessages.size();
-            if (cs.notifyAndSleep(drainedMessages.get(0).timestampNanos)) {
-                backlog.drainTo(drainedMessages, remainingSlots);
+            if (!DISABLE_COALESCING) {
+                if (cs.notifyAndSleep(drainedMessages.get(0).timestampNanos)) {
+                    backlog.drainTo(drainedMessages, remainingSlots);
+                }
             }
 
             currentMsgBufferCount = drainedMessages.size();
