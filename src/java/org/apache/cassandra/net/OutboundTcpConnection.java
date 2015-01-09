@@ -219,7 +219,7 @@ public class OutboundTcpConnection extends Thread
                     coalesceDecision = Math.min(maxCoalesceWindow, average * 2);
                 }
                 long now = System.nanoTime();
-                final long timer = now + TimeUnit.MICROSECONDS.toNanos(coalesceDecision);
+                final long timer = now + coalesceDecision;
                 do {
                     LockSupport.parkNanos(timer - now);
                 } while ((now = System.nanoTime()) < timer);
