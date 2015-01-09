@@ -74,11 +74,9 @@ public class OutboundTcpConnection extends Thread
      * System.currentTimeMillis() is 25 nanoseconds. This is 2 nanoseconds (maybe) according to JMH.
      * Faster than calling both currentTimeMillis() and nanoTime() for every outbound message.
      */
-    private static final long convertNanoTimeToCurrentTimeMillis(long nanoTime, long actual) {
+    private static final long convertNanoTimeToCurrentTimeMillis(long nanoTime) {
         final long timestampBase[] = TIMESTAMP_BASE;
-        long retval = timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
-        logger.info("Current time " + actual + " retval " + retval);
-        return retval;
+        return timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
     }
 
     public static final long OUT_BATCH_WINDOW = Long.getLong("OUT_BATCH_WINDOW", 100);
@@ -222,7 +220,6 @@ public class OutboundTcpConnection extends Thread
                 }
                 long now = System.nanoTime();
                 final long timer = now + coalesceDecision;
-                logger.info("parking to coalesce " + TimeUnit.NANOSECONDS.toMicros(timer - now));
                 do {
                     LockSupport.parkNanos(timer - now);
                 } while ((now = System.nanoTime()) < timer);
@@ -314,7 +311,7 @@ public class OutboundTcpConnection extends Thread
                     }
                     logTimestamp = true;
 
-                    if (qm.isTimedOut(m.getTimeout(), System.nanoTime())) {
+                    if (qm.isTimedOut(TimeUnit.MILLISECONDS.toNanos(m.getTimeout()), System.nanoTime())) {
                         dropped.incrementAndGet();
                         logger.info("dropping");
                     } else if (socket != null || connect())
@@ -383,7 +380,7 @@ public class OutboundTcpConnection extends Thread
                 }
             }
 
-            writeInternal(qm.message, qm.id, convertNanoTimeToCurrentTimeMillis(qm.timestampNanos, qm.timestamp));
+            writeInternal(qm.message, qm.id, convertNanoTimeToCurrentTimeMillis(qm.timestampNanos));
 
             completed++;
             if (flush)
@@ -633,7 +630,6 @@ public class OutboundTcpConnection extends Thread
         final MessageOut<?> message;
         final int id;
         final long timestampNanos;
-        final long timestamp;
         final boolean droppable;
 
         QueuedMessage(MessageOut<?> message, int id)
@@ -641,7 +637,6 @@ public class OutboundTcpConnection extends Thread
             this.message = message;
             this.id = id;
             this.timestampNanos = System.nanoTime();
-            this.timestamp = System.currentTimeMillis();
             this.droppable = MessagingService.DROPPABLE_VERBS.contains(message.verb);
         }
 
