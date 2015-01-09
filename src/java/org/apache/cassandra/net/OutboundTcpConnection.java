@@ -180,7 +180,7 @@ public class OutboundTcpConnection extends Thread
         private final int samples[] = new int[16];
         private long lastSample = 0;
         private int index = 0;
-        private int sum = 0;
+        private long sum = 0;
 
         private final int maxCoalesceWindow;
 
@@ -188,6 +188,8 @@ public class OutboundTcpConnection extends Thread
 
         public MovingAverageCoalescingStrategy(int maxCoalesceWindow) {
             this.maxCoalesceWindow = maxCoalesceWindow;
+            for (int ii = 0; ii < samples.length; ii++)
+                samples[ii] = Integer.MAX_VALUE;
         }
 
         private int logSample(int value) {
@@ -196,7 +198,7 @@ public class OutboundTcpConnection extends Thread
             samples[index] = value;
             index++;
             index = index & ((1 << 4) - 1);
-            return sum / 8;
+            return (int)(sum / 8);
         }
 
         @Override
