@@ -175,6 +175,8 @@ public class OutboundTcpConnection extends Thread
         boolean notifyAndSleep(long sample);
     }
 
+    public static final boolean DEBUG_COALESCING = Boolean.getBoolean("DEBUG_COALESCING");
+
     /*
      * Returns the wrong answer for the first N samples, but does it really matter?
      */
@@ -223,6 +225,8 @@ public class OutboundTcpConnection extends Thread
             if (average < maxCoalesceWindow) {
                 if (coalesceDecision == -1 || average > coalesceDecision) {
                     coalesceDecision = Math.min(maxCoalesceWindow, average * 2);
+                    if (DEBUG_COALESCING)
+                        logger.info("Enabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
                 }
                 long now = System.nanoTime();
                 final long timer = now + coalesceDecision;
@@ -231,7 +235,10 @@ public class OutboundTcpConnection extends Thread
                 } while ((now = System.nanoTime()) < timer);
                 return true;
             }
-             coalesceDecision = -1;
+            if (DEBUG_COALESCING && coalesceDecision != -1) {
+                logger.info("Disabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+            }
+            coalesceDecision = -1;
             return false;
         }
     }
