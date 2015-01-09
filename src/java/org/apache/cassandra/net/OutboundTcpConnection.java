@@ -303,8 +303,28 @@ public class OutboundTcpConnection extends Thread
 //        h.outputPercentileDistribution(System.out, 1000.0);
 //    }
 
+    private long messagesSent = 0;
+    private long messageDelayTotal = 0;
+
     public void run()
     {
+        ScheduledExecutors.scheduledTasks.scheduleAtFixedRate(new Runnable() {
+            long lastMessagesSent = 0;
+            long lastMessageDelayTotal = 0;
+
+            @Override
+            public void run() {
+                long sent = messagesSent - lastMessagesSent;
+                lastMessagesSent = messagesSent;
+                long total = messageDelayTotal - lastMessageDelayTotal;
+                lastMessageDelayTotal = messageDelayTotal;
+
+                if (sent > 0) {
+                    logger.info("Average delay " + TimeUnit.NANOSECONDS.toMicros(total) / (double)sent);
+                }
+
+            }
+        }, 0, 30, TimeUnit.SECONDS);
         DataOutputStream dos = null;
         if (trace.tryAcquire()) {
             FileOutputStream fos;
@@ -380,7 +400,10 @@ public class OutboundTcpConnection extends Thread
                     }
                     logTimestamp = true;
 
-                    if (qm.isTimedOut(TimeUnit.MILLISECONDS.toNanos(m.getTimeout()), System.nanoTime()))
+                    final long nowNanos = System.nanoTime();
+                    messageDelayTotal += qm.timestampNanos - nowNanos;
+                    messagesSent++;
+                    if (qm.isTimedOut(TimeUnit.MILLISECONDS.toNanos(m.getTimeout()), nowNanos))
                         dropped.incrementAndGet();
                     else if (socket != null || connect())
                         writeConnected(qm, count == 1 && backlog.isEmpty());
