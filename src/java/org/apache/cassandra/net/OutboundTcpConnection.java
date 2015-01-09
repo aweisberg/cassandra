@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.net;
 
+import io.netty.util.internal.ThreadLocalRandom;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
@@ -221,6 +223,10 @@ public class OutboundTcpConnection extends Thread
         public boolean notifyAndSleep(long sample)
         {
             long average = notifyOfSample(sample);
+
+            if (ThreadLocalRandom.current().nextDouble() < .000001) {
+                logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+            }
 
             if (average < maxCoalesceWindow) {
                 if (coalesceDecision == -1 || average > coalesceDecision) {
