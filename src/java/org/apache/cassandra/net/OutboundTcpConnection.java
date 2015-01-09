@@ -212,12 +212,12 @@ public class OutboundTcpConnection extends Thread
         @Override
         public long notifyOfSample(long sample)
         {
-            if (sample <= lastSample) {
-                return logSample(1);
-            } else {
+            if (sample > lastSample) {
                 final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
                 lastSample = sample;
                 return logSample(delta);
+            } else {
+                return logSample(1);
             }
         }
 
