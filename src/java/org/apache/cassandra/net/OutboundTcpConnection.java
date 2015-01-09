@@ -241,35 +241,35 @@ public class OutboundTcpConnection extends Thread
 
     private static final boolean DISABLE_COALESCING = Boolean.getBoolean("DISABLE_COALESCING");
 
-    public static void main(String args[]) throws Exception {
-        FileInputStream fis = new FileInputStream("/tmp/trace");
-        BufferedInputStream bis = new BufferedInputStream(fis, 1024 * 64);
-        DataInputStream dis = new DataInputStream(bis);
-
-        Histogram h = new Histogram(Long.MAX_VALUE, 3);
-        System.out.println("Footprint " + h.getEstimatedFootprintInBytes());
-        long last = 0;
-        long samplesFound = 0;
-        while (true) {
-            try {
-                long sample = dis.readLong();
-                samplesFound++;
-                if (last == 0) {
-                    last = sample;
-                    continue;
-                }
-                long delta = sample - last;
-                if (delta < 0) delta = 1;
-                h.recordValue(delta);
-                last = sample;
-            } catch (Exception e) {
-                e.printStackTrace();
-                break;
-            }
-        }
-        System.out.println("Samples found " + samplesFound);
-        h.outputPercentileDistribution(System.out, 1000.0);
-    }
+//    public static void main(String args[]) throws Exception {
+//        FileInputStream fis = new FileInputStream("/tmp/trace");
+//        BufferedInputStream bis = new BufferedInputStream(fis, 1024 * 64);
+//        DataInputStream dis = new DataInputStream(bis);
+//
+//        Histogram h = new Histogram(Long.MAX_VALUE, 3);
+//        System.out.println("Footprint " + h.getEstimatedFootprintInBytes());
+//        long last = 0;
+//        long samplesFound = 0;
+//        while (true) {
+//            try {
+//                long sample = dis.readLong();
+//                samplesFound++;
+//                if (last == 0) {
+//                    last = sample;
+//                    continue;
+//                }
+//                long delta = sample - last;
+//                if (delta < 0) delta = 1;
+//                h.recordValue(delta);
+//                last = sample;
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//                break;
+//            }
+//        }
+//        System.out.println("Samples found " + samplesFound);
+//        h.outputPercentileDistribution(System.out, 1000.0);
+//    }
 
     public void run()
     {
