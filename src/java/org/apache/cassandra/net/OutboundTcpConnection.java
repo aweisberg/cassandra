@@ -17,10 +17,12 @@
  */
 package org.apache.cassandra.net;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.DataOutputStream;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -51,6 +53,7 @@ import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
 
+import org.HdrHistogram.Histogram;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
@@ -204,9 +207,13 @@ public class OutboundTcpConnection extends Thread
         @Override
         public long notifyOfSample(long sample)
         {
-            final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
-            lastSample = sample;
-            return logSample(delta);
+            if (sample <= lastSample) {
+                return logSample(1);
+            } else {
+                final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
+                lastSample = sample;
+                return logSample(delta);
+            }
         }
 
         @Override
@@ -233,6 +240,36 @@ public class OutboundTcpConnection extends Thread
     private final CoalescingStrategy cs = new MovingAverageCoalescingStrategy(Integer.getInteger("MAX_COALESCE_WINDOW", 200));
 
     private static final boolean DISABLE_COALESCING = Boolean.getBoolean("DISABLE_COALESCING");
+
+    public static void main(String args[]) throws Exception {
+        FileInputStream fis = new FileInputStream("/tmp/trace");
+        BufferedInputStream bis = new BufferedInputStream(fis, 1024 * 64);
+        DataInputStream dis = new DataInputStream(bis);
+
+        Histogram h = new Histogram(Long.MAX_VALUE, 3);
+        System.out.println("Footprint " + h.getEstimatedFootprintInBytes());
+        long last = 0;
+        long samplesFound = 0;
+        while (true) {
+            try {
+                long sample = dis.readLong();
+                samplesFound++;
+                if (last == 0) {
+                    last = sample;
+                    continue;
+                }
+                long delta = sample - last;
+                if (delta < 0) delta = 1;
+                h.recordValue(delta);
+                last = sample;
+            } catch (Exception e) {
+                e.printStackTrace();
+                break;
+            }
+        }
+        System.out.println("Samples found " + samplesFound);
+        h.outputPercentileDistribution(System.out, 1000.0);
+    }
 
     public void run()
     {
