@@ -224,7 +224,7 @@ public class OutboundTcpConnection extends Thread
         {
             long average = notifyOfSample(sample);
 
-            if (ThreadLocalRandom.current().nextDouble() < .000001) {
+            if (DEBUG_COALESCING && ThreadLocalRandom.current().nextDouble() < .000001) {
                 logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
             }
 
