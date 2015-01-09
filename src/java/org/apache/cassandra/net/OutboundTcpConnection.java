@@ -20,11 +20,15 @@ package org.apache.cassandra.net;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutput;
+import java.io.DataOutputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -32,6 +36,7 @@ import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -87,6 +92,8 @@ public class OutboundTcpConnection extends Thread
             }
         }, 0, 10, TimeUnit.SECONDS);
     }
+
+    public static final Semaphore trace = new Semaphore(1);
 
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
     private volatile boolean isStopped = false;
@@ -177,6 +184,8 @@ public class OutboundTcpConnection extends Thread
 
         private final int maxCoalesceWindow;
 
+        private long coalesceDecision = -1;
+
         public MovingAverageCoalescingStrategy(int maxCoalesceWindow) {
             this.maxCoalesceWindow = maxCoalesceWindow;
         }
@@ -204,13 +213,17 @@ public class OutboundTcpConnection extends Thread
             int average = notifyOfSample(sample);
 
             if (average < maxCoalesceWindow) {
+                if (coalesceDecision == -1 || average > coalesceDecision) {
+                    coalesceDecision = Math.min(maxCoalesceWindow, average * 2);
+                }
                 long now = System.nanoTime();
-                final long timer = now + TimeUnit.MICROSECONDS.toNanos(Math.min(maxCoalesceWindow, average * 2));
+                final long timer = now + TimeUnit.MICROSECONDS.toNanos(coalesceDecision);
                 do {
                     LockSupport.parkNanos(timer - now);
                 } while ((now = System.nanoTime()) < timer);
                 return true;
             }
+             coalesceDecision = -1;
             return false;
         }
     }
@@ -221,6 +234,20 @@ public class OutboundTcpConnection extends Thread
 
     public void run()
     {
+        DataOutputStream dos = null;
+        if (trace.tryAcquire()) {
+            FileOutputStream fos;
+            try
+            {
+                fos = new FileOutputStream("/tmp/trace");
+                dos = new DataOutputStream(new BufferedOutputStream(fos, 1024 * 64));
+            }
+            catch (FileNotFoundException e)
+            {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+        }
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
         final List<QueuedMessage> drainedMessages = new ArrayList<>(128);
 
@@ -255,6 +282,17 @@ public class OutboundTcpConnection extends Thread
             boolean logTimestamp = false;
             for (QueuedMessage qm : drainedMessages)
             {
+                if (dos != null) {
+                    try
+                    {
+                        dos.writeLong(qm.timestampNanos);
+                    }
+                    catch (IOException e)
+                    {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                }
                 try
                 {
                     MessageOut<?> m = qm.message;
