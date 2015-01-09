@@ -76,7 +76,9 @@ public class OutboundTcpConnection extends Thread
      */
     private static final long convertNanoTimeToCurrentTimeMillis(long nanoTime) {
         final long timestampBase[] = TIMESTAMP_BASE;
-        return timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
+        long retval = timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
+        logger.info("Current time " + System.currentTimeMillis() + " retval " + retval);
+        return retval;
     }
 
     public static final long OUT_BATCH_WINDOW = Long.getLong("OUT_BATCH_WINDOW", 100);
@@ -163,7 +165,7 @@ public class OutboundTcpConnection extends Thread
         /*
          * Notify of a sample, but don't attempt to coalesce. Used when coalescing has already been done.
          */
-        int notifyOfSample(long sample);
+        long notifyOfSample(long sample);
 
         /*
          * Notify of a sample, and sleep if it makes sense in order to allow coalescing to occur
@@ -182,27 +184,27 @@ public class OutboundTcpConnection extends Thread
         private int index = 0;
         private long sum = 0;
 
-        private final int maxCoalesceWindow;
+        private final long maxCoalesceWindow;
 
         private long coalesceDecision = -1;
 
         public MovingAverageCoalescingStrategy(int maxCoalesceWindow) {
-            this.maxCoalesceWindow = maxCoalesceWindow;
+            this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
             for (int ii = 0; ii < samples.length; ii++)
                 samples[ii] = Integer.MAX_VALUE;
         }
 
-        private int logSample(int value) {
+        private long logSample(int value) {
             sum -= samples[index];
             sum += value;
             samples[index] = value;
             index++;
             index = index & ((1 << 4) - 1);
-            return (int)(sum / 8);
+            return sum / 8;
         }
 
         @Override
-        public int notifyOfSample(long sample)
+        public long notifyOfSample(long sample)
         {
             final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
             lastSample = sample;
@@ -212,7 +214,7 @@ public class OutboundTcpConnection extends Thread
         @Override
         public boolean notifyAndSleep(long sample)
         {
-            int average = notifyOfSample(sample);
+            long average = notifyOfSample(sample);
 
             if (average < maxCoalesceWindow) {
                 if (coalesceDecision == -1 || average > coalesceDecision) {
@@ -220,6 +222,7 @@ public class OutboundTcpConnection extends Thread
                 }
                 long now = System.nanoTime();
                 final long timer = now + coalesceDecision;
+                logger.info("parking to coalesce " + TimeUnit.NANOSECONDS.toMicros(timer - now));
                 do {
                     LockSupport.parkNanos(timer - now);
                 } while ((now = System.nanoTime()) < timer);
