@@ -36,6 +36,7 @@ import java.nio.channels.FileChannel.MapMode;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -196,6 +197,7 @@ public class OutboundTcpConnection extends Thread
             this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
             for (int ii = 0; ii < samples.length; ii++)
                 samples[ii] = Integer.MAX_VALUE;
+            sum = Integer.MAX_VALUE * (long)samples.length;
         }
 
         private long logSample(int value) {
@@ -204,7 +206,7 @@ public class OutboundTcpConnection extends Thread
             samples[index] = value;
             index++;
             index = index & ((1 << 4) - 1);
-            return sum / 8;
+            return sum / 16;
         }
 
         @Override
@@ -251,6 +253,24 @@ public class OutboundTcpConnection extends Thread
 
     private final CoalescingStrategy cs = new MovingAverageCoalescingStrategy(Integer.getInteger("MAX_COALESCE_WINDOW", 200));
 
+//    public static void main(String args[]) throws Exception {
+//        MovingAverageCoalescingStrategy strategy = new MovingAverageCoalescingStrategy(200);
+//
+//        final long base = System.nanoTime();
+//
+//        System.out.println(base);
+//        Random r = new Random(base);
+//
+//        long now = base;
+//        for (int ii = 0; ii < 1000; ii++) {
+//            if (r.nextDouble() > .8) {
+//                System.out.println(strategy.notifyOfSample(now - 10));
+//            } else {
+//                now += r.nextLong() % TimeUnit.MICROSECONDS.toNanos(400);
+//                System.out.println(strategy.notifyOfSample(now));
+//            }
+//        }
+//    }
     private static final boolean DISABLE_COALESCING = Boolean.getBoolean("DISABLE_COALESCING");
 
 //    public static void main(String args[]) throws Exception {
