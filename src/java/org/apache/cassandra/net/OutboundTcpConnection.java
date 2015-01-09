@@ -311,10 +311,9 @@ public class OutboundTcpConnection extends Thread
                     }
                     logTimestamp = true;
 
-                    if (qm.isTimedOut(TimeUnit.MILLISECONDS.toNanos(m.getTimeout()), System.nanoTime())) {
+                    if (qm.isTimedOut(TimeUnit.MILLISECONDS.toNanos(m.getTimeout()), System.nanoTime()))
                         dropped.incrementAndGet();
-                        logger.info("dropping");
-                    } else if (socket != null || connect())
+                    else if (socket != null || connect())
                         writeConnected(qm, count == 1 && backlog.isEmpty());
                     else
                         // clear out the queue, else gossip messages back up.
