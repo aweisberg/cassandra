@@ -20,7 +20,6 @@ package org.apache.cassandra.io.util;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.StandardOpenOption;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.RateLimiter;
@@ -30,7 +29,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class RandomAccessReader extends AbstractDataInput implements FileDataInput
 {
-    public static final boolean USE_DIRECT_IO = Boolean.getBoolean("cassandra.use_direct_io");
+    public static final boolean USE_DIRECT_IO = true;//Boolean.getBoolean("cassandra.use_direct_io");
 
     // default buffer size, 64Kb
     public static final int DEFAULT_BUFFER_SIZE = 65536;
@@ -54,12 +53,12 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
 
 
-    protected RandomAccessReader(File file, int bufferSize, PoolingSegmentedFile owner, RateLimiter limiter) throws FileNotFoundException
+    protected RandomAccessReader(File file, int bufferSize, PoolingSegmentedFile owner, RateLimiter limiter, boolean tryDirectIO) throws FileNotFoundException
     {
-        this(file, bufferSize, false, owner);
+        this(file, bufferSize, false, owner, limiter, tryDirectIO);
     }
 
-    protected RandomAccessReader(File file, int bufferSize, boolean useDirectBuffer, PoolingSegmentedFile owner) throws FileNotFoundException
+    protected RandomAccessReader(File file, int bufferSize, boolean useDirectBuffer, PoolingSegmentedFile owner, RateLimiter limiter, boolean tryDirectIO) throws FileNotFoundException
     {
         this.owner = owner;
 
@@ -67,8 +66,12 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
         try
         {
-            final FileChannel delegate = FileChannel.open(file.toPath(), StandardOpenOption.READ);
-            if (limiter != null) {
+            @SuppressWarnings("resource")
+            final FileInputStream fis = new FileInputStream(file);
+            final FileChannel delegate = fis.getChannel();
+            if (tryDirectIO && USE_DIRECT_IO) {
+                channel = new DirectFileChannel(delegate, fis.getFD(), limiter);
+            } else if (limiter != null) {
                 channel = new ThrottledFileChannel(delegate, limiter);
             } else {
                 channel = delegate;
@@ -106,25 +109,30 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
 
     public static RandomAccessReader open(File file, PoolingSegmentedFile owner)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, owner, null);
+        return open(file, DEFAULT_BUFFER_SIZE, owner, null, false);
     }
 
     public static RandomAccessReader open(File file)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, null, null);
+        return open(file, DEFAULT_BUFFER_SIZE, null, null, false);
     }
 
-    public static RandomAccessReader open(File file, RateLimiter limiter)
+    public static RandomAccessReader openDirect(File file)
     {
-        return open(file, DEFAULT_BUFFER_SIZE, null, limiter);
+        return open(file, DEFAULT_BUFFER_SIZE, null, null, true);
+    }
+
+    public static RandomAccessReader openDirect(File file, RateLimiter limiter)
+    {
+        return open(file, DEFAULT_BUFFER_SIZE, null, limiter, true);
     }
 
     @VisibleForTesting
-    static RandomAccessReader open(File file, int bufferSize, PoolingSegmentedFile owner, RateLimiter limiter)
+    static RandomAccessReader open(File file, int bufferSize, PoolingSegmentedFile owner, RateLimiter limiter, boolean tryDirectIO)
     {
         try
         {
-            return new RandomAccessReader(file, bufferSize, owner, limiter);
+            return new RandomAccessReader(file, bufferSize, owner, limiter, tryDirectIO);
         }
         catch (IOException e)
         {
@@ -135,7 +143,7 @@ public class RandomAccessReader extends AbstractDataInput implements FileDataInp
     @VisibleForTesting
     static RandomAccessReader open(SequentialWriter writer)
     {
-        return open(new File(writer.getPath()), DEFAULT_BUFFER_SIZE, null, null);
+        return open(new File(writer.getPath()), DEFAULT_BUFFER_SIZE, null, null, false);
     }
 
     // channel extends FileChannel, impl SeekableByteChannel.  Safe to cast.

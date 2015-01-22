@@ -1737,15 +1737,15 @@ public abstract class SSTableReader extends SSTable
     {
         assert limiter != null;
         return compression
-                ? CompressedRandomAccessReader.open(getFilename(), getCompressionMetadata(), limiter)
-                : RandomAccessReader.open(new File(getFilename()), limiter);
+                ? CompressedRandomAccessReader.openDirect(getFilename(), getCompressionMetadata(), limiter)
+                : RandomAccessReader.openDirect(new File(getFilename()), limiter);
     }
 
     public RandomAccessReader openDataReader()
     {
         return compression
-                ? CompressedRandomAccessReader.open(getFilename(), getCompressionMetadata())
-                : RandomAccessReader.open(new File(getFilename()));
+                ? CompressedRandomAccessReader.openDirect(getFilename(), getCompressionMetadata())
+                : RandomAccessReader.openDirect(new File(getFilename()));
     }
 
     public RandomAccessReader openIndexReader()
