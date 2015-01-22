@@ -53,8 +53,35 @@ public final class CLibrary
     static boolean jnaAvailable = true;
     static boolean jnaLockable = false;
 
+    public static enum Platform {
+        LINUX(true), OTHER(false);
+
+        Platform(boolean supportsDirectIO)
+        {
+            directIOSupported = supportsDirectIO;
+        }
+
+        public final boolean supportsDirectIO()
+        {
+            return directIOSupported;
+        }
+
+        public final boolean directIOSupported;
+    }
+
+    public static final Platform PLATFORM;
+
     static
     {
+        if (System.getProperty("os.name").toLowerCase().contains("linux"))
+        {
+            PLATFORM = Platform.LINUX;
+        }
+        else
+        {
+            PLATFORM = Platform.OTHER;
+        }
+
         try
         {
             Native.register("c");
