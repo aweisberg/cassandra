@@ -87,6 +87,8 @@ public class OutboundTcpConnection extends Thread
      * System.currentTimeMillis() is 25 nanoseconds. This is 2 nanoseconds (maybe) according to JMH.
      * Faster than calling both currentTimeMillis() and nanoTime() for every outbound message.
      *
+     * There is also the issue of how scalable nanoTime() and currentTimeMillis() are which is a moving target.
+     *
      * These timestamps don't order with System.currentTimeMillis() because currentTimeMillis() can tick over
      * before this one does. I have seen it behind by as much as 2 milliseconds.
      */
