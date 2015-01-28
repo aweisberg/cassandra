@@ -35,6 +35,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.zip.Checksum;
 
 import org.slf4j.Logger;
@@ -44,6 +46,7 @@ import net.jpountz.lz4.LZ4BlockOutputStream;
 import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
+
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
@@ -51,15 +54,292 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.UUIDGen;
 import org.xerial.snappy.SnappyOutputStream;
-
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 public class OutboundTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(OutboundTcpConnection.class);
+
+    private static final String PREFIX = OutboundTcpConnection.class.getName() + ".";
+
+    /*
+     * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
+     */
+    private static final String INTRADC_TCP_NODELAY_PROPERTY = PREFIX + "INTRADC_TCP_NODELAY";
+    private static final boolean INTRADC_TCP_NODELAY = Boolean.valueOf(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
+
+    /*
+     * How often to pull a new timestamp from the system.
+     */
+    private static final String TIMESTAMP_UPDATE_INTERVAL_PROPERTY = PREFIX + "TIMESTAMP_UPDATE_INTERVAL";
+    private static final long TIMESTAMP_UPDATE_INTERVAL = Long.getLong(TIMESTAMP_UPDATE_INTERVAL_PROPERTY, 10000);
+
+    private static volatile long TIMESTAMP_BASE[] = new long[] { System.currentTimeMillis(), System.nanoTime() };
+
+    @VisibleForTesting
+    public static final Object TIMESTAMP_UPDATE = new Object();
+
+    /*
+     * System.currentTimeMillis() is 25 nanoseconds. This is 2 nanoseconds (maybe) according to JMH.
+     * Faster than calling both currentTimeMillis() and nanoTime() for every outbound message.
+     *
+     * These timestamps don't order with System.currentTimeMillis() because currentTimeMillis() can tick over
+     * before this one does. I have seen it behind by as much as 2 milliseconds.
+     */
+    @VisibleForTesting
+    public static final long convertNanoTimeToCurrentTimeMillis(long nanoTime)
+    {
+        final long timestampBase[] = TIMESTAMP_BASE;
+        return timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
+    }
+
+    /*
+     * Size of buffer in output stream
+     */
+    private static final String BUFFER_SIZE_PROPERTY = PREFIX + "BUFFER_SIZE";
+    private static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
+
+    /*
+     * How many microseconds to wait for coalescing. For fixed strategy this is the amount of time after the first
+     * messgae is received before it will be sent with any accompanying messages. For moving average this is the
+     * maximum amount of time that will be waited as well as the interval at which messages must arrive on average
+     * for coalescing to be enabled.
+     */
+    private static final String COALESCING_WINDOW_PROPERTY = PREFIX + "COALESCING_WINDOW_MICROSECONDS";
+    private static final int COALESCING_WINDOW = Integer.getInteger(COALESCING_WINDOW_PROPERTY, 200);
+
+    /*
+     * Strategy to use for Coalescing. Can be fixed, or movingaverage. Setting is case and leading/trailing
+     * whitespace insensitive.
+     */
+    private static final String COALESCING_STRATEGY_PROPERTY = PREFIX + "COALESCING_STRATEGY";
+    private static final String COALESCING_STRATEGY = System.getProperty(COALESCING_STRATEGY_PROPERTY, "MOVINGAVERAGE").trim().toUpperCase();
+
+    /*
+     * Log debug information at info level about what the average is and when coalescing is enabled/disabled
+     */
+    private static final String DEBUG_COALESCING_PROPERTY = PREFIX + "DEBUG_COALESCING";
+    private static final boolean DEBUG_COALESCING = Boolean.getBoolean(DEBUG_COALESCING_PROPERTY) | logger.isDebugEnabled();
+
+    /*
+     * Disable coalescing so coalescing related code paths can be compiled out.
+     */
+    private static final String DISABLE_COALESCING_PROPERTY = PREFIX + "DISABLE_COALESCING";
+    private static final boolean DISABLE_COALESCING = Boolean.getBoolean(DISABLE_COALESCING_PROPERTY);
+
+    private static void parkLoop(long nanos)
+    {
+        long now = System.nanoTime();
+        final long timer = now + nanos;
+        do
+        {
+            LockSupport.parkNanos(timer - now);
+        }
+        while ((now = System.nanoTime()) < timer);
+    }
+
+    @VisibleForTesting
+    public interface CoalescingStrategy
+    {
+        /*
+         * Notify of a sample, but don't attempt to coalesce. Used when coalescing has already been done.
+         */
+        long notifyOfSample(long sample);
+
+        /*
+         * Notify of a sample, and sleep if it makes sense in order to allow coalescing to occur
+         *
+         * Returns true if a sleep occurred and the task queue should be checked again.
+         */
+        boolean notifyAndSleep(long sample);
+    }
+
+    /*
+     * Start coalescing by sleeping if the moving average is < the requested window.
+     * The actual time spent waiting to coalesce will be the min( window, moving average * 2)
+     * The actual amount of time spent waiting can be greater then the window. For instance
+     * observed time spent coalescing was 400 microseconds with the window set to 200 in one benchmark.
+     */
+    @VisibleForTesting
+    public static class MovingAverageCoalescingStrategy implements CoalescingStrategy
+    {
+        private final int samples[] = new int[16];
+        private long lastSample = 0;
+        private int index = 0;
+        private long sum = 0;
+
+        private final long maxCoalesceWindow;
+
+        private long coalesceDecision = -1;
+
+        private boolean haveAllSamples = false;
+
+        public MovingAverageCoalescingStrategy(int maxCoalesceWindow)
+        {
+            this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
+            for (int ii = 0; ii < samples.length; ii++)
+                samples[ii] = Integer.MAX_VALUE;
+            sum = Integer.MAX_VALUE * (long)samples.length;
+        }
+
+        private long logSample(int value)
+        {
+            sum -= samples[index];
+            sum += value;
+            samples[index] = value;
+            index++;
+            index = index & ((1 << 4) - 1);
+            return sum / 16;
+        }
+
+        @Override
+        public long notifyOfSample(long sample)
+        {
+            if (sample > lastSample)
+            {
+                final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
+                lastSample = sample;
+                return logSample(delta);
+            }
+            else
+            {
+                return logSample(1);
+            }
+        }
+
+        @Override
+        public boolean notifyAndSleep(long sample)
+        {
+            long average = notifyOfSample(sample);
+
+            if (DEBUG_COALESCING && ThreadLocalRandom.current().nextDouble() < .000001)
+                logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+
+            if (average < maxCoalesceWindow)
+            {
+                if (coalesceDecision == -1 || average > coalesceDecision)
+                {
+                    /*
+                     * The coalesce decision made with the dummy samples that are Integer.MAX_VALUE
+                     * are not very good. Better to wait until they are replaced before attempting
+                     * any coalescing.
+                     */
+                    if (!haveAllSamples && !(haveAllSamples = hasAllSamples()))
+                        return false;
+
+                    coalesceDecision = Math.min(maxCoalesceWindow, average * 2);
+                    if (DEBUG_COALESCING)
+                        logger.info("Enabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+                }
+
+                parkLoop(coalesceDecision);
+
+                return true;
+            }
+
+            if (DEBUG_COALESCING && coalesceDecision != -1)
+                logger.info("Disabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+
+            coalesceDecision = -1;
+            return false;
+        }
+
+        private boolean hasAllSamples()
+        {
+            for (int sample : samples)
+                if (sample == Integer.MAX_VALUE)
+                    return false;
+            return true;
+        }
+    }
+
+    /*
+     * A fixed strategy as a backup in case the MovingAverage fails in some scenario
+     */
+    @VisibleForTesting
+    public static class FixedCoalescingStrategy implements CoalescingStrategy
+    {
+        private final long coalesceWindow;
+
+        public FixedCoalescingStrategy(int coalesceWindowMicros)
+        {
+            coalesceWindow = TimeUnit.MICROSECONDS.toNanos(coalesceWindowMicros);
+        }
+
+        @Override
+        public long notifyOfSample(long sample)
+        {
+            return 0;
+        }
+
+        @Override
+        public boolean notifyAndSleep(long sample)
+        {
+            parkLoop(coalesceWindow);
+            return true;
+        }
+    }
+
+    private static CoalescingStrategy newCoalescingStrategy()
+    {
+        switch(COALESCING_STRATEGY)
+        {
+        case "MOVINGAVERAGE":
+            return new MovingAverageCoalescingStrategy(COALESCING_WINDOW);
+        case "FIXED":
+            return new FixedCoalescingStrategy(COALESCING_WINDOW);
+            default:
+                throw new Error("Unrecognized coalescing strategy " + COALESCING_STRATEGY);
+        }
+    }
+
+    static {
+        if (!DISABLE_COALESCING)
+        {
+            if (!COALESCING_STRATEGY.equals("MOVINGAVERAGE") && !COALESCING_STRATEGY.equals("FIXED"))
+                throw new ExceptionInInitializerError(
+                        "Unrecognized coalescing strategy provide via " + COALESCING_STRATEGY_PROPERTY +
+                        ": " + COALESCING_STRATEGY);
+
+            if (COALESCING_WINDOW < 0)
+                throw new ExceptionInInitializerError(
+                        "Value provided for coalescing window via " + COALESCING_WINDOW_PROPERTY +
+                        " must be greather than 0: " + COALESCING_WINDOW);
+        }
+
+        //Pick up updates from NTP periodically
+        Thread t = new Thread("OutboundTcpConnection time updater")
+        {
+            @Override
+            public void run()
+            {
+                while (true)
+                {
+                    try
+                    {
+                        synchronized (TIMESTAMP_UPDATE)
+                        {
+                            TIMESTAMP_UPDATE.wait(TIMESTAMP_UPDATE_INTERVAL);
+                        }
+                    }
+                    catch (InterruptedException e)
+                    {
+                        return;
+                    }
+
+                    TIMESTAMP_BASE = new long[] {
+                            Math.max(TIMESTAMP_BASE[0], System.currentTimeMillis()),
+                            Math.max(TIMESTAMP_BASE[1], System.nanoTime()) };
+                }
+            }
+        };
+        t.setDaemon(true);
+        t.start();
+    }
 
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
     private volatile boolean isStopped = false;
@@ -74,6 +354,7 @@ public class OutboundTcpConnection extends Thread
 
     private final OutboundTcpConnectionPool poolReference;
 
+    private final CoalescingStrategy cs = newCoalescingStrategy();
     private DataOutputStreamPlus out;
     private Socket socket;
     private volatile long completed;
@@ -129,24 +410,40 @@ public class OutboundTcpConnection extends Thread
     {
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
         final List<QueuedMessage> drainedMessages = new ArrayList<>(128);
+
         outer:
         while (true)
         {
+            boolean blocked = false;
             if (backlog.drainTo(drainedMessages, drainedMessages.size()) == 0)
             {
                 try
                 {
                     drainedMessages.add(backlog.take());
+                    blocked = true;
                 }
                 catch (InterruptedException e)
                 {
                     throw new AssertionError(e);
                 }
-
+                if (DISABLE_COALESCING) {
+                    backlog.drainTo(drainedMessages, 127);
+                }
             }
+
+            int remainingSlots = 128 - drainedMessages.size();
+            if (!DISABLE_COALESCING) {
+                if (cs.notifyAndSleep(drainedMessages.get(0).timestampNanos) || blocked) {
+                    backlog.drainTo(drainedMessages, remainingSlots);
+                }
+            }
+
             currentMsgBufferCount = drainedMessages.size();
 
             int count = drainedMessages.size();
+            //The timestamp of the first message has already been provided to the coalescing strategy
+            //so skip logging it.
+            boolean logTimestamp = false;
             for (QueuedMessage qm : drainedMessages)
             {
                 try
@@ -159,10 +456,16 @@ public class OutboundTcpConnection extends Thread
                             break outer;
                         continue;
                     }
-                    if (qm.isTimedOut(m.getTimeout()))
+
+                    if (logTimestamp) {
+                        cs.notifyOfSample(qm.timestampNanos);
+                    }
+                    logTimestamp = true;
+
+                    if (qm.isTimedOut(TimeUnit.MILLISECONDS.toNanos(m.getTimeout()), System.nanoTime()))
                         dropped.incrementAndGet();
                     else if (socket != null || connect())
-                        writeConnected(qm, count == 1 && backlog.size() == 0);
+                        writeConnected(qm, count == 1 && backlog.isEmpty());
                     else
                         // clear out the queue, else gossip messages back up.
                         backlog.clear();
@@ -227,7 +530,7 @@ public class OutboundTcpConnection extends Thread
                 }
             }
 
-            writeInternal(qm.message, qm.id, qm.timestamp);
+            writeInternal(qm.message, qm.id, convertNanoTimeToCurrentTimeMillis(qm.timestampNanos));
 
             completed++;
             if (flush)
@@ -327,7 +630,7 @@ public class OutboundTcpConnection extends Thread
                 socket.setKeepAlive(true);
                 if (isLocalDC(poolReference.endPoint()))
                 {
-                    socket.setTcpNoDelay(true);
+                    socket.setTcpNoDelay(INTRADC_TCP_NODELAY);
                 }
                 else
                 {
@@ -344,7 +647,7 @@ public class OutboundTcpConnection extends Thread
                         logger.warn("Failed to set send buffer size on internode socket.", se);
                     }
                 }
-                out = new DataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream(), 4096));
+                out = new DataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream(), BUFFER_SIZE));
 
                 out.writeInt(MessagingService.PROTOCOL_MAGIC);
                 writeHeader(out, targetVersion, shouldCompressConnection());
@@ -416,7 +719,7 @@ public class OutboundTcpConnection extends Thread
         }
         return false;
     }
-    
+
     private int handshakeVersion(final DataInputStream inputStream)
     {
         final AtomicInteger version = new AtomicInteger(NO_VERSION);
@@ -431,7 +734,7 @@ public class OutboundTcpConnection extends Thread
                     logger.info("Handshaking version with {}", poolReference.endPoint());
                     version.set(inputStream.readInt());
                 }
-                catch (IOException ex) 
+                catch (IOException ex)
                 {
                     final String msg = "Cannot handshake version with " + poolReference.endPoint();
                     if (logger.isTraceEnabled())
@@ -464,7 +767,7 @@ public class OutboundTcpConnection extends Thread
         while (iter.hasNext())
         {
             QueuedMessage qm = iter.next();
-            if (qm.timestamp >= System.currentTimeMillis() - qm.message.getTimeout())
+            if (qm.timestampNanos >= System.nanoTime() - qm.message.getTimeout())
                 return;
             iter.remove();
             dropped.incrementAndGet();
@@ -476,21 +779,21 @@ public class OutboundTcpConnection extends Thread
     {
         final MessageOut<?> message;
         final int id;
-        final long timestamp;
+        final long timestampNanos;
         final boolean droppable;
 
         QueuedMessage(MessageOut<?> message, int id)
         {
             this.message = message;
             this.id = id;
-            this.timestamp = System.currentTimeMillis();
+            this.timestampNanos = System.nanoTime();
             this.droppable = MessagingService.DROPPABLE_VERBS.contains(message.verb);
         }
 
         /** don't drop a non-droppable message just because it's timestamp is expired */
-        boolean isTimedOut(long maxTime)
+        boolean isTimedOut(long maxTimeNanos, long nowNanos)
         {
-            return droppable && timestamp < System.currentTimeMillis() - maxTime;
+            return droppable && timestampNanos < nowNanos - maxTimeNanos;
         }
 
         boolean shouldRetry()

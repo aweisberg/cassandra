@@ -40,6 +40,8 @@ public class IncomingTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(IncomingTcpConnection.class);
 
+    private static final int BUFFER_SIZE = Integer.getInteger(IncomingTcpConnection.class.getName() + ".BUFFER_SIZE", 1024 * 4);
+
     private final int version;
     private final boolean compressed;
     private final Socket socket;
@@ -132,7 +134,7 @@ public class IncomingTcpConnection extends Thread
         }
         else
         {
-            in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
+            in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), BUFFER_SIZE));
         }
 
         if (version > MessagingService.current_version)
