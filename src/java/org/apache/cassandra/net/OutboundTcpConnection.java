@@ -81,7 +81,7 @@ public class OutboundTcpConnection extends Thread
     private static volatile long TIMESTAMP_BASE[] = new long[] { System.currentTimeMillis(), System.nanoTime() };
 
     @VisibleForTesting
-    public static final Object TIMESTAMP_UPDATE = new Object();
+    static final Object TIMESTAMP_UPDATE = new Object();
 
     /*
      * System.currentTimeMillis() is 25 nanoseconds. This is 2 nanoseconds (maybe) according to JMH.
@@ -93,7 +93,7 @@ public class OutboundTcpConnection extends Thread
      * before this one does. I have seen it behind by as much as 2 milliseconds.
      */
     @VisibleForTesting
-    public static final long convertNanoTimeToCurrentTimeMillis(long nanoTime)
+    static final long convertNanoTimeToCurrentTimeMillis(long nanoTime)
     {
         final long timestampBase[] = TIMESTAMP_BASE;
         return timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
@@ -145,7 +145,7 @@ public class OutboundTcpConnection extends Thread
     }
 
     @VisibleForTesting
-    public interface CoalescingStrategy
+    interface CoalescingStrategy
     {
         /*
          * Notify of a sample, but don't attempt to coalesce. Used when coalescing has already been done.
@@ -167,7 +167,7 @@ public class OutboundTcpConnection extends Thread
      * observed time spent coalescing was 400 microseconds with the window set to 200 in one benchmark.
      */
     @VisibleForTesting
-    public static class MovingAverageCoalescingStrategy implements CoalescingStrategy
+    static class MovingAverageCoalescingStrategy implements CoalescingStrategy
     {
         private final int samples[] = new int[16];
         private long lastSample = 0;
@@ -263,7 +263,7 @@ public class OutboundTcpConnection extends Thread
      * A fixed strategy as a backup in case the MovingAverage fails in some scenario
      */
     @VisibleForTesting
-    public static class FixedCoalescingStrategy implements CoalescingStrategy
+    static class FixedCoalescingStrategy implements CoalescingStrategy
     {
         private final long coalesceWindow;
 
