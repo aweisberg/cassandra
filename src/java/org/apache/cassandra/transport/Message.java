@@ -332,7 +332,7 @@ public abstract class Message
         }
     }
 
-    static final boolean DISABLE_WINDOWED_COALESCING = Boolean.getBoolean("DISABLE_WINDOWS_COALESCING");
+    static final boolean DISABLE_WINDOWED_COALESCING = Boolean.getBoolean("DISABLE_WINDOWED_COALESCING");
 
     @ChannelHandler.Sharable
     public static class Dispatcher extends SimpleChannelInboundHandler<Request>
