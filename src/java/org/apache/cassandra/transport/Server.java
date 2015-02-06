@@ -149,7 +149,7 @@ public class Server implements CassandraDaemon.Server
         ServerBootstrap bootstrap = new ServerBootstrap()
                                     .group(workerGroup)
                                     .channel(hasEpoll ? EpollServerSocketChannel.class : NioServerSocketChannel.class)
-                                    .childOption(ChannelOption.TCP_NODELAY, true)
+                                    .childOption(ChannelOption.TCP_NODELAY, System.getProperty("NO_DELAY") == null ? true : Boolean.getBoolean("NO_DELAY"))
                                     .childOption(ChannelOption.SO_LINGER, 0)
                                     .childOption(ChannelOption.SO_KEEPALIVE, DatabaseDescriptor.getRpcKeepAlive())
                                     .childOption(ChannelOption.ALLOCATOR, CBUtil.allocator)
@@ -245,7 +245,7 @@ public class Server implements CassandraDaemon.Server
         public int getConnectedClients()
         {
             /*
-              - When server is running: allChannels contains all clients' connections (channels) 
+              - When server is running: allChannels contains all clients' connections (channels)
                 plus one additional channel used for the server's own bootstrap.
                - When server is stopped: the size is 0
             */

@@ -52,6 +52,8 @@ public final class Stress
 
     public static void main(String[] arguments) throws Exception
     {
+        System.out.println("Starting Ariel's stress");
+        System.err.println("Starting Ariel's stress");
         final StressSettings settings;
         try
         {

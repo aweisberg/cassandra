@@ -332,6 +332,8 @@ public abstract class Message
         }
     }
 
+    static final boolean DISABLE_WINDOWED_COALESCING = Boolean.getBoolean("DISABLE_WINDOWS_COALESCING");
+
     @ChannelHandler.Sharable
     public static class Dispatcher extends SimpleChannelInboundHandler<Request>
     {
@@ -368,9 +370,8 @@ public abstract class Message
                     this.eventLoop.execute(this);
                 }
             }
-            public void run()
-            {
 
+            private void runRegular() {
                 boolean doneWork = false;
                 FlushItem flush;
                 while ( null != (flush = queued.poll()) )
@@ -411,6 +412,40 @@ public abstract class Message
                 }
 
                 eventLoop.schedule(this, 10000, TimeUnit.NANOSECONDS);
+            }
+
+            private void runCoalescing() {
+                while (true) {
+                    FlushItem flush;
+                    while ( null != (flush = queued.poll()) )
+                    {
+                        channels.add(flush.ctx);
+                        flush.ctx.write(flush.response, flush.ctx.voidPromise());
+                        flushed.add(flush);
+                    }
+
+                    for (ChannelHandlerContext c : channels)
+                        c.flush();
+
+                    for (FlushItem item : flushed)
+                        item.sourceFrame.release();
+
+                    channels.clear();
+                    flushed.clear();
+
+                    running.set(false);
+                    if (queued.isEmpty() || !running.compareAndSet(false, true))
+                        return;
+                }
+            }
+
+            public void run()
+            {
+                if (DISABLE_WINDOWED_COALESCING) {
+                    runCoalescing();
+                } else {
+                    runRegular();
+                }
             }
         }
 
