@@ -445,7 +445,7 @@ public class OutboundTcpConnection extends Thread
         switch (COALESCING_STRATEGY) {
         case "MOVINGAVERAGE":
         case "FIXED":
-        case "TIMEDHORIZON":
+        case "TIMEHORIZON":
         case "DISABLED":
         case "DISABLED_BROKEN":
             break;
