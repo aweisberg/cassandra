@@ -116,7 +116,7 @@ public class OutboundTcpConnection extends Thread
      * whitespace insensitive.
      */
     private static final String COALESCING_STRATEGY_PROPERTY = PREFIX + "OTC_COALESCING_STRATEGY";
-    private static final String COALESCING_STRATEGY = System.getProperty(COALESCING_STRATEGY_PROPERTY, "MOVINGAVERAGE").trim().toUpperCase();
+    private static final String COALESCING_STRATEGY = System.getProperty(COALESCING_STRATEGY_PROPERTY, "TIMEHORIZON").trim().toUpperCase();
 
     /*
      * Log debug information at info level about what the average is and when coalescing is enabled/disabled
@@ -409,8 +409,21 @@ public class OutboundTcpConnection extends Thread
         }
     }
 
+    @VisibleForTesting
+    static class DisabledBrokenCoalescingStrategy implements CoalescingStrategy
+    {
+        @Override
+        public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
+        {
+            out.add(input.take());
+        }
+    }
+
     private static CoalescingStrategy newCoalescingStrategy()
     {
+        System.out.println("Creating new coalescing strategy for " + COALESCING_STRATEGY);
+        System.err.println("Creating new coalescing strategy for " + COALESCING_STRATEGY);
+        logger.info("Creating new coalescing strategy for " + COALESCING_STRATEGY);
         switch(COALESCING_STRATEGY)
         {
         case "MOVINGAVERAGE":
@@ -421,6 +434,8 @@ public class OutboundTcpConnection extends Thread
             return new TimeHorizonMovingAverageCoalescingStrategy(COALESCING_WINDOW);
         case "DISABLED":
             return new DisabledCoalescingStrategy();
+        case "DISABLED_BROKEN":
+            return new DisabledBrokenCoalescingStrategy();
             default:
                 throw new Error("Unrecognized coalescing strategy " + COALESCING_STRATEGY);
         }
@@ -432,6 +447,7 @@ public class OutboundTcpConnection extends Thread
         case "FIXED":
         case "TIMEDHORIZON":
         case "DISABLED":
+        case "DISABLED_BROKEN":
             break;
             default:
                 throw new ExceptionInInitializerError(
