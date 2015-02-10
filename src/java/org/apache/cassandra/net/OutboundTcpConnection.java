@@ -20,15 +20,20 @@ package org.apache.cassandra.net;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutput;
+import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.channels.FileChannel.MapMode;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -518,6 +523,8 @@ public class OutboundTcpConnection extends Thread
     private volatile int currentMsgBufferCount = 0;
     private int targetVersion;
 
+    public static final Semaphore logTimestamps = new Semaphore(1);
+
     public OutboundTcpConnection(OutboundTcpConnectionPool pool)
     {
         super("WRITE-" + pool.endPoint());
@@ -564,6 +571,21 @@ public class OutboundTcpConnection extends Thread
 
     public void run()
     {
+        ByteBuffer logBuffer = null;
+        RandomAccessFile ras = null;
+        if (logTimestamps.tryAcquire()) {
+            new File("/tmp/sillylog").delete();
+            try {
+                ras = new RandomAccessFile("/tmp/sillylog", "rw");
+                logBuffer = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
+                logBuffer.order(ByteOrder.LITTLE_ENDIAN);
+                logBuffer.putLong(0);
+            } catch (Exception e) {
+                logger.error("ouch", e);
+            }
+        }
+
+
         final int drainedMessageSize = 128;
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
         final List<QueuedMessage> drainedMessages = new ArrayList<>(drainedMessageSize);
@@ -584,6 +606,10 @@ public class OutboundTcpConnection extends Thread
             //so skip logging it.
             for (QueuedMessage qm : drainedMessages)
             {
+                if (logBuffer != null) {
+                    logBuffer.putLong(0, logBuffer.getLong(0) + 1);
+                    logBuffer.putLong(qm.timestampNanos);
+                }
                 try
                 {
                     MessageOut<?> m = qm.message;
