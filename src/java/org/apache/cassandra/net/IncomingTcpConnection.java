@@ -30,8 +30,9 @@ import net.jpountz.lz4.LZ4BlockInputStream;
 import net.jpountz.lz4.LZ4FastDecompressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
-import org.xerial.snappy.SnappyInputStream;
 
+import org.xerial.snappy.SnappyInputStream;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.UnknownColumnFamilyException;
 import org.apache.cassandra.gms.Gossiper;
@@ -40,7 +41,7 @@ public class IncomingTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(IncomingTcpConnection.class);
 
-    private static final int BUFFER_SIZE = Integer.getInteger(IncomingTcpConnection.class.getName() + ".BUFFER_SIZE", 1024 * 4);
+    private static final int BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + ".ITC_BUFFER_SIZE", 1024 * 4);
 
     private final int version;
     private final boolean compressed;

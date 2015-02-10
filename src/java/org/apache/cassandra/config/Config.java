@@ -35,11 +35,16 @@ import org.supercsv.prefs.CsvPreference;
 
 /**
  * A class that contains configuration properties for the cassandra node it runs within.
- * 
+ *
  * Properties declared as volatile can be mutated via JMX.
  */
 public class Config
 {
+    /*
+     * Prefix for Java properties for internal Cassandra configuration options
+     */
+    public static final String PROPERTY_PREFIX = "cassandra.";
+
     public String cluster_name = "Test Cluster";
     public String authenticator;
     public String authorizer;
