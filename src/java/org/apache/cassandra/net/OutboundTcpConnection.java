@@ -206,9 +206,10 @@ public class OutboundTcpConnection extends Thread
             long sleep = messages * averageGap();
             if (sleep > maxCoalesceWindow)
                 return false;
-                 // assume we receive as many messages as we expect; apply the same logic to the future batch:
-                 // expect twice as many messages to consider sleeping for "another" interval; this basically translates
-                 // to doubling our sleep period until we exceed our max sleep window
+
+            // assume we receive as many messages as we expect; apply the same logic to the future batch:
+            // expect twice as many messages to consider sleeping for "another" interval; this basically translates
+            // to doubling our sleep period until we exceed our max sleep window
             while (sleep * 2 < maxCoalesceWindow)
                 sleep *= 2;
             parkLoop(sleep);
@@ -264,6 +265,9 @@ public class OutboundTcpConnection extends Thread
             for (QueuedMessage qm : out) {
                 logSample(qm.timestampNanos);
             }
+
+            if (DEBUG_COALESCING && ThreadLocalRandom.current().nextDouble() < .000001)
+                logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(averageGap()));
 
             int count = out.size();
             if (maybeSleep(count)) {
