@@ -292,7 +292,7 @@ public class OutboundTcpConnection extends Thread
 
             if (shouldSampleAverage) {
                 logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(averageGap()));
-                shouldSampleAverage = true;
+                shouldSampleAverage = false;
             }
 
             int count = out.size();
