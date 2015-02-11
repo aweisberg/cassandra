@@ -360,11 +360,13 @@ public class OutboundTcpConnection extends Thread
 
         private long logSample(int value)
         {
+            assert(sumMatches());
             sum -= samples[index];
             sum += value;
             samples[index] = value;
             index++;
             index = index & ((1 << 4) - 1);
+            assert(sumMatches());
             return sum / 16;
         }
 
@@ -412,6 +414,14 @@ public class OutboundTcpConnection extends Thread
             for (int ii = 1; ii < out.size(); ii++) {
                 notifyOfSample(out.get(ii).timestampNanos);
             }
+        }
+
+        boolean sumMatches() {
+            long recalc = 0;
+            for (int sample : samples) {
+                recalc += sample;
+            }
+            return recalc == sum;
         }
     }
 
