@@ -147,6 +147,22 @@ public class OutboundTcpConnection extends Thread
         while (timer - (now = System.nanoTime()) > nanos / 16);
     }
 
+    private static boolean maybeSleep(int messages, long averageGap, long maxCoalesceWindow)
+    {
+        // only sleep if we can expect to double the number of messages we're sending in the time interval
+        long sleep = messages * averageGap;
+        if (sleep > maxCoalesceWindow)
+            return false;
+
+        // assume we receive as many messages as we expect; apply the same logic to the future batch:
+        // expect twice as many messages to consider sleeping for "another" interval; this basically translates
+        // to doubling our sleep period until we exceed our max sleep window
+        while (sleep * 2 < maxCoalesceWindow)
+            sleep *= 2;
+        parkLoop(sleep);
+        return true;
+    }
+
     @VisibleForTesting
     interface CoalescingStrategy
     {
@@ -230,22 +246,6 @@ public class OutboundTcpConnection extends Thread
             return MEASURED_INTERVAL / sum;
         }
 
-        public boolean maybeSleep(int messages)
-        {
-            // only sleep if we can expect to double the number of messages we're sending in the time interval
-            long sleep = messages * averageGap();
-            if (sleep > maxCoalesceWindow)
-                return false;
-
-            // assume we receive as many messages as we expect; apply the same logic to the future batch:
-            // expect twice as many messages to consider sleeping for "another" interval; this basically translates
-            // to doubling our sleep period until we exceed our max sleep window
-            while (sleep * 2 < maxCoalesceWindow)
-                sleep *= 2;
-            parkLoop(sleep);
-            return true;
-        }
-
         // this sample extends past the end of the range we cover, so rollover
         private long rollepoch(long delta, long epoch, long nanos)
         {
@@ -304,7 +304,7 @@ public class OutboundTcpConnection extends Thread
             }
 
             int count = out.size();
-            if (maybeSleep(count)) {
+            if (maybeSleep(count, averageGap(), maxCoalesceWindow)) {
                 input.drainTo(out, outSize - out.size());
                 int prevCount = count;
                 count = out.size();
@@ -398,10 +398,8 @@ public class OutboundTcpConnection extends Thread
                 logger.info("MovingAverage average gap " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
             }
 
-            if (average < maxCoalesceWindow)
+            if (maybeSleep(out.size(), average, maxCoalesceWindow))
             {
-                parkLoop(Math.min(maxCoalesceWindow, average * 2));
-
                 input.drainTo(out, outSize - out.size());
                 for (int ii = 1; ii < out.size(); ii++) {
                     notifyOfSample(out.get(ii).timestampNanos);
