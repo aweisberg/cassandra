@@ -294,7 +294,7 @@ public class OutboundTcpConnection extends Thread
 
             if (DEBUG_COALESCING && shouldLogAverage) {
                 shouldLogAverage = false;
-                logger.info("MovingTimeHorizon average gap " + averageGap());
+                logger.info("MovingTimeHorizon average gap " + TimeUnit.NANOSECONDS.toMicros(averageGap()) + "μs");
             }
 
             int count = out.size();
@@ -368,7 +368,7 @@ public class OutboundTcpConnection extends Thread
             long average = notifyOfSample(out.get(0).timestampNanos);
 
             if (DEBUG_COALESCING && ThreadLocalRandom.current().nextDouble() < .000001)
-                logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+                logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
 
             if (average < maxCoalesceWindow)
             {
@@ -376,7 +376,7 @@ public class OutboundTcpConnection extends Thread
                 {
                     coalesceDecision = Math.min(maxCoalesceWindow, average * 2);
                     if (DEBUG_COALESCING)
-                        logger.info("Enabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+                        logger.info("Enabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
                 }
 
                 parkLoop(coalesceDecision);
@@ -390,7 +390,7 @@ public class OutboundTcpConnection extends Thread
             }
 
             if (DEBUG_COALESCING && coalesceDecision != -1)
-                logger.info("Disabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average));
+                logger.info("Disabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
 
             coalesceDecision = -1;
 
