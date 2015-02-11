@@ -621,7 +621,7 @@ public class OutboundTcpConnection extends Thread
         if (DEBUG_COALESCING) {
             try {
                 File outFile = File.createTempFile("sillylog_" + poolReference.endPoint().getHostAddress() + "_", ".log", new File("/tmp/sillylogs"));
-                ras = new RandomAccessFile("/tmp/sillylog", "rw");
+                ras = new RandomAccessFile(outFile, "rw");
                 logBuffer = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
                 logBuffer.order(ByteOrder.LITTLE_ENDIAN);
                 logBuffer.putLong(0);
@@ -651,7 +651,7 @@ public class OutboundTcpConnection extends Thread
             //so skip logging it.
             for (QueuedMessage qm : drainedMessages)
             {
-                if (logBuffer != null) {
+                if (DEBUG_COALESCING) {
                     logBuffer.putLong(0, logBuffer.getLong(0) + 1);
                     logBuffer.putLong(qm.timestampNanos);
                 }
