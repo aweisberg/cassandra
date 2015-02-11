@@ -330,8 +330,6 @@ public class OutboundTcpConnection extends Thread
 
         private final long maxCoalesceWindow;
 
-        private long coalesceDecision = -1;
-
         public MovingAverageCoalescingStrategy(int maxCoalesceWindow)
         {
             this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
@@ -360,12 +358,20 @@ public class OutboundTcpConnection extends Thread
 
         private long logSample(int value)
         {
+            if (!sumMatches()) {
+                logger.error("oh snap");
+                System.exit(-1);
+            }
             assert(sumMatches());
             sum -= samples[index];
             sum += value;
             samples[index] = value;
             index++;
             index = index & ((1 << 4) - 1);
+            if (!sumMatches()) {
+                logger.error("oh snap2");
+                System.exit(-1);
+            }
             assert(sumMatches());
             return sum / 16;
         }
