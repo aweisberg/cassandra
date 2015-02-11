@@ -276,7 +276,7 @@ public class OutboundTcpConnection extends Thread
 
         private long epoch(long latestNanos)
         {
-            return (latestNanos - INTERVAL) & ~(BUCKET_INTERVAL - 1);
+            return (latestNanos - MEASURED_INTERVAL) & ~(BUCKET_INTERVAL - 1);
         }
 
         private int ix(long nanos)
