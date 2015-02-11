@@ -29,6 +29,12 @@ import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
+import java.nio.file.FileSystems;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -50,6 +56,7 @@ import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
 
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
@@ -188,8 +195,7 @@ public class OutboundTcpConnection extends Thread
                             }
                             catch (InterruptedException e)
                             {
-                                // TODO Auto-generated catch block
-                                e.printStackTrace();
+                                throw new AssertionError();
                             }
                             shouldLogAverage = true;
                         }
@@ -332,6 +338,24 @@ public class OutboundTcpConnection extends Thread
             for (int ii = 0; ii < samples.length; ii++)
                 samples[ii] = Integer.MAX_VALUE;
             sum = Integer.MAX_VALUE * (long)samples.length;
+            if (DEBUG_COALESCING) {
+                new Thread() {
+                    @Override
+                    public void run() {
+                        while (true) {
+                            try
+                            {
+                                Thread.sleep(5000);
+                            }
+                            catch (InterruptedException e)
+                            {
+                                throw new AssertionError();
+                            }
+                            shouldLogAverage = true;
+                        }
+                    }
+                }.start();
+            }
         }
 
         private long logSample(int value)
@@ -358,6 +382,8 @@ public class OutboundTcpConnection extends Thread
             }
         }
 
+        volatile boolean shouldLogAverage = false;
+
         @Override
         public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
         {
@@ -367,19 +393,14 @@ public class OutboundTcpConnection extends Thread
 
             long average = notifyOfSample(out.get(0).timestampNanos);
 
-            if (DEBUG_COALESCING && ThreadLocalRandom.current().nextDouble() < .000001)
-                logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
+            if (DEBUG_COALESCING && shouldLogAverage) {
+                shouldLogAverage = false;
+                logger.info("MovingAverage average gap " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
+            }
 
             if (average < maxCoalesceWindow)
             {
-                if (coalesceDecision == -1 || average > coalesceDecision)
-                {
-                    coalesceDecision = Math.min(maxCoalesceWindow, average * 2);
-                    if (DEBUG_COALESCING)
-                        logger.info("Enabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
-                }
-
-                parkLoop(coalesceDecision);
+                parkLoop(Math.min(maxCoalesceWindow, average * 2));
 
                 input.drainTo(out, outSize - out.size());
                 for (int ii = 1; ii < out.size(); ii++) {
@@ -388,11 +409,6 @@ public class OutboundTcpConnection extends Thread
 
                 return;
             }
-
-            if (DEBUG_COALESCING && coalesceDecision != -1)
-                logger.info("Disabling coalescing average " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
-
-            coalesceDecision = -1;
 
             input.drainTo(out, outSize - out.size());
             for (int ii = 1; ii < out.size(); ii++) {
@@ -523,6 +539,13 @@ public class OutboundTcpConnection extends Thread
         };
         t.setDaemon(true);
         t.start();
+
+        if (DEBUG_COALESCING) {
+            FileUtils.deleteRecursive(new File("/tmp/sillylogs"));
+            if (!new File("/tmp/sillylogs").mkdirs()) {
+                throw new ExceptionInInitializerError("Couldn't create log dir");
+            }
+        }
     }
 
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
@@ -545,8 +568,6 @@ public class OutboundTcpConnection extends Thread
     private final AtomicLong dropped = new AtomicLong();
     private volatile int currentMsgBufferCount = 0;
     private int targetVersion;
-
-    public static final Semaphore logTimestamps = new Semaphore(1);
 
     public OutboundTcpConnection(OutboundTcpConnectionPool pool)
     {
@@ -596,9 +617,9 @@ public class OutboundTcpConnection extends Thread
     {
         ByteBuffer logBuffer = null;
         RandomAccessFile ras = null;
-        if (logTimestamps.tryAcquire()) {
-            new File("/tmp/sillylog").delete();
+        if (DEBUG_COALESCING) {
             try {
+                File outFile = File.createTempFile("sillylog_" + poolReference.endPoint().getHostAddress() + "_", ".log");
                 ras = new RandomAccessFile("/tmp/sillylog", "rw");
                 logBuffer = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
                 logBuffer.order(ByteOrder.LITTLE_ENDIAN);
