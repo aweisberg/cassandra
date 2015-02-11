@@ -177,6 +177,25 @@ public class OutboundTcpConnection extends Thread
         {
             this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
             sum = 0;
+            if (DEBUG_COALESCING) {
+                new Thread() {
+                    @Override
+                    public void run() {
+                        while (true) {
+                            try
+                            {
+                                Thread.sleep(5000);
+                            }
+                            catch (InterruptedException e)
+                            {
+                                // TODO Auto-generated catch block
+                                e.printStackTrace();
+                            }
+                            shouldLogAverage = true;
+                        }
+                    }
+                }.start();
+            }
         }
 
         private void logSample(long nanos)
@@ -259,6 +278,8 @@ public class OutboundTcpConnection extends Thread
             return (int) ((nanos >>> INDEX_SHIFT) & 15);
         }
 
+        volatile boolean shouldLogAverage = false;
+
         @Override
         public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
         {
@@ -269,6 +290,11 @@ public class OutboundTcpConnection extends Thread
 
             for (QueuedMessage qm : out) {
                 logSample(qm.timestampNanos);
+            }
+
+            if (DEBUG_COALESCING && shouldLogAverage) {
+                shouldLogAverage = false;
+                logger.info("MovingTimeHorizon average gap " + averageGap());
             }
 
             int count = out.size();
