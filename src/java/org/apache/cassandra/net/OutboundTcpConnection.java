@@ -539,8 +539,11 @@ public class OutboundTcpConnection extends Thread
         t.start();
 
         if (DEBUG_COALESCING) {
-            FileUtils.deleteRecursive(new File("/tmp/sillylogs"));
-            if (!new File("/tmp/sillylogs").mkdirs()) {
+            File directory = new File("/tmp/sillylogs");
+            if (directory.exists()) {
+                FileUtils.deleteRecursive(directory);
+            }
+            if (!directory.mkdirs()) {
                 throw new ExceptionInInitializerError("Couldn't create log dir");
             }
         }
