@@ -177,23 +177,6 @@ public class OutboundTcpConnection extends Thread
         {
             this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
             sum = 0;
-            new Thread() {
-                @Override
-                public void run() {
-                    while (true) {
-                        try
-                        {
-                            Thread.sleep(5000);
-                        }
-                        catch (InterruptedException e)
-                        {
-                            // TODO Auto-generated catch block
-                            e.printStackTrace();
-                        }
-                        shouldSampleAverage = true;
-                    }
-                }
-            }.start();
         }
 
         private void logSample(long nanos)
@@ -217,8 +200,6 @@ public class OutboundTcpConnection extends Thread
 
         private long averageGap()
         {
-            if (sum == 0)
-                return Integer.MAX_VALUE;
             return MEASURED_INTERVAL / sum;
         }
 
@@ -268,15 +249,13 @@ public class OutboundTcpConnection extends Thread
 
         private long epoch(long latestNanos)
         {
-            return (latestNanos - INTERVAL) & (BUCKET_INTERVAL - 1);
+            return (latestNanos - INTERVAL) & ~(BUCKET_INTERVAL - 1);
         }
 
         private int ix(long nanos)
         {
             return (int) ((nanos >>> INDEX_SHIFT) & 15);
         }
-
-        volatile boolean shouldSampleAverage = false;
 
         @Override
         public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
@@ -288,11 +267,6 @@ public class OutboundTcpConnection extends Thread
 
             for (QueuedMessage qm : out) {
                 logSample(qm.timestampNanos);
-            }
-
-            if (shouldSampleAverage) {
-                logger.info("Coalescing average " + TimeUnit.NANOSECONDS.toMicros(averageGap()));
-                shouldSampleAverage = false;
             }
 
             int count = out.size();
