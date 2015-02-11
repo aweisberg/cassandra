@@ -619,7 +619,7 @@ public class OutboundTcpConnection extends Thread
         RandomAccessFile ras = null;
         if (DEBUG_COALESCING) {
             try {
-                File outFile = File.createTempFile("sillylog_" + poolReference.endPoint().getHostAddress() + "_", ".log");
+                File outFile = File.createTempFile("sillylog_" + poolReference.endPoint().getHostAddress() + "_", ".log", new File("/tmp/sillylogs"));
                 ras = new RandomAccessFile("/tmp/sillylog", "rw");
                 logBuffer = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
                 logBuffer.order(ByteOrder.LITTLE_ENDIAN);
