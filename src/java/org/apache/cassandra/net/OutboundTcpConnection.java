@@ -182,7 +182,7 @@ public class OutboundTcpConnection extends Thread
     {
         // for now we'll just use 64ms per bucket; this can be made configurable, but results in ~1s for 16 samples
         private static final int INDEX_SHIFT = 26;
-        private static final long BUCKET_INTERVAL = 16L << 26;
+        private static final long BUCKET_INTERVAL = 1L << 26;
         private static final int BUCKET_COUNT = 16;
         private static final long INTERVAL = BUCKET_INTERVAL * BUCKET_COUNT;
         private static final long MEASURED_INTERVAL = BUCKET_INTERVAL * (BUCKET_COUNT - 1);
