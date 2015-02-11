@@ -200,6 +200,8 @@ public class OutboundTcpConnection extends Thread
 
         private long averageGap()
         {
+            if (sum == 0)
+                return Integer.MAX_VALUE;
             return MEASURED_INTERVAL / sum;
         }
 
