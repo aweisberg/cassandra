@@ -59,14 +59,17 @@ import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.CoalescingStrategies;
+import org.apache.cassandra.utils.CoalescingStrategies.Coalescable;
+import org.apache.cassandra.utils.CoalescingStrategies.CoalescingStrategy;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
+import org.apache.cassandra.utils.NanoTimeToCurrentTimeMillis;
 import org.apache.cassandra.utils.UUIDGen;
 import org.xerial.snappy.SnappyOutputStream;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.Uninterruptibles;
 
 public class OutboundTcpConnection extends Thread
@@ -82,33 +85,6 @@ public class OutboundTcpConnection extends Thread
     private static final boolean INTRADC_TCP_NODELAY = Boolean.valueOf(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
 
     /*
-     * How often to pull a new timestamp from the system.
-     */
-    private static final String TIMESTAMP_UPDATE_INTERVAL_PROPERTY = PREFIX + "OTC_TIMESTAMP_UPDATE_INTERVAL";
-    private static final long TIMESTAMP_UPDATE_INTERVAL = Long.getLong(TIMESTAMP_UPDATE_INTERVAL_PROPERTY, 10000);
-
-    private static volatile long TIMESTAMP_BASE[] = new long[] { System.currentTimeMillis(), System.nanoTime() };
-
-    @VisibleForTesting
-    static final Object TIMESTAMP_UPDATE = new Object();
-
-    /*
-     * System.currentTimeMillis() is 25 nanoseconds. This is 2 nanoseconds (maybe) according to JMH.
-     * Faster than calling both currentTimeMillis() and nanoTime() for every outbound message.
-     *
-     * There is also the issue of how scalable nanoTime() and currentTimeMillis() are which is a moving target.
-     *
-     * These timestamps don't order with System.currentTimeMillis() because currentTimeMillis() can tick over
-     * before this one does. I have seen it behind by as much as 2 milliseconds.
-     */
-    @VisibleForTesting
-    static final long convertNanoTimeToCurrentTimeMillis(long nanoTime)
-    {
-        final long timestampBase[] = TIMESTAMP_BASE;
-        return timestampBase[0] + TimeUnit.NANOSECONDS.toMillis(nanoTime - timestampBase[1]);
-    }
-
-    /*
      * Size of buffer in output stream
      */
     private static final String BUFFER_SIZE_PROPERTY = PREFIX + "OTC_BUFFER_SIZE";
@@ -120,8 +96,9 @@ public class OutboundTcpConnection extends Thread
      * maximum amount of time that will be waited as well as the interval at which messages must arrive on average
      * for coalescing to be enabled.
      */
+    private static final int COALESCING_WINDOW_DEFAULT = 200;
     private static final String COALESCING_WINDOW_PROPERTY = PREFIX + "OTC_COALESCING_WINDOW_MICROSECONDS";
-    private static final int COALESCING_WINDOW = Integer.getInteger(COALESCING_WINDOW_PROPERTY, 200);
+    private static final int COALESCING_WINDOW = Integer.getInteger(COALESCING_WINDOW_PROPERTY, COALESCING_WINDOW_DEFAULT);
 
     /*
      * Strategy to use for Coalescing. Can be fixed, or movingaverage. Setting is case and leading/trailing
@@ -133,385 +110,28 @@ public class OutboundTcpConnection extends Thread
     /*
      * Log debug information at info level about what the average is and when coalescing is enabled/disabled
      */
-    private static final String DEBUG_COALESCING_PROPERTY = PREFIX + "OTC_DEBUG_COALESCING";
+    private static final String DEBUG_COALESCING_PROPERTY = PREFIX + "OTC_COALESCING_DEBUG";
     private static final boolean DEBUG_COALESCING = Boolean.getBoolean(DEBUG_COALESCING_PROPERTY) | logger.isDebugEnabled();
 
-    private static void parkLoop(long nanos)
-    {
-        long now = System.nanoTime();
-        final long timer = now + nanos;
-        do
-        {
-            LockSupport.parkNanos(timer - now);
-        }
-        while (timer - (now = System.nanoTime()) > nanos / 16);
-    }
-
-    private static boolean maybeSleep(int messages, long averageGap, long maxCoalesceWindow)
-    {
-        // only sleep if we can expect to double the number of messages we're sending in the time interval
-        long sleep = messages * averageGap;
-        if (sleep > maxCoalesceWindow)
-            return false;
-
-        // assume we receive as many messages as we expect; apply the same logic to the future batch:
-        // expect twice as many messages to consider sleeping for "another" interval; this basically translates
-        // to doubling our sleep period until we exceed our max sleep window
-        while (sleep * 2 < maxCoalesceWindow)
-            sleep *= 2;
-        parkLoop(sleep);
-        return true;
-    }
-
-    @VisibleForTesting
-    interface CoalescingStrategy
-    {
-
-        /*
-         * Drain from the input blocking queue to the output list up to outSize elements
-         *
-         * The coalescing strategy may choose to park the current thread if it thinks it will
-         * be able to produce an output list with more elements
-         */
-        void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out, int outSize) throws InterruptedException;
-    }
-
-
-    @VisibleForTesting
-    static class TimeHorizonMovingAverageCoalescingStrategy implements CoalescingStrategy
-    {
-        // for now we'll just use 64ms per bucket; this can be made configurable, but results in ~1s for 16 samples
-        private static final int INDEX_SHIFT = 26;
-        private static final long BUCKET_INTERVAL = 1L << 26;
-        private static final int BUCKET_COUNT = 16;
-        private static final long INTERVAL = BUCKET_INTERVAL * BUCKET_COUNT;
-        private static final long MEASURED_INTERVAL = BUCKET_INTERVAL * (BUCKET_COUNT - 1);
-
-        // the minimum timestamp we will now accept updates for; only moves forwards, never backwards
-        private long epoch = System.nanoTime();
-        // the buckets, each following on from epoch; the measurements run from ix(epoch) to ix(epoch - 1)
-        // ix(epoch-1) is a partial result, that is never actually part of the calculation, and most updates
-        // are expected to hit this bucket
-        private final int samples[] = new int[BUCKET_COUNT];
-        private long sum = 0;
-        private final long maxCoalesceWindow;
-
-        public TimeHorizonMovingAverageCoalescingStrategy(int maxCoalesceWindow)
-        {
-            this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
-            sum = 0;
-            if (DEBUG_COALESCING) {
-                new Thread() {
-                    @Override
-                    public void run() {
-                        while (true) {
-                            try
-                            {
-                                Thread.sleep(5000);
-                            }
-                            catch (InterruptedException e)
-                            {
-                                throw new AssertionError();
-                            }
-                            shouldLogAverage = true;
-                        }
-                    }
-                }.start();
-            }
-        }
-
-        private void logSample(long nanos)
-        {
-            long epoch = this.epoch;
-            long delta = nanos - epoch;
-            if (delta < 0)
-                // have to simply ignore, but would be a bit crazy to get such reordering
-                return;
-
-            if (delta > INTERVAL)
-                epoch = rollepoch(delta, epoch, nanos);
-
-            int ix = ix(nanos);
-            samples[ix]++;
-
-            // if we've updated an old bucket, we need to update the sum to match
-            if (ix != ix(epoch - 1))
-                sum++;
-        }
-
-        private long averageGap()
-        {
-            if (sum == 0)
-                return Integer.MAX_VALUE;
-            return MEASURED_INTERVAL / sum;
-        }
-
-        // this sample extends past the end of the range we cover, so rollover
-        private long rollepoch(long delta, long epoch, long nanos)
-        {
-            if (delta > 2 * INTERVAL)
-            {
-                // this sample is more than twice our interval ahead, so just clear our counters completely
-                epoch = epoch(nanos);
-                sum = 0;
-                Arrays.fill(samples, 0);
-            }
-            else
-            {
-                // ix(epoch - 1) => last index; this is our partial result bucket, so we add this to the sum
-                sum += samples[ix(epoch - 1)];
-                // then we roll forwards, clearing buckets, until our interval covers the new sample time
-                for (int i = 0 ; epoch + INTERVAL < nanos; i++)
-                {
-                    int index = ix(epoch);
-                    sum -= samples[index];
-                    samples[index] = 0;
-                    epoch += BUCKET_INTERVAL;
-                }
-            }
-            // store the new epoch
-            this.epoch = epoch;
-            return epoch;
-        }
-
-        private long epoch(long latestNanos)
-        {
-            return (latestNanos - MEASURED_INTERVAL) & ~(BUCKET_INTERVAL - 1);
-        }
-
-        private int ix(long nanos)
-        {
-            return (int) ((nanos >>> INDEX_SHIFT) & 15);
-        }
-
-        volatile boolean shouldLogAverage = false;
-
-        @Override
-        public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
-        {
-            if (input.drainTo(out, outSize) == 0) {
-                out.add(input.take());
-                input.drainTo(out, outSize - out.size());
-            }
-
-            for (QueuedMessage qm : out) {
-                logSample(qm.timestampNanos);
-            }
-
-            if (DEBUG_COALESCING && shouldLogAverage) {
-                shouldLogAverage = false;
-                logger.info("MovingTimeHorizon average gap " + TimeUnit.NANOSECONDS.toMicros(averageGap()) + "μs");
-            }
-
-            int count = out.size();
-            if (maybeSleep(count, averageGap(), maxCoalesceWindow)) {
-                input.drainTo(out, outSize - out.size());
-                int prevCount = count;
-                count = out.size();
-                for (int  i = prevCount; i < count; i++)
-                    logSample(out.get(i).timestampNanos);
-            }
-        }
-    }
-
-    /*
-     * Start coalescing by sleeping if the moving average is < the requested window.
-     * The actual time spent waiting to coalesce will be the min( window, moving average * 2)
-     * The actual amount of time spent waiting can be greater then the window. For instance
-     * observed time spent coalescing was 400 microseconds with the window set to 200 in one benchmark.
-     */
-    @VisibleForTesting
-    static class MovingAverageCoalescingStrategy implements CoalescingStrategy
-    {
-        private final int samples[] = new int[16];
-        private long lastSample = 0;
-        private int index = 0;
-        private long sum = 0;
-
-        private final long maxCoalesceWindow;
-
-        public MovingAverageCoalescingStrategy(int maxCoalesceWindow)
-        {
-            this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
-            for (int ii = 0; ii < samples.length; ii++)
-                samples[ii] = Integer.MAX_VALUE;
-            sum = Integer.MAX_VALUE * (long)samples.length;
-            if (DEBUG_COALESCING) {
-                new Thread() {
-                    @Override
-                    public void run() {
-                        while (true) {
-                            try
-                            {
-                                Thread.sleep(5000);
-                            }
-                            catch (InterruptedException e)
-                            {
-                                throw new AssertionError();
-                            }
-                            shouldLogAverage = true;
-                        }
-                    }
-                }.start();
-            }
-        }
-
-        private long logSample(int value)
-        {
-            if (!sumMatches()) {
-                logger.error("oh snap");
-                System.exit(-1);
-            }
-            assert(sumMatches());
-            sum -= samples[index];
-            sum += value;
-            samples[index] = value;
-            index++;
-            index = index & ((1 << 4) - 1);
-            if (!sumMatches()) {
-                logger.error("oh snap2");
-                System.exit(-1);
-            }
-            assert(sumMatches());
-            return sum / 16;
-        }
-
-        private long notifyOfSample(long sample)
-        {
-            if (sample > lastSample)
-            {
-                final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
-                lastSample = sample;
-                return logSample(delta);
-            }
-            else
-            {
-                return logSample(1);
-            }
-        }
-
-        volatile boolean shouldLogAverage = false;
-
-        @Override
-        public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
-        {
-            if (input.drainTo(out, outSize) == 0) {
-                out.add(input.take());
-            }
-
-            long average = notifyOfSample(out.get(0).timestampNanos);
-
-            if (DEBUG_COALESCING && shouldLogAverage) {
-                shouldLogAverage = false;
-                logger.info("MovingAverage average gap " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
-            }
-
-            if (maybeSleep(out.size(), average, maxCoalesceWindow))
-            {
-                input.drainTo(out, outSize - out.size());
-                for (int ii = 1; ii < out.size(); ii++) {
-                    notifyOfSample(out.get(ii).timestampNanos);
-                }
-
-                return;
-            }
-
-            input.drainTo(out, outSize - out.size());
-            for (int ii = 1; ii < out.size(); ii++) {
-                notifyOfSample(out.get(ii).timestampNanos);
-            }
-        }
-
-        boolean sumMatches() {
-            long recalc = 0;
-            for (int sample : samples) {
-                recalc += sample;
-            }
-            return recalc == sum;
-        }
-    }
-
-    /*
-     * A fixed strategy as a backup in case MovingAverage or TimeHorizongMovingAverage fails in some scenario
-     */
-    @VisibleForTesting
-    static class FixedCoalescingStrategy implements CoalescingStrategy
-    {
-        private final long coalesceWindow;
-
-        public FixedCoalescingStrategy(int coalesceWindowMicros)
-        {
-            coalesceWindow = TimeUnit.MICROSECONDS.toNanos(coalesceWindowMicros);
-        }
-
-        @Override
-        public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
-        {
-            if (input.drainTo(out, outSize) == 0) {
-                out.add(input.take());
-            }
-
-            parkLoop(coalesceWindow);
-
-            input.drainTo(out, outSize - out.size());
-        }
-    }
-
-    /*
-     * A coalesscing strategy that just returns all currently available elements
-     */
-    @VisibleForTesting
-    static class DisabledCoalescingStrategy implements CoalescingStrategy
-    {
-        @Override
-        public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
-        {
-            if (input.drainTo(out, outSize) == 0) {
-                out.add(input.take());
-                input.drainTo(out, outSize - out.size());
-            }
-        }
-    }
-
-    @VisibleForTesting
-    static class DisabledBrokenCoalescingStrategy implements CoalescingStrategy
-    {
-        @Override
-        public void coalesce(BlockingQueue<QueuedMessage> input, List<QueuedMessage> out,  int outSize) throws InterruptedException
-        {
-            out.add(input.take());
-        }
-    }
+    private static final String DEBUG_COALESCING_PATH_PROPERTY = PREFIX + "OTC_COALESCING_DEBUG_PATH";
+    private static final String DEBUG_COALESCING_PATH = System.getProperty(DEBUG_COALESCING_PATH_PROPERTY, "/tmp/coleascing_debug");
 
     private static CoalescingStrategy newCoalescingStrategy()
     {
-        System.out.println("Creating new coalescing strategy for " + COALESCING_STRATEGY);
-        System.err.println("Creating new coalescing strategy for " + COALESCING_STRATEGY);
-        logger.info("Creating new coalescing strategy for " + COALESCING_STRATEGY);
-        switch(COALESCING_STRATEGY)
-        {
-        case "MOVINGAVERAGE":
-            return new MovingAverageCoalescingStrategy(COALESCING_WINDOW);
-        case "FIXED":
-            return new FixedCoalescingStrategy(COALESCING_WINDOW);
-        case "TIMEHORIZON":
-            return new TimeHorizonMovingAverageCoalescingStrategy(COALESCING_WINDOW);
-        case "DISABLED":
-            return new DisabledCoalescingStrategy();
-        case "DISABLED_BROKEN":
-            return new DisabledBrokenCoalescingStrategy();
-            default:
-                throw new Error("Unrecognized coalescing strategy " + COALESCING_STRATEGY);
-        }
+        return CoalescingStrategies.newCoalescingStrategy(COALESCING_STRATEGY,
+                                                          COALESCING_WINDOW,
+                                                          logger,
+                                                          DEBUG_COALESCING);
     }
 
     static {
         switch (COALESCING_STRATEGY) {
+        case "TIMEHORIZON":
+            break;
         case "MOVINGAVERAGE":
         case "FIXED":
-        case "TIMEHORIZON":
         case "DISABLED":
-        case "DISABLED_BROKEN":
+            logger.info("OutboundTcpConnection using coalescing strategy " + COALESCING_STRATEGY);
             break;
             default:
                 throw new ExceptionInInitializerError(
@@ -520,42 +140,17 @@ public class OutboundTcpConnection extends Thread
 
         }
 
+        if (COALESCING_WINDOW != COALESCING_WINDOW_DEFAULT) {
+            logger.info("OutboundTcpConnection coalescing window set to " + COALESCING_WINDOW + "μs");
+        }
+
         if (COALESCING_WINDOW < 0)
             throw new ExceptionInInitializerError(
                     "Value provided for coalescing window via " + COALESCING_WINDOW_PROPERTY +
                     " must be greather than 0: " + COALESCING_WINDOW);
 
-        //Pick up updates from NTP periodically
-        Thread t = new Thread("OutboundTcpConnection time updater")
-        {
-            @Override
-            public void run()
-            {
-                while (true)
-                {
-                    try
-                    {
-                        synchronized (TIMESTAMP_UPDATE)
-                        {
-                            TIMESTAMP_UPDATE.wait(TIMESTAMP_UPDATE_INTERVAL);
-                        }
-                    }
-                    catch (InterruptedException e)
-                    {
-                        return;
-                    }
-
-                    TIMESTAMP_BASE = new long[] {
-                            Math.max(TIMESTAMP_BASE[0], System.currentTimeMillis()),
-                            Math.max(TIMESTAMP_BASE[1], System.nanoTime()) };
-                }
-            }
-        };
-        t.setDaemon(true);
-        t.start();
-
         if (DEBUG_COALESCING) {
-            File directory = new File("/tmp/sillylogs");
+            File directory = new File(DEBUG_COALESCING_PATH);
             if (directory.exists()) {
                 FileUtils.deleteRecursive(directory);
             }
@@ -636,13 +231,12 @@ public class OutboundTcpConnection extends Thread
         RandomAccessFile ras = null;
         if (DEBUG_COALESCING) {
             try {
-                File outFile = File.createTempFile("sillylog_" + poolReference.endPoint().getHostAddress() + "_", ".log", new File("/tmp/sillylogs"));
+                File outFile = File.createTempFile("coalescing_" + poolReference.endPoint().getHostAddress() + "_", ".log", new File(DEBUG_COALESCING_PATH));
                 ras = new RandomAccessFile(outFile, "rw");
                 logBuffer = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
-                logBuffer.order(ByteOrder.LITTLE_ENDIAN);
                 logBuffer.putLong(0);
             } catch (Exception e) {
-                logger.error("ouch", e);
+                logger.error("Unable to create output file for debugging coalescing", e);
             }
         }
 
@@ -655,7 +249,11 @@ public class OutboundTcpConnection extends Thread
         while (true)
         {
             try {
-                cs.coalesce(backlog, drainedMessages, drainedMessageSize);
+                @SuppressWarnings("unchecked")
+                BlockingQueue<Coalescable> input = (BlockingQueue<Coalescable>)(BlockingQueue<?>)backlog;
+                @SuppressWarnings("unchecked")
+                List<Coalescable> outCasted= (List<Coalescable>)(List<?>)drainedMessages;
+                cs.coalesce(input, outCasted, drainedMessageSize);
             } catch (InterruptedException e) {
                 throw new AssertionError(e);
             }
@@ -671,6 +269,7 @@ public class OutboundTcpConnection extends Thread
                     logBuffer.putLong(0, logBuffer.getLong(0) + 1);
                     logBuffer.putLong(qm.timestampNanos);
                 }
+
                 try
                 {
                     MessageOut<?> m = qm.message;
@@ -750,7 +349,8 @@ public class OutboundTcpConnection extends Thread
                 }
             }
 
-            writeInternal(qm.message, qm.id, convertNanoTimeToCurrentTimeMillis(qm.timestampNanos));
+            long timestampMillis = NanoTimeToCurrentTimeMillis.convert(qm.timestampNanos);
+            writeInternal(qm.message, qm.id, timestampMillis);
 
             completed++;
             if (flush)
@@ -995,7 +595,7 @@ public class OutboundTcpConnection extends Thread
     }
 
     /** messages that have not been retried yet */
-    private static class QueuedMessage
+    private static class QueuedMessage implements Coalescable
     {
         final MessageOut<?> message;
         final int id;
@@ -1019,6 +619,10 @@ public class OutboundTcpConnection extends Thread
         boolean shouldRetry()
         {
             return !droppable;
+        }
+
+        public long timestampNanos() {
+            return timestampNanos;
         }
     }
 
