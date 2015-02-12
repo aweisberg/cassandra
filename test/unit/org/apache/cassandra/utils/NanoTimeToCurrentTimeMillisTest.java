@@ -45,7 +45,12 @@ public class NanoTimeToCurrentTimeMillisTest
             assertTrue(convertedNow >= lastConverted);
             lastConverted = convertedNow;
             //Seems to be off by as much as two milliseconds sadly
+            if ((now - 2) > convertedNow) {
+                System.out.println("Now is " + now + " convertedNow is " + convertedNow);
+                System.err.println("Now is " + now + " convertedNow is " + convertedNow);
+            }
             assertTrue((now - 2) <= convertedNow);
+
         }
     }
 }
