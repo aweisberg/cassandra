@@ -27,24 +27,14 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.FileChannel.MapMode;
-import java.nio.file.FileSystems;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.LockSupport;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.zip.Checksum;
 
 import org.slf4j.Logger;
@@ -124,7 +114,8 @@ public class OutboundTcpConnection extends Thread
                                                           DEBUG_COALESCING);
     }
 
-    static {
+    static
+    {
         switch (COALESCING_STRATEGY) {
         case "TIMEHORIZON":
             break;
@@ -140,23 +131,23 @@ public class OutboundTcpConnection extends Thread
 
         }
 
-        if (COALESCING_WINDOW != COALESCING_WINDOW_DEFAULT) {
+        if (COALESCING_WINDOW != COALESCING_WINDOW_DEFAULT)
             logger.info("OutboundTcpConnection coalescing window set to " + COALESCING_WINDOW + "μs");
-        }
 
         if (COALESCING_WINDOW < 0)
             throw new ExceptionInInitializerError(
                     "Value provided for coalescing window via " + COALESCING_WINDOW_PROPERTY +
                     " must be greather than 0: " + COALESCING_WINDOW);
 
-        if (DEBUG_COALESCING) {
+        if (DEBUG_COALESCING)
+        {
             File directory = new File(DEBUG_COALESCING_PATH);
-            if (directory.exists()) {
+
+            if (directory.exists())
                 FileUtils.deleteRecursive(directory);
-            }
-            if (!directory.mkdirs()) {
+
+            if (!directory.mkdirs())
                 throw new ExceptionInInitializerError("Couldn't create log dir");
-            }
         }
     }
 
@@ -229,13 +220,17 @@ public class OutboundTcpConnection extends Thread
     {
         ByteBuffer logBuffer = null;
         RandomAccessFile ras = null;
-        if (DEBUG_COALESCING) {
-            try {
+        if (DEBUG_COALESCING)
+        {
+            try
+            {
                 File outFile = File.createTempFile("coalescing_" + poolReference.endPoint().getHostAddress() + "_", ".log", new File(DEBUG_COALESCING_PATH));
                 ras = new RandomAccessFile(outFile, "rw");
                 logBuffer = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
                 logBuffer.putLong(0);
-            } catch (Exception e) {
+            }
+            catch (Exception e)
+            {
                 logger.error("Unable to create output file for debugging coalescing", e);
             }
         }
@@ -248,13 +243,16 @@ public class OutboundTcpConnection extends Thread
         outer:
         while (true)
         {
-            try {
+            try
+            {
                 @SuppressWarnings("unchecked")
                 BlockingQueue<Coalescable> input = (BlockingQueue<Coalescable>)(BlockingQueue<?>)backlog;
                 @SuppressWarnings("unchecked")
                 List<Coalescable> outCasted= (List<Coalescable>)(List<?>)drainedMessages;
                 cs.coalesce(input, outCasted, drainedMessageSize);
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e)
+            {
                 throw new AssertionError(e);
             }
 
@@ -265,7 +263,9 @@ public class OutboundTcpConnection extends Thread
             //so skip logging it.
             for (QueuedMessage qm : drainedMessages)
             {
-                if (DEBUG_COALESCING) {
+
+                if (DEBUG_COALESCING)
+                {
                     logBuffer.putLong(0, logBuffer.getLong(0) + 1);
                     logBuffer.putLong(qm.timestampNanos);
                 }
@@ -621,7 +621,8 @@ public class OutboundTcpConnection extends Thread
             return !droppable;
         }
 
-        public long timestampNanos() {
+        public long timestampNanos()
+        {
             return timestampNanos;
         }
     }

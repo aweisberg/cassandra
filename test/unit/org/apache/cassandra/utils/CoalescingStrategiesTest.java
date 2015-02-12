@@ -86,7 +86,8 @@ public class CoalescingStrategiesTest
     }
 
 
-    static long toNanos(long micros) {
+    static long toNanos(long micros)
+    {
         return TimeUnit.MICROSECONDS.toNanos(micros);
     }
 
@@ -118,9 +119,11 @@ public class CoalescingStrategiesTest
         };
 
         parker = new MockParker();
-        input = new LinkedBlockingQueue<SimpleCoalescable>() {
+        input = new LinkedBlockingQueue<SimpleCoalescable>()
+                {
             @Override
-            public SimpleCoalescable take() throws InterruptedException{
+            public SimpleCoalescable take() throws InterruptedException
+            {
                 queueParked.release();
                 queueRelease.acquire();
                 return super.take();
@@ -232,7 +235,7 @@ public class CoalescingStrategiesTest
 
     @Test
     public void parkLoop() throws Exception
-{
+   {
         final Thread current = Thread.currentThread();
         final Semaphore helperReady = new Semaphore(0);
         final Semaphore helperGo = new Semaphore(0);
@@ -270,7 +273,8 @@ public class CoalescingStrategiesTest
     }
 
     @Test
-    public void testMovingAverageCoalescingStrategy() throws Exception {
+    public void testMovingAverageCoalescingStrategy() throws Exception
+    {
         cs = newStrategy("MOVINGAVERAGE", 200);
 
 
@@ -310,9 +314,8 @@ public class CoalescingStrategiesTest
         clear();
 
         //Test that too high an average doesn't coalesce
-        for (long ii = 0; ii < 128; ii++) {
+        for (long ii = 0; ii < 128; ii++)
             add(ii * 1000);
-        }
         cs.coalesce(inputCasted, outputCasted, 128);
         assertEquals(outputCasted.size(), 128);
         assertTrue(parker.parks.isEmpty());
@@ -328,9 +331,8 @@ public class CoalescingStrategiesTest
 
         //Test that a low enough average coalesces
         cs = newStrategy("MOVINGAVERAGE", 200);
-        for (long ii = 0; ii < 128; ii++) {
+        for (long ii = 0; ii < 128; ii++)
             add(ii * 99);
-        }
         cs.coalesce(inputCasted, outputCasted, 128);
         assertEquals(outputCasted.size(), 128);
         assertTrue(parker.parks.isEmpty());
@@ -346,7 +348,8 @@ public class CoalescingStrategiesTest
     }
 
     @Test
-    public void testTimeHorizonStrategy() throws Exception {
+    public void testTimeHorizonStrategy() throws Exception
+    {
         cs = newStrategy("TIMEHORIZON", 200);
 
         //Test that things can be pulled out of the queue if it is non-empty
@@ -385,9 +388,8 @@ public class CoalescingStrategiesTest
         clear();
 
         //Test that too high an average doesn't coalesce
-        for (long ii = 0; ii < 128; ii++) {
+        for (long ii = 0; ii < 128; ii++)
             add(ii * 1000);
-        }
         cs.coalesce(inputCasted, outputCasted, 128);
         assertEquals(outputCasted.size(), 128);
         assertTrue(parker.parks.isEmpty());
@@ -434,10 +436,13 @@ public class CoalescingStrategiesTest
         assertTrue(parker.parks.isEmpty());
     }
 
-    void primeTimeHorizonAverage(long micros) throws Exception {
-        for (long ii = 0; ii < 100000; ii++) {
+    void primeTimeHorizonAverage(long micros) throws Exception
+    {
+        for (long ii = 0; ii < 100000; ii++)
+        {
             add(ii * micros);
-            if (ii % 128 == 0) {
+            if (ii % 128 == 0)
+            {
                 cs.coalesce(inputCasted, outputCasted, 128);
                 output.clear();
             }

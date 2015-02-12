@@ -356,7 +356,8 @@ public class CoalescingStrategies
                 notifyOfSample(out.get(ii).timestampNanos());
         }
 
-        boolean sumMatches() {
+        boolean sumMatches()
+        {
             long recalc = 0;
             for (int sample : samples)
                 recalc += sample;
