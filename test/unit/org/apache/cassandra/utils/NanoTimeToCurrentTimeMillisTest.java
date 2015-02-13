@@ -47,13 +47,10 @@ public class NanoTimeToCurrentTimeMillisTest
             }
             nowNanos = Math.max(now, System.nanoTime());
             long convertedNow = NanoTimeToCurrentTimeMillis.convert(nowNanos);
-            assertTrue(convertedNow >= lastConverted);
+            assertTrue("convertedNow = " + convertedNow + " lastConverted = " + lastConverted + " in iteration " + ii, convertedNow >= lastConverted);
             lastConverted = convertedNow;
-            if (!((now - 2) <= convertedNow)) {
-                logger.error("Now is " + now + " convertedNow is " + convertedNow);
-            }
             //Seems to be off by as much as two milliseconds sadly
-            assertTrue("Now is " + now + " convertedNow is " + convertedNow, (now - 2) <= convertedNow);
+            assertTrue("now = " + now + " convertedNow = " + convertedNow + " in iteration " + ii, (now - 2) <= convertedNow);
 
         }
     }
