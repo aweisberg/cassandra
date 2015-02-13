@@ -17,17 +17,12 @@
  */
 package org.apache.cassandra.utils;
 
-import org.apache.cassandra.net.OutboundTcpConnection;
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import static org.junit.Assert.*;
+
+import org.junit.Test;
 
 public class NanoTimeToCurrentTimeMillisTest
 {
-    private static final Logger logger = LoggerFactory.getLogger(NanoTimeToCurrentTimeMillisTest.class);
-
     @Test
     public void testTimestampOrdering() throws Exception
     {
