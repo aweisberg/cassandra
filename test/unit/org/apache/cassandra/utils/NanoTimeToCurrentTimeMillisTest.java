@@ -17,12 +17,17 @@
  */
 package org.apache.cassandra.utils;
 
+import org.apache.cassandra.net.OutboundTcpConnection;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.Assert.*;
 
 public class NanoTimeToCurrentTimeMillisTest
 {
+    private static final Logger logger = LoggerFactory.getLogger(NanoTimeToCurrentTimeMillisTest.class);
+
     @Test
     public void testTimestampOrdering() throws Exception
     {
@@ -44,6 +49,9 @@ public class NanoTimeToCurrentTimeMillisTest
             long convertedNow = NanoTimeToCurrentTimeMillis.convert(nowNanos);
             assertTrue(convertedNow >= lastConverted);
             lastConverted = convertedNow;
+            if (!((now - 2) <= convertedNow)) {
+                logger.error("Now is " + now + " convertedNow is " + convertedNow);
+            }
             //Seems to be off by as much as two milliseconds sadly
             assertTrue("Now is " + now + " convertedNow is " + convertedNow, (now - 2) <= convertedNow);
 
