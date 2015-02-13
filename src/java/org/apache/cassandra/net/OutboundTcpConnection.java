@@ -81,23 +81,6 @@ public class OutboundTcpConnection extends Thread
     private static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 
     /*
-     * How many microseconds to wait for coalescing. For fixed strategy this is the amount of time after the first
-     * messgae is received before it will be sent with any accompanying messages. For moving average this is the
-     * maximum amount of time that will be waited as well as the interval at which messages must arrive on average
-     * for coalescing to be enabled.
-     */
-    private static final int COALESCING_WINDOW_DEFAULT = 200;
-    private static final String COALESCING_WINDOW_PROPERTY = PREFIX + "OTC_COALESCING_WINDOW_MICROSECONDS";
-    private static final int COALESCING_WINDOW = Integer.getInteger(COALESCING_WINDOW_PROPERTY, COALESCING_WINDOW_DEFAULT);
-
-    /*
-     * Strategy to use for Coalescing. Can be fixed, or movingaverage. Setting is case and leading/trailing
-     * whitespace insensitive.
-     */
-    private static final String COALESCING_STRATEGY_PROPERTY = PREFIX + "OTC_COALESCING_STRATEGY";
-    private static final String COALESCING_STRATEGY = System.getProperty(COALESCING_STRATEGY_PROPERTY, "TIMEHORIZON").trim().toUpperCase();
-
-    /*
      * Log debug information at info level about what the average is and when coalescing is enabled/disabled
      */
     private static final String DEBUG_COALESCING_PROPERTY = PREFIX + "OTC_COALESCING_DEBUG";
@@ -108,36 +91,36 @@ public class OutboundTcpConnection extends Thread
 
     private static CoalescingStrategy newCoalescingStrategy()
     {
-        return CoalescingStrategies.newCoalescingStrategy(COALESCING_STRATEGY,
-                                                          COALESCING_WINDOW,
+        return CoalescingStrategies.newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(),
+                                                          DatabaseDescriptor.getOtcCoalescingWindow(),
                                                           logger,
                                                           DEBUG_COALESCING);
     }
 
     static
     {
-        switch (COALESCING_STRATEGY) {
+        String strategy = DatabaseDescriptor.getOtcCoalescingStrategy();
+        switch (strategy)
+        {
         case "TIMEHORIZON":
             break;
         case "MOVINGAVERAGE":
         case "FIXED":
         case "DISABLED":
-            logger.info("OutboundTcpConnection using coalescing strategy " + COALESCING_STRATEGY);
+            logger.info("OutboundTcpConnection using coalescing strategy " + strategy);
             break;
             default:
-                throw new ExceptionInInitializerError(
-                        "Unrecognized coalescing strategy provide via " + COALESCING_STRATEGY_PROPERTY +
-                        ": " + COALESCING_STRATEGY);
-
+                //Check that it can be loaded
+                newCoalescingStrategy();
         }
 
-        if (COALESCING_WINDOW != COALESCING_WINDOW_DEFAULT)
-            logger.info("OutboundTcpConnection coalescing window set to " + COALESCING_WINDOW + "μs");
+        int coalescingWindow = DatabaseDescriptor.getOtcCoalescingWindow();
+        if (coalescingWindow != Config.otc_coalescing_window_us_default)
+            logger.info("OutboundTcpConnection coalescing window set to " + coalescingWindow + "μs");
 
-        if (COALESCING_WINDOW < 0)
+        if (coalescingWindow < 0)
             throw new ExceptionInInitializerError(
-                    "Value provided for coalescing window via " + COALESCING_WINDOW_PROPERTY +
-                    " must be greather than 0: " + COALESCING_WINDOW);
+                    "Value provided for coalescing window must be greather than 0: " + coalescingWindow);
 
         if (DEBUG_COALESCING)
         {

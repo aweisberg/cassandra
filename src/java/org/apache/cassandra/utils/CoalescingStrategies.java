@@ -19,6 +19,7 @@ package org.apache.cassandra.utils;
 
 import org.slf4j.Logger;
 
+import java.lang.reflect.Constructor;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -400,9 +401,9 @@ public class CoalescingStrategies
     static class DisabledCoalescingStrategy extends CoalescingStrategy
     {
 
-        public DisabledCoalescingStrategy()
+        public DisabledCoalescingStrategy(int coalesceWindowMicros, Parker parker, Logger logger, boolean debug)
         {
-            super(null, null, false);
+            super(parker, logger, debug);
         }
 
         @Override
@@ -419,18 +420,42 @@ public class CoalescingStrategies
     @VisibleForTesting
     static CoalescingStrategy newCoalescingStrategy(String strategy, int coalesceWindow, Parker parker, Logger logger, boolean debug)
     {
-        switch(strategy)
+        String classname = null;
+        String strategyCleaned = strategy.trim().toUpperCase();
+        switch(strategyCleaned)
         {
         case "MOVINGAVERAGE":
-            return new MovingAverageCoalescingStrategy(coalesceWindow, parker, logger, debug);
+            classname = MovingAverageCoalescingStrategy.class.getName();
+            break;
         case "FIXED":
-            return new FixedCoalescingStrategy(coalesceWindow, parker, logger, debug);
+            classname = FixedCoalescingStrategy.class.getName();
+            break;
         case "TIMEHORIZON":
-            return new TimeHorizonMovingAverageCoalescingStrategy(coalesceWindow, parker, logger, debug);
+            classname = TimeHorizonMovingAverageCoalescingStrategy.class.getName();
+            break;
         case "DISABLED":
-            return new DisabledCoalescingStrategy();
-            default:
-                throw new Error("Unrecognized coalescing strategy " + strategy);
+            classname = DisabledCoalescingStrategy.class.getName();
+            break;
+        default:
+            classname = strategy;
+        }
+
+        try
+        {
+            Class<?> clazz = Class.forName(classname);
+
+            if (!CoalescingStrategy.class.isAssignableFrom(clazz))
+            {
+                throw new RuntimeException(classname + " is not an instance of CoalescingStrategy");
+            }
+
+            Constructor<?> constructor = clazz.getConstructor(int.class, Parker.class, Logger.class, boolean.class);
+
+            return (CoalescingStrategy)constructor.newInstance(coalesceWindow, parker, logger, debug);
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException(e);
         }
     }
 
