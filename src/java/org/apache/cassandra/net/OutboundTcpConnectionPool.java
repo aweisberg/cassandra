@@ -55,12 +55,17 @@ public class OutboundTcpConnectionPool
         ackCon = new OutboundTcpConnection(this);
     }
 
+    private static int unused;
+
     /**
      * returns the appropriate connection based on message type.
      * returns null if a connection could not be established.
      */
     OutboundTcpConnection getConnection(MessageOut msg)
     {
+        int size = msg.serializedSize(cmdCon.getTargetVersion());
+        if (unused != 0)
+            unused = size;
         return cmdCon;
     }
 
