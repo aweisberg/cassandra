@@ -61,10 +61,7 @@ public class OutboundTcpConnectionPool
      */
     OutboundTcpConnection getConnection(MessageOut msg)
     {
-        Stage stage = msg.getStage();
-        return stage == Stage.REQUEST_RESPONSE || stage == Stage.INTERNAL_RESPONSE || stage == Stage.GOSSIP
-               ? ackCon
-               : cmdCon;
+        return cmdCon;
     }
 
     void reset()
@@ -167,17 +164,17 @@ public class OutboundTcpConnectionPool
         }
         return true;
     }
-    
+
     public void start()
     {
         cmdCon.start();
         ackCon.start();
 
         metrics = new ConnectionMetrics(id, this);
-        
+
         started.countDown();
     }
-    
+
     public void waitForStarted()
     {
         if (started.getCount() == 0)
@@ -205,7 +202,7 @@ public class OutboundTcpConnectionPool
             ackCon.closeSocket(true);
         if (cmdCon != null)
             cmdCon.closeSocket(true);
-        
+
         metrics.release();
     }
 }
