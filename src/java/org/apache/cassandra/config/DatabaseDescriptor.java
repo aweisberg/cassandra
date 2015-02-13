@@ -1568,4 +1568,14 @@ public class DatabaseDescriptor
     {
         return conf.tracetype_query_ttl;
     }
+
+    public static String getOtcCoalescingStrategy()
+    {
+        return conf.otc_coalescing_strategy;
+    }
+
+    public static int getOtcCoalescingWindow()
+    {
+        return conf.otc_coalescing_window_us;
+    }
 }

@@ -229,6 +229,22 @@ public class Config
     public int tracetype_query_ttl = (int) TimeUnit.DAYS.toSeconds(1);
     public int tracetype_repair_ttl = (int) TimeUnit.DAYS.toSeconds(7);
 
+    /*
+     * Strategy to use for coalescing messages in OutboundTcpConnection.
+     * Can be fixed, movingaverage, timehorizon, disabled. Setting is case and leading/trailing
+     * whitespace insensitive. You can also specify a subclass of CoalescingStrategies.CoalescingStrategy by name.
+     */
+    public String otc_coalescing_strategy = "TIMEHORIZON";
+
+    /*
+     * How many microseconds to wait for coalescing. For fixed strategy this is the amount of time after the first
+     * messgae is received before it will be sent with any accompanying messages. For moving average this is the
+     * maximum amount of time that will be waited as well as the interval at which messages must arrive on average
+     * for coalescing to be enabled.
+     */
+    public static final int otc_coalescing_window_us_default = 200;
+    public int otc_coalescing_window_us = otc_coalescing_window_us_default;
+
     public static boolean getOutboundBindAny()
     {
         return outboundBindAny;

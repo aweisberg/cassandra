@@ -275,7 +275,7 @@ public class CoalescingStrategiesTest
     @Test
     public void testMovingAverageCoalescingStrategy() throws Exception
     {
-        cs = newStrategy("MOVINGAVERAGE", 200);
+        cs = newStrategy("org.apache.cassandra.utils.CoalescingStrategies$MovingAverageCoalescingStrategy", 200);
 
 
         //Test that things can be pulled out of the queue if it is non-empty
