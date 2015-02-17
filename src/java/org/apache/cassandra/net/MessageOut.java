@@ -147,7 +147,6 @@ public class MessageOut<T>
 
     public long payloadSize(int version)
     {
-        assert(payloadSizeVersion == -1 || payloadSizeVersion == version);
         if (payloadSize == -1)
         {
             payloadSize = payload == null ? 0 : serializer.serializedSize(payload, version);

@@ -64,7 +64,6 @@ public class OutboundTcpConnectionPool
      */
     OutboundTcpConnection getConnection(MessageOut msg)
     {
-        assert(smallMessages.getTargetVersion() == largeMessages.getTargetVersion());
         return msg.payloadSize(smallMessages.getTargetVersion()) > LARGE_MESSAGE_THRESHOLD
                ? largeMessages
                : smallMessages;
