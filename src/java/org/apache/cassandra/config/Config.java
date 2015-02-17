@@ -35,11 +35,16 @@ import org.supercsv.prefs.CsvPreference;
 
 /**
  * A class that contains configuration properties for the cassandra node it runs within.
- * 
+ *
  * Properties declared as volatile can be mutated via JMX.
  */
 public class Config
 {
+    /*
+     * Prefix for Java properties for internal Cassandra configuration options
+     */
+    public static final String PROPERTY_PREFIX = "cassandra.";
+
     public String cluster_name = "Test Cluster";
     public String authenticator;
     public String authorizer;
@@ -157,7 +162,7 @@ public class Config
     public Double commitlog_sync_batch_window_in_ms;
     public Integer commitlog_sync_period_in_ms;
     public int commitlog_segment_size_in_mb = 32;
- 
+
     @Deprecated
     public int commitlog_periodic_queue_size = -1;
 
