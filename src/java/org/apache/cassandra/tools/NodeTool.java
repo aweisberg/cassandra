@@ -667,7 +667,7 @@ public class NodeTool
                 completed = 0;
                 for (long n : ms.getLargeMessageCompletedTasks().values())
                     completed += n;
-                System.out.printf("%-25s%10s%10s%15s%n", "Commands", "n/a", pending, completed);
+                System.out.printf("%-25s%10s%10s%15s%n", "Large messages", "n/a", pending, completed);
 
                 pending = 0;
                 for (int n : ms.getSmallMessagePendingTasks().values())
@@ -675,7 +675,7 @@ public class NodeTool
                 completed = 0;
                 for (long n : ms.getSmallMessageCompletedTasks().values())
                     completed += n;
-                System.out.printf("%-25s%10s%10s%15s%n", "Responses", "n/a", pending, completed);
+                System.out.printf("%-25s%10s%10s%15s%n", "Small messages", "n/a", pending, completed);
             }
         }
     }
