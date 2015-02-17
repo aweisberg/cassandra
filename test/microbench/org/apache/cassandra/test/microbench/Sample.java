@@ -18,113 +18,50 @@
 
 package org.apache.cassandra.test.microbench;
 
-import net.jpountz.lz4.LZ4Compressor;
-import net.jpountz.lz4.LZ4Factory;
-import net.jpountz.lz4.LZ4FastDecompressor;
 import org.openjdk.jmh.annotations.*;
-import org.xerial.snappy.Snappy;
+import org.openjdk.jmh.runner.*;
+import org.openjdk.jmh.*;
+import org.openjdk.jmh.runner.options.*;
+import org.openjdk.jmh.results.*;
 
-import java.io.IOException;
-import java.util.concurrent.ThreadLocalRandom;
+import java.io.PrintWriter;
 import java.util.concurrent.TimeUnit;
 
-@BenchmarkMode(Mode.Throughput)
-@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@BenchmarkMode(Mode.AverageTime)
+@OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 5, time = 2, timeUnit = TimeUnit.SECONDS)
-@Fork(value = 1,jvmArgsAppend = "-Xmx512M")
-@Threads(1)
-@State(Scope.Benchmark)
+@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Fork(value = 5,jvmArgsAppend = "-Xmx512M")
+@State(Scope.Thread)
 public class Sample
 {
-    @Param({"65536"})
-    private int pageSize;
+   @Benchmark
+   public long nanoTime() {
+       return System.nanoTime();
+   }
+   
+   @Benchmark
+   public long currentTimeMillis() {
+       return System.currentTimeMillis();
+   }
+   
+   public static void main(String... args) throws RunnerException {
+       PrintWriter pw = new PrintWriter(System.out, true);
+       for (int t = 1; t <= Runtime.getRuntime().availableProcessors(); t++) {
+           runWith(pw, t);
+       }
+   }
 
-    @Param({"1024"})
-    private int uniquePages;
+   private static void runWith(PrintWriter pw, int threads) throws RunnerException {
+       Options opts = new OptionsBuilder()
+               .include(".*" + Sample.class.getName() + ".nanoTime")
+               .threads(threads)
+               .verbosity(VerboseMode.SILENT)
+               .build();
 
-    @Param({"0.1"})
-    private double randomRatio;
-
-    @Param({"4..16"})
-    private String randomRunLength;
-
-    @Param({"4..128"})
-    private String duplicateLookback;
-
-    private byte[][] lz4Bytes;
-    private byte[][] snappyBytes;
-    private byte[][] rawBytes;
-
-    private LZ4FastDecompressor lz4Decompressor = LZ4Factory.fastestInstance().fastDecompressor();
-
-    private LZ4Compressor lz4Compressor = LZ4Factory.fastestInstance().fastCompressor();
-
-    @State(Scope.Thread)
-    public static class ThreadState
-    {
-        byte[] bytes;
-    }
-
-    @Setup
-    public void setup() throws IOException
-    {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        int[] randomRunLength = range(this.randomRunLength);
-        int[] duplicateLookback = range(this.duplicateLookback);
-        rawBytes = new byte[uniquePages][pageSize];
-        lz4Bytes = new byte[uniquePages][];
-        snappyBytes = new byte[uniquePages][];
-        byte[][] runs = new byte[duplicateLookback[1] - duplicateLookback[0]][];
-        for (int i = 0 ; i < rawBytes.length ; i++)
-        {
-            byte[] trg = rawBytes[0];
-            int runCount = 0;
-            int byteCount = 0;
-            while (byteCount < trg.length)
-            {
-                byte[] nextRun;
-                if (runCount == 0 || random.nextDouble() < this.randomRatio)
-                {
-                    nextRun = new byte[random.nextInt(randomRunLength[0], randomRunLength[1])];
-                    random.nextBytes(nextRun );
-                    runs[runCount % runs.length] = nextRun;
-                    runCount++;
-                }
-                else
-                {
-                    int index = runCount < duplicateLookback[1]
-                            ? random.nextInt(runCount)
-                            : (runCount - random.nextInt(duplicateLookback[0], duplicateLookback[1]));
-                    nextRun = runs[index % runs.length];
-                }
-                System.arraycopy(nextRun, 0, trg, byteCount, Math.min(nextRun.length, trg.length - byteCount));
-                byteCount += nextRun.length;
-            }
-            lz4Bytes[i] = lz4Compressor.compress(trg);
-            snappyBytes[i] = Snappy.compress(trg);
-        }
-    }
-
-    static int[] range(String spec)
-    {
-        String[] split = spec.split("\\.\\.");
-        return new int[] { Integer.parseInt(split[0]), Integer.parseInt(split[1]) };
-    }
-
-    @Benchmark
-    public void lz4(ThreadState state)
-    {
-        if (state.bytes == null)
-            state.bytes = new byte[this.pageSize];
-        byte[] in = lz4Bytes[ThreadLocalRandom.current().nextInt(lz4Bytes.length)];
-        lz4Decompressor.decompress(in, state.bytes);
-    }
-
-    @Benchmark
-    public void snappy(ThreadState state) throws IOException
-    {
-        byte[] in = snappyBytes[ThreadLocalRandom.current().nextInt(snappyBytes.length)];
-        state.bytes = Snappy.uncompress(in);
-    }
+       RunResult r = new Runner(opts).runSingle();
+       double score = r.getPrimaryResult().getScore();
+       double scoreError = r.getPrimaryResult().getStatistics().getMeanErrorAt(0.99);
+       pw.printf("%3d, %11.3f, %10.3f%n", threads, score, scoreError);
+   }
 }

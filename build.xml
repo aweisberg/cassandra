@@ -363,8 +363,8 @@
           <dependency groupId="org.jacoco" artifactId="org.jacoco.agent" version="${jacoco.version}"/>
           <dependency groupId="org.jacoco" artifactId="org.jacoco.ant" version="${jacoco.version}"/>
 
-          <dependency groupId="org.openjdk.jmh" artifactId="jmh-core" version="1.1.1"/>
-          <dependency groupId="org.openjdk.jmh" artifactId="jmh-generator-annprocess" version="1.1.1"/>
+          <dependency groupId="org.openjdk.jmh" artifactId="jmh-core" version="1.6"/>
+          <dependency groupId="org.openjdk.jmh" artifactId="jmh-generator-annprocess" version="1.6"/>
 
           <dependency groupId="org.apache.cassandra" artifactId="cassandra-all" version="${version}" />
           <dependency groupId="org.apache.cassandra" artifactId="cassandra-thrift" version="${version}" />
@@ -1542,7 +1542,7 @@
 
   <!-- run microbenchmarks suite -->
   <target name="microbench" depends="build-test">
-      <java classname="org.openjdk.jmh.Main"
+      <java classname="org.apache.cassandra.test.microbench.Sample"
             fork="true"
             failonerror="true">
           <classpath>
