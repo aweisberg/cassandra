@@ -83,12 +83,38 @@ public class CoalescingStrategies
         protected final Parker parker;
         protected final Logger logger;
         protected final boolean DEBUG_COALESCING;
+        protected volatile boolean shouldLogAverage = false;
 
         protected CoalescingStrategy(Parker parker, Logger logger, boolean debug)
         {
             this.parker = parker;
             this.logger = logger;
             DEBUG_COALESCING = debug;
+            if (DEBUG_COALESCING) {
+                new Thread() {
+                    @Override
+                    public void run() {
+                        while (true) {
+                            try
+                            {
+                                Thread.sleep(5000);
+                            }
+                            catch (InterruptedException e)
+                            {
+                                throw new AssertionError();
+                            }
+                            shouldLogAverage = true;
+                        }
+                    }
+                }.start();
+            }
+        }
+
+        final protected void debug(long averageGap) {
+            if (DEBUG_COALESCING && shouldLogAverage) {
+                shouldLogAverage = false;
+                logger.info(toString() + " gap " + TimeUnit.NANOSECONDS.toMicros(averageGap) + "μs");
+            }
         }
 
         /*
@@ -97,7 +123,7 @@ public class CoalescingStrategies
          * The coalescing strategy may choose to park the current thread if it thinks it will
          * be able to produce an output list with more elements
          */
-        public abstract void coalesce(BlockingQueue<Coalescable> input, List<Coalescable> out, int outSize) throws InterruptedException;
+        public abstract <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out, int outSize) throws InterruptedException;
     }
 
     @VisibleForTesting
@@ -114,7 +140,6 @@ public class CoalescingStrategies
             parkLoop(nanos);
         }
     };
-
 
     @VisibleForTesting
     static class TimeHorizonMovingAverageCoalescingStrategy extends CoalescingStrategy
@@ -140,24 +165,6 @@ public class CoalescingStrategies
             super(parker, logger, debug);
             this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
             sum = 0;
-            if (DEBUG_COALESCING) {
-                new Thread() {
-                    @Override
-                    public void run() {
-                        while (true) {
-                            try
-                            {
-                                Thread.sleep(5000);
-                            }
-                            catch (InterruptedException e)
-                            {
-                                throw new AssertionError();
-                            }
-                            shouldLogAverage = true;
-                        }
-                    }
-                }.start();
-            }
         }
 
         private void logSample(long nanos)
@@ -224,10 +231,8 @@ public class CoalescingStrategies
             return (int) ((nanos >>> INDEX_SHIFT) & 15);
         }
 
-        volatile boolean shouldLogAverage = false;
-
         @Override
-        public void coalesce(BlockingQueue<Coalescable> input, List<Coalescable> out,  int outSize) throws InterruptedException
+        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
         {
             if (input.drainTo(out, outSize) == 0)
             {
@@ -238,14 +243,11 @@ public class CoalescingStrategies
             for (Coalescable qm : out)
                 logSample(qm.timestampNanos());
 
-            if (DEBUG_COALESCING && shouldLogAverage)
-            {
-                shouldLogAverage = false;
-                logger.info("MovingTimeHorizon average gap " + TimeUnit.NANOSECONDS.toMicros(averageGap()) + "μs");
-            }
+            long averageGap = averageGap();
+            debug(averageGap);
 
             int count = out.size();
-            if (maybeSleep(count, averageGap(), maxCoalesceWindow, parker))
+            if (maybeSleep(count, averageGap, maxCoalesceWindow, parker))
             {
                 input.drainTo(out, outSize - out.size());
                 int prevCount = count;
@@ -253,6 +255,11 @@ public class CoalescingStrategies
                 for (int  i = prevCount; i < count; i++)
                     logSample(out.get(i).timestampNanos());
             }
+        }
+
+        @Override
+        public String toString() {
+            return "Time horizon moving average";
         }
     }
 
@@ -279,35 +286,15 @@ public class CoalescingStrategies
             for (int ii = 0; ii < samples.length; ii++)
                 samples[ii] = Integer.MAX_VALUE;
             sum = Integer.MAX_VALUE * (long)samples.length;
-            if (DEBUG_COALESCING) {
-                new Thread() {
-                    @Override
-                    public void run() {
-                        while (true) {
-                            try
-                            {
-                                Thread.sleep(5000);
-                            }
-                            catch (InterruptedException e)
-                            {
-                                throw new AssertionError();
-                            }
-                            shouldLogAverage = true;
-                        }
-                    }
-                }.start();
-            }
         }
 
         private long logSample(int value)
         {
-            assert(sumMatches());
             sum -= samples[index];
             sum += value;
             samples[index] = value;
             index++;
             index = index & ((1 << 4) - 1);
-            assert(sumMatches());
             return sum / 16;
         }
 
@@ -325,10 +312,8 @@ public class CoalescingStrategies
             }
         }
 
-        volatile boolean shouldLogAverage = false;
-
         @Override
-        public void coalesce(BlockingQueue<Coalescable> input, List<Coalescable> out,  int outSize) throws InterruptedException
+        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
         {
             if (input.drainTo(out, outSize) == 0)
             {
@@ -337,32 +322,18 @@ public class CoalescingStrategies
 
             long average = notifyOfSample(out.get(0).timestampNanos());
 
-            if (DEBUG_COALESCING && shouldLogAverage)
-            {
-                shouldLogAverage = false;
-                logger.info("MovingAverage average gap " + TimeUnit.NANOSECONDS.toMicros(average) + "μs");
-            }
+            debug(average);
 
-            if (maybeSleep(out.size(), average, maxCoalesceWindow, parker))
-            {
-                input.drainTo(out, outSize - out.size());
-                for (int ii = 1; ii < out.size(); ii++)
-                    notifyOfSample(out.get(ii).timestampNanos());
-
-                return;
-            }
+            maybeSleep(out.size(), average, maxCoalesceWindow, parker);
 
             input.drainTo(out, outSize - out.size());
             for (int ii = 1; ii < out.size(); ii++)
                 notifyOfSample(out.get(ii).timestampNanos());
         }
 
-        boolean sumMatches()
-        {
-            long recalc = 0;
-            for (int sample : samples)
-                recalc += sample;
-            return recalc == sum;
+        @Override
+        public String toString() {
+            return "Moving average";
         }
     }
 
@@ -381,7 +352,7 @@ public class CoalescingStrategies
         }
 
         @Override
-        public void coalesce(BlockingQueue<Coalescable> input, List<Coalescable> out,  int outSize) throws InterruptedException
+        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
         {
             if (input.drainTo(out, outSize) == 0)
                 out.add(input.take());
@@ -391,6 +362,11 @@ public class CoalescingStrategies
             parker.park(coalesceWindow);
 
             input.drainTo(out, outSize - out.size());
+        }
+
+        @Override
+        public String toString() {
+            return "Fixed";
         }
     }
 
@@ -407,13 +383,18 @@ public class CoalescingStrategies
         }
 
         @Override
-        public void coalesce(BlockingQueue<Coalescable> input, List<Coalescable> out,  int outSize) throws InterruptedException
+        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
         {
             if (input.drainTo(out, outSize) == 0)
             {
                 out.add(input.take());
                 input.drainTo(out, outSize - out.size());
             }
+        }
+
+        @Override
+        public String toString() {
+            return "Disabled";
         }
     }
 

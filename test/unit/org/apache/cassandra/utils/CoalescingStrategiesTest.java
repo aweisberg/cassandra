@@ -96,9 +96,6 @@ public class CoalescingStrategiesTest
     BlockingQueue<SimpleCoalescable> input;
     List<SimpleCoalescable> output;
 
-    BlockingQueue<Coalescable> inputCasted;
-    List<Coalescable> outputCasted;
-
     CoalescingStrategy cs;
 
     Semaphore queueParked = new Semaphore(0);
@@ -129,10 +126,7 @@ public class CoalescingStrategiesTest
                 return super.take();
             }
         };
-        output = new ArrayList<SimpleCoalescable>(128);
-
-        inputCasted = (BlockingQueue<Coalescable>)(BlockingQueue<?>)input;
-        outputCasted = (List<Coalescable>)(List<?>)output;
+        output = new ArrayList<>(128);
 
         clear();
     }
@@ -175,7 +169,7 @@ public class CoalescingStrategiesTest
             {
                 try
                 {
-                    cs.coalesce(inputCasted, outputCasted, 128);
+                    cs.coalesce(input, output, 128);
                 }
                 catch (Exception ex)
                 {
@@ -196,7 +190,7 @@ public class CoalescingStrategiesTest
         //It does this because it is already awake and sending messages
         add(42);
         add(42);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals( 2, output.size());
         assertNull(parker.parks.poll());
 
@@ -219,7 +213,7 @@ public class CoalescingStrategiesTest
 
         add(42);
         add(42);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals( 2, output.size());
         assertNull(parker.parks.poll());
 
@@ -281,7 +275,7 @@ public class CoalescingStrategiesTest
         //Test that things can be pulled out of the queue if it is non-empty
         add(201);
         add(401);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals( 2, output.size());
         assertNull(parker.parks.poll());
 
@@ -307,7 +301,7 @@ public class CoalescingStrategiesTest
         clear();
 
         add(0);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals( 1, output.size());
         assertNull(parker.parks.poll());
 
@@ -316,8 +310,8 @@ public class CoalescingStrategiesTest
         //Test that too high an average doesn't coalesce
         for (long ii = 0; ii < 128; ii++)
             add(ii * 1000);
-        cs.coalesce(inputCasted, outputCasted, 128);
-        assertEquals(outputCasted.size(), 128);
+        cs.coalesce(input, output, 128);
+        assertEquals(output.size(), 128);
         assertTrue(parker.parks.isEmpty());
 
         clear();
@@ -333,8 +327,8 @@ public class CoalescingStrategiesTest
         cs = newStrategy("MOVINGAVERAGE", 200);
         for (long ii = 0; ii < 128; ii++)
             add(ii * 99);
-        cs.coalesce(inputCasted, outputCasted, 128);
-        assertEquals(outputCasted.size(), 128);
+        cs.coalesce(input, output, 128);
+        assertEquals(output.size(), 128);
         assertTrue(parker.parks.isEmpty());
 
         clear();
@@ -355,7 +349,7 @@ public class CoalescingStrategiesTest
         //Test that things can be pulled out of the queue if it is non-empty
         add(201);
         add(401);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals( 2, output.size());
         assertNull(parker.parks.poll());
 
@@ -381,7 +375,7 @@ public class CoalescingStrategiesTest
         clear();
 
         add(0);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals( 1, output.size());
         assertNull(parker.parks.poll());
 
@@ -390,8 +384,8 @@ public class CoalescingStrategiesTest
         //Test that too high an average doesn't coalesce
         for (long ii = 0; ii < 128; ii++)
             add(ii * 1000);
-        cs.coalesce(inputCasted, outputCasted, 128);
-        assertEquals(outputCasted.size(), 128);
+        cs.coalesce(input, output, 128);
+        assertEquals(output.size(), 128);
         assertTrue(parker.parks.isEmpty());
 
         clear();
@@ -423,7 +417,7 @@ public class CoalescingStrategiesTest
 
         //Test far future
         add(Integer.MAX_VALUE);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals(1, output.size());
         assertTrue(parker.parks.isEmpty());
 
@@ -431,7 +425,7 @@ public class CoalescingStrategiesTest
 
         //Distant past
         add(0);
-        cs.coalesce(inputCasted, outputCasted, 128);
+        cs.coalesce(input, output, 128);
         assertEquals(1, output.size());
         assertTrue(parker.parks.isEmpty());
     }
@@ -443,7 +437,7 @@ public class CoalescingStrategiesTest
             add(ii * micros);
             if (ii % 128 == 0)
             {
-                cs.coalesce(inputCasted, outputCasted, 128);
+                cs.coalesce(input, output, 128);
                 output.clear();
             }
         }

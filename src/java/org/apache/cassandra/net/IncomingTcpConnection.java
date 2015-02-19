@@ -41,7 +41,7 @@ public class IncomingTcpConnection extends Thread
 {
     private static final Logger logger = LoggerFactory.getLogger(IncomingTcpConnection.class);
 
-    private static final int BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + ".ITC_BUFFER_SIZE", 1024 * 4);
+    private static final int BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + ".itc_buffer_size", 1024 * 4);
 
     private final int version;
     private final boolean compressed;

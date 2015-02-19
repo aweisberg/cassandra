@@ -71,22 +71,22 @@ public class OutboundTcpConnection extends Thread
     /*
      * Enabled/disable TCP_NODELAY for intradc connections. Defaults to enabled.
      */
-    private static final String INTRADC_TCP_NODELAY_PROPERTY = PREFIX + "OTC_INTRADC_TCP_NODELAY";
+    private static final String INTRADC_TCP_NODELAY_PROPERTY = PREFIX + "otc_intradc_tcp_nodelay";
     private static final boolean INTRADC_TCP_NODELAY = Boolean.valueOf(System.getProperty(INTRADC_TCP_NODELAY_PROPERTY, "true"));
 
     /*
      * Size of buffer in output stream
      */
-    private static final String BUFFER_SIZE_PROPERTY = PREFIX + "OTC_BUFFER_SIZE";
+    private static final String BUFFER_SIZE_PROPERTY = PREFIX + "otc_buffer_size";
     private static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 
     /*
      * Log debug information at info level about what the average is and when coalescing is enabled/disabled
      */
-    private static final String DEBUG_COALESCING_PROPERTY = PREFIX + "OTC_COALESCING_DEBUG";
-    private static final boolean DEBUG_COALESCING = Boolean.getBoolean(DEBUG_COALESCING_PROPERTY) | logger.isDebugEnabled();
+    private static final String DEBUG_COALESCING_PROPERTY = PREFIX + "otc_coalescing_debug";
+    private static final boolean DEBUG_COALESCING = Boolean.getBoolean(DEBUG_COALESCING_PROPERTY);
 
-    private static final String DEBUG_COALESCING_PATH_PROPERTY = PREFIX + "OTC_COALESCING_DEBUG_PATH";
+    private static final String DEBUG_COALESCING_PATH_PROPERTY = PREFIX + "otc_coalescing_debug_path";
     private static final String DEBUG_COALESCING_PATH = System.getProperty(DEBUG_COALESCING_PATH_PROPERTY, "/tmp/coleascing_debug");
 
     private static CoalescingStrategy newCoalescingStrategy()
@@ -228,11 +228,7 @@ public class OutboundTcpConnection extends Thread
         {
             try
             {
-                @SuppressWarnings("unchecked")
-                BlockingQueue<Coalescable> input = (BlockingQueue<Coalescable>)(BlockingQueue<?>)backlog;
-                @SuppressWarnings("unchecked")
-                List<Coalescable> outCasted= (List<Coalescable>)(List<?>)drainedMessages;
-                cs.coalesce(input, outCasted, drainedMessageSize);
+                cs.coalesce(backlog, drainedMessages, drainedMessageSize);
             }
             catch (InterruptedException e)
             {
