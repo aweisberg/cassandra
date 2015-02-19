@@ -145,6 +145,20 @@ public class MessageOut<T>
         return size;
     }
 
+    /**
+     * Calculate the size of the payload of this message for the specified protocol version
+     * and memoize the result for the specified protocol version. Memoization only covers the protocol
+     * version of the first invocation.
+     *
+     * It is not safe to call payloadSize concurrently from multiple threads unless it has already been invoked
+     * once from a single thread and there is a happens before relationship between that invocation and other
+     * threads concurrently invoking payloadSize.
+     *
+     * For instance it would be safe to invokePayload size to make a decision in the thread that created the message
+     * and then hand it off to other threads via a thread-safe queue, volatile write, or synchronized/ReentrantLock.
+     * @param version Protocol version to use when calculating payload size
+     * @return Size of the payload of this message in bytes
+     */
     public long payloadSize(int version)
     {
         if (payloadSize == -1)
