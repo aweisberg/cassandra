@@ -17,10 +17,17 @@
  */
 package org.apache.cassandra.utils;
 
+import org.apache.cassandra.config.Config;
+import org.apache.cassandra.io.util.FileUtils;
 import org.slf4j.Logger;
 
+import java.io.File;
+import java.io.RandomAccessFile;
 import java.lang.reflect.Constructor;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel.MapMode;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +37,28 @@ import com.google.common.annotations.VisibleForTesting;
 
 public class CoalescingStrategies
 {
+
+    /*
+     * Log debug information at info level about what the average is and when coalescing is enabled/disabled
+     */
+    private static final String DEBUG_COALESCING_PROPERTY = Config.PROPERTY_PREFIX + "coalescing_debug";
+    private static final boolean DEBUG_COALESCING = Boolean.getBoolean(DEBUG_COALESCING_PROPERTY);
+
+    private static final String DEBUG_COALESCING_PATH_PROPERTY = Config.PROPERTY_PREFIX + "coalescing_debug_path";
+    private static final String DEBUG_COALESCING_PATH = System.getProperty(DEBUG_COALESCING_PATH_PROPERTY, "/tmp/coleascing_debug");
+
+    static {
+        if (DEBUG_COALESCING)
+        {
+            File directory = new File(DEBUG_COALESCING_PATH);
+
+            if (directory.exists())
+                FileUtils.deleteRecursive(directory);
+
+            if (!directory.mkdirs())
+                throw new ExceptionInInitializerError("Couldn't create log dir");
+        }
+    }
 
     @VisibleForTesting
     interface Clock
@@ -82,16 +111,19 @@ public class CoalescingStrategies
     {
         protected final Parker parker;
         protected final Logger logger;
-        protected final boolean DEBUG_COALESCING;
         protected volatile boolean shouldLogAverage = false;
+        protected final ByteBuffer logBuffer;
+        private RandomAccessFile ras;
+        private final String displayName;
 
-        protected CoalescingStrategy(Parker parker, Logger logger, boolean debug)
+        protected CoalescingStrategy(Parker parker, Logger logger, String displayName)
         {
             this.parker = parker;
             this.logger = logger;
-            DEBUG_COALESCING = debug;
-            if (DEBUG_COALESCING) {
-                new Thread() {
+            this.displayName = displayName;
+            if (DEBUG_COALESCING)
+            {
+                new Thread(displayName + " debug thread") {
                     @Override
                     public void run() {
                         while (true) {
@@ -108,12 +140,59 @@ public class CoalescingStrategies
                     }
                 }.start();
             }
+            RandomAccessFile rasTemp = null;
+            ByteBuffer logBufferTemp = null;
+            if (DEBUG_COALESCING)
+            {
+                try
+                {
+                    File outFile = File.createTempFile("coalescing_" + this.displayName + "_", ".log", new File(DEBUG_COALESCING_PATH));
+                    rasTemp = new RandomAccessFile(outFile, "rw");
+                    logBufferTemp = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
+                    logBufferTemp.putLong(0);
+                }
+                catch (Exception e)
+                {
+                    logger.error("Unable to create output file for debugging coalescing", e);
+                }
+            }
+            ras = rasTemp;
+            logBuffer = logBufferTemp;
         }
 
-        final protected void debug(long averageGap) {
-            if (DEBUG_COALESCING && shouldLogAverage) {
+        /*
+         * If debugging is enabled log to the logger the current average gap calculation result.
+         */
+        final protected void debugGap(long averageGap)
+        {
+            if (DEBUG_COALESCING && shouldLogAverage)
+            {
                 shouldLogAverage = false;
                 logger.info(toString() + " gap " + TimeUnit.NANOSECONDS.toMicros(averageGap) + "μs");
+            }
+        }
+
+        /*
+         * If debugging is enabled log the provided nanotime timestamp to a file.
+         */
+        final protected void debugTimestamp(long timestamp)
+        {
+            if(DEBUG_COALESCING && logBuffer != null)
+            {
+                logBuffer.putLong(0, logBuffer.getLong(0) + 1);
+                logBuffer.putLong(timestamp);
+            }
+        }
+
+        /*
+         * If debugging is enabled log the timestamps of all the items in the provided collection
+         * to a file.
+         */
+        final protected <C extends Coalescable> void debugTimestamps(Collection<C> coalescables) {
+            if (DEBUG_COALESCING) {
+                for (C coalescable : coalescables) {
+                    debugTimestamp(coalescable.timestampNanos());
+                }
             }
         }
 
@@ -160,15 +239,16 @@ public class CoalescingStrategies
         private long sum = 0;
         private final long maxCoalesceWindow;
 
-        public TimeHorizonMovingAverageCoalescingStrategy(int maxCoalesceWindow, Parker parker, Logger logger, boolean debug)
+        public TimeHorizonMovingAverageCoalescingStrategy(int maxCoalesceWindow, Parker parker, Logger logger, String displayName)
         {
-            super(parker, logger, debug);
+            super(parker, logger, displayName);
             this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
             sum = 0;
         }
 
         private void logSample(long nanos)
         {
+            debugTimestamp(nanos);
             long epoch = this.epoch;
             long delta = nanos - epoch;
             if (delta < 0)
@@ -244,7 +324,7 @@ public class CoalescingStrategies
                 logSample(qm.timestampNanos());
 
             long averageGap = averageGap();
-            debug(averageGap);
+            debugGap(averageGap);
 
             int count = out.size();
             if (maybeSleep(count, averageGap, maxCoalesceWindow, parker))
@@ -279,9 +359,9 @@ public class CoalescingStrategies
 
         private final long maxCoalesceWindow;
 
-        public MovingAverageCoalescingStrategy(int maxCoalesceWindow, Parker parker, Logger logger, boolean debug)
+        public MovingAverageCoalescingStrategy(int maxCoalesceWindow, Parker parker, Logger logger, String displayName)
         {
-            super(parker, logger, debug);
+            super(parker, logger, displayName);
             this.maxCoalesceWindow = TimeUnit.MICROSECONDS.toNanos(maxCoalesceWindow);
             for (int ii = 0; ii < samples.length; ii++)
                 samples[ii] = Integer.MAX_VALUE;
@@ -300,6 +380,7 @@ public class CoalescingStrategies
 
         private long notifyOfSample(long sample)
         {
+            debugTimestamp(sample);
             if (sample > lastSample)
             {
                 final int delta = (int)(Math.min(Integer.MAX_VALUE, sample - lastSample));
@@ -322,7 +403,7 @@ public class CoalescingStrategies
 
             long average = notifyOfSample(out.get(0).timestampNanos());
 
-            debug(average);
+            debugGap(average);
 
             maybeSleep(out.size(), average, maxCoalesceWindow, parker);
 
@@ -345,9 +426,9 @@ public class CoalescingStrategies
     {
         private final long coalesceWindow;
 
-        public FixedCoalescingStrategy(int coalesceWindowMicros, Parker parker, Logger logger, boolean debug)
+        public FixedCoalescingStrategy(int coalesceWindowMicros, Parker parker, Logger logger, String displayName)
         {
-            super(parker, logger, debug);
+            super(parker, logger, displayName);
             coalesceWindow = TimeUnit.MICROSECONDS.toNanos(coalesceWindowMicros);
         }
 
@@ -355,13 +436,12 @@ public class CoalescingStrategies
         public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
         {
             if (input.drainTo(out, outSize) == 0)
+            {
                 out.add(input.take());
-            else
-                return;
-
-            parker.park(coalesceWindow);
-
-            input.drainTo(out, outSize - out.size());
+                parker.park(coalesceWindow);
+                input.drainTo(out, outSize - out.size());
+            }
+            debugTimestamps(out);
         }
 
         @Override
@@ -377,9 +457,9 @@ public class CoalescingStrategies
     static class DisabledCoalescingStrategy extends CoalescingStrategy
     {
 
-        public DisabledCoalescingStrategy(int coalesceWindowMicros, Parker parker, Logger logger, boolean debug)
+        public DisabledCoalescingStrategy(int coalesceWindowMicros, Parker parker, Logger logger, String displayName)
         {
-            super(parker, logger, debug);
+            super(parker, logger, displayName);
         }
 
         @Override
@@ -390,6 +470,7 @@ public class CoalescingStrategies
                 out.add(input.take());
                 input.drainTo(out, outSize - out.size());
             }
+            debugTimestamps(out);
         }
 
         @Override
@@ -399,7 +480,11 @@ public class CoalescingStrategies
     }
 
     @VisibleForTesting
-    static CoalescingStrategy newCoalescingStrategy(String strategy, int coalesceWindow, Parker parker, Logger logger, boolean debug)
+    static CoalescingStrategy newCoalescingStrategy(String strategy,
+                                                    int coalesceWindow,
+                                                    Parker parker,
+                                                    Logger logger,
+                                                    String displayName)
     {
         String classname = null;
         String strategyCleaned = strategy.trim().toUpperCase();
@@ -430,9 +515,9 @@ public class CoalescingStrategies
                 throw new RuntimeException(classname + " is not an instance of CoalescingStrategy");
             }
 
-            Constructor<?> constructor = clazz.getConstructor(int.class, Parker.class, Logger.class, boolean.class);
+            Constructor<?> constructor = clazz.getConstructor(int.class, Parker.class, Logger.class, String.class);
 
-            return (CoalescingStrategy)constructor.newInstance(coalesceWindow, parker, logger, debug);
+            return (CoalescingStrategy)constructor.newInstance(coalesceWindow, parker, logger, displayName);
         }
         catch (Exception e)
         {
@@ -440,8 +525,8 @@ public class CoalescingStrategies
         }
     }
 
-    public static CoalescingStrategy newCoalescingStrategy(String strategy, int coalesceWindow, Logger logger, boolean debug)
+    public static CoalescingStrategy newCoalescingStrategy(String strategy, int coalesceWindow, Logger logger, String displayName)
     {
-        return newCoalescingStrategy(strategy, coalesceWindow, PARKER, logger, debug);
+        return newCoalescingStrategy(strategy, coalesceWindow, PARKER, logger, displayName);
     }
 }

@@ -101,7 +101,7 @@ public class CoalescingStrategiesTest
     Semaphore queueParked = new Semaphore(0);
     Semaphore queueRelease = new Semaphore(0);
 
-    @SuppressWarnings({ "unchecked", "serial" })
+    @SuppressWarnings({ "serial" })
     @Before
     public void setUp() throws Exception
     {
@@ -133,7 +133,7 @@ public class CoalescingStrategiesTest
 
     CoalescingStrategy newStrategy(String name, int window)
     {
-        return CoalescingStrategies.newCoalescingStrategy(name, window, parker, logger, true);
+        return CoalescingStrategies.newCoalescingStrategy(name, window, parker, logger, "Stupendopotamus");
     }
 
     void add(long whenMicros)

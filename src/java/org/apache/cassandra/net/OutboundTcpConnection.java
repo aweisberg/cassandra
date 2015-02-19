@@ -20,14 +20,11 @@ package org.apache.cassandra.net;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutput;
-import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel.MapMode;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -46,7 +43,6 @@ import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
 
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.CoalescingStrategies;
@@ -80,21 +76,12 @@ public class OutboundTcpConnection extends Thread
     private static final String BUFFER_SIZE_PROPERTY = PREFIX + "otc_buffer_size";
     private static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 
-    /*
-     * Log debug information at info level about what the average is and when coalescing is enabled/disabled
-     */
-    private static final String DEBUG_COALESCING_PROPERTY = PREFIX + "otc_coalescing_debug";
-    private static final boolean DEBUG_COALESCING = Boolean.getBoolean(DEBUG_COALESCING_PROPERTY);
-
-    private static final String DEBUG_COALESCING_PATH_PROPERTY = PREFIX + "otc_coalescing_debug_path";
-    private static final String DEBUG_COALESCING_PATH = System.getProperty(DEBUG_COALESCING_PATH_PROPERTY, "/tmp/coleascing_debug");
-
-    private static CoalescingStrategy newCoalescingStrategy()
+    private static CoalescingStrategy newCoalescingStrategy(String displayName)
     {
         return CoalescingStrategies.newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(),
                                                           DatabaseDescriptor.getOtcCoalescingWindow(),
                                                           logger,
-                                                          DEBUG_COALESCING);
+                                                          displayName);
     }
 
     static
@@ -111,7 +98,7 @@ public class OutboundTcpConnection extends Thread
             break;
             default:
                 //Check that it can be loaded
-                newCoalescingStrategy();
+                newCoalescingStrategy("dummy");
         }
 
         int coalescingWindow = DatabaseDescriptor.getOtcCoalescingWindow();
@@ -121,17 +108,6 @@ public class OutboundTcpConnection extends Thread
         if (coalescingWindow < 0)
             throw new ExceptionInInitializerError(
                     "Value provided for coalescing window must be greather than 0: " + coalescingWindow);
-
-        if (DEBUG_COALESCING)
-        {
-            File directory = new File(DEBUG_COALESCING_PATH);
-
-            if (directory.exists())
-                FileUtils.deleteRecursive(directory);
-
-            if (!directory.mkdirs())
-                throw new ExceptionInInitializerError("Couldn't create log dir");
-        }
     }
 
     private static final MessageOut CLOSE_SENTINEL = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE);
@@ -147,7 +123,7 @@ public class OutboundTcpConnection extends Thread
 
     private final OutboundTcpConnectionPool poolReference;
 
-    private final CoalescingStrategy cs = newCoalescingStrategy();
+    private final CoalescingStrategy cs;
     private DataOutputStreamPlus out;
     private Socket socket;
     private volatile long completed;
@@ -159,6 +135,7 @@ public class OutboundTcpConnection extends Thread
     {
         super("WRITE-" + pool.endPoint());
         this.poolReference = pool;
+        cs = newCoalescingStrategy(pool.endPoint().getHostAddress());
     }
 
     private static boolean isLocalDC(InetAddress targetHost)
@@ -201,24 +178,6 @@ public class OutboundTcpConnection extends Thread
 
     public void run()
     {
-        ByteBuffer logBuffer = null;
-        RandomAccessFile ras = null;
-        if (DEBUG_COALESCING)
-        {
-            try
-            {
-                File outFile = File.createTempFile("coalescing_" + poolReference.endPoint().getHostAddress() + "_", ".log", new File(DEBUG_COALESCING_PATH));
-                ras = new RandomAccessFile(outFile, "rw");
-                logBuffer = ras.getChannel().map(MapMode.READ_WRITE, 0, Integer.MAX_VALUE);
-                logBuffer.putLong(0);
-            }
-            catch (Exception e)
-            {
-                logger.error("Unable to create output file for debugging coalescing", e);
-            }
-        }
-
-
         final int drainedMessageSize = 128;
         // keeping list (batch) size small for now; that way we don't have an unbounded array (that we never resize)
         final List<QueuedMessage> drainedMessages = new ArrayList<>(drainedMessageSize);
@@ -242,13 +201,6 @@ public class OutboundTcpConnection extends Thread
             //so skip logging it.
             for (QueuedMessage qm : drainedMessages)
             {
-
-                if (DEBUG_COALESCING)
-                {
-                    logBuffer.putLong(0, logBuffer.getLong(0) + 1);
-                    logBuffer.putLong(qm.timestampNanos);
-                }
-
                 try
                 {
                     MessageOut<?> m = qm.message;
