@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 
 public class CoalescingStrategies
 {
@@ -196,13 +197,24 @@ public class CoalescingStrategies
             }
         }
 
-        /*
-         * Drain from the input blocking queue to the output list up to outSize elements
+        /**
+         * Drain from the input blocking queue to the output list up to maxItems elements.
          *
          * The coalescing strategy may choose to park the current thread if it thinks it will
-         * be able to produce an output list with more elements
+         * be able to produce an output list with more elements.
+         *
+         * @param input Blocking queue to retrieve elements from
+         * @param out Output list to place retrieved elements in. Must be empty.
+         * @param maxItems Maximum number of elements to place in the output list
          */
-        public abstract <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out, int outSize) throws InterruptedException;
+        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out, int maxItems) throws InterruptedException
+        {
+            Preconditions.checkArgument(out.isEmpty(), "out list should be empty");
+            coalesceInternal(input, out, maxItems);
+        }
+
+        protected abstract <C extends Coalescable> void coalesceInternal(BlockingQueue<C> input, List<C> out, int maxItems) throws InterruptedException;
+
     }
 
     @VisibleForTesting
@@ -312,12 +324,12 @@ public class CoalescingStrategies
         }
 
         @Override
-        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
+        protected <C extends Coalescable> void coalesceInternal(BlockingQueue<C> input, List<C> out,  int maxItems) throws InterruptedException
         {
-            if (input.drainTo(out, outSize) == 0)
+            if (input.drainTo(out, maxItems) == 0)
             {
                 out.add(input.take());
-                input.drainTo(out, outSize - out.size());
+                input.drainTo(out, maxItems - 1);
             }
 
             for (Coalescable qm : out)
@@ -329,7 +341,7 @@ public class CoalescingStrategies
             int count = out.size();
             if (maybeSleep(count, averageGap, maxCoalesceWindow, parker))
             {
-                input.drainTo(out, outSize - out.size());
+                input.drainTo(out, maxItems - out.size());
                 int prevCount = count;
                 count = out.size();
                 for (int  i = prevCount; i < count; i++)
@@ -394,9 +406,9 @@ public class CoalescingStrategies
         }
 
         @Override
-        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
+        protected <C extends Coalescable> void coalesceInternal(BlockingQueue<C> input, List<C> out,  int maxItems) throws InterruptedException
         {
-            if (input.drainTo(out, outSize) == 0)
+            if (input.drainTo(out, maxItems) == 0)
             {
                 out.add(input.take());
             }
@@ -407,7 +419,7 @@ public class CoalescingStrategies
 
             maybeSleep(out.size(), average, maxCoalesceWindow, parker);
 
-            input.drainTo(out, outSize - out.size());
+            input.drainTo(out, maxItems - out.size());
             for (int ii = 1; ii < out.size(); ii++)
                 notifyOfSample(out.get(ii).timestampNanos());
         }
@@ -433,13 +445,13 @@ public class CoalescingStrategies
         }
 
         @Override
-        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
+        protected <C extends Coalescable> void coalesceInternal(BlockingQueue<C> input, List<C> out,  int maxItems) throws InterruptedException
         {
-            if (input.drainTo(out, outSize) == 0)
+            if (input.drainTo(out, maxItems) == 0)
             {
                 out.add(input.take());
                 parker.park(coalesceWindow);
-                input.drainTo(out, outSize - out.size());
+                input.drainTo(out, maxItems - 1);
             }
             debugTimestamps(out);
         }
@@ -463,12 +475,12 @@ public class CoalescingStrategies
         }
 
         @Override
-        public <C extends Coalescable> void coalesce(BlockingQueue<C> input, List<C> out,  int outSize) throws InterruptedException
+        protected <C extends Coalescable> void coalesceInternal(BlockingQueue<C> input, List<C> out,  int maxItems) throws InterruptedException
         {
-            if (input.drainTo(out, outSize) == 0)
+            if (input.drainTo(out, maxItems) == 0)
             {
                 out.add(input.take());
-                input.drainTo(out, outSize - out.size());
+                input.drainTo(out, maxItems - 1);
             }
             debugTimestamps(out);
         }
