@@ -596,6 +596,9 @@ public class CassandraDaemon
 
     public static void main(String[] args)
     {
+        for (Map.Entry<String, String> e : System.getenv().entrySet()) {
+            System.out.println(e.getKey() + " : " + e.getValue());
+        }
         instance.activate();
     }
 

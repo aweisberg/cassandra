@@ -38,6 +38,7 @@ New features
      directory.
    - Support for user-defined functions and user-defined aggregates have
      been added to CQL.
+   - Row-cache is now fully off-heap.
 
 
 Upgrading
