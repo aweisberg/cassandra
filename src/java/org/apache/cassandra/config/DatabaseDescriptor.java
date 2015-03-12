@@ -20,6 +20,8 @@ package org.apache.cassandra.config;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
@@ -38,6 +40,7 @@ import java.util.UUID;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Longs;
+
 import org.apache.cassandra.thrift.ThriftServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -158,7 +161,7 @@ public class DatabaseDescriptor
         return loader.loadConfig();
     }
 
-    private static InetAddress getNetworkInterfaceAddress(String intf, String configName) throws ConfigurationException
+    private static InetAddress getNetworkInterfaceAddress(String intf, String configName, boolean preferIPv6) throws ConfigurationException
     {
         try
         {
@@ -168,9 +171,18 @@ public class DatabaseDescriptor
             Enumeration<InetAddress> addrs = ni.getInetAddresses();
             if (!addrs.hasMoreElements())
                 throw new ConfigurationException("Configured " + configName + " \"" + intf + "\" was found, but had no addresses");
-            InetAddress retval = listenAddress = addrs.nextElement();
-            if (addrs.hasMoreElements())
-                throw new ConfigurationException("Configured " + configName + " \"" + intf + "\" can't have more than one address");
+
+            /*
+             * Try to return the first address of the preferred type, otherwise return the first address
+             */
+            InetAddress retval = null;
+            while (addrs.hasMoreElements())
+            {
+                InetAddress temp = addrs.nextElement();
+                if (preferIPv6 && temp.getClass() == Inet6Address.class) return temp;
+                if (!preferIPv6 && temp.getClass() == Inet4Address.class) return temp;
+                if (retval == null) retval = temp;
+            }
             return retval;
         }
         catch (SocketException e)
@@ -182,6 +194,11 @@ public class DatabaseDescriptor
     @VisibleForTesting
     static void applyAddressConfig(Config config) throws ConfigurationException
     {
+        listenAddress = null;
+        rpcAddress = null;
+        broadcastAddress = null;
+        broadcastRpcAddress = null;
+
         /* Local IP, hostname or interface to bind services to */
         if (config.listen_address != null && config.listen_interface != null)
         {
@@ -203,7 +220,7 @@ public class DatabaseDescriptor
         }
         else if (config.listen_interface != null)
         {
-            listenAddress = getNetworkInterfaceAddress(config.listen_interface, "listen_interface");
+            listenAddress = getNetworkInterfaceAddress(config.listen_interface, "listen_interface", config.listen_interface_prefer_ipv6);
         }
 
         /* Gossip Address to broadcast */
@@ -240,7 +257,7 @@ public class DatabaseDescriptor
         }
         else if (config.rpc_interface != null)
         {
-            rpcAddress = getNetworkInterfaceAddress(config.rpc_interface, "rpc_interface");
+            rpcAddress = getNetworkInterfaceAddress(config.rpc_interface, "rpc_interface", config.rpc_interface_prefer_ipv6);
         }
         else
         {

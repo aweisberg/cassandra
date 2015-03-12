@@ -18,6 +18,8 @@
 */
 package org.apache.cassandra.config;
 
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.Enumeration;
@@ -133,8 +135,8 @@ public class DatabaseDescriptorTest
         }
     }
 
-    static NetworkInterface oneAddressInterface = null;
     static NetworkInterface suitableInterface = null;
+    static boolean hasIPv4andIPv6 = false;
 
     /*
      * Server only accepts interfaces by name if they have a single address
@@ -142,64 +144,105 @@ public class DatabaseDescriptorTest
      * if not checked for and skipped
      */
     @BeforeClass
-    public static void selectInterfaces() throws Exception {
+    public static void selectSuitableInterface() throws Exception {
         Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
         while(interfaces.hasMoreElements()) {
             NetworkInterface intf = interfaces.nextElement();
 
             System.out.println("Evaluating " + intf.getName());
-            Enumeration<InetAddress> addresses = intf.getInetAddresses();
-            int count = 0;
-            while (addresses.hasMoreElements()) {
-                count++;
-                System.out.println("\t" + addresses.nextElement().toString());
-            }
-
-            if (count == 1)
-            {
-                oneAddressInterface = intf;
-                suitableInterface = intf;
-                break;
-            }
 
             if (intf.isLoopback()) {
                 suitableInterface = intf;
+
+                boolean hasIPv4 = false;
+                boolean hasIPv6 = false;
+                Enumeration<InetAddress> addresses = suitableInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    if (addresses.nextElement().getClass() == Inet6Address.class)
+                        hasIPv6 = true;
+                    else
+                        hasIPv4 = true;
+                }
+                hasIPv4andIPv6 = hasIPv4 && hasIPv6;
+                return;
             }
         }
-    }
-
-    /*
-     * Skip testing interfaces configured by name on OS X because there are ipv4 and ipv6 addresses
-     * and the tests would fail because it doesn't know which to pick.
-     */
-    static boolean maybeSkipOnOSX() throws Exception
-    {
-        if (oneAddressInterface == null)
-            if (System.getProperty("os.name").equals("Mac OS X"))
-                return true;
-            else
-                Assert.fail("Should have a one address interface for this test to pass");
-        return false;
     }
 
     @Test
     public void testRpcInterface() throws Exception
     {
-        if (maybeSkipOnOSX()) return;
         Config testConfig = DatabaseDescriptor.loadConfig();
-        testConfig.rpc_interface = oneAddressInterface.getName();
+        testConfig.rpc_interface = suitableInterface.getName();
         testConfig.rpc_address = null;
         DatabaseDescriptor.applyAddressConfig(testConfig);
+
+        /*
+         * Confirm ability to select between IPv4 and IPv6
+         */
+        if (hasIPv4andIPv6)
+        {
+            testConfig = DatabaseDescriptor.loadConfig();
+            testConfig.rpc_interface = suitableInterface.getName();
+            testConfig.rpc_address = null;
+            testConfig.rpc_interface_prefer_ipv6 = true;
+            DatabaseDescriptor.applyAddressConfig(testConfig);
+
+            assertEquals(DatabaseDescriptor.getRpcAddress().getClass(), Inet6Address.class);
+
+            testConfig = DatabaseDescriptor.loadConfig();
+            testConfig.rpc_interface = suitableInterface.getName();
+            testConfig.rpc_address = null;
+            testConfig.rpc_interface_prefer_ipv6 = false;
+            DatabaseDescriptor.applyAddressConfig(testConfig);
+
+            assertEquals(DatabaseDescriptor.getRpcAddress().getClass(), Inet4Address.class);
+        }
+        else
+        {
+            /*
+             * Confirm first address of interface is selected
+             */
+            assertEquals(DatabaseDescriptor.getRpcAddress(), suitableInterface.getInetAddresses().nextElement());
+        }
     }
 
     @Test
     public void testListenInterface() throws Exception
     {
-        if (maybeSkipOnOSX()) return;
         Config testConfig = DatabaseDescriptor.loadConfig();
-        testConfig.listen_interface = oneAddressInterface.getName();
+        testConfig.listen_interface = suitableInterface.getName();
         testConfig.listen_address = null;
         DatabaseDescriptor.applyAddressConfig(testConfig);
+
+        /*
+         * Confirm ability to select between IPv4 and IPv6
+         */
+        if (hasIPv4andIPv6)
+        {
+            testConfig = DatabaseDescriptor.loadConfig();
+            testConfig.listen_interface = suitableInterface.getName();
+            testConfig.listen_address = null;
+            testConfig.listen_interface_prefer_ipv6 = true;
+            DatabaseDescriptor.applyAddressConfig(testConfig);
+
+            assertEquals(DatabaseDescriptor.getListenAddress().getClass(), Inet6Address.class);
+
+            testConfig = DatabaseDescriptor.loadConfig();
+            testConfig.listen_interface = suitableInterface.getName();
+            testConfig.listen_address = null;
+            testConfig.listen_interface_prefer_ipv6 = false;
+            DatabaseDescriptor.applyAddressConfig(testConfig);
+
+            assertEquals(DatabaseDescriptor.getListenAddress().getClass(), Inet4Address.class);
+        }
+        else
+        {
+            /*
+             * Confirm first address of interface is selected
+             */
+            assertEquals(DatabaseDescriptor.getRpcAddress(), suitableInterface.getInetAddresses().nextElement());
+        }
     }
 
     @Test
