@@ -18,9 +18,15 @@
 */
 package org.apache.cassandra.config;
 
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.Enumeration;
+
+import junit.framework.Assert;
+
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-
 import org.apache.cassandra.OrderedJUnit4ClassRunner;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.db.Keyspace;
@@ -125,5 +131,93 @@ public class DatabaseDescriptorTest
             testConfig.cluster_name = "ConfigurationLoader Test";;
             return testConfig;
         }
+    }
+
+    static NetworkInterface oneAddressInterface = null;
+    static NetworkInterface suitableInterface = null;
+
+    /*
+     * Server only accepts interfaces by name if they have a single address
+     * OS X seems to always have an ipv4 and ipv6 address on all interfaces which means some tests fail
+     * if not checked for and skipped
+     */
+    @BeforeClass
+    public static void selectInterfaces() throws Exception {
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while(interfaces.hasMoreElements()) {
+            NetworkInterface intf = interfaces.nextElement();
+
+            System.out.println("Evaluating " + intf.getName());
+            Enumeration<InetAddress> addresses = intf.getInetAddresses();
+            int count = 0;
+            while (addresses.hasMoreElements()) {
+                count++;
+                System.out.println("\t" + addresses.nextElement().toString());
+            }
+
+            if (count == 1)
+            {
+                oneAddressInterface = intf;
+                suitableInterface = intf;
+                break;
+            }
+
+            if (intf.isLoopback()) {
+                suitableInterface = intf;
+            }
+        }
+    }
+
+    /*
+     * Skip testing interfaces configured by name on OS X because there are ipv4 and ipv6 addresses
+     * and the tests would fail because it doesn't know which to pick.
+     */
+    static boolean maybeSkipOnOSX() throws Exception
+    {
+        if (oneAddressInterface == null)
+            if (System.getProperty("os.name").equals("Mac OS X"))
+                return true;
+            else
+                Assert.fail("Should have a one address interface for this test to pass");
+        return false;
+    }
+
+    @Test
+    public void testRpcInterface() throws Exception
+    {
+        if (maybeSkipOnOSX()) return;
+        Config testConfig = DatabaseDescriptor.loadConfig();
+        testConfig.rpc_interface = oneAddressInterface.getName();
+        testConfig.rpc_address = null;
+        DatabaseDescriptor.applyAddressConfig(testConfig);
+    }
+
+    @Test
+    public void testListenInterface() throws Exception
+    {
+        if (maybeSkipOnOSX()) return;
+        Config testConfig = DatabaseDescriptor.loadConfig();
+        testConfig.listen_interface = oneAddressInterface.getName();
+        testConfig.listen_address = null;
+        DatabaseDescriptor.applyAddressConfig(testConfig);
+    }
+
+    @Test
+    public void testListenAddress() throws Exception
+    {
+        Config testConfig = DatabaseDescriptor.loadConfig();
+        testConfig.listen_address = suitableInterface.getInterfaceAddresses().get(0).getAddress().getHostAddress();
+        testConfig.listen_interface = null;
+        DatabaseDescriptor.applyAddressConfig(testConfig);
+    }
+
+    @Test
+    public void testRpcAddress() throws Exception
+    {
+        Config testConfig = DatabaseDescriptor.loadConfig();
+        testConfig.rpc_address = suitableInterface.getInterfaceAddresses().get(0).getAddress().getHostAddress();
+        testConfig.rpc_interface = null;
+        DatabaseDescriptor.applyAddressConfig(testConfig);
+
     }
 }
