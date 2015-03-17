@@ -143,8 +143,8 @@ public class DatabaseDescriptor
             while (addrs.hasMoreElements())
             {
                 InetAddress temp = addrs.nextElement();
-                if (preferIPv6 && temp.getClass() == Inet6Address.class) return temp;
-                if (!preferIPv6 && temp.getClass() == Inet4Address.class) return temp;
+                if (preferIPv6 && temp instanceof Inet6Address) return temp;
+                if (!preferIPv6 && temp instanceof Inet4Address) return temp;
                 if (retval == null) retval = temp;
             }
             return retval;

@@ -160,7 +160,7 @@ public class DatabaseDescriptorTest
                 boolean hasIPv6 = false;
                 Enumeration<InetAddress> addresses = suitableInterface.getInetAddresses();
                 while (addresses.hasMoreElements()) {
-                    if (addresses.nextElement().getClass() == Inet6Address.class)
+                    if (addresses.nextElement() instanceof Inet6Address)
                         hasIPv6 = true;
                     else
                         hasIPv4 = true;
