@@ -1,4 +1,5 @@
 3.0
+ * Partition intra-cluster message streams by size, not type (CASSANDRA-8789)
  * Add WriteFailureException to native protocol, notify coordinator of
    write failures (CASSANDRA-8592)
  * Convert SequentialWriter to nio (CASSANDRA-8709)
@@ -69,8 +70,19 @@
  * Select optimal CRC32 implementation at runtime (CASSANDRA-8614)
  * Evaluate MurmurHash of Token once per query (CASSANDRA-7096)
  * Generalize progress reporting (CASSANDRA-8901)
+ * Resumable bootstrap streaming (CASSANDRA-8838)
 
 2.1.4
+ * (cqlsh) Greatly improve performance of COPY FROM (CASSANDRA-8225)
+ * IndexSummary effectiveIndexInterval is now a guideline, not a rule (CASSANDRA-8993)
+ * Use correct bounds for page cache eviction of compressed files (CASSANDRA-8746)
+ * SSTableScanner enforces its bounds (CASSANDRA-8946)
+ * Cleanup cell equality (CASSANDRA-8947)
+ * Introduce intra-cluster message coalescing (CASSANDRA-8692)
+ * DatabaseDescriptor throws NPE when rpc_interface is used (CASSANDRA-8839)
+ * Don't check if an sstable is live for offline compactions (CASSANDRA-8841)
+ * Don't set clientMode in SSTableLoader (CASSANDRA-8238)
+ * Fix SSTableRewriter with disabled early open (CASSANDRA-8535)
  * Fix cassandra-stress so it respects the CL passed in user mode (CASSANDRA-8948)
  * Fix rare NPE in ColumnDefinition#hasIndexOption() (CASSANDRA-8786)
  * cassandra-stress reports per-operation statistics, plus misc (CASSANDRA-8769)
@@ -109,8 +121,13 @@
  * cassandra-stress support for varint (CASSANDRA-8882)
  * Fix Adler32 digest for compressed sstables (CASSANDRA-8778)
  * Add nodetool statushandoff/statusbackup (CASSANDRA-8912)
+ * Use stdout for progress and stats in sstableloader (CASSANDRA-8982)
 Merged from 2.0:
-2.0.14:
+ * Fix NullPointerException when nodetool getendpoints is run
+   against invalid keyspaces or tables (CASSANDRA-8950)
+ * Allow specifying the tmp dir (CASSANDRA-7712)
+ * Improve compaction estimated tasks estimation (CASSANDRA-8904)
+ * Fix duplicate up/down messages sent to native clients (CASSANDRA-7816)
  * Expose commit log archive status via JMX (CASSANDRA-8734)
  * Provide better exceptions for invalid replication strategy parameters
    (CASSANDRA-8909)
