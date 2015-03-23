@@ -6,6 +6,8 @@ import java.io.UTFDataFormatException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 
+import org.apache.cassandra.utils.memory.MemoryUtil;
+
 import com.google.common.base.Preconditions;
 
 /**
@@ -217,36 +219,26 @@ public class NIODataOutputStreamPlus extends OutputStream implements DataOutputP
         write(utfBytes);
     }
 
+    private final ByteBuffer hollowBuffer = MemoryUtil.getHollowDirectByteBuffer();
     @Override
     public void write(ByteBuffer buffer) throws IOException
     {
         if (buffer.isDirect() && buffer.remaining() > buf.remaining())
         {
             flush();
-            while (buffer.hasRemaining())
-                wbc.write(buffer);
+            MemoryUtil.duplicateByteBuffer(buffer, hollowBuffer);
+            while (hollowBuffer.hasRemaining())
+                wbc.write(hollowBuffer);
+        }
+        else if (buffer.isDirect())
+        {
+            MemoryUtil.duplicateByteBuffer(buffer, hollowBuffer);
+            buf.put(hollowBuffer);
         }
         else
         {
-            while (buffer.hasRemaining())
-                writeNext(buffer);
+            write(buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.remaining());
         }
-    }
-
-    private void writeNext(ByteBuffer buffer) throws IOException
-    {
-        if (!buf.hasRemaining())
-            flush();
-        assert(buf.hasRemaining());
-
-        int originalLimit = buffer.limit();
-        int toCopy = Math.min(buf.remaining(), buffer.remaining());
-
-        buffer.limit(buffer.position() + toCopy);
-        buf.put(buffer);
-
-        buffer.limit(originalLimit);
-
     }
 
     @Override

@@ -246,7 +246,10 @@ public class NIODataOutputStreamTest
                 r.nextBytes(buf.array());
                 buf.position(buf.capacity() == 0 ? 0 : r.nextInt(buf.capacity()));
                 buf.limit(buf.position() + (buf.capacity() - buf.position() == 0 ? 0 : r.nextInt(buf.capacity() - buf.position())));
+                ByteBuffer dup = buf.duplicate();
                 ndosp.write(buf.duplicate());
+                assertEquals(dup.position(), buf.position());
+                assertEquals(dup.limit(), buf.limit());
                 dosp.write(buf.duplicate());
                 break;
             }
@@ -256,7 +259,10 @@ public class NIODataOutputStreamTest
                     buf.put((byte)r.nextInt());
                 buf.position(buf.capacity() == 0 ? 0 : r.nextInt(buf.capacity()));
                 buf.limit(buf.position() + (buf.capacity() - buf.position() == 0 ? 0 : r.nextInt(buf.capacity() - buf.position())));
+                ByteBuffer dup = buf.duplicate();
                 ndosp.write(buf.duplicate());
+                assertEquals(dup.position(), buf.position());
+                assertEquals(dup.limit(), buf.limit());
                 dosp.write(buf.duplicate());
                 break;
             }
