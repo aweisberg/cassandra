@@ -19,6 +19,8 @@ import com.google.common.base.Preconditions;
  * of some indirection and delegation when it comes to reading out individual values, but that is not the goal.
  *
  * Closing NIODataOutputStreamPlus will invoke close on the WritableByteChannel provided at construction.
+ *
+ * NIODataOutputStreamPlus is not thread safe.
  */
 public class NIODataOutputStreamPlus extends OutputStream implements DataOutputPlus
 {

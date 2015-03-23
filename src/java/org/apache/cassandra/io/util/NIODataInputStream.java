@@ -38,6 +38,8 @@ import com.google.common.base.Preconditions;
  * of some indirection and delegation when it comes to reading out individual values, but that is not the goal.
  *
  * Closing NIODataInputStream will invoke close on the ReadableByteChannel provided at construction.
+ *
+ * NIODataInputStream is not thread safe.
  */
 public class NIODataInputStream extends InputStream implements DataInput, Closeable
 {
