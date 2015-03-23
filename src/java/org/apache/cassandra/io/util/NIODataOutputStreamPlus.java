@@ -88,7 +88,7 @@ public class NIODataOutputStreamPlus extends OutputStream implements DataOutputP
             if (buf.hasRemaining())
             {
                 int toCopy = Math.min(len - copied, buf.remaining());
-                buf.get(b, off + copied, toCopy);
+                buf.put(b, off + copied, toCopy);
                 copied += toCopy;
             }
             else
@@ -220,14 +220,16 @@ public class NIODataOutputStreamPlus extends OutputStream implements DataOutputP
     @Override
     public void write(ByteBuffer buffer) throws IOException
     {
-        if (buffer.isDirect())
+        if (buffer.isDirect() && buffer.remaining() > buf.remaining())
         {
+            flush();
             while (buffer.hasRemaining())
                 wbc.write(buffer);
         }
         else
         {
-            writeNext(buffer);
+            while (buffer.hasRemaining())
+                writeNext(buffer);
         }
     }
 

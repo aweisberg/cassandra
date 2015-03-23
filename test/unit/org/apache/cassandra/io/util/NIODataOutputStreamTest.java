@@ -2,9 +2,9 @@ package org.apache.cassandra.io.util;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
-import java.util.Arrays;
 import java.util.Random;
 
 import org.junit.Test;
@@ -91,6 +91,18 @@ public class NIODataOutputStreamTest
         fakeStream.write(type, 11, 1);
     }
 
+    static Field baos_bytes;
+    static {
+        try
+        {
+            baos_bytes = ByteArrayOutputStream.class.getDeclaredField("buf");
+            baos_bytes.setAccessible(true);
+        }
+        catch (Throwable t)
+        {
+            throw new RuntimeException(t);
+        }
+    }
     private Random r;
     private ByteArrayOutputStream generated;
     private NIODataOutputStreamPlus ndosp;
@@ -101,6 +113,8 @@ public class NIODataOutputStreamTest
     void setUp()
     {
         long seed = System.nanoTime();
+        //seed = 437143587703251L;
+        System.out.println("Seed " + seed);
         r = new Random(seed);
         generated = new ByteArrayOutputStream();
         canonical = new ByteArrayOutputStream();
@@ -120,12 +134,19 @@ public class NIODataOutputStreamTest
     String threeByte = "㒨";
     String fourByte = "𠝹";
 
+    @SuppressWarnings("unused")
     private void fuzzOnce() throws Exception
     {
         setUp();
+        int iteration = 0;
+        int bytesChecked = 0;
+        int action = 0;
         while (generated.size() < 1024 * 1024 * 8)
         {
-            int action = r.nextInt(18);
+            action = r.nextInt(18);
+
+            //System.out.println("Action " + action + " iteration " + iteration);
+            iteration++;
 
             switch (action)
             {
@@ -170,7 +191,7 @@ public class NIODataOutputStreamTest
             }
             case 6: {
                 int val = r.nextInt();
-                dosp.writeShort(r.nextInt());
+                dosp.writeShort(val);
                 ndosp.writeShort(val);
                 break;
             }
@@ -244,18 +265,36 @@ public class NIODataOutputStreamTest
                 for (int ii = 0; ii < buf.size(); ii++)
                     buf.setByte(ii, (byte)r.nextInt());
                 long offset = buf.size() == 0 ? 0 : r.nextInt((int)buf.size());
-                long length = offset + (buf.size() - offset == 0 ? 0 : r.nextInt((int)(buf.size() - offset)));
+                long length = (buf.size() - offset == 0 ? 0 : r.nextInt((int)(buf.size() - offset)));
                 ndosp.write(buf, offset, length);
                 dosp.write(buf, offset, length);
-                break;            }
+                break;
+            }
             default:
                 fail("Shouldn't reach here");
             }
+            //bytesChecked = assertSameOutput(bytesChecked, action, iteration);
         }
 
+        assertSameOutput(0, -1, iteration);
+    }
+
+    private int assertSameOutput(int bytesChecked, int lastAction, int iteration) throws Exception
+    {
         ndosp.flush();
         dosp.flush();
 
-        Arrays.equals(generated.toByteArray(), canonical.toByteArray());
+        byte generatedBytes[] = (byte[])baos_bytes.get(generated);
+        byte canonicalBytes[] = (byte[])baos_bytes.get(canonical);
+
+        int count = generated.size();
+        assertEquals(count, canonical.size());
+        for (;bytesChecked < count; bytesChecked++)
+        {
+            byte generatedByte = generatedBytes[bytesChecked];
+            byte canonicalByte = canonicalBytes[bytesChecked];
+            assertEquals(generatedByte, canonicalByte);
+        }
+        return count;
     }
 }
