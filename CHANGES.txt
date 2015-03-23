@@ -71,8 +71,12 @@
  * Evaluate MurmurHash of Token once per query (CASSANDRA-7096)
  * Generalize progress reporting (CASSANDRA-8901)
  * Resumable bootstrap streaming (CASSANDRA-8838)
+ * Allow scrub for secondary index (CASSANDRA-5174)
 
 2.1.4
+ * Fix AssertionError when binding nested collections in DELETE (CASSANDRA-8900)
+ * Check for overlap with non-early sstables in LCS (CASSANDRA-8739)
+ * Only calculate max purgable timestamp if we have to (CASSANDRA-8914)
  * (cqlsh) Greatly improve performance of COPY FROM (CASSANDRA-8225)
  * IndexSummary effectiveIndexInterval is now a guideline, not a rule (CASSANDRA-8993)
  * Use correct bounds for page cache eviction of compressed files (CASSANDRA-8746)
@@ -123,6 +127,8 @@
  * Add nodetool statushandoff/statusbackup (CASSANDRA-8912)
  * Use stdout for progress and stats in sstableloader (CASSANDRA-8982)
 Merged from 2.0:
+ * Stop logging range tombstones when exceeding the threshold
+   (CASSANDRA-8559)
  * Fix NullPointerException when nodetool getendpoints is run
    against invalid keyspaces or tables (CASSANDRA-8950)
  * Allow specifying the tmp dir (CASSANDRA-7712)
