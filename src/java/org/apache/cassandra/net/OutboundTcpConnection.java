@@ -17,10 +17,10 @@
  */
 package org.apache.cassandra.net;
 
-import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
@@ -42,7 +42,9 @@ import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
 
+import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
+import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.CoalescingStrategies;
@@ -124,7 +126,8 @@ public class OutboundTcpConnection extends Thread
     private final OutboundTcpConnectionPool poolReference;
 
     private final CoalescingStrategy cs;
-    private DataOutputStreamPlus out;
+    private DataOutputPlus out;
+    private OutputStream flushable;
     private Socket socket;
     private volatile long completed;
     private final AtomicLong dropped = new AtomicLong();
@@ -285,7 +288,7 @@ public class OutboundTcpConnection extends Thread
 
             completed++;
             if (flush)
-                out.flush();
+                flushable.flush();
         }
         catch (Exception e)
         {
@@ -398,11 +401,13 @@ public class OutboundTcpConnection extends Thread
                         logger.warn("Failed to set send buffer size on internode socket.", se);
                     }
                 }
-                out = new DataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream(), BUFFER_SIZE));
+
+                out = new NIODataOutputStreamPlus(socket.getChannel(), BUFFER_SIZE);
+                flushable  = (OutputStream)out;
 
                 out.writeInt(MessagingService.PROTOCOL_MAGIC);
                 writeHeader(out, targetVersion, shouldCompressConnection());
-                out.flush();
+                flushable.flush();
 
                 DataInputStream in = new DataInputStream(socket.getInputStream());
                 int maxTargetVersion = handshakeVersion(in);
@@ -440,7 +445,7 @@ public class OutboundTcpConnection extends Thread
                 CompactEndpointSerializationHelper.serialize(FBUtilities.getBroadcastAddress(), out);
                 if (shouldCompressConnection())
                 {
-                    out.flush();
+                    flushable.flush();
                     logger.trace("Upgrading OutputStream to be compressed");
                     if (targetVersion < MessagingService.VERSION_21)
                     {
@@ -458,6 +463,7 @@ public class OutboundTcpConnection extends Thread
                                                                             checksum,
                                                                             true)); // no async flushing
                     }
+                    flushable = (OutputStream)out;
                 }
 
                 return true;
