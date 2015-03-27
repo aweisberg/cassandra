@@ -44,7 +44,7 @@ import net.jpountz.xxhash.XXHashFactory;
 
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
+import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
 import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
@@ -402,7 +402,7 @@ public class OutboundTcpConnection extends Thread
                     }
                 }
 
-                out = new NIODataOutputStreamPlus(socket.getChannel(), BUFFER_SIZE);
+                out = new NIODataOutputStreamAndChannelPlus(socket.getChannel(), BUFFER_SIZE);
 
                 out.writeInt(MessagingService.PROTOCOL_MAGIC);
                 writeHeader(out, targetVersion, shouldCompressConnection());

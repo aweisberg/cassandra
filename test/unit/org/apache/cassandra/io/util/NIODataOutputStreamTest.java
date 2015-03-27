@@ -33,20 +33,20 @@ public class NIODataOutputStreamTest
 
     };
 
-    NIODataOutputStreamPlus fakeStream = new NIODataOutputStreamPlus(adapter, 8);
+    NIODataOutputStreamAndChannelPlus fakeStream = new NIODataOutputStreamAndChannelPlus(adapter, 8);
 
     @SuppressWarnings("resource")
     @Test(expected = NullPointerException.class)
     public void testNullChannel()
     {
-        new NIODataOutputStreamPlus((WritableByteChannel)null, 8);
+        new NIODataOutputStreamAndChannelPlus((WritableByteChannel)null, 8);
     }
 
     @SuppressWarnings("resource")
     @Test(expected = IllegalArgumentException.class)
     public void testTooSmallBuffer()
     {
-        new NIODataOutputStreamPlus(adapter, 7);
+        new NIODataOutputStreamAndChannelPlus(adapter, 7);
     }
 
     @Test(expected = NullPointerException.class)
@@ -105,7 +105,7 @@ public class NIODataOutputStreamTest
     }
     private Random r;
     private ByteArrayOutputStream generated;
-    private NIODataOutputStreamPlus ndosp;
+    private NIODataOutputStreamAndChannelPlus ndosp;
 
     private ByteArrayOutputStream canonical;
     private DataOutputStreamPlus dosp;
@@ -119,7 +119,7 @@ public class NIODataOutputStreamTest
         generated = new ByteArrayOutputStream();
         canonical = new ByteArrayOutputStream();
         dosp = new WrappedDataOutputStreamPlus(canonical);
-        ndosp = new NIODataOutputStreamPlus(adapter, 4096);
+        ndosp = new NIODataOutputStreamAndChannelPlus(adapter, 4096);
     }
 
     @Test

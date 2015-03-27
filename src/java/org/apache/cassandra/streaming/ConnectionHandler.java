@@ -37,7 +37,7 @@ import com.google.common.util.concurrent.SettableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
-import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
+import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
 import org.apache.cassandra.streaming.messages.StreamInitMessage;
 import org.apache.cassandra.streaming.messages.StreamMessage;
 import org.apache.cassandra.utils.FBUtilities;
@@ -161,7 +161,7 @@ public class ConnectionHandler
             // socket channel is null when encrypted(SSL)
             if (out == null)
                 out = Channels.newChannel(socket.getOutputStream());
-            return new NIODataOutputStreamPlus( out, 1024 * 16);
+            return new NIODataOutputStreamAndChannelPlus( out, 1024 * 16);
         }
 
         protected static ReadableByteChannel getReadChannel(Socket socket) throws IOException

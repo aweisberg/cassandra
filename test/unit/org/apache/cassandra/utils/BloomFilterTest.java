@@ -36,7 +36,7 @@ import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
+import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
 import org.apache.cassandra.utils.IFilter.FilterKey;
 import org.apache.cassandra.utils.KeyGenerator.RandomStringGenerator;
 import org.apache.cassandra.utils.BloomFilter;
@@ -199,7 +199,7 @@ public class BloomFilterTest
         File file = FileUtils.createTempFile("bloomFilterTest-", ".dat");
         BloomFilter filter = (BloomFilter) FilterFactory.getFilter(((long)Integer.MAX_VALUE / 8) + 1, 0.01d, true);
         filter.add(FilterTestHelper.wrap(test));
-        DataOutputStreamAndChannelPlus out = new NIODataOutputStreamPlus(new FileOutputStream(file));
+        DataOutputStreamAndChannelPlus out = new NIODataOutputStreamAndChannelPlus(new FileOutputStream(file));
         FilterFactory.serialize(filter, out);
         filter.bitset.serialize(out);
         out.close();

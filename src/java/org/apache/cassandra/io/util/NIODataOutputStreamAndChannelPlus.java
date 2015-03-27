@@ -40,37 +40,37 @@ import com.google.common.base.Preconditions;
  *
  * NIODataOutputStreamPlus is not thread safe.
  */
-public class NIODataOutputStreamPlus extends DataOutputByteBuffer
+public class NIODataOutputStreamAndChannelPlus extends DataOutputStreamByteBufferAndChannelPlus
 {
     private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + "nio_data_output_stream_plus_buffer_size", 1024 * 32);
     private final WritableByteChannel wbc;
 
-    public NIODataOutputStreamPlus(RandomAccessFile ras)
+    public NIODataOutputStreamAndChannelPlus(RandomAccessFile ras)
     {
         this(ras.getChannel());
     }
 
-    public NIODataOutputStreamPlus(RandomAccessFile ras, int bufferSize)
+    public NIODataOutputStreamAndChannelPlus(RandomAccessFile ras, int bufferSize)
     {
         this(ras.getChannel(), bufferSize);
     }
 
-    public NIODataOutputStreamPlus(FileOutputStream fos)
+    public NIODataOutputStreamAndChannelPlus(FileOutputStream fos)
     {
         this(fos.getChannel());
     }
 
-    public NIODataOutputStreamPlus(FileOutputStream fos, int bufferSize)
+    public NIODataOutputStreamAndChannelPlus(FileOutputStream fos, int bufferSize)
     {
         this(fos.getChannel(), bufferSize);
     }
 
-    public NIODataOutputStreamPlus(WritableByteChannel wbc)
+    public NIODataOutputStreamAndChannelPlus(WritableByteChannel wbc)
     {
         this( wbc, DEFAULT_BUFFER_SIZE);
     }
 
-    public NIODataOutputStreamPlus(WritableByteChannel wbc, int bufferSize)
+    public NIODataOutputStreamAndChannelPlus(WritableByteChannel wbc, int bufferSize)
     {
         super(ByteBuffer.allocateDirect(bufferSize));
         Preconditions.checkNotNull(wbc);

@@ -29,12 +29,12 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  *
  * This class is completely thread unsafe.
  */
-public class DataOutputByteBuffer extends DataOutputStreamAndChannelPlus
+public class DataOutputStreamByteBufferAndChannelPlus extends DataOutputStreamAndChannelPlus
 {
 
     ByteBuffer buffer;
 
-    public DataOutputByteBuffer(ByteBuffer buffer)
+    public DataOutputStreamByteBufferAndChannelPlus(ByteBuffer buffer)
     {
         this.buffer = buffer;
     }

@@ -65,7 +65,7 @@ public class DataOutputTest
     public void testNIODataOutputStreamPlusAndChannel() throws IOException
     {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        DataOutputStreamPlus write = new NIODataOutputStreamPlus(Channels.newChannel(bos));
+        DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(Channels.newChannel(bos));
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
         testRead(test, canon);
@@ -84,7 +84,7 @@ public class DataOutputTest
     public void testDataOutputDirectByteBuffer() throws IOException
     {
         ByteBuffer buf = wrap(new byte[345], true);
-        DataOutputByteBuffer write = new DataOutputByteBuffer(buf.duplicate());
+        DataOutputStreamByteBufferAndChannelPlus write = new DataOutputStreamByteBufferAndChannelPlus(buf.duplicate());
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(ByteBufferUtil.getArray(buf)));
         testRead(test, canon);
@@ -94,7 +94,7 @@ public class DataOutputTest
     public void testDataOutputHeapByteBuffer() throws IOException
     {
         ByteBuffer buf = wrap(new byte[345], false);
-        DataOutputByteBuffer write = new DataOutputByteBuffer(buf.duplicate());
+        DataOutputStreamByteBufferAndChannelPlus write = new DataOutputStreamByteBufferAndChannelPlus(buf.duplicate());
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(ByteBufferUtil.getArray(buf)));
         testRead(test, canon);
@@ -136,7 +136,7 @@ public class DataOutputTest
         File file = FileUtils.createTempFile("dataoutput", "test");
         try
         {
-            DataOutputStreamPlus write = new NIODataOutputStreamPlus(new FileOutputStream(file));
+            DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(new FileOutputStream(file));
             DataInput canon = testWrite(write);
             write.close();
             DataInputStream test = new DataInputStream(new FileInputStream(file));
@@ -176,7 +176,7 @@ public class DataOutputTest
         try
         {
             final RandomAccessFile raf = new RandomAccessFile(file, "rw");
-            DataOutputStreamPlus write = new NIODataOutputStreamPlus(raf.getChannel());
+            DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(raf.getChannel());
             DataInput canon = testWrite(write);
             write.close();
             DataInputStream test = new DataInputStream(new FileInputStream(file));

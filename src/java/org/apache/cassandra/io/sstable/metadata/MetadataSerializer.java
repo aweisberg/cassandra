@@ -31,7 +31,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
+import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -149,7 +149,7 @@ public class MetadataSerializer implements IMetadataSerializer
     {
         Descriptor tmpDescriptor = descriptor.asType(Descriptor.Type.TEMP);
 
-        try (DataOutputStreamPlus out = new NIODataOutputStreamPlus(new FileOutputStream(tmpDescriptor.filenameFor(Component.STATS))))
+        try (DataOutputStreamPlus out = new NIODataOutputStreamAndChannelPlus(new FileOutputStream(tmpDescriptor.filenameFor(Component.STATS))))
         {
             serialize(currentComponents, out);
             out.flush();

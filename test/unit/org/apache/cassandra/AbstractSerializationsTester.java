@@ -23,7 +23,7 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
+import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
 import org.apache.cassandra.net.MessagingService;
 
 import java.io.DataInputStream;
@@ -72,6 +72,6 @@ public class AbstractSerializationsTester
     {
         File f = new File("test/data/serialization/" + CUR_VER + "/" + name);
         f.getParentFile().mkdirs();
-        return new NIODataOutputStreamPlus(new FileOutputStream(f).getChannel());
+        return new NIODataOutputStreamAndChannelPlus(new FileOutputStream(f).getChannel());
     }
 }
