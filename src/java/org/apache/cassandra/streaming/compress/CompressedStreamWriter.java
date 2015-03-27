@@ -55,7 +55,7 @@ public class CompressedStreamWriter extends StreamWriter
     {
         long totalSize = totalSize();
         RandomAccessReader file = sstable.openDataReader();
-        FileChannel fc = file.getChannel();
+        final FileChannel fc = file.getChannel();
 
         long progress = 0L;
         // calculate chunks to transfer. we want to send continuous chunks altogether.
