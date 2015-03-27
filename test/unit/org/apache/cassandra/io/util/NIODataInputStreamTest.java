@@ -196,10 +196,16 @@ public class NIODataInputStreamTest
     {
         init();
         DummyChannel dc = new DummyChannel();
+        dc.slices.clear();
+        dc.slices.offer(ByteBuffer.allocate(8190));
         NIODataInputStream is = new NIODataInputStream(dc, 4096);
         assertEquals(0, is.available());
         is.read();
+        assertEquals(4095, is.available());
+        is.read(new byte[4095]);
         assertEquals(0, is.available());
+        is.read(new byte[10]);
+        assertEquals(8190 - 10 - 4096, is.available());
 
         File f = File.createTempFile("foo", "bar");
         RandomAccessFile fos = new RandomAccessFile(f, "rw");
