@@ -57,7 +57,6 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         buf.limit(0);
     }
 
-
     @Override
     public void readFully(byte[] b) throws IOException
     {
@@ -194,14 +193,12 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         return skipped;
     }
 
-
     @Override
     public boolean readBoolean() throws IOException
     {
         prepareReadPrimitive(1);
         return buf.get() != 0;
     }
-
 
     @Override
     public byte readByte() throws IOException
@@ -210,14 +207,12 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         return buf.get();
     }
 
-
     @Override
     public int readUnsignedByte() throws IOException
     {
         prepareReadPrimitive(1);
         return buf.get() & 0xff;
     }
-
 
     @Override
     public short readShort() throws IOException
@@ -226,13 +221,11 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         return buf.getShort();
     }
 
-
     @Override
     public int readUnsignedShort() throws IOException
     {
         return readShort() & 0xFFFF;
     }
-
 
     @Override
     public char readChar() throws IOException
@@ -241,14 +234,12 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         return buf.getChar();
     }
 
-
     @Override
     public int readInt() throws IOException
     {
         prepareReadPrimitive(4);
         return buf.getInt();
     }
-
 
     @Override
     public long readLong() throws IOException
@@ -257,14 +248,12 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         return buf.getLong();
     }
 
-
     @Override
     public float readFloat() throws IOException
     {
         prepareReadPrimitive(4);
         return buf.getFloat();
     }
-
 
     @Override
     public double readDouble() throws IOException
@@ -279,20 +268,17 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         throw new UnsupportedOperationException();
     }
 
-
     @Override
     public String readUTF() throws IOException
     {
         return DataInputStream.readUTF(this);
     }
 
-
     @Override
     public void close() throws IOException
     {
             rbc.close();
     }
-
 
     @Override
     public int read() throws IOException

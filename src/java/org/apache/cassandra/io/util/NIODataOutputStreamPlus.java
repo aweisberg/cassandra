@@ -45,19 +45,23 @@ public class NIODataOutputStreamPlus extends DataOutputByteBuffer
     private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + "nio_data_output_stream_plus_buffer_size", 1024 * 32);
     private final WritableByteChannel wbc;
 
-    public NIODataOutputStreamPlus(RandomAccessFile ras) {
+    public NIODataOutputStreamPlus(RandomAccessFile ras)
+    {
         this(ras.getChannel());
     }
 
-    public NIODataOutputStreamPlus(RandomAccessFile ras, int bufferSize) {
+    public NIODataOutputStreamPlus(RandomAccessFile ras, int bufferSize)
+    {
         this(ras.getChannel(), bufferSize);
     }
 
-    public NIODataOutputStreamPlus(FileOutputStream fos) {
+    public NIODataOutputStreamPlus(FileOutputStream fos)
+    {
         this(fos.getChannel());
     }
 
-    public NIODataOutputStreamPlus(FileOutputStream fos, int bufferSize) {
+    public NIODataOutputStreamPlus(FileOutputStream fos, int bufferSize)
+    {
         this(fos.getChannel(), bufferSize);
     }
 
@@ -168,7 +172,8 @@ public class NIODataOutputStreamPlus extends DataOutputByteBuffer
     }
 
     @Override
-    protected WritableByteChannel channel() {
+    protected WritableByteChannel channel()
+    {
         return wbc;
     }
 }

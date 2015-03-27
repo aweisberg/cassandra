@@ -5,7 +5,8 @@ import java.nio.channels.WritableByteChannel;
 
 public interface DataOutputAndChannelPlus extends DataOutputPlus
 {
-    interface WBCConsumer {
+    interface WBCConsumer
+    {
         void apply(WritableByteChannel c) throws IOException;
     }
 

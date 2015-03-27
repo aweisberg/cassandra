@@ -62,7 +62,6 @@ public class DataOutputByteBuffer extends DataOutputStreamAndChannelPlus
         this.buffer.position(this.buffer.position() + len);
     }
 
-
     @Override
     public void writeBoolean(boolean v) throws IOException
     {
