@@ -24,6 +24,14 @@ import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 
+/**
+ * Non-buffering wrapper around an output stream and a channel. Attempts to write a ByteBuffer or Memory will forward
+ * to the provided channel providing an opportunity for zero copy writes. The channel can also be retrieved
+ * and used for things like FileChannel.transferTo.
+ *
+ * Be careful when mixing channel usage if the provided output stream is buffered.
+ *
+ */
 public class WrappedDataOutputStreamAndChannelPlus extends WrappedDataOutputStreamPlus implements DataOutputAndChannelPlus
 {
     private final WritableByteChannel channel;
@@ -48,8 +56,7 @@ public class WrappedDataOutputStreamAndChannelPlus extends WrappedDataOutputStre
             channel.write(buffer);
     }
 
-    @Override
-    public WritableByteChannel channel()
+    protected WritableByteChannel channel()
     {
         return channel;
     }

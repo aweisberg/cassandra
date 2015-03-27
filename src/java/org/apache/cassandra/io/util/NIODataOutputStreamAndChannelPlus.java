@@ -36,9 +36,9 @@ import com.google.common.base.Preconditions;
  * There may also be some performance improvement due to using a DBB as the underlying buffer for IO and the removal
  * of some indirection and delegation when it comes to reading out individual values, but that is not the goal.
  *
- * Closing NIODataOutputStreamPlus will invoke close on the WritableByteChannel provided at construction.
+ * Closing NIODataOutputStreamAndChannelPlus will invoke close on the WritableByteChannel provided at construction.
  *
- * NIODataOutputStreamPlus is not thread safe.
+ * NIODataOutputStreamAndChannelPlus is not thread safe.
  */
 public class NIODataOutputStreamAndChannelPlus extends DataOutputStreamByteBufferAndChannelPlus
 {

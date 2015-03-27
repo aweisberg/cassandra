@@ -24,7 +24,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 
 
 /**
- * An implementation of the DataOutputStream interface using a FastByteArrayOutputStream and exposing
+ * An implementation of the DataOutputStreamAndChannelPlus interface using a FastByteArrayOutputStream and exposing
  * its buffer so copies can be avoided.
  *
  * This class is completely thread unsafe.

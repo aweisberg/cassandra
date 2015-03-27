@@ -21,6 +21,10 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+/**
+ * Extension to DataOutput that provides for writing ByteBuffer and Memory, potentially with an efficient
+ * implementation that is zero copy or at least has reduced bounds checking overhead.
+ */
 public interface DataOutputPlus extends DataOutput
 {
 

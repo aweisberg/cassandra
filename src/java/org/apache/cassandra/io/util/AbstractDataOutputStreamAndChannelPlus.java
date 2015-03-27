@@ -25,6 +25,13 @@ import java.nio.ByteBuffer;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+/**
+ * Base class for DataOutput implementations that does not have an optimized implementations of Plus methods
+ * and does no buffering.
+ *
+ * Unlike NIODataOutputStreamAndChannelPlus this is capable of operating as an unbuffered output stream.
+ * Currently necessary because SequentialWriter implements its own buffering along with mark/reset/truncate.
+ */
 public abstract class AbstractDataOutputStreamAndChannelPlus extends DataOutputStreamAndChannelPlus
 {
     /*
