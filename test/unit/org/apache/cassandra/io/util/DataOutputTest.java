@@ -36,7 +36,6 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import org.junit.Assert;
 import org.junit.Test;
-
 import org.apache.cassandra.utils.ByteBufferUtil;
 
 public class DataOutputTest
@@ -67,6 +66,7 @@ public class DataOutputTest
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(Channels.newChannel(bos));
         DataInput canon = testWrite(write);
+        write.close();
         DataInput test = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
         testRead(test, canon);
     }
@@ -155,6 +155,7 @@ public class DataOutputTest
         File file = FileUtils.createTempFile("dataoutput", "test");
         try
         {
+            @SuppressWarnings("resource")
             final RandomAccessFile raf = new RandomAccessFile(file, "rw");
             DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(raf.getChannel());
             DataInput canon = testWrite(write);
@@ -175,6 +176,7 @@ public class DataOutputTest
         File file = FileUtils.createTempFile("dataoutput", "test");
         try
         {
+            @SuppressWarnings("resource")
             final RandomAccessFile raf = new RandomAccessFile(file, "rw");
             DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(raf.getChannel());
             DataInput canon = testWrite(write);

@@ -91,8 +91,14 @@ public class NIODataOutputStreamTest
         fakeStream.write(type, 11, 1);
     }
 
+    static final Random r;
+
     static Field baos_bytes;
     static {
+        long seed = System.nanoTime();
+        //seed = 210187780999648L;
+        System.out.println("Seed " + seed);
+        r = new Random(seed);
         try
         {
             baos_bytes = ByteArrayOutputStream.class.getDeclaredField("buf");
@@ -103,7 +109,7 @@ public class NIODataOutputStreamTest
             throw new RuntimeException(t);
         }
     }
-    private Random r;
+
     private ByteArrayOutputStream generated;
     private NIODataOutputStreamAndChannelPlus ndosp;
 
@@ -112,10 +118,7 @@ public class NIODataOutputStreamTest
 
     void setUp()
     {
-        long seed = System.nanoTime();
-        //seed = 210187780999648L;
-        System.out.println("Seed " + seed);
-        r = new Random(seed);
+
         generated = new ByteArrayOutputStream();
         canonical = new ByteArrayOutputStream();
         dosp = new WrappedDataOutputStreamPlus(canonical);
