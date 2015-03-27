@@ -28,7 +28,7 @@ import java.util.Arrays;
  *
  * This class is completely thread unsafe.
  */
-public final class DataOutputBuffer extends DataOutputStreamPlus
+public final class DataOutputBuffer extends WrappedDataOutputStreamPlus
 {
     public DataOutputBuffer()
     {
@@ -74,7 +74,7 @@ public final class DataOutputBuffer extends DataOutputStreamPlus
     /**
      * Returns the current contents of the buffer. Data is only valid to
      * {@link #getLength()}.
-     * 
+     *
      * @return the buffer contents
      */
     public byte[] getData()

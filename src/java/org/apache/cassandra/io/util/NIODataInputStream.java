@@ -123,6 +123,9 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
          * If there is data already at the start of the buffer, move the position to the end
          * If there is data but not at the start, move it to the start
          * Otherwise move the position to 0 so writes start at the beginning of the buffer
+         *
+         * We go to the trouble of shuffling the bytes remaining for cases where the buffer isn't fully drained
+         * while retrieving a multi-byte value while the position is in the middle.
          */
         if (buf.position() == 0 && buf.hasRemaining())
         {

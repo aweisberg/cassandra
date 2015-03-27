@@ -29,31 +29,124 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  *
  * This class is completely thread unsafe.
  */
-public final class DataOutputByteBuffer extends AbstractDataOutput
+public class DataOutputByteBuffer extends DataOutputStreamAndChannelPlus
 {
 
-    final ByteBuffer buffer;
+    ByteBuffer buffer;
+
     public DataOutputByteBuffer(ByteBuffer buffer)
     {
         this.buffer = buffer;
     }
 
     @Override
-    public void write(int b)
+    public void write(int b) throws IOException
     {
-        buffer.put((byte) b);
+        ensureRemaining(1);
+        buffer.put((byte) (b & 0xFF));
     }
 
     @Override
-    public void write(byte[] b, int off, int len)
+    public void write(byte[] b, int off, int len) throws IOException
     {
+        ensureRemaining(len);
         buffer.put(b, off, len);
     }
 
+    @Override
     public void write(ByteBuffer buffer) throws IOException
     {
         int len = buffer.remaining();
+        ensureRemaining(len);
         ByteBufferUtil.arrayCopy(buffer, buffer.position(), this.buffer, this.buffer.position(), len);
         this.buffer.position(this.buffer.position() + len);
     }
+
+
+    @Override
+    public void writeBoolean(boolean v) throws IOException
+    {
+        ensureRemaining(1);
+        buffer.put(v ? (byte)1 : (byte)0);
+    }
+
+    @Override
+    public void writeByte(int v) throws IOException
+    {
+        write(v);
+    }
+
+    @Override
+    public void writeShort(int v) throws IOException
+    {
+        ensureRemaining(2);
+        buffer.putShort((short)v);
+    }
+
+    @Override
+    public void writeChar(int v) throws IOException
+    {
+        ensureRemaining(2);
+        buffer.putChar((char)v);
+    }
+
+    @Override
+    public void writeInt(int v) throws IOException
+    {
+        ensureRemaining(4);
+        buffer.putInt(v);
+    }
+
+    @Override
+    public void writeLong(long v) throws IOException
+    {
+        ensureRemaining(8);
+        buffer.putLong(v);
+    }
+
+    @Override
+    public void writeFloat(float v) throws IOException
+    {
+        ensureRemaining(4);
+        buffer.putFloat(v);
+    }
+
+    @Override
+    public void writeDouble(double v) throws IOException
+    {
+        ensureRemaining(8);
+        buffer.putDouble(v);
+    }
+
+    @Override
+    public void writeBytes(String s) throws IOException
+    {
+        for (int index = 0; index < s.length(); index++)
+            writeByte(s.charAt(index));
+    }
+
+    @Override
+    public void writeChars(String s) throws IOException
+    {
+        for (int index = 0; index < s.length(); index++)
+            writeChar(s.charAt(index));
+    }
+
+    @Override
+    public void writeUTF(String s) throws IOException
+    {
+        AbstractDataOutputStreamAndChannelPlus.writeUTF(s, this);
+    }
+
+    @Override
+    public void write(Memory memory, long offset, long length) throws IOException
+    {
+        for (ByteBuffer buffer : memory.asByteBuffers(offset, length))
+            write(buffer);
+    }
+
+    protected void ensureRemaining(int minimum) throws IOException {}
+
+    @Override
+    public void flush() throws IOException {}
 }

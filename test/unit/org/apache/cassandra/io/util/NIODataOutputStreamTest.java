@@ -39,7 +39,7 @@ public class NIODataOutputStreamTest
     @Test(expected = NullPointerException.class)
     public void testNullChannel()
     {
-        new NIODataOutputStreamPlus(null, 8);
+        new NIODataOutputStreamPlus((WritableByteChannel)null, 8);
     }
 
     @SuppressWarnings("resource")
@@ -113,12 +113,12 @@ public class NIODataOutputStreamTest
     void setUp()
     {
         long seed = System.nanoTime();
-        //seed = 437143587703251L;
+        //seed = 210187780999648L;
         System.out.println("Seed " + seed);
         r = new Random(seed);
         generated = new ByteArrayOutputStream();
         canonical = new ByteArrayOutputStream();
-        dosp = new DataOutputStreamPlus(canonical);
+        dosp = new WrappedDataOutputStreamPlus(canonical);
         ndosp = new NIODataOutputStreamPlus(adapter, 4096);
     }
 
@@ -242,7 +242,7 @@ public class NIODataOutputStreamTest
                     sb.append(simple + twoByte + threeByte + fourByte);
                 }
                 String str = sb.toString();
-                DataOutputStreamPlus.writeUTFLegacy(str, dosp);
+                AbstractDataOutputStreamAndChannelPlus.writeUTFLegacy(str, dosp);
                 ndosp.writeUTF(str);
                 break;
             }
@@ -299,11 +299,17 @@ public class NIODataOutputStreamTest
         byte canonicalBytes[] = (byte[])baos_bytes.get(canonical);
 
         int count = generated.size();
+        if (count != canonical.size()) {
+            System.out.println("Failed at " + bytesChecked + " last action " + lastAction + " iteration " + iteration);
+        }
         assertEquals(count, canonical.size());
         for (;bytesChecked < count; bytesChecked++)
         {
             byte generatedByte = generatedBytes[bytesChecked];
             byte canonicalByte = canonicalBytes[bytesChecked];
+            if (generatedByte != canonicalByte) {
+                System.out.println("Failed at " + bytesChecked + " last action " + lastAction + " iteration " + iteration);
+            }
             assertEquals(generatedByte, canonicalByte);
         }
         return count;

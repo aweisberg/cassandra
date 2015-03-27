@@ -42,20 +42,30 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class DataOutputTest
 {
     @Test
-    public void testDataOutputStreamPlus() throws IOException
+    public void testWrappedDataOutputStreamPlus() throws IOException
     {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        DataOutputStreamPlus write = new DataOutputStreamPlus(bos);
+        DataOutputStreamPlus write = new WrappedDataOutputStreamPlus(bos);
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
         testRead(test, canon);
     }
 
     @Test
-    public void testDataOutputChannelAndChannel() throws IOException
+    public void testWrappedDataOutputChannelAndChannel() throws IOException
     {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        DataOutputStreamPlus write = new DataOutputStreamAndChannel(Channels.newChannel(bos));
+        DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(Channels.newChannel(bos));
+        DataInput canon = testWrite(write);
+        DataInput test = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
+        testRead(test, canon);
+    }
+
+    @Test
+    public void testNIODataOutputStreamPlusAndChannel() throws IOException
+    {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        DataOutputStreamPlus write = new NIODataOutputStreamPlus(Channels.newChannel(bos));
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
         testRead(test, canon);
@@ -102,12 +112,51 @@ public class DataOutputTest
     }
 
     @Test
+    public void testWrappedFileOutputStream() throws IOException
+    {
+        File file = FileUtils.createTempFile("dataoutput", "test");
+        try
+        {
+            DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(new FileOutputStream(file));
+            DataInput canon = testWrite(write);
+            write.close();
+            DataInputStream test = new DataInputStream(new FileInputStream(file));
+            testRead(test, canon);
+            test.close();
+        }
+        finally
+        {
+            Assert.assertTrue(file.delete());
+        }
+    }
+
+    @Test
     public void testFileOutputStream() throws IOException
     {
         File file = FileUtils.createTempFile("dataoutput", "test");
         try
         {
-            DataOutputStreamAndChannel write = new DataOutputStreamAndChannel(new FileOutputStream(file));
+            DataOutputStreamPlus write = new NIODataOutputStreamPlus(new FileOutputStream(file));
+            DataInput canon = testWrite(write);
+            write.close();
+            DataInputStream test = new DataInputStream(new FileInputStream(file));
+            testRead(test, canon);
+            test.close();
+        }
+        finally
+        {
+            Assert.assertTrue(file.delete());
+        }
+    }
+
+    @Test
+    public void testWrappedRandomAccessFile() throws IOException
+    {
+        File file = FileUtils.createTempFile("dataoutput", "test");
+        try
+        {
+            final RandomAccessFile raf = new RandomAccessFile(file, "rw");
+            DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(raf.getChannel());
             DataInput canon = testWrite(write);
             write.close();
             DataInputStream test = new DataInputStream(new FileInputStream(file));
@@ -127,7 +176,7 @@ public class DataOutputTest
         try
         {
             final RandomAccessFile raf = new RandomAccessFile(file, "rw");
-            DataOutputStreamAndChannel write = new DataOutputStreamAndChannel(Channels.newOutputStream(raf.getChannel()), raf.getChannel());
+            DataOutputStreamPlus write = new NIODataOutputStreamPlus(raf.getChannel());
             DataInput canon = testWrite(write);
             write.close();
             DataInputStream test = new DataInputStream(new FileInputStream(file));
@@ -145,7 +194,7 @@ public class DataOutputTest
     {
         File file = FileUtils.createTempFile("dataoutput", "test");
         final SequentialWriter writer = new SequentialWriter(file, 32, false);
-        DataOutputStreamAndChannel write = new DataOutputStreamAndChannel(writer, writer);
+        DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(writer);
         DataInput canon = testWrite(write);
         write.flush();
         write.close();

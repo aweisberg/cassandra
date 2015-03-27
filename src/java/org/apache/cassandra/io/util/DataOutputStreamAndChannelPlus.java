@@ -17,13 +17,38 @@
  */
 package org.apache.cassandra.io.util;
 
-import java.io.OutputStream;
+import java.io.IOException;
+import java.nio.channels.Channels;
+import java.nio.channels.WritableByteChannel;
 
 /**
  * When possible use {@link DataOutputStreamAndChannel} instead of this class, as it will
  * be more efficient. This class is only for situations where it cannot be used
  */
-public abstract class DataOutputStreamPlus extends OutputStream implements DataOutputPlus
+public abstract class DataOutputStreamAndChannelPlus extends DataOutputStreamPlus implements DataOutputAndChannelPlus
 {
+    //Dummy wrapper channel for derived implementations that don't have a channel
+    private final WritableByteChannel channel = Channels.newChannel(this);
 
+    //Derived classes and can override and provide a real channel
+    protected WritableByteChannel channel()
+    {
+        return channel;
+    }
+
+    @Override
+    public WritableByteChannel getChannel() throws IOException
+    {
+        //Don't allow writes to the underlying channel while data is buffered
+        flush();
+        return channel();
+    }
+
+    @Override
+    public void applyToChannel(WBCConsumer c) throws IOException
+    {
+        //Don't allow writes to the underlying channel while data is buffered
+        flush();
+        c.apply(channel());
+    }
 }

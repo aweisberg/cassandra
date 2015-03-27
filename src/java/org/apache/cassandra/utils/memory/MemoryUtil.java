@@ -153,7 +153,8 @@ public abstract class MemoryUtil
         unsafe.putInt(instance, DIRECT_BYTE_BUFFER_LIMIT_OFFSET, length);
     }
 
-    public static void duplicateByteBuffer(ByteBuffer source, ByteBuffer hollowBuffer) {
+    public static void duplicateByteBuffer(ByteBuffer source, ByteBuffer hollowBuffer)
+    {
         unsafe.putLong(hollowBuffer, DIRECT_BYTE_BUFFER_ADDRESS_OFFSET, unsafe.getLong(source, DIRECT_BYTE_BUFFER_ADDRESS_OFFSET));
         unsafe.putInt(hollowBuffer, DIRECT_BYTE_BUFFER_CAPACITY_OFFSET, unsafe.getInt(source, DIRECT_BYTE_BUFFER_CAPACITY_OFFSET));
         unsafe.putInt(hollowBuffer, DIRECT_BYTE_BUFFER_LIMIT_OFFSET, unsafe.getInt(source, DIRECT_BYTE_BUFFER_LIMIT_OFFSET));

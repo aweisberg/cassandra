@@ -97,7 +97,7 @@ public class SequentialWriter extends OutputStream implements WritableByteChanne
         fd = CLibrary.getfd(channel);
 
         directoryFD = CLibrary.tryOpenDirectory(file.getParent());
-        stream = new DataOutputStreamAndChannel(this, this);
+        stream = new WrappedDataOutputStreamAndChannelPlus(this);
     }
 
     /**

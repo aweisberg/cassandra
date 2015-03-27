@@ -17,13 +17,38 @@
  */
 package org.apache.cassandra.io.util;
 
+import java.io.IOException;
 import java.io.OutputStream;
 
 /**
  * When possible use {@link DataOutputStreamAndChannel} instead of this class, as it will
  * be more efficient. This class is only for situations where it cannot be used
  */
-public abstract class DataOutputStreamPlus extends OutputStream implements DataOutputPlus
+public class WrappedDataOutputStreamPlus extends AbstractDataOutputStreamAndChannelPlus implements DataOutputPlus
 {
+    protected final OutputStream out;
+    public WrappedDataOutputStreamPlus(OutputStream out)
+    {
+        this.out = out;
+    }
 
+    public void write(byte[] buffer, int offset, int count) throws IOException
+    {
+        out.write(buffer, offset, count);
+    }
+
+    public void write(int oneByte) throws IOException
+    {
+        out.write(oneByte);
+    }
+
+    public void close() throws IOException
+    {
+        out.close();
+    }
+
+    public void flush() throws IOException
+    {
+        out.flush();
+    }
 }

@@ -33,10 +33,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.apache.cassandra.io.util.DataOutputStreamAndChannel;
+import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
+import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
 import org.apache.cassandra.streaming.messages.StreamInitMessage;
 import org.apache.cassandra.streaming.messages.StreamMessage;
 import org.apache.cassandra.utils.FBUtilities;
@@ -154,13 +155,13 @@ public class ConnectionHandler
 
         protected abstract String name();
 
-        protected static DataOutputStreamAndChannel getWriteChannel(Socket socket) throws IOException
+        protected static DataOutputStreamAndChannelPlus getWriteChannel(Socket socket) throws IOException
         {
             WritableByteChannel out = socket.getChannel();
             // socket channel is null when encrypted(SSL)
             if (out == null)
                 out = Channels.newChannel(socket.getOutputStream());
-            return new DataOutputStreamAndChannel(socket.getOutputStream(), out);
+            return new NIODataOutputStreamPlus( out, 1024 * 16);
         }
 
         protected static ReadableByteChannel getReadChannel(Socket socket) throws IOException
@@ -308,7 +309,7 @@ public class ConnectionHandler
         {
             try
             {
-                DataOutputStreamAndChannel out = getWriteChannel(socket);
+                DataOutputStreamAndChannelPlus out = getWriteChannel(socket);
 
                 StreamMessage next;
                 while (!isClosed())
@@ -340,7 +341,7 @@ public class ConnectionHandler
             }
         }
 
-        private void sendMessage(DataOutputStreamAndChannel out, StreamMessage message)
+        private void sendMessage(DataOutputStreamAndChannelPlus out, StreamMessage message)
         {
             try
             {

@@ -784,10 +784,10 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         if (summariesFile.exists())
             FileUtils.deleteWithConfirm(summariesFile);
 
-        DataOutputStreamAndChannel oStream = null;
+        DataOutputStreamPlus oStream = null;
         try
         {
-            oStream = new DataOutputStreamAndChannel(new FileOutputStream(summariesFile));
+            oStream = new NIODataOutputStreamPlus(new FileOutputStream(summariesFile));
             IndexSummary.serializer.serialize(summary, oStream, descriptor.version.hasSamplingLevel());
             ByteBufferUtil.writeWithLength(first.getKey(), oStream);
             ByteBufferUtil.writeWithLength(last.getKey(), oStream);

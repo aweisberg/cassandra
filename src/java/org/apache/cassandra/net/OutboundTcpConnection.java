@@ -45,6 +45,7 @@ import net.jpountz.xxhash.XXHashFactory;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.NIODataOutputStreamPlus;
+import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.CoalescingStrategies;
@@ -126,8 +127,7 @@ public class OutboundTcpConnection extends Thread
     private final OutboundTcpConnectionPool poolReference;
 
     private final CoalescingStrategy cs;
-    private DataOutputPlus out;
-    private OutputStream flushable;
+    private DataOutputStreamPlus out;
     private Socket socket;
     private volatile long completed;
     private final AtomicLong dropped = new AtomicLong();
@@ -288,7 +288,7 @@ public class OutboundTcpConnection extends Thread
 
             completed++;
             if (flush)
-                flushable.flush();
+                out.flush();
         }
         catch (Exception e)
         {
@@ -403,11 +403,10 @@ public class OutboundTcpConnection extends Thread
                 }
 
                 out = new NIODataOutputStreamPlus(socket.getChannel(), BUFFER_SIZE);
-                flushable  = (OutputStream)out;
 
                 out.writeInt(MessagingService.PROTOCOL_MAGIC);
                 writeHeader(out, targetVersion, shouldCompressConnection());
-                flushable.flush();
+                out.flush();
 
                 DataInputStream in = new DataInputStream(socket.getInputStream());
                 int maxTargetVersion = handshakeVersion(in);
@@ -445,25 +444,24 @@ public class OutboundTcpConnection extends Thread
                 CompactEndpointSerializationHelper.serialize(FBUtilities.getBroadcastAddress(), out);
                 if (shouldCompressConnection())
                 {
-                    flushable.flush();
+                    out.flush();
                     logger.trace("Upgrading OutputStream to be compressed");
                     if (targetVersion < MessagingService.VERSION_21)
                     {
                         // Snappy is buffered, so no need for extra buffering output stream
-                        out = new DataOutputStreamPlus(new SnappyOutputStream(socket.getOutputStream()));
+                        out = new WrappedDataOutputStreamPlus(new SnappyOutputStream(socket.getOutputStream()));
                     }
                     else
                     {
                         // TODO: custom LZ4 OS that supports BB write methods
                         LZ4Compressor compressor = LZ4Factory.fastestInstance().fastCompressor();
                         Checksum checksum = XXHashFactory.fastestInstance().newStreamingHash32(LZ4_HASH_SEED).asChecksum();
-                        out = new DataOutputStreamPlus(new LZ4BlockOutputStream(socket.getOutputStream(),
+                        out = new WrappedDataOutputStreamPlus(new LZ4BlockOutputStream(socket.getOutputStream(),
                                                                             1 << 14,  // 16k block size
                                                                             compressor,
                                                                             checksum,
                                                                             true)); // no async flushing
                     }
-                    flushable = (OutputStream)out;
                 }
 
                 return true;

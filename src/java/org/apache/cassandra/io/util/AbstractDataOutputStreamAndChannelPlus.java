@@ -17,14 +17,15 @@
  */
 package org.apache.cassandra.io.util;
 
+import java.io.DataOutput;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.UTFDataFormatException;
 import java.nio.ByteBuffer;
 
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-public abstract class AbstractDataOutput extends OutputStream implements DataOutputPlus
+public abstract class AbstractDataOutputStreamAndChannelPlus extends DataOutputStreamAndChannelPlus
 {
     /*
     !! DataOutput methods below are copied from the implementation in Apache Harmony RandomAccessFile.
@@ -33,10 +34,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
     /**
      * Writes the entire contents of the byte array <code>buffer</code> to
      * this RandomAccessFile starting at the current file pointer.
-     * 
+     *
      * @param buffer
      *            the buffer to be written.
-     * 
+     *
      * @throws IOException
      *             If an error occurs trying to write to this RandomAccessFile.
      */
@@ -48,14 +49,14 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
      * Writes <code>count</code> bytes from the byte array <code>buffer</code>
      * starting at <code>offset</code> to this RandomAccessFile starting at
      * the current file pointer..
-     * 
+     *
      * @param buffer
      *            the bytes to be written
      * @param offset
      *            offset in buffer to get bytes
      * @param count
      *            number of bytes in buffer to write
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             RandomAccessFile.
@@ -68,10 +69,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
      * Writes the specified byte <code>oneByte</code> to this RandomAccessFile
      * starting at the current file pointer. Only the low order byte of
      * <code>oneByte</code> is written.
-     * 
+     *
      * @param oneByte
      *            the byte to be written
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             RandomAccessFile.
@@ -80,10 +81,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
 
     /**
      * Writes a boolean to this output stream.
-     * 
+     *
      * @param val
      *            the boolean value to write to the OutputStream
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -94,10 +95,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
 
     /**
      * Writes a 8-bit byte to this output stream.
-     * 
+     *
      * @param val
      *            the byte value to write to the OutputStream
-     * 
+     *
      * @throws java.io.IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -108,10 +109,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
 
     /**
      * Writes the low order 8-bit bytes from a String to this output stream.
-     * 
+     *
      * @param str
      *            the String containing the bytes to write to the OutputStream
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -128,10 +129,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
      * Writes the specified 16-bit character to the OutputStream. Only the lower
      * 2 bytes are written with the higher of the 2 bytes written first. This
      * represents the Unicode value of val.
-     * 
+     *
      * @param val
      *            the character to be written
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -146,10 +147,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
      * OutputStream. Only the lower 2 bytes of each character are written with
      * the higher of the 2 bytes written first. This represents the Unicode
      * value of each character in str.
-     * 
+     *
      * @param str
      *            the String whose characters are to be written.
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -167,10 +168,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
     /**
      * Writes a 64-bit double to this output stream. The resulting output is the
      * 8 bytes resulting from calling Double.doubleToLongBits().
-     * 
+     *
      * @param val
      *            the double to be written.
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -182,10 +183,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
     /**
      * Writes a 32-bit float to this output stream. The resulting output is the
      * 4 bytes resulting from calling Float.floatToIntBits().
-     * 
+     *
      * @param val
      *            the float to be written.
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -197,10 +198,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
     /**
      * Writes a 32-bit int to this output stream. The resulting output is the 4
      * bytes, highest order first, of val.
-     * 
+     *
      * @param val
      *            the int to be written.
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -215,10 +216,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
     /**
      * Writes a 64-bit long to this output stream. The resulting output is the 8
      * bytes, highest order first, of val.
-     * 
+     *
      * @param val
      *            the long to be written.
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -237,10 +238,10 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
     /**
      * Writes the specified 16-bit short to the OutputStream. Only the lower 2
      * bytes are written with the higher of the 2 bytes written first.
-     * 
+     *
      * @param val
      *            the short to be written
-     * 
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
@@ -249,17 +250,133 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
         writeChar(val);
     }
 
+    private static final ThreadLocal<byte[]> utfBytesLocal = new ThreadLocal<>();
+
     /**
-     * Writes the specified String out in UTF format.
-     * 
+     * Writes the specified String out in UTF format to the provided DataOutput
+     *
      * @param str
      *            the String to be written in UTF format.
-     * 
+     * @param out
+     *            the DataOutput to write the UTF encoded string to
+     *
      * @throws IOException
      *             If an error occurs attempting to write to this
      *             DataOutputStream.
      */
-    public final void writeUTF(String str) throws IOException {
+    public static void writeUTF(String str, DataOutput out) throws IOException {
+        int utfCount = 0, length = str.length();
+        utfCount = calculateUTFLength(str, utfCount, length);
+
+        if (utfCount > 65535) {
+            throw new UTFDataFormatException(); //$NON-NLS-1$
+        }
+
+        byte[] utfBytes = retrieveOutputBuffer(utfCount);
+
+        if (utfCount + 2 < utfBytes.length) {
+            fastPathEncode(str, out, utfCount, length, utfBytes);
+        } else {
+            slowPathEncode(str, out, utfCount, length, utfBytes);
+        }
+    }
+
+    /*
+     * Factored out into separate method to create more flexibility around inlining
+     */
+    private static int calculateUTFLength(String str, int utfCount, int length)
+    {
+        for (int i = 0; i < length; i++) {
+            int charValue = str.charAt(i);
+            if (charValue > 0 && charValue <= 127) {
+                utfCount++;
+            } else if (charValue <= 2047) {
+                utfCount += 2;
+            } else {
+                utfCount += 3;
+            }
+        }
+        return utfCount;
+    }
+
+    public static final int MAX_BUFFER_SIZE =
+            Integer.getInteger(Config.PROPERTY_PREFIX + "oaciu.abstract_data_output_max_buffer_size", 1024 * 8);
+
+    /*
+     * Factored out into separate method to create more flexibility around inlining
+     */
+    private static byte[] retrieveOutputBuffer(int utfCount)
+    {
+        byte utfBytes[] = utfBytesLocal.get();
+        if (utfBytes == null || utfBytes.length < utfCount)
+        {
+            utfBytes = new byte[Math.min(MAX_BUFFER_SIZE, utfCount * 2)];
+            utfBytesLocal.set(utfBytes);
+        }
+        return utfBytes;
+    }
+
+    /*
+     * Not knowing what the distribution of multi-byte values is, can't fill the entire buffer when encoding.
+     * Opting to not fill the buffer so the loop body would stay simple and maybe run faster.
+     * TODO microbenchmark checking in the loop whether there are three bytes of buffer space remaining, and is
+     * that faster than not checking but not filling the entire buffer
+     */
+    private static void slowPathEncode(String str, DataOutput out, int utfCount, int length, byte[] utfBytes)
+            throws IOException
+    {
+        int totalWritten = 0;
+        int utfIndex = 0;
+        out.writeShort(utfCount);
+        int charIndex = 0;
+        while (totalWritten < utfCount) {
+            int nextLength = Math.min(utfBytes.length / 3, length - charIndex );
+            for (int i = 0; i < nextLength; i++) {
+                int charValue = str.charAt(charIndex);
+                charIndex++;
+                if (charValue > 0 && charValue <= 127) {
+                    utfBytes[utfIndex++] = (byte) charValue;
+                } else if (charValue <= 2047) {
+                    utfBytes[utfIndex++] = (byte) (0xc0 | (0x1f & (charValue >> 6)));
+                    utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
+                } else {
+                    utfBytes[utfIndex++] = (byte) (0xe0 | (0x0f & (charValue >> 12)));
+                    utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & (charValue >> 6)));
+                    utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
+                }
+            }
+            out.write(utfBytes, 0, utfIndex);
+            totalWritten += utfIndex;
+            utfIndex = 0;
+        }
+    }
+
+    /*
+     * Know it will fit the buffer so we can use the entire buffer
+     */
+    private static void fastPathEncode(String str, DataOutput out, int utfCount, int length, byte[] utfBytes)
+            throws IOException
+    {
+        int utfIndex = 2;
+        for (int i = 0; i < length; i++) {
+            int charValue = str.charAt(i);
+            if (charValue > 0 && charValue <= 127) {
+                utfBytes[utfIndex++] = (byte) charValue;
+            } else if (charValue <= 2047) {
+                utfBytes[utfIndex++] = (byte) (0xc0 | (0x1f & (charValue >> 6)));
+                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
+            } else {
+                utfBytes[utfIndex++] = (byte) (0xe0 | (0x0f & (charValue >> 12)));
+                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & (charValue >> 6)));
+                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
+            }
+        }
+        utfBytes[0] = (byte) (utfCount >> 8);
+        utfBytes[1] = (byte) utfCount;
+        out.write(utfBytes, 0, utfIndex);
+    }
+
+    public static void writeUTFLegacy(String str, DataOutput out) throws IOException {
         int utfCount = 0, length = str.length();
         for (int i = 0; i < length; i++) {
             int charValue = str.charAt(i);
@@ -291,7 +408,21 @@ public abstract class AbstractDataOutput extends OutputStream implements DataOut
         }
         utfBytes[0] = (byte) (utfCount >> 8);
         utfBytes[1] = (byte) utfCount;
-        write(utfBytes);
+        out.write(utfBytes);
+    }
+
+    /**
+     * Writes the specified String out in UTF format.
+     *
+     * @param str
+     *            the String to be written in UTF format.
+     *
+     * @throws IOException
+     *             If an error occurs attempting to write to this
+     *             DataOutputStream.
+     */
+    public final void writeUTF(String str) throws IOException {
+        writeUTF(str, this);
     }
 
     private byte[] buf;

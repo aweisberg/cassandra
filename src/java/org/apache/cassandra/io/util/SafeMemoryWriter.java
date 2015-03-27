@@ -22,7 +22,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-public class SafeMemoryWriter extends AbstractDataOutput implements DataOutputPlus
+public class SafeMemoryWriter extends AbstractDataOutputStreamAndChannelPlus implements DataOutputPlus
 {
     private ByteOrder order = ByteOrder.BIG_ENDIAN;
     private SafeMemory buffer;

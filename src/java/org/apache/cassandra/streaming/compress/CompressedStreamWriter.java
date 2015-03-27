@@ -19,13 +19,13 @@ package org.apache.cassandra.streaming.compress;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
-import java.nio.channels.WritableByteChannel;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.streaming.ProgressInfo;
@@ -49,7 +49,7 @@ public class CompressedStreamWriter extends StreamWriter
     }
 
     @Override
-    public void write(WritableByteChannel channel) throws IOException
+    public void write(DataOutputStreamAndChannelPlus out) throws IOException
     {
         long totalSize = totalSize();
         RandomAccessReader file = sstable.openDataReader();
@@ -71,7 +71,7 @@ public class CompressedStreamWriter extends StreamWriter
                 {
                     int toTransfer = (int) Math.min(CHUNK_SIZE, length - bytesTransferred);
                     limiter.acquire(toTransfer);
-                    long lastWrite = fc.transferTo(section.left + bytesTransferred, toTransfer, channel);
+                    long lastWrite = fc.transferTo(section.left + bytesTransferred, toTransfer, out.getChannel());
                     bytesTransferred += lastWrite;
                     progress += lastWrite;
                     session.progress(sstable.descriptor, ProgressInfo.Direction.OUT, progress, totalSize);

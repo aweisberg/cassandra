@@ -1,12 +1,29 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.cassandra.io.util;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.io.UTFDataFormatException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 
-import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.memory.MemoryUtil;
 
 import com.google.common.base.Preconditions;
@@ -23,28 +40,49 @@ import com.google.common.base.Preconditions;
  *
  * NIODataOutputStreamPlus is not thread safe.
  */
-public class NIODataOutputStreamPlus extends OutputStream implements DataOutputPlus
+public class NIODataOutputStreamPlus extends DataOutputByteBuffer
 {
-    private ByteBuffer buf;
+    private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + "nio_data_output_stream_plus_buffer_size", 1024 * 32);
     private final WritableByteChannel wbc;
+
+    public NIODataOutputStreamPlus(RandomAccessFile ras) {
+        this(ras.getChannel());
+    }
+
+    public NIODataOutputStreamPlus(RandomAccessFile ras, int bufferSize) {
+        this(ras.getChannel(), bufferSize);
+    }
+
+    public NIODataOutputStreamPlus(FileOutputStream fos) {
+        this(fos.getChannel());
+    }
+
+    public NIODataOutputStreamPlus(FileOutputStream fos, int bufferSize) {
+        this(fos.getChannel(), bufferSize);
+    }
+
+    public NIODataOutputStreamPlus(WritableByteChannel wbc)
+    {
+        this( wbc, DEFAULT_BUFFER_SIZE);
+    }
 
     public NIODataOutputStreamPlus(WritableByteChannel wbc, int bufferSize)
     {
+        super(ByteBuffer.allocateDirect(bufferSize));
         Preconditions.checkNotNull(wbc);
         Preconditions.checkArgument(bufferSize >= 8, "Buffer size must be large enough to accomadate a long/double");
         this.wbc = wbc;
-        buf = ByteBuffer.allocateDirect(bufferSize);
     }
 
     @Override
     public void flush() throws IOException
     {
-        buf.flip();
+        buffer.flip();
 
-        while (buf.hasRemaining())
-            wbc.write(buf);
+        while (buffer.hasRemaining())
+            wbc.write(buffer);
 
-        buf.clear();
+        buffer.clear();
     }
 
     @Override
@@ -52,22 +90,15 @@ public class NIODataOutputStreamPlus extends OutputStream implements DataOutputP
     {
         flush();
         wbc.close();
-        FileUtils.clean(buf);
-        buf = null;
-    }
-
-    private void ensureRemaining(int minimum) throws IOException
-    {
-        if (buf.remaining() < minimum)
-            flush();
+        FileUtils.clean(buffer);
+        buffer = null;
     }
 
     @Override
-    public void write(int b) throws IOException
+    protected void ensureRemaining(int minimum) throws IOException
     {
-        if (!buf.hasRemaining())
+        if (buffer.remaining() < minimum)
             flush();
-        buf.put((byte)(b & 0xFF));
     }
 
     @Override
@@ -93,10 +124,10 @@ public class NIODataOutputStreamPlus extends OutputStream implements DataOutputP
         int copied = 0;
         while (copied < len)
         {
-            if (buf.hasRemaining())
+            if (buffer.hasRemaining())
             {
-                int toCopy = Math.min(len - copied, buf.remaining());
-                buf.put(b, off + copied, toCopy);
+                int toCopy = Math.min(len - copied, buffer.remaining());
+                buffer.put(b, off + copied, toCopy);
                 copied += toCopy;
             }
             else
@@ -106,108 +137,38 @@ public class NIODataOutputStreamPlus extends OutputStream implements DataOutputP
         }
     }
 
-    @Override
-    public void writeBoolean(boolean v) throws IOException
-    {
-        if (!buf.hasRemaining())
-            flush();
-        buf.put(v ? (byte)1 : (byte)0);
-    }
-
-    @Override
-    public void writeByte(int v) throws IOException
-    {
-        write(v);
-    }
-
-    @Override
-    public void writeShort(int v) throws IOException
-    {
-        ensureRemaining(2);
-        buf.putShort((short)v);
-    }
-
-    @Override
-    public void writeChar(int v) throws IOException
-    {
-        ensureRemaining(2);
-        buf.putChar((char)v);
-    }
-
-    @Override
-    public void writeInt(int v) throws IOException
-    {
-        ensureRemaining(4);
-        buf.putInt(v);
-    }
-
-    @Override
-    public void writeLong(long v) throws IOException
-    {
-        ensureRemaining(8);
-        buf.putLong(v);
-    }
-
-    @Override
-    public void writeFloat(float v) throws IOException
-    {
-        ensureRemaining(4);
-        buf.putFloat(v);
-    }
-
-    @Override
-    public void writeDouble(double v) throws IOException
-    {
-        ensureRemaining(8);
-        buf.putDouble(v);
-    }
-
-    @Override
-    public void writeBytes(String s) throws IOException
-    {
-        for (int index = 0; index < s.length(); index++)
-            writeByte(s.charAt(index));
-    }
-
-    @Override
-    public void writeChars(String s) throws IOException
-    {
-        for (int index = 0; index < s.length(); index++)
-            writeChar(s.charAt(index));
-    }
-
-    public void writeUTF(String s) throws IOException
-    {
-        AbstractDataOutput.writeUTF(s, this);
-    }
-
+    // ByteBuffer to use for defensive copies
     private final ByteBuffer hollowBuffer = MemoryUtil.getHollowDirectByteBuffer();
+
+    /*
+     * Makes a defensive copy of the incoming ByteBuffer and don't modify the position or limit
+     * even temporarily so it is thread-safe WRT to the incoming buffer
+     * (non-Javadoc)
+     * @see org.apache.cassandra.io.util.DataOutputPlus#write(java.nio.ByteBuffer)
+     */
     @Override
-    public void write(ByteBuffer buffer) throws IOException
+    public void write(ByteBuffer toWrite) throws IOException
     {
-        if (buffer.isDirect() && buffer.remaining() > buf.remaining())
+        if (toWrite.isDirect() && toWrite.remaining() > buffer.remaining())
         {
             flush();
-            MemoryUtil.duplicateByteBuffer(buffer, hollowBuffer);
+            MemoryUtil.duplicateByteBuffer(toWrite, hollowBuffer);
             while (hollowBuffer.hasRemaining())
                 wbc.write(hollowBuffer);
         }
-        else if (buffer.isDirect())
+        else if (toWrite.isDirect())
         {
-            MemoryUtil.duplicateByteBuffer(buffer, hollowBuffer);
-            buf.put(hollowBuffer);
+            MemoryUtil.duplicateByteBuffer(toWrite, hollowBuffer);
+            buffer.put(hollowBuffer);
         }
         else
         {
-            write(buffer.array(), buffer.arrayOffset() + buffer.position(), buffer.remaining());
+            write(toWrite.array(), toWrite.arrayOffset() + toWrite.position(), toWrite.remaining());
         }
     }
 
     @Override
-    public void write(Memory memory, long offset, long length) throws IOException
-    {
-        for (ByteBuffer buffer : memory.asByteBuffers(offset, length))
-            write(buffer);
+    protected WritableByteChannel channel() {
+        return wbc;
     }
-
 }
