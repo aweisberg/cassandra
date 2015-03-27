@@ -39,18 +39,10 @@ public abstract class DataOutputStreamAndChannelPlus extends DataOutputStreamPlu
     }
 
     @Override
-    public WritableByteChannel getChannel() throws IOException
+    public Object applyToChannel(WBCFunction c) throws IOException
     {
         //Don't allow writes to the underlying channel while data is buffered
         flush();
-        return channel();
-    }
-
-    @Override
-    public void applyToChannel(WBCConsumer c) throws IOException
-    {
-        //Don't allow writes to the underlying channel while data is buffered
-        flush();
-        c.apply(channel());
+        return c.apply(channel());
     }
 }

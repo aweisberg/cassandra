@@ -9,20 +9,14 @@ import java.nio.channels.WritableByteChannel;
  */
 public interface DataOutputAndChannelPlus extends DataOutputPlus
 {
-    interface WBCConsumer
+    interface WBCFunction
     {
-        void apply(WritableByteChannel c) throws IOException;
+        Object apply(WritableByteChannel c) throws IOException;
     }
 
     /**
      * Safe way to operate against the underlying channel. Impossible to stash a reference to the channel
      * and forget to flush
      */
-    void applyToChannel(WBCConsumer c) throws IOException;
-
-    /**
-     * Careful stashing a reference to this channel while also using a wrapping stream that buffers.
-     * Needs to flush before operating on the channel.
-     */
-    WritableByteChannel getChannel() throws IOException;
+    Object applyToChannel(WBCFunction c) throws IOException;
 }

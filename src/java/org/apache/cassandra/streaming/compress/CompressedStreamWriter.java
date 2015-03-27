@@ -19,12 +19,14 @@ package org.apache.cassandra.streaming.compress;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.nio.channels.WritableByteChannel;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.io.util.DataOutputAndChannelPlus.WBCFunction;
 import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
@@ -61,7 +63,7 @@ public class CompressedStreamWriter extends StreamWriter
         try
         {
             // stream each of the required sections of the file
-            for (Pair<Long, Long> section : sections)
+            for (final Pair<Long, Long> section : sections)
             {
                 // length of the section to stream
                 long length = section.right - section.left;
@@ -69,9 +71,16 @@ public class CompressedStreamWriter extends StreamWriter
                 long bytesTransferred = 0;
                 while (bytesTransferred < length)
                 {
-                    int toTransfer = (int) Math.min(CHUNK_SIZE, length - bytesTransferred);
+                    final long bytesTransferredFinal = bytesTransferred;
+                    final int toTransfer = (int) Math.min(CHUNK_SIZE, length - bytesTransferred);
                     limiter.acquire(toTransfer);
-                    long lastWrite = fc.transferTo(section.left + bytesTransferred, toTransfer, out.getChannel());
+                    long lastWrite = (Long)out.applyToChannel( new WBCFunction()
+                    {
+                        public Object apply(WritableByteChannel wbc) throws IOException
+                        {
+                            return fc.transferTo(section.left + bytesTransferredFinal, toTransfer, wbc);
+                        }
+                    });
                     bytesTransferred += lastWrite;
                     progress += lastWrite;
                     session.progress(sstable.descriptor, ProgressInfo.Direction.OUT, progress, totalSize);
