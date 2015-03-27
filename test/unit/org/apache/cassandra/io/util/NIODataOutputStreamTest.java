@@ -150,25 +150,29 @@ public class NIODataOutputStreamTest
 
             switch (action)
             {
-            case 0: {
+            case 0:
+            {
                 generated.flush();
                 dosp.flush();
                 break;
             }
-            case 1: {
+            case 1:
+            {
                 int val = r.nextInt();
                 dosp.write(val);
                 ndosp.write(val);
                 break;
             }
-            case 2: {
+            case 2:
+            {
                 byte randomBytes[] = new byte[r.nextInt(4096 * 2 + 1)];
                 r.nextBytes(randomBytes);
                 dosp.write(randomBytes);
                 ndosp.write(randomBytes);
                 break;
             }
-            case 3: {
+            case 3:
+            {
                 byte randomBytes[] = new byte[r.nextInt(4096 * 2 + 1)];
                 r.nextBytes(randomBytes);
                 int offset = randomBytes.length == 0 ? 0 : r.nextInt(randomBytes.length);
@@ -177,68 +181,80 @@ public class NIODataOutputStreamTest
                 ndosp.write(randomBytes, offset, length);
                 break;
             }
-            case 4: {
+            case 4:
+            {
                 boolean val = r.nextInt(2) == 0;
                 dosp.writeBoolean(val);
                 ndosp.writeBoolean(val);
                 break;
             }
-            case 5: {
+            case 5:
+            {
                 int val = r.nextInt();
                 dosp.writeByte(val);
                 ndosp.writeByte(val);
                 break;
             }
-            case 6: {
+            case 6:
+            {
                 int val = r.nextInt();
                 dosp.writeShort(val);
                 ndosp.writeShort(val);
                 break;
             }
-            case 7: {
+            case 7:
+            {
                 int val = r.nextInt();
                 dosp.writeChar(val);
                 ndosp.writeChar(val);
                 break;
             }
-            case 8: {
+            case 8:
+            {
                 int val = r.nextInt();
                 dosp.writeInt(val);
                 ndosp.writeInt(val);
                 break;
             }
-            case 9: {
+            case 9:
+            {
                 int val = r.nextInt();
                 dosp.writeLong(val);
                 ndosp.writeLong(val);
                 break;
             }
-            case 10: {
+            case 10:
+            {
                 float val = r.nextFloat();
                 dosp.writeFloat(val);
                 ndosp.writeFloat(val);
                 break;
             }
-            case 11: {
+            case 11:
+            {
                 double val = r.nextDouble();
                 dosp.writeDouble(val);
                 ndosp.writeDouble(val);
                 break;
             }
-            case 12: {
+            case 12:
+            {
                 dosp.writeBytes(simple);
                 ndosp.writeBytes(simple);
                 break;
             }
-            case 13: {
+            case 13:
+            {
                 dosp.writeChars(twoByte);
                 ndosp.writeChars(twoByte);
                 break;
             }
-            case 14: {
+            case 14:
+            {
                 StringBuilder sb = new StringBuilder();
                 int length = r.nextInt(500);
-                for (int ii = 0; ii < length; ii++) {
+                for (int ii = 0; ii < length; ii++)
+                {
                     sb.append(simple + twoByte + threeByte + fourByte);
                 }
                 String str = sb.toString();
@@ -246,7 +262,8 @@ public class NIODataOutputStreamTest
                 ndosp.writeUTF(str);
                 break;
             }
-            case 15: {
+            case 15:
+            {
                 ByteBuffer buf = ByteBuffer.allocate(r.nextInt(1024 * 8 + 1));
                 r.nextBytes(buf.array());
                 buf.position(buf.capacity() == 0 ? 0 : r.nextInt(buf.capacity()));
@@ -258,7 +275,8 @@ public class NIODataOutputStreamTest
                 dosp.write(buf.duplicate());
                 break;
             }
-            case 16: {
+            case 16:
+            {
                 ByteBuffer buf = ByteBuffer.allocateDirect(r.nextInt(1024 * 8 + 1));
                 while (buf.hasRemaining())
                     buf.put((byte)r.nextInt());
@@ -271,7 +289,8 @@ public class NIODataOutputStreamTest
                 dosp.write(buf.duplicate());
                 break;
             }
-            case 17: {
+            case 17:
+            {
                 Memory buf = Memory.allocate(r.nextInt(1024 * 8 - 1) + 1);
                 for (int ii = 0; ii < buf.size(); ii++)
                     buf.setByte(ii, (byte)r.nextInt());
@@ -299,17 +318,15 @@ public class NIODataOutputStreamTest
         byte canonicalBytes[] = (byte[])baos_bytes.get(canonical);
 
         int count = generated.size();
-        if (count != canonical.size()) {
+        if (count != canonical.size())
             System.out.println("Failed at " + bytesChecked + " last action " + lastAction + " iteration " + iteration);
-        }
         assertEquals(count, canonical.size());
         for (;bytesChecked < count; bytesChecked++)
         {
             byte generatedByte = generatedBytes[bytesChecked];
             byte canonicalByte = canonicalBytes[bytesChecked];
-            if (generatedByte != canonicalByte) {
+            if (generatedByte != canonicalByte)
                 System.out.println("Failed at " + bytesChecked + " last action " + lastAction + " iteration " + iteration);
-            }
             assertEquals(generatedByte, canonicalByte);
         }
         return count;

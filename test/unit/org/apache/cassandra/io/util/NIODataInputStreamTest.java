@@ -315,7 +315,8 @@ public class NIODataInputStreamTest
             iteration++;
 
             switch (action) {
-            case 0: {
+            case 0:
+            {
                 byte bytes[] = new byte[111];
 
                 int expectedBytes = corpus.capacity() - totalRead;
@@ -340,7 +341,8 @@ public class NIODataInputStreamTest
                 totalRead += 111;
                 break;
             }
-            case 1: {
+            case 1:
+            {
                 byte bytes[] = new byte[r.nextInt(1024 * 8 + 1)];
 
                 int offset = bytes.length == 0 ? 0 : r.nextInt(bytes.length);
@@ -366,7 +368,8 @@ public class NIODataInputStreamTest
                 totalRead += length;
                 break;
             }
-            case 2: {
+            case 2:
+            {
                 byte bytes[] = new byte[r.nextInt(1024 * 8 + 1)];
 
                 int offset = bytes.length == 0 ? 0 : r.nextInt(bytes.length);
@@ -385,7 +388,8 @@ public class NIODataInputStreamTest
                 totalRead += read;
                 break;
             }
-            case 3: {
+            case 3:
+            {
                 byte bytes[] = new byte[111];
 
                 int expectedBytes = corpus.capacity() - totalRead;
@@ -402,7 +406,8 @@ public class NIODataInputStreamTest
                 totalRead += read;
                 break;
             }
-            case 4: {
+            case 4:
+            {
                 boolean expected = corpus.get() != 0;
                 boolean canonical = dis.readBoolean();
                 boolean actual = is.readBoolean();
@@ -410,7 +415,8 @@ public class NIODataInputStreamTest
                 totalRead++;
                 break;
             }
-            case 5: {
+            case 5:
+            {
                 byte expected = corpus.get();
                 byte canonical = dis.readByte();
                 byte actual = is.readByte();
@@ -418,7 +424,8 @@ public class NIODataInputStreamTest
                 totalRead++;
                 break;
             }
-            case 6: {
+            case 6:
+            {
                 int expected = corpus.get() & 0xFF;
                 int canonical = dis.read();
                 int actual = is.read();
@@ -426,7 +433,8 @@ public class NIODataInputStreamTest
                 totalRead++;
                 break;
             }
-            case 7: {
+            case 7:
+            {
                 int expected = corpus.get() & 0xFF;
                 int canonical = dis.readUnsignedByte();
                 int actual = is.readUnsignedByte();
@@ -434,7 +442,8 @@ public class NIODataInputStreamTest
                 totalRead++;
                 break;
             }
-            case 8: {
+            case 8:
+            {
                 if (corpus.remaining() < 2)
                 {
                     boolean threw = false;
@@ -459,7 +468,8 @@ public class NIODataInputStreamTest
                 totalRead += 2;
                 break;
             }
-            case 9: {
+            case 9:
+            {
                 if (corpus.remaining() < 2)
                 {
                     boolean threw = false;
@@ -486,7 +496,8 @@ public class NIODataInputStreamTest
                 totalRead += 2;
                 break;
             }
-            case 10: {
+            case 10:
+            {
                 if (corpus.remaining() < 2)
                 {
                     boolean threw = false;
@@ -511,7 +522,8 @@ public class NIODataInputStreamTest
                 totalRead += 2;
                 break;
             }
-            case 11: {
+            case 11:
+            {
                 if (corpus.remaining() < 4)
                 {
                     boolean threw = false;
@@ -536,7 +548,8 @@ public class NIODataInputStreamTest
                 totalRead += 4;
                 break;
             }
-            case 12: {
+            case 12:
+            {
                 if (corpus.remaining() < 4)
                 {
                     boolean threw = false;
@@ -566,7 +579,8 @@ public class NIODataInputStreamTest
                 }
                 break;
             }
-            case 13: {
+            case 13:
+            {
                 if (corpus.remaining() < 8)
                 {
                     boolean threw = false;
@@ -592,7 +606,8 @@ public class NIODataInputStreamTest
                 totalRead += 8;
                 break;
             }
-            case 14: {
+            case 14:
+            {
                 if (corpus.remaining() < 8)
                 {
                     boolean threw = false;
@@ -622,7 +637,8 @@ public class NIODataInputStreamTest
                 }
                 break;
             }
-            case 15: {
+            case 15:
+            {
                 int skipBytes = r.nextInt(1024);
                 int actuallySkipped =  Math.min(skipBytes, corpus.remaining());
 
