@@ -257,7 +257,13 @@ public abstract class AbstractDataOutputStreamAndChannelPlus extends DataOutputS
         writeChar(val);
     }
 
-    private static final ThreadLocal<byte[]> utfBytesLocal = new ThreadLocal<>();
+    private static final ThreadLocal<byte[]> utfBytesLocal = new ThreadLocal<byte[]>() {
+        @Override
+        public byte[] initialValue()
+        {
+            return new byte[16];
+        }
+    };
 
     /**
      * Writes the specified String out in UTF format to the provided DataOutput
@@ -278,7 +284,7 @@ public abstract class AbstractDataOutputStreamAndChannelPlus extends DataOutputS
         if (utfCount > 65535)
             throw new UTFDataFormatException(); //$NON-NLS-1$
 
-        byte[] utfBytes = retrieveOutputBuffer(utfCount);
+        byte[] utfBytes = retrieveOutputBuffer(utfCount + 2);
 
         if (utfCount + 2 < utfBytes.length)
             fastPathEncode(str, out, utfCount, length, utfBytes);
@@ -313,7 +319,7 @@ public abstract class AbstractDataOutputStreamAndChannelPlus extends DataOutputS
     private static byte[] retrieveOutputBuffer(int utfCount)
     {
         byte utfBytes[] = utfBytesLocal.get();
-        if (utfBytes == null || utfBytes.length < utfCount)
+        if (utfBytes.length < utfCount)
         {
             utfBytes = new byte[Math.min(MAX_BUFFER_SIZE, utfCount * 2)];
             utfBytesLocal.set(utfBytes);
