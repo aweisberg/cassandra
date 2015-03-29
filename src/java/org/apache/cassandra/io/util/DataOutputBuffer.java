@@ -19,7 +19,7 @@ package org.apache.cassandra.io.util;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
+import java.nio.channels.WritableByteChannel;
 
 
 /**
@@ -28,7 +28,7 @@ import java.util.Arrays;
  *
  * This class is completely thread unsafe.
  */
-public final class DataOutputBuffer extends WrappedDataOutputStreamPlus
+public final class DataOutputBuffer extends BufferedDataOutputStreamPlus
 {
     public DataOutputBuffer()
     {
@@ -37,67 +37,73 @@ public final class DataOutputBuffer extends WrappedDataOutputStreamPlus
 
     public DataOutputBuffer(int size)
     {
-        super(new FastByteArrayOutputStream(size));
+        super(ByteBuffer.allocate(size));
     }
 
-    @Override
-    public void write(int b)
+    public void flush() throws IOException
     {
-        try
-        {
-            super.write(b);
-        }
-        catch (IOException e)
-        {
-            throw new AssertionError(e); // FBOS does not throw IOE
-        }
+        reallocate(buffer.capacity() * 2);
     }
 
-    @Override
-    public void write(byte[] b, int off, int len)
+    private void reallocate(int newSize)
     {
-        try
-        {
-            super.write(b, off, len);
-        }
-        catch (IOException e)
-        {
-            throw new AssertionError(e); // FBOS does not throw IOE
-        }
+        ByteBuffer newBuffer = ByteBuffer.allocate(newSize);
+        buffer.flip();
+        newBuffer.put(buffer);
+        buffer = newBuffer;
     }
 
-    public void write(ByteBuffer buffer) throws IOException
+    protected WritableByteChannel newDefaultChannel()
     {
-        ((FastByteArrayOutputStream) out).write(buffer);
+        return new GrowingChannel();
     }
 
-    /**
-     * Returns the current contents of the buffer. Data is only valid to
-     * {@link #getLength()}.
-     *
-     * @return the buffer contents
-     */
+    private final class GrowingChannel implements WritableByteChannel
+    {
+        public int write(ByteBuffer src) throws IOException
+        {
+            int count = src.remaining();
+            reallocate(buffer.capacity() + count);
+            buffer.put(src);
+            return count;
+        }
+
+        public boolean isOpen()
+        {
+            return true;
+        }
+
+        public void close() throws IOException
+        {
+        }
+    }
+
+    public void close() throws IOException
+    {
+    }
+
+    public ByteBuffer buffer()
+    {
+        ByteBuffer result = buffer.duplicate();
+        result.flip();
+        return result;
+    }
+
     public byte[] getData()
     {
-        return ((FastByteArrayOutputStream) out).buf;
+        return buffer.array();
+    }
+
+    public int getLength()
+    {
+        return buffer.position();
     }
 
     public byte[] toByteArray()
     {
-        FastByteArrayOutputStream out = (FastByteArrayOutputStream) this.out;
-        return Arrays.copyOfRange(out.buf, 0, out.count);
-
-    }
-
-    public ByteBuffer asByteBuffer()
-    {
-        FastByteArrayOutputStream out = (FastByteArrayOutputStream) this.out;
-        return ByteBuffer.wrap(out.buf, 0, out.count);
-    }
-
-    /** @return the length of the valid data currently in the buffer. */
-    public int getLength()
-    {
-        return ((FastByteArrayOutputStream) out).count;
+        ByteBuffer buffer = buffer();
+        byte[] result = new byte[buffer.remaining()];
+        buffer.get(result);
+        return result;
     }
 }

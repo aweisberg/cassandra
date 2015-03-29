@@ -294,13 +294,15 @@ public class BufferedDataOutputStreamTest
             }
             case 17:
             {
-                Memory buf = Memory.allocate(r.nextInt(1024 * 8 - 1) + 1);
-                for (int ii = 0; ii < buf.size(); ii++)
-                    buf.setByte(ii, (byte)r.nextInt());
-                long offset = buf.size() == 0 ? 0 : r.nextInt((int)buf.size());
-                long length = (buf.size() - offset == 0 ? 0 : r.nextInt((int)(buf.size() - offset)));
-                ndosp.write(buf, offset, length);
-                dosp.write(buf, offset, length);
+                try (Memory buf = Memory.allocate(r.nextInt(1024 * 8 - 1) + 1);)
+                {
+                    for (int ii = 0; ii < buf.size(); ii++)
+                        buf.setByte(ii, (byte)r.nextInt());
+                    long offset = buf.size() == 0 ? 0 : r.nextInt((int)buf.size());
+                    long length = (buf.size() - offset == 0 ? 0 : r.nextInt((int)(buf.size() - offset)));
+                    ndosp.write(buf, offset, length);
+                    dosp.write(buf, offset, length);
+                }
                 break;
             }
             default:

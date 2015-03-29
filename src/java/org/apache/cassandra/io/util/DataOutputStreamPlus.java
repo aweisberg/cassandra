@@ -37,7 +37,7 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
 
     protected DataOutputStreamPlus()
     {
-        this.channel = Channels.newChannel(this);
+        this.channel = newDefaultChannel();
     }
 
     protected DataOutputStreamPlus(WritableByteChannel channel)
@@ -45,10 +45,10 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
         this.channel = channel;
     }
 
-    //Derived classes and can override and provide a real channel
-    protected WritableByteChannel channel()
+    // Derived classes can override and *construct* a real channel, if it is not possible to provide one to the constructor
+    protected WritableByteChannel newDefaultChannel()
     {
-        return channel;
+        return Channels.newChannel(this);
     }
 
     @Override
@@ -56,6 +56,6 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
     {
         //Don't allow writes to the underlying channel while data is buffered
         flush();
-        return f.apply(channel());
+        return f.apply(channel);
     }
 }
