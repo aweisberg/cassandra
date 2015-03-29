@@ -24,10 +24,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import com.google.common.base.Function;
+
+import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.compress.CompressionMetadata;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
-import org.apache.cassandra.io.util.DataOutputAndChannelPlus.WBCFunction;
-import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
+import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.streaming.ProgressInfo;
@@ -51,7 +53,7 @@ public class CompressedStreamWriter extends StreamWriter
     }
 
     @Override
-    public void write(DataOutputStreamAndChannelPlus out) throws IOException
+    public void write(DataOutputStreamPlus out) throws IOException
     {
         long totalSize = totalSize();
         RandomAccessReader file = sstable.openDataReader();
@@ -74,11 +76,18 @@ public class CompressedStreamWriter extends StreamWriter
                     final long bytesTransferredFinal = bytesTransferred;
                     final int toTransfer = (int) Math.min(CHUNK_SIZE, length - bytesTransferred);
                     limiter.acquire(toTransfer);
-                    long lastWrite = (Long)out.applyToChannel( new WBCFunction()
+                    long lastWrite = out.applyToChannel( new Function<WritableByteChannel, Long>()
                     {
-                        public Object apply(WritableByteChannel wbc) throws IOException
+                        public Long apply(WritableByteChannel wbc)
                         {
-                            return fc.transferTo(section.left + bytesTransferredFinal, toTransfer, wbc);
+                            try
+                            {
+                                return fc.transferTo(section.left + bytesTransferredFinal, toTransfer, wbc);
+                            }
+                            catch (IOException e)
+                            {
+                                throw new FSWriteError(e, sstable.getFilename());
+                            }
                         }
                     });
                     bytesTransferred += lastWrite;

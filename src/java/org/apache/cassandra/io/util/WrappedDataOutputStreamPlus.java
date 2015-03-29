@@ -19,18 +19,26 @@ package org.apache.cassandra.io.util;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.channels.Channel;
+import java.nio.channels.WritableByteChannel;
 
 /**
- * When possible use {@link WrappedDataOutputStreamAndChannelPlus} instead of this class, as it will
+ * When possible use {@link WrappedDataOutputStreamPlus} instead of this class, as it will
  * be more efficient when using Plus methods. This class is only for situations where it cannot be used.
  *
  * The channel provided by this class is just a wrapper around the output stream.
  */
-public class WrappedDataOutputStreamPlus extends AbstractDataOutputStreamAndChannelPlus implements DataOutputPlus
+public class WrappedDataOutputStreamPlus extends AbstractDataOutputStreamPlus
 {
     protected final OutputStream out;
     public WrappedDataOutputStreamPlus(OutputStream out)
     {
+        this.out = out;
+    }
+
+    public WrappedDataOutputStreamPlus(OutputStream out, WritableByteChannel channel)
+    {
+        super(channel);
         this.out = out;
     }
 

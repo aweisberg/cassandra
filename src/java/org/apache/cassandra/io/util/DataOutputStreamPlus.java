@@ -17,13 +17,45 @@
  */
 package org.apache.cassandra.io.util;
 
+import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.WritableByteChannel;
+
+import com.google.common.base.Function;
 
 /**
- * When possible use {@link DataOutputStreamAndChannel} instead of this class, as it will
- * be more efficient. This class is only for situations where it cannot be used
+ * Abstract base class for DataOutputStreams that accept writes from ByteBuffer or Memory and also provide
+ * access to the underlying WritableByteChannel associated with their output stream.
+ *
+ * If no channel is provided by derived classes then a wrapper channel is provided.
  */
 public abstract class DataOutputStreamPlus extends OutputStream implements DataOutputPlus
 {
+    //Dummy wrapper channel for derived implementations that don't have a channel
+    protected final WritableByteChannel channel;
 
+    protected DataOutputStreamPlus()
+    {
+        this.channel = Channels.newChannel(this);
+    }
+
+    protected DataOutputStreamPlus(WritableByteChannel channel)
+    {
+        this.channel = channel;
+    }
+
+    //Derived classes and can override and provide a real channel
+    protected WritableByteChannel channel()
+    {
+        return channel;
+    }
+
+    @Override
+    public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException
+    {
+        //Don't allow writes to the underlying channel while data is buffered
+        flush();
+        return f.apply(channel());
+    }
 }

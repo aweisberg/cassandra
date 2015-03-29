@@ -46,10 +46,10 @@ import org.apache.cassandra.io.sstable.metadata.MetadataComponent;
 import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
+import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
+import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
 import org.apache.cassandra.io.util.SegmentedFile;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -553,7 +553,7 @@ public class BigTableWriter extends SSTableWriter
                 {
                     // bloom filter
                     FileOutputStream fos = new FileOutputStream(path);
-                    DataOutputStreamAndChannelPlus stream = new NIODataOutputStreamAndChannelPlus(fos);
+                    DataOutputStreamPlus stream = new BufferedDataOutputStreamPlus(fos);
                     FilterFactory.serialize(bf, stream);
                     stream.flush();
                     fos.getFD().sync();

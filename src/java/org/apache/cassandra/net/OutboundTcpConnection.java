@@ -20,7 +20,6 @@ package org.apache.cassandra.net;
 import java.io.DataInputStream;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketException;
@@ -42,9 +41,8 @@ import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.xxhash.XXHashFactory;
 
-import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
+import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
 import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
@@ -402,7 +400,7 @@ public class OutboundTcpConnection extends Thread
                     }
                 }
 
-                out = new NIODataOutputStreamAndChannelPlus(socket.getChannel(), BUFFER_SIZE);
+                out = new BufferedDataOutputStreamPlus(socket.getChannel(), BUFFER_SIZE);
 
                 out.writeInt(MessagingService.PROTOCOL_MAGIC);
                 writeHeader(out, targetVersion, shouldCompressConnection());

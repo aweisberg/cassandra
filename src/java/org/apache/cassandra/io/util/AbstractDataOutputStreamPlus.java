@@ -21,6 +21,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.io.UTFDataFormatException;
 import java.nio.ByteBuffer;
+import java.nio.channels.WritableByteChannel;
 
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -29,11 +30,20 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * Base class for DataOutput implementations that does not have an optimized implementations of Plus methods
  * and does no buffering.
  *
- * Unlike NIODataOutputStreamAndChannelPlus this is capable of operating as an unbuffered output stream.
+ * Unlike BufferedDataOutputStreamPlus this is capable of operating as an unbuffered output stream.
  * Currently necessary because SequentialWriter implements its own buffering along with mark/reset/truncate.
  */
-public abstract class AbstractDataOutputStreamAndChannelPlus extends DataOutputStreamAndChannelPlus
+public abstract class AbstractDataOutputStreamPlus extends DataOutputStreamPlus
 {
+    protected AbstractDataOutputStreamPlus()
+    {
+        super();
+    }
+
+    protected AbstractDataOutputStreamPlus(WritableByteChannel channel)
+    {
+        super(channel);
+    }
     /*
     !! DataOutput methods below are copied from the implementation in Apache Harmony RandomAccessFile.
     */

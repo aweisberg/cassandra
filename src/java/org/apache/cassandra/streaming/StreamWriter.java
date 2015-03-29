@@ -20,8 +20,6 @@ package org.apache.cassandra.streaming;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.channels.Channels;
-import java.nio.channels.WritableByteChannel;
 import java.util.Collection;
 
 import com.ning.compress.lzf.LZFOutputStream;
@@ -30,7 +28,6 @@ import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.DataIntegrityMetadata;
 import org.apache.cassandra.io.util.DataIntegrityMetadata.ChecksumValidator;
-import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
@@ -70,7 +67,7 @@ public class StreamWriter
      * @param output where this writes data to
      * @throws IOException on any I/O error
      */
-    public void write(DataOutputStreamAndChannelPlus output) throws IOException
+    public void write(DataOutputStreamPlus output) throws IOException
     {
         long totalSize = totalSize();
         RandomAccessReader file = sstable.openDataReader();

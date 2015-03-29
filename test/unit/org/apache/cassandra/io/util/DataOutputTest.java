@@ -54,17 +54,17 @@ public class DataOutputTest
     public void testWrappedDataOutputChannelAndChannel() throws IOException
     {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(Channels.newChannel(bos));
+        DataOutputStreamPlus write = new WrappedDataOutputStreamPlus(bos);
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
         testRead(test, canon);
     }
 
     @Test
-    public void testNIODataOutputStreamPlusAndChannel() throws IOException
+    public void testBufferedDataOutputStreamPlusAndChannel() throws IOException
     {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(Channels.newChannel(bos));
+        DataOutputStreamPlus write = new BufferedDataOutputStreamPlus(Channels.newChannel(bos));
         DataInput canon = testWrite(write);
         write.close();
         DataInput test = new DataInputStream(new ByteArrayInputStream(bos.toByteArray()));
@@ -84,7 +84,7 @@ public class DataOutputTest
     public void testDataOutputDirectByteBuffer() throws IOException
     {
         ByteBuffer buf = wrap(new byte[345], true);
-        DataOutputStreamByteBufferAndChannelPlus write = new DataOutputStreamByteBufferAndChannelPlus(buf.duplicate());
+        BufferedDataOutputStreamPlus write = new BufferedDataOutputStreamPlus(buf.duplicate());
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(ByteBufferUtil.getArray(buf)));
         testRead(test, canon);
@@ -94,7 +94,7 @@ public class DataOutputTest
     public void testDataOutputHeapByteBuffer() throws IOException
     {
         ByteBuffer buf = wrap(new byte[345], false);
-        DataOutputStreamByteBufferAndChannelPlus write = new DataOutputStreamByteBufferAndChannelPlus(buf.duplicate());
+        BufferedDataOutputStreamPlus write = new BufferedDataOutputStreamPlus(buf.duplicate());
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(ByteBufferUtil.getArray(buf)));
         testRead(test, canon);
@@ -117,7 +117,7 @@ public class DataOutputTest
         File file = FileUtils.createTempFile("dataoutput", "test");
         try
         {
-            DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(new FileOutputStream(file));
+            DataOutputStreamPlus write = new WrappedDataOutputStreamPlus(new FileOutputStream(file));
             DataInput canon = testWrite(write);
             write.close();
             DataInputStream test = new DataInputStream(new FileInputStream(file));
@@ -136,28 +136,7 @@ public class DataOutputTest
         File file = FileUtils.createTempFile("dataoutput", "test");
         try
         {
-            DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(new FileOutputStream(file));
-            DataInput canon = testWrite(write);
-            write.close();
-            DataInputStream test = new DataInputStream(new FileInputStream(file));
-            testRead(test, canon);
-            test.close();
-        }
-        finally
-        {
-            Assert.assertTrue(file.delete());
-        }
-    }
-
-    @Test
-    public void testWrappedRandomAccessFile() throws IOException
-    {
-        File file = FileUtils.createTempFile("dataoutput", "test");
-        try
-        {
-            @SuppressWarnings("resource")
-            final RandomAccessFile raf = new RandomAccessFile(file, "rw");
-            DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(raf.getChannel());
+            DataOutputStreamPlus write = new BufferedDataOutputStreamPlus(new FileOutputStream(file));
             DataInput canon = testWrite(write);
             write.close();
             DataInputStream test = new DataInputStream(new FileInputStream(file));
@@ -178,7 +157,7 @@ public class DataOutputTest
         {
             @SuppressWarnings("resource")
             final RandomAccessFile raf = new RandomAccessFile(file, "rw");
-            DataOutputStreamPlus write = new NIODataOutputStreamAndChannelPlus(raf.getChannel());
+            DataOutputStreamPlus write = new BufferedDataOutputStreamPlus(raf.getChannel());
             DataInput canon = testWrite(write);
             write.close();
             DataInputStream test = new DataInputStream(new FileInputStream(file));
@@ -196,7 +175,7 @@ public class DataOutputTest
     {
         File file = FileUtils.createTempFile("dataoutput", "test");
         final SequentialWriter writer = new SequentialWriter(file, 32, false);
-        DataOutputStreamPlus write = new WrappedDataOutputStreamAndChannelPlus(writer);
+        DataOutputStreamPlus write = new WrappedDataOutputStreamPlus(writer);
         DataInput canon = testWrite(write);
         write.flush();
         write.close();

@@ -33,8 +33,8 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.cassandra.io.util.DataOutputStreamAndChannelPlus;
-import org.apache.cassandra.io.util.NIODataOutputStreamAndChannelPlus;
+import org.apache.cassandra.io.util.DataOutputStreamPlus;
+import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
 import org.apache.cassandra.io.util.RandomAccessReader;
 import org.apache.cassandra.utils.EstimatedHistogram;
 
@@ -71,7 +71,7 @@ public class MetadataSerializerTest
         MetadataSerializer serializer = new MetadataSerializer();
         // Serialize to tmp file
         File statsFile = File.createTempFile(Component.STATS.name, null);
-        try (DataOutputStreamAndChannelPlus out = new NIODataOutputStreamAndChannelPlus(new FileOutputStream(statsFile)))
+        try (DataOutputStreamPlus out = new BufferedDataOutputStreamPlus(new FileOutputStream(statsFile)))
         {
             serializer.serialize(originalMetadata, out);
         }

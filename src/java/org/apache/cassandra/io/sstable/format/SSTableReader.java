@@ -61,7 +61,6 @@ import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.utils.concurrent.Ref;
-import org.apache.cassandra.utils.concurrent.RefCounted;
 import org.apache.cassandra.utils.concurrent.SelfRefCounted;
 
 import static org.apache.cassandra.db.Directories.SECONDARY_INDEX_NAME_SEPARATOR;
@@ -787,7 +786,7 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
         DataOutputStreamPlus oStream = null;
         try
         {
-            oStream = new NIODataOutputStreamAndChannelPlus(new FileOutputStream(summariesFile));
+            oStream = new BufferedDataOutputStreamPlus(new FileOutputStream(summariesFile));
             IndexSummary.serializer.serialize(summary, oStream, descriptor.version.hasSamplingLevel());
             ByteBufferUtil.writeWithLength(first.getKey(), oStream);
             ByteBufferUtil.writeWithLength(last.getKey(), oStream);

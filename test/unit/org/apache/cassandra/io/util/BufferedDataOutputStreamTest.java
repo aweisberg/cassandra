@@ -11,7 +11,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.*;
 
-public class NIODataOutputStreamTest
+public class BufferedDataOutputStreamTest
 {
     WritableByteChannel adapter = new WritableByteChannel()
     {
@@ -33,20 +33,20 @@ public class NIODataOutputStreamTest
 
     };
 
-    NIODataOutputStreamAndChannelPlus fakeStream = new NIODataOutputStreamAndChannelPlus(adapter, 8);
+    BufferedDataOutputStreamPlus fakeStream = new BufferedDataOutputStreamPlus(adapter, 8);
 
     @SuppressWarnings("resource")
     @Test(expected = NullPointerException.class)
     public void testNullChannel()
     {
-        new NIODataOutputStreamAndChannelPlus((WritableByteChannel)null, 8);
+        new BufferedDataOutputStreamPlus((WritableByteChannel)null, 8);
     }
 
     @SuppressWarnings("resource")
     @Test(expected = IllegalArgumentException.class)
     public void testTooSmallBuffer()
     {
-        new NIODataOutputStreamAndChannelPlus(adapter, 7);
+        new BufferedDataOutputStreamPlus(adapter, 7);
     }
 
     @Test(expected = NullPointerException.class)
@@ -111,7 +111,7 @@ public class NIODataOutputStreamTest
     }
 
     private ByteArrayOutputStream generated;
-    private NIODataOutputStreamAndChannelPlus ndosp;
+    private BufferedDataOutputStreamPlus ndosp;
 
     private ByteArrayOutputStream canonical;
     private DataOutputStreamPlus dosp;
@@ -122,7 +122,7 @@ public class NIODataOutputStreamTest
         generated = new ByteArrayOutputStream();
         canonical = new ByteArrayOutputStream();
         dosp = new WrappedDataOutputStreamPlus(canonical);
-        ndosp = new NIODataOutputStreamAndChannelPlus(adapter, 4096);
+        ndosp = new BufferedDataOutputStreamPlus(adapter, 4096);
     }
 
     @Test
@@ -261,7 +261,7 @@ public class NIODataOutputStreamTest
                     sb.append(simple + twoByte + threeByte + fourByte);
                 }
                 String str = sb.toString();
-                AbstractDataOutputStreamAndChannelPlus.writeUTFLegacy(str, dosp);
+                AbstractDataOutputStreamPlus.writeUTFLegacy(str, dosp);
                 ndosp.writeUTF(str);
                 break;
             }
