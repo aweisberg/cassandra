@@ -24,7 +24,9 @@ import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 
 import org.apache.cassandra.config.Config;
-import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.memory.MemoryUtil;
+
+import com.google.common.base.Function;
 
 /**
  * Base class for DataOutput implementations that does not have an optimized implementations of Plus methods
@@ -33,11 +35,16 @@ import org.apache.cassandra.utils.ByteBufferUtil;
  * Unlike BufferedDataOutputStreamPlus this is capable of operating as an unbuffered output stream.
  * Currently necessary because SequentialWriter implements its own buffering along with mark/reset/truncate.
  */
-public abstract class AbstractDataOutputStreamPlus extends DataOutputStreamPlus
+public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlus
 {
-    protected AbstractDataOutputStreamPlus()
+    protected UnbufferedDataOutputStreamPlus()
     {
         super();
+    }
+
+    protected UnbufferedDataOutputStreamPlus(WritableByteChannel channel)
+    {
+        super(channel);
     }
 
     /*
@@ -455,36 +462,27 @@ public abstract class AbstractDataOutputStreamPlus extends DataOutputStreamPlus
         writeUTF(str, this);
     }
 
-    private byte[] buf;
-    public synchronized void write(ByteBuffer buffer) throws IOException
+
+    // ByteBuffer to use for defensive copies
+    private final ByteBuffer hollowBuffer = MemoryUtil.getHollowDirectByteBuffer();
+
+    @Override
+    public void write(ByteBuffer buf) throws IOException
     {
-        int len = buffer.remaining();
-        if (len < 16)
-        {
-            int offset = buffer.position();
-            for (int i = 0 ; i < len ; i++)
-                write(buffer.get(i + offset));
-            return;
-        }
-
-        byte[] buf = this.buf;
-        if (buf == null)
-            this.buf = buf = new byte[256];
-
-        int offset = 0;
-        while (len > 0)
-        {
-            int sublen = Math.min(buf.length, len);
-            ByteBufferUtil.arrayCopy(buffer, buffer.position() + offset, buf, 0, sublen);
-            write(buf, 0, sublen);
-            offset += sublen;
-            len -= sublen;
-        }
+        MemoryUtil.duplicateByteBuffer(buf, hollowBuffer);
+        while (hollowBuffer.hasRemaining())
+            channel.write(hollowBuffer);
     }
 
     public void write(Memory memory, long offset, long length) throws IOException
     {
         for (ByteBuffer buffer : memory.asByteBuffers(offset, length))
             write(buffer);
+    }
+
+    @Override
+    public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException
+    {
+        return f.apply(channel);
     }
 }

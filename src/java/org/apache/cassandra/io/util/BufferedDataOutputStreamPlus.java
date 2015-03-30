@@ -23,10 +23,10 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.config.Config;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.memory.MemoryUtil;
 
 
@@ -232,7 +232,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public void writeUTF(String s) throws IOException
     {
-        AbstractDataOutputStreamPlus.writeUTF(s, this);
+        UnbufferedDataOutputStreamPlus.writeUTF(s, this);
     }
 
     @Override
@@ -271,5 +271,13 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     {
         if (buffer.remaining() < minimum)
             doFlush();
+    }
+
+    @Override
+    public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException
+    {
+        //Don't allow writes to the underlying channel while data is buffered
+        flush();
+        return f.apply(channel);
     }
 }

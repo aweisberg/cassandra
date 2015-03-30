@@ -261,7 +261,7 @@ public class BufferedDataOutputStreamTest
                     sb.append(simple + twoByte + threeByte + fourByte);
                 }
                 String str = sb.toString();
-                AbstractDataOutputStreamPlus.writeUTFLegacy(str, dosp);
+                UnbufferedDataOutputStreamPlus.writeUTFLegacy(str, dosp);
                 ndosp.writeUTF(str);
                 break;
             }

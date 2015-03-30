@@ -17,12 +17,9 @@
  */
 package org.apache.cassandra.io.util;
 
-import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
-
-import com.google.common.base.Function;
 
 /**
  * Abstract base class for DataOutputStreams that accept writes from ByteBuffer or Memory and also provide
@@ -48,14 +45,7 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
     // Derived classes can override and *construct* a real channel, if it is not possible to provide one to the constructor
     protected WritableByteChannel newDefaultChannel()
     {
-        return new WrappedWritableByteChannel(this);
+        return Channels.newChannel(this);
     }
 
-    @Override
-    public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException
-    {
-        //Don't allow writes to the underlying channel while data is buffered
-        flush();
-        return f.apply(channel);
-    }
 }

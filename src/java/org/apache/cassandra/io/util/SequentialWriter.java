@@ -21,11 +21,11 @@ import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
+import java.nio.channels.WritableByteChannel;
 import java.nio.file.StandardOpenOption;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.CLibrary;
  * Adds buffering, mark, and fsyncing to OutputStream.  We always fsync on close; we may also
  * fsync incrementally if Config.trickle_fsync is enabled.
  */
-public class SequentialWriter extends OutputStream
+public class SequentialWriter extends OutputStream implements WritableByteChannel
 {
     private static final Logger logger = LoggerFactory.getLogger(SequentialWriter.class);
 
@@ -96,7 +96,7 @@ public class SequentialWriter extends OutputStream
         fd = CLibrary.getfd(channel);
 
         directoryFD = CLibrary.tryOpenDirectory(file.getParent());
-        stream = new WrappedDataOutputStreamPlus(this);
+        stream = new WrappedDataOutputStreamPlus(this, this);
     }
 
     /**

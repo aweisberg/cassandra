@@ -30,34 +30,6 @@ import com.google.common.base.Function;
  */
 public interface DataOutputPlus extends DataOutput
 {
-
-    // a thin adapter to WritableByteChannel functionality from that provided by a DataOutputPlus
-    public static final class WrappedWritableByteChannel implements WritableByteChannel
-    {
-        final DataOutputPlus out;
-        public WrappedWritableByteChannel(DataOutputPlus out)
-        {
-            this.out = out;
-        }
-
-        public int write(ByteBuffer src) throws IOException
-        {
-            out.write(src);
-            int written = src.remaining();
-            src.position(src.limit());
-            return written;
-        }
-
-        public boolean isOpen()
-        {
-            return true;
-        }
-
-        public void close() throws IOException
-        {
-        }
-    }
-
     // write the buffer without modifying its position
     void write(ByteBuffer buffer) throws IOException;
 
