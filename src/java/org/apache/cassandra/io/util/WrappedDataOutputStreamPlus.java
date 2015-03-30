@@ -33,12 +33,7 @@ public class WrappedDataOutputStreamPlus extends AbstractDataOutputStreamPlus
     protected final OutputStream out;
     public WrappedDataOutputStreamPlus(OutputStream out)
     {
-        this.out = out;
-    }
-
-    public WrappedDataOutputStreamPlus(OutputStream out, WritableByteChannel channel)
-    {
-        super(channel);
+        super();
         this.out = out;
     }
 

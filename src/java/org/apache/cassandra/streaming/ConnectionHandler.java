@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.streaming;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketException;
@@ -38,6 +39,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
+import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.apache.cassandra.streaming.messages.StreamInitMessage;
 import org.apache.cassandra.streaming.messages.StreamMessage;
 import org.apache.cassandra.utils.FBUtilities;
@@ -160,8 +162,8 @@ public class ConnectionHandler
             WritableByteChannel out = socket.getChannel();
             // socket channel is null when encrypted(SSL)
             if (out == null)
-                out = Channels.newChannel(socket.getOutputStream());
-            return new BufferedDataOutputStreamPlus( out );
+                return new WrappedDataOutputStreamPlus(new BufferedOutputStream(socket.getOutputStream()));
+            return new BufferedDataOutputStreamPlus(out);
         }
 
         protected static ReadableByteChannel getReadChannel(Socket socket) throws IOException

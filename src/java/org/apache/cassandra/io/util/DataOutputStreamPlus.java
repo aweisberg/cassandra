@@ -48,7 +48,7 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
     // Derived classes can override and *construct* a real channel, if it is not possible to provide one to the constructor
     protected WritableByteChannel newDefaultChannel()
     {
-        return Channels.newChannel(this);
+        return new WrappedWritableByteChannel(this);
     }
 
     @Override

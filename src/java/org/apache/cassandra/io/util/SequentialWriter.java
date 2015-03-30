@@ -96,7 +96,7 @@ public class SequentialWriter extends OutputStream
         fd = CLibrary.getfd(channel);
 
         directoryFD = CLibrary.tryOpenDirectory(file.getParent());
-        stream = new WrappedDataOutputStreamPlus(this, channel);
+        stream = new WrappedDataOutputStreamPlus(this);
     }
 
     /**

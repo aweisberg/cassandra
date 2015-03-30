@@ -40,10 +40,6 @@ public abstract class AbstractDataOutputStreamPlus extends DataOutputStreamPlus
         super();
     }
 
-    protected AbstractDataOutputStreamPlus(WritableByteChannel channel)
-    {
-        super(channel);
-    }
     /*
     !! DataOutput methods below are copied from the implementation in Apache Harmony RandomAccessFile.
     */
