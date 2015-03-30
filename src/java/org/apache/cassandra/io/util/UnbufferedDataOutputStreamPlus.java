@@ -464,14 +464,21 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
 
 
     // ByteBuffer to use for defensive copies
-    private final ByteBuffer hollowBuffer = MemoryUtil.getHollowDirectByteBuffer();
+    private final ByteBuffer hollowBufferD = MemoryUtil.getHollowDirectByteBuffer();
+    private final ByteBuffer hollowBuffer = MemoryUtil.getHollowByteBuffer();
 
     @Override
     public void write(ByteBuffer buf) throws IOException
     {
-        MemoryUtil.duplicateByteBuffer(buf, hollowBuffer);
-        while (hollowBuffer.hasRemaining())
-            channel.write(hollowBuffer);
+        if (buf.isDirect()) {
+            MemoryUtil.duplicateDirectByteBuffer(buf, hollowBufferD);
+            while (hollowBufferD.hasRemaining())
+                channel.write(hollowBufferD);
+        } else {
+            MemoryUtil.duplicateByteBuffer(buf, hollowBuffer);
+            while (hollowBuffer.hasRemaining())
+                channel.write(hollowBuffer);
+        }
     }
 
     public void write(Memory memory, long offset, long length) throws IOException

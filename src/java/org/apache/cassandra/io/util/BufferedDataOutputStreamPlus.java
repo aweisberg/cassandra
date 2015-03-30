@@ -137,13 +137,20 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         if (toWrite.isDirect() && toWrite.remaining() > buffer.remaining())
         {
             doFlush();
-            MemoryUtil.duplicateByteBuffer(toWrite, hollowBuffer);
-            while (hollowBuffer.hasRemaining())
-                channel.write(hollowBuffer);
+            MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
+            if (toWrite.remaining() > buffer.remaining())
+            {
+                while (hollowBuffer.hasRemaining())
+                    channel.write(hollowBuffer);
+            }
+            else
+            {
+                buffer.put(hollowBuffer);
+            }
         }
         else if (toWrite.isDirect())
         {
-            MemoryUtil.duplicateByteBuffer(toWrite, hollowBuffer);
+            MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
             buffer.put(hollowBuffer);
         }
         else
