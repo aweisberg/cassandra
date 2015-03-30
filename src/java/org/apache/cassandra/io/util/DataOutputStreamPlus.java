@@ -76,6 +76,7 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
                 if (!src.isDirect())
                 {
                     DataOutputStreamPlus.this.write(src.array(), src.arrayOffset() + src.position(), src.remaining());
+                    src.position(src.limit());
                     return toWrite;
                 }
 
@@ -84,6 +85,7 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
                     int offset = src.position();
                     for (int i = 0 ; i < toWrite ; i++)
                         DataOutputStreamPlus.this.write(src.get(i + offset));
+                    src.position(src.limit());
                     return toWrite;
                 }
 
@@ -99,6 +101,7 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
                     totalWritten += toWriteThisTime;
                 }
 
+                src.position(src.limit());
                 return totalWritten;
             }
 
