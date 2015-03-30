@@ -40,7 +40,14 @@ public final class DataOutputBuffer extends BufferedDataOutputStreamPlus
         super(ByteBuffer.allocate(size));
     }
 
+    @Override
     public void flush() throws IOException
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected void doFlush() throws IOException
     {
         reallocate(buffer.capacity() * 2);
     }
@@ -53,6 +60,7 @@ public final class DataOutputBuffer extends BufferedDataOutputStreamPlus
         buffer = newBuffer;
     }
 
+    @Override
     protected WritableByteChannel newDefaultChannel()
     {
         return new GrowingChannel();

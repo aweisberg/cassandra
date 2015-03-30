@@ -117,7 +117,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
             }
             else
             {
-                flush();
+                doFlush();
             }
         }
     }
@@ -136,7 +136,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     {
         if (toWrite.isDirect() && toWrite.remaining() > buffer.remaining())
         {
-            flush();
+            doFlush();
             MemoryUtil.duplicateByteBuffer(toWrite, hollowBuffer);
             while (hollowBuffer.hasRemaining())
                 channel.write(hollowBuffer);
@@ -242,8 +242,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
             write(buffer);
     }
 
-    @Override
-    public void flush() throws IOException
+    protected void doFlush() throws IOException
     {
         buffer.flip();
 
@@ -254,9 +253,15 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     }
 
     @Override
+    public void flush() throws IOException
+    {
+        doFlush();
+    }
+
+    @Override
     public void close() throws IOException
     {
-        flush();
+        doFlush();
         channel.close();
         FileUtils.clean(buffer);
         buffer = null;
@@ -265,6 +270,6 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     protected void ensureRemaining(int minimum) throws IOException
     {
         if (buffer.remaining() < minimum)
-            flush();
+            doFlush();
     }
 }

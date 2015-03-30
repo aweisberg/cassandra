@@ -42,8 +42,10 @@ public interface DataOutputPlus extends DataOutput
 
         public int write(ByteBuffer src) throws IOException
         {
-            out.write(src.duplicate());
-            return src.remaining();
+            out.write(src);
+            int written = src.remaining();
+            src.position(src.limit());
+            return written;
         }
 
         public boolean isOpen()
