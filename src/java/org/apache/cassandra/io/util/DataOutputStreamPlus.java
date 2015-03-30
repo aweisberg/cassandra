@@ -17,9 +17,13 @@
  */
 package org.apache.cassandra.io.util;
 
+import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.channels.Channels;
+import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
+
+import org.apache.cassandra.config.Config;
+import org.apache.cassandra.utils.ByteBufferUtil;
 
 /**
  * Abstract base class for DataOutputStreams that accept writes from ByteBuffer or Memory and also provide
@@ -42,10 +46,63 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
         this.channel = channel;
     }
 
+    private static int COPY_SIZE =
+            Integer.getInteger(Config.PROPERTY_PREFIX + "data_output_stream_plus_wbc_copy_size", 8192);
+
     // Derived classes can override and *construct* a real channel, if it is not possible to provide one to the constructor
     protected WritableByteChannel newDefaultChannel()
     {
-        return Channels.newChannel(this);
+        return new WritableByteChannel()
+        {
+
+            @Override
+            public boolean isOpen()
+            {
+                return true;
+            }
+
+            @Override
+            public void close() throws IOException
+            {
+            }
+
+            private byte[] buf = new byte[0];
+
+            @Override
+            public int write(ByteBuffer src) throws IOException
+            {
+                int toWrite = src.remaining();
+
+                if (!src.isDirect())
+                {
+                    DataOutputStreamPlus.this.write(src.array(), src.arrayOffset() + src.position(), src.remaining());
+                    return toWrite;
+                }
+
+                if (toWrite < 16)
+                {
+                    int offset = src.position();
+                    for (int i = 0 ; i < toWrite ; i++)
+                        DataOutputStreamPlus.this.write(src.get(i + offset));
+                    return toWrite;
+                }
+
+                int totalWritten = 0;
+                while (totalWritten < toWrite)
+                {
+                    int toWriteThisTime = Math.min(COPY_SIZE, toWrite - totalWritten);
+
+                    if (buf.length < toWriteThisTime)
+                        buf = new byte[toWriteThisTime];
+
+                    ByteBufferUtil.arrayCopy(src, src.position() + totalWritten, buf, 0, toWriteThisTime);
+                    totalWritten += toWriteThisTime;
+                }
+
+                return totalWritten;
+            }
+
+        };
     }
 
 }
