@@ -308,7 +308,7 @@ public class BufferedDataOutputStreamTest
             default:
                 fail("Shouldn't reach here");
             }
-            bytesChecked = assertSameOutput(bytesChecked, action, iteration);
+            //bytesChecked = assertSameOutput(bytesChecked, action, iteration);
         }
 
         assertSameOutput(0, -1, iteration);
