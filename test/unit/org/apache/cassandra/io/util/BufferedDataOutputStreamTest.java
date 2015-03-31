@@ -3,7 +3,6 @@ package org.apache.cassandra.io.util;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.io.UTFDataFormatException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
@@ -318,7 +317,7 @@ public class BufferedDataOutputStreamTest
         assertSameOutput(0, -1, iteration);
     }
 
-    public static void writeUTFLegacy(String str, OutputStream out) throws IOException
+    static void writeUTFLegacy(String str, DataOutput out) throws IOException
     {
         int utfCount = 0, length = str.length();
         for (int i = 0; i < length; i++)
