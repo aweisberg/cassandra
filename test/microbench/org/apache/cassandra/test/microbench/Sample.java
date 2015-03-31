@@ -18,113 +18,257 @@
 
 package org.apache.cassandra.test.microbench;
 
-import net.jpountz.lz4.LZ4Compressor;
-import net.jpountz.lz4.LZ4Factory;
-import net.jpountz.lz4.LZ4FastDecompressor;
+import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
+import org.apache.cassandra.io.util.BufferedDataOutputStreamTest;
+import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
 import org.openjdk.jmh.annotations.*;
-import org.xerial.snappy.Snappy;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.util.concurrent.ThreadLocalRandom;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.WritableByteChannel;
 import java.util.concurrent.TimeUnit;
 
-@BenchmarkMode(Mode.Throughput)
-@OutputTimeUnit(TimeUnit.MILLISECONDS)
+@BenchmarkMode(Mode.AverageTime)
+@OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 5, time = 2, timeUnit = TimeUnit.SECONDS)
-@Fork(value = 1,jvmArgsAppend = "-Xmx512M")
+@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
+@Fork(value = 5,jvmArgsAppend = "-Xmx512M")
 @Threads(1)
 @State(Scope.Benchmark)
 public class Sample
 {
-    @Param({"65536"})
-    private int pageSize;
 
-    @Param({"1024"})
-    private int uniquePages;
+    BufferedOutputStream hole = new BufferedOutputStream(new OutputStream() {
 
-    @Param({"0.1"})
-    private double randomRatio;
-
-    @Param({"4..16"})
-    private String randomRunLength;
-
-    @Param({"4..128"})
-    private String duplicateLookback;
-
-    private byte[][] lz4Bytes;
-    private byte[][] snappyBytes;
-    private byte[][] rawBytes;
-
-    private LZ4FastDecompressor lz4Decompressor = LZ4Factory.fastestInstance().fastDecompressor();
-
-    private LZ4Compressor lz4Compressor = LZ4Factory.fastestInstance().fastCompressor();
-
-    @State(Scope.Thread)
-    public static class ThreadState
-    {
-        byte[] bytes;
-    }
-
-    @Setup
-    public void setup() throws IOException
-    {
-        ThreadLocalRandom random = ThreadLocalRandom.current();
-        int[] randomRunLength = range(this.randomRunLength);
-        int[] duplicateLookback = range(this.duplicateLookback);
-        rawBytes = new byte[uniquePages][pageSize];
-        lz4Bytes = new byte[uniquePages][];
-        snappyBytes = new byte[uniquePages][];
-        byte[][] runs = new byte[duplicateLookback[1] - duplicateLookback[0]][];
-        for (int i = 0 ; i < rawBytes.length ; i++)
+        @Override
+        public void write(int b) throws IOException
         {
-            byte[] trg = rawBytes[0];
-            int runCount = 0;
-            int byteCount = 0;
-            while (byteCount < trg.length)
-            {
-                byte[] nextRun;
-                if (runCount == 0 || random.nextDouble() < this.randomRatio)
-                {
-                    nextRun = new byte[random.nextInt(randomRunLength[0], randomRunLength[1])];
-                    random.nextBytes(nextRun );
-                    runs[runCount % runs.length] = nextRun;
-                    runCount++;
-                }
-                else
-                {
-                    int index = runCount < duplicateLookback[1]
-                            ? random.nextInt(runCount)
-                            : (runCount - random.nextInt(duplicateLookback[0], duplicateLookback[1]));
-                    nextRun = runs[index % runs.length];
-                }
-                System.arraycopy(nextRun, 0, trg, byteCount, Math.min(nextRun.length, trg.length - byteCount));
-                byteCount += nextRun.length;
-            }
-            lz4Bytes[i] = lz4Compressor.compress(trg);
-            snappyBytes[i] = Snappy.compress(trg);
+
         }
+
+        @Override
+        public void write(byte b[]) throws IOException {
+
+        }
+
+        @Override
+        public void write(byte b[], int a, int c) throws IOException {
+
+        }
+        });
+
+    WrappedDataOutputStreamPlus streamA = new WrappedDataOutputStreamPlus(hole);
+
+    BufferedDataOutputStreamPlus streamB = new BufferedDataOutputStreamPlus(new WritableByteChannel() {
+
+        @Override
+        public boolean isOpen()
+        {
+            // TODO Auto-generated method stub
+            return true;
+        }
+
+        @Override
+        public void close() throws IOException
+        {
+            // TODO Auto-generated method stub
+
+        }
+
+        @Override
+        public int write(ByteBuffer src) throws IOException
+        {
+            int remaining = src.remaining();
+            src.position(src.limit());
+            return remaining;
+        }
+
+    }, 8192);
+
+    public static byte foo;
+
+    public static int foo1;
+
+    public static long foo2;
+
+    public static double foo3;
+
+    public static float foo4;
+
+    public static short foo5;
+
+    public static char foo6;
+
+//    @Benchmark
+//    public void testBOSByte() throws IOException
+//    {
+//        streamA.write(foo);
+//    }
+//
+//    @Benchmark
+//    public void testBDOSPByte() throws IOException
+//    {
+//        streamB.write(foo);
+//    }
+//
+//    @Benchmark
+//    public void testBOSInt() throws IOException
+//    {
+//        streamA.writeInt(foo1);
+//    }
+//
+//    @Benchmark
+//    public void testBDOSPInt() throws IOException
+//    {
+//        streamB.writeInt(foo1);
+//    }
+//
+//    @Benchmark
+//    public void testBOSLong() throws IOException
+//    {
+//        streamA.writeLong(foo2);
+//    }
+//
+//    @Benchmark
+//    public void testBDOSPLong() throws IOException
+//    {
+//        streamB.writeLong(foo2);
+//    }
+//
+//    @Benchmark
+//    public void testBOSMixed() throws IOException
+//    {
+//        streamA.write(foo);
+//        streamA.writeInt(foo1);
+//        streamA.writeLong(foo2);
+//        streamA.writeDouble(foo3);
+//        streamA.writeFloat(foo4);
+//        streamA.writeShort(foo5);
+//        streamA.writeChar(foo6);
+//    }
+//
+//    @Benchmark
+//    public void testBDOSPMixed() throws IOException
+//    {
+//        streamB.write(foo);
+//        streamB.writeInt(foo1);
+//        streamB.writeLong(foo2);
+//        streamB.writeDouble(foo3);
+//        streamB.writeFloat(foo4);
+//        streamB.writeShort(foo5);
+//        streamB.writeChar(foo6);
+//    }
+//
+    static String tinyM = "𠝹";
+    static String smallM = "𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ𠝹㒨ƀ";
+    static String largeM;
+    static String tiny = "a";
+    static String small = "adsjglhnafsjk;gujfakyhgukafshgjkahfsgjkhafs;jkhausjkgaksfj;gafskdghajfsk;g";
+    static String large;
+
+    static {
+        StringBuilder sb = new StringBuilder();
+        while (sb.length() < 1024 * 12) {
+            sb.append(small);
+        }
+        large = sb.toString();
+
+        sb = new StringBuilder();
+        while (sb.length() < 1024 * 12) {
+            sb.append(smallM);
+        }
+        largeM = sb.toString();
     }
 
-    static int[] range(String spec)
-    {
-        String[] split = spec.split("\\.\\.");
-        return new int[] { Integer.parseInt(split[0]), Integer.parseInt(split[1]) };
+//    @Benchmark
+//    public void testMTinyStringBOS() throws IOException {
+//        streamA.writeUTF(tinyM);
+//    }
+//
+//    @Benchmark
+//    public void testMTinyStringBDOSP() throws IOException {
+//        streamB.writeUTF(tinyM);
+//    }
+//
+//    @Benchmark
+//    public void testMTinyLegacyWriteUTF() throws IOException {
+//        BufferedDataOutputStreamTest.writeUTFLegacy(tinyM, hole);
+//    }
+//
+//    @Benchmark
+//    public void testMSmallStringBOS() throws IOException {
+//        streamA.writeUTF(smallM);
+//    }
+//
+//    @Benchmark
+//    public void testMSmallStringBDOSP() throws IOException {
+//        streamB.writeUTF(smallM);
+//    }
+//
+//    @Benchmark
+//    public void testMSmallLegacyWriteUTF() throws IOException {
+//        BufferedDataOutputStreamTest.writeUTFLegacy(smallM, hole);
+//    }
+//
+    @Benchmark
+    public void testMLargeStringBOS() throws IOException {
+        streamA.writeUTF(largeM);
     }
 
     @Benchmark
-    public void lz4(ThreadState state)
-    {
-        if (state.bytes == null)
-            state.bytes = new byte[this.pageSize];
-        byte[] in = lz4Bytes[ThreadLocalRandom.current().nextInt(lz4Bytes.length)];
-        lz4Decompressor.decompress(in, state.bytes);
+    public void testMLargeStringBDOSP() throws IOException {
+        streamB.writeUTF(largeM);
     }
 
     @Benchmark
-    public void snappy(ThreadState state) throws IOException
-    {
-        byte[] in = snappyBytes[ThreadLocalRandom.current().nextInt(snappyBytes.length)];
-        state.bytes = Snappy.uncompress(in);
+    public void testMLargeLegacyWriteUTF() throws IOException {
+        BufferedDataOutputStreamTest.writeUTFLegacy(largeM, hole);
     }
+
+    @Benchmark
+    public void testTinyStringBOS() throws IOException {
+        streamA.writeUTF(tiny);
+    }
+
+    @Benchmark
+    public void testTinyStringBDOSP() throws IOException {
+        streamB.writeUTF(tiny);
+    }
+
+    @Benchmark
+    public void testTinyLegacyWriteUTF() throws IOException {
+        BufferedDataOutputStreamTest.writeUTFLegacy(tiny, hole);
+    }
+//
+//    @Benchmark
+//    public void testSmallStringBOS() throws IOException {
+//        streamA.writeUTF(small);
+//    }
+//
+//    @Benchmark
+//    public void testSmallStringBDOSP() throws IOException {
+//        streamB.writeUTF(small);
+//    }
+//
+//    @Benchmark
+//    public void testSmallLegacyWriteUTF() throws IOException {
+//        BufferedDataOutputStreamTest.writeUTFLegacy(small, hole);
+//    }
+//
+//    @Benchmark
+//    public void testRLargeStringBOS() throws IOException {
+//        streamA.writeUTF(large);
+//    }
+//
+//    @Benchmark
+//    public void testRLargeStringBDOSP() throws IOException {
+//        streamB.writeUTF(large);
+//    }
+//
+//    @Benchmark
+//    public void testRLargeLegacyWriteUTF() throws IOException {
+//        BufferedDataOutputStreamTest.writeUTFLegacy(large, hole);
+//    }
 }
