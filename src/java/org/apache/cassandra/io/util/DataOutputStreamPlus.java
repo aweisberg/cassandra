@@ -46,8 +46,32 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
         this.channel = channel;
     }
 
-    private static int COPY_SIZE =
-            Integer.getInteger(Config.PROPERTY_PREFIX + "data_output_stream_plus_wbc_copy_size", 8192);
+    private static int MAX_BUFFER_SIZE =
+            Integer.getInteger(Config.PROPERTY_PREFIX + "data_output_stream_plus_temp_buffer_size", 8192);
+
+    /*
+     * Factored out into separate method to create more flexibility around inlining
+     */
+    protected static byte[] retrieveTemporaryBuffer(int minSize)
+    {
+        byte[] bytes = tempBuffer.get();
+        if (bytes.length < minSize)
+        {
+            // increase in powers of 2, to avoid wasted repeat allocations
+            bytes = new byte[Math.min(MAX_BUFFER_SIZE, 2 * Integer.highestOneBit(minSize))];
+            tempBuffer.set(bytes);
+        }
+        return bytes;
+    }
+
+    private static final ThreadLocal<byte[]> tempBuffer = new ThreadLocal<byte[]>()
+    {
+        @Override
+        public byte[] initialValue()
+        {
+            return new byte[16];
+        }
+    };
 
     // Derived classes can override and *construct* a real channel, if it is not possible to provide one to the constructor
     protected WritableByteChannel newDefaultChannel()
@@ -66,14 +90,12 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
             {
             }
 
-            private byte[] buf = new byte[0];
-
             @Override
             public int write(ByteBuffer src) throws IOException
             {
                 int toWrite = src.remaining();
 
-                if (!src.isDirect())
+                if (src.hasArray())
                 {
                     DataOutputStreamPlus.this.write(src.array(), src.arrayOffset() + src.position(), src.remaining());
                     src.position(src.limit());
@@ -89,13 +111,12 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
                     return toWrite;
                 }
 
+                byte[] buf = retrieveTemporaryBuffer(toWrite);
+
                 int totalWritten = 0;
                 while (totalWritten < toWrite)
                 {
-                    int toWriteThisTime = Math.min(COPY_SIZE, toWrite - totalWritten);
-
-                    if (buf.length < toWriteThisTime)
-                        buf = new byte[toWriteThisTime];
+                    int toWriteThisTime = Math.min(buf.length, toWrite - totalWritten);
 
                     ByteBufferUtil.arrayCopy(src, src.position() + totalWritten, buf, 0, toWriteThisTime);
 

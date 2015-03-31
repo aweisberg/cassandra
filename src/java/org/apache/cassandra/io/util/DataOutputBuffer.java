@@ -28,7 +28,7 @@ import java.nio.channels.WritableByteChannel;
  *
  * This class is completely thread unsafe.
  */
-public final class DataOutputBuffer extends BufferedDataOutputStreamPlus
+public class DataOutputBuffer extends BufferedDataOutputStreamPlus
 {
     public DataOutputBuffer()
     {
@@ -38,6 +38,11 @@ public final class DataOutputBuffer extends BufferedDataOutputStreamPlus
     public DataOutputBuffer(int size)
     {
         super(ByteBuffer.allocate(size));
+    }
+
+    protected DataOutputBuffer(ByteBuffer buffer)
+    {
+        super(buffer);
     }
 
     @Override
@@ -52,9 +57,10 @@ public final class DataOutputBuffer extends BufferedDataOutputStreamPlus
         reallocate(buffer.capacity() * 2);
     }
 
-    private void reallocate(int newSize)
+    protected void reallocate(long newSize)
     {
-        ByteBuffer newBuffer = ByteBuffer.allocate(newSize);
+        assert newSize <= Integer.MAX_VALUE;
+        ByteBuffer newBuffer = ByteBuffer.allocate((int) newSize);
         buffer.flip();
         newBuffer.put(buffer);
         buffer = newBuffer;
@@ -71,7 +77,7 @@ public final class DataOutputBuffer extends BufferedDataOutputStreamPlus
         public int write(ByteBuffer src) throws IOException
         {
             int count = src.remaining();
-            reallocate(buffer.capacity() + count);
+            reallocate(Math.max((buffer.capacity() * 3) / 2, buffer.capacity() + count));
             buffer.put(src);
             return count;
         }

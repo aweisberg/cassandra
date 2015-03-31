@@ -31,7 +31,7 @@ import com.google.common.base.Function;
 /**
  * Base class for DataOutput implementations that does not have an optimized implementations of Plus methods
  * and does no buffering.
- *
+ * <p/>
  * Unlike BufferedDataOutputStreamPlus this is capable of operating as an unbuffered output stream.
  * Currently necessary because SequentialWriter implements its own buffering along with mark/reset/truncate.
  */
@@ -55,13 +55,11 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * Writes the entire contents of the byte array <code>buffer</code> to
      * this RandomAccessFile starting at the current file pointer.
      *
-     * @param buffer
-     *            the buffer to be written.
-     *
-     * @throws IOException
-     *             If an error occurs trying to write to this RandomAccessFile.
+     * @param buffer the buffer to be written.
+     * @throws IOException If an error occurs trying to write to this RandomAccessFile.
      */
-    public void write(byte[] buffer) throws IOException {
+    public void write(byte[] buffer) throws IOException
+    {
         write(buffer, 0, buffer.length);
     }
 
@@ -70,18 +68,12 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * starting at <code>offset</code> to this RandomAccessFile starting at
      * the current file pointer..
      *
-     * @param buffer
-     *            the bytes to be written
-     * @param offset
-     *            offset in buffer to get bytes
-     * @param count
-     *            number of bytes in buffer to write
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             RandomAccessFile.
-     * @throws IndexOutOfBoundsException
-     *             If offset or count are outside of bounds.
+     * @param buffer the bytes to be written
+     * @param offset offset in buffer to get bytes
+     * @param count  number of bytes in buffer to write
+     * @throws IOException               If an error occurs attempting to write to this
+     *                                   RandomAccessFile.
+     * @throws IndexOutOfBoundsException If offset or count are outside of bounds.
      */
     public abstract void write(byte[] buffer, int offset, int count) throws IOException;
 
@@ -90,56 +82,48 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * starting at the current file pointer. Only the low order byte of
      * <code>oneByte</code> is written.
      *
-     * @param oneByte
-     *            the byte to be written
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             RandomAccessFile.
+     * @param oneByte the byte to be written
+     * @throws IOException If an error occurs attempting to write to this
+     *                     RandomAccessFile.
      */
     public abstract void write(int oneByte) throws IOException;
 
     /**
      * Writes a boolean to this output stream.
      *
-     * @param val
-     *            the boolean value to write to the OutputStream
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the boolean value to write to the OutputStream
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public final void writeBoolean(boolean val) throws IOException {
+    public final void writeBoolean(boolean val) throws IOException
+    {
         write(val ? 1 : 0);
     }
 
     /**
      * Writes a 8-bit byte to this output stream.
      *
-     * @param val
-     *            the byte value to write to the OutputStream
-     *
-     * @throws java.io.IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the byte value to write to the OutputStream
+     * @throws java.io.IOException If an error occurs attempting to write to this
+     *                             DataOutputStream.
      */
-    public final void writeByte(int val) throws IOException {
+    public final void writeByte(int val) throws IOException
+    {
         write(val & 0xFF);
     }
 
     /**
      * Writes the low order 8-bit bytes from a String to this output stream.
      *
-     * @param str
-     *            the String containing the bytes to write to the OutputStream
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param str the String containing the bytes to write to the OutputStream
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public final void writeBytes(String str) throws IOException {
+    public final void writeBytes(String str) throws IOException
+    {
         byte bytes[] = new byte[str.length()];
-        for (int index = 0; index < str.length(); index++) {
+        for (int index = 0; index < str.length(); index++)
+        {
             bytes[index] = (byte) (str.charAt(index) & 0xFF);
         }
         write(bytes);
@@ -150,14 +134,12 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * 2 bytes are written with the higher of the 2 bytes written first. This
      * represents the Unicode value of val.
      *
-     * @param val
-     *            the character to be written
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the character to be written
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public final void writeChar(int val) throws IOException {
+    public final void writeChar(int val) throws IOException
+    {
         write((val >>> 8) & 0xFF);
         write((val >>> 0) & 0xFF);
     }
@@ -168,16 +150,15 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * the higher of the 2 bytes written first. This represents the Unicode
      * value of each character in str.
      *
-     * @param str
-     *            the String whose characters are to be written.
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param str the String whose characters are to be written.
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public final void writeChars(String str) throws IOException {
+    public final void writeChars(String str) throws IOException
+    {
         byte newBytes[] = new byte[str.length() * 2];
-        for (int index = 0; index < str.length(); index++) {
+        for (int index = 0; index < str.length(); index++)
+        {
             int newIndex = index == 0 ? index : index * 2;
             newBytes[newIndex] = (byte) ((str.charAt(index) >> 8) & 0xFF);
             newBytes[newIndex + 1] = (byte) (str.charAt(index) & 0xFF);
@@ -189,14 +170,12 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * Writes a 64-bit double to this output stream. The resulting output is the
      * 8 bytes resulting from calling Double.doubleToLongBits().
      *
-     * @param val
-     *            the double to be written.
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the double to be written.
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public final void writeDouble(double val) throws IOException {
+    public final void writeDouble(double val) throws IOException
+    {
         writeLong(Double.doubleToLongBits(val));
     }
 
@@ -204,14 +183,12 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * Writes a 32-bit float to this output stream. The resulting output is the
      * 4 bytes resulting from calling Float.floatToIntBits().
      *
-     * @param val
-     *            the float to be written.
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the float to be written.
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public final void writeFloat(float val) throws IOException {
+    public final void writeFloat(float val) throws IOException
+    {
         writeInt(Float.floatToIntBits(val));
     }
 
@@ -219,17 +196,15 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * Writes a 32-bit int to this output stream. The resulting output is the 4
      * bytes, highest order first, of val.
      *
-     * @param val
-     *            the int to be written.
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the int to be written.
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public void writeInt(int val) throws IOException {
+    public void writeInt(int val) throws IOException
+    {
         write((val >>> 24) & 0xFF);
         write((val >>> 16) & 0xFF);
-        write((val >>>  8) & 0xFF);
+        write((val >>> 8) & 0xFF);
         write((val >>> 0) & 0xFF);
     }
 
@@ -237,21 +212,19 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * Writes a 64-bit long to this output stream. The resulting output is the 8
      * bytes, highest order first, of val.
      *
-     * @param val
-     *            the long to be written.
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the long to be written.
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public void writeLong(long val) throws IOException {
-        write((int)(val >>> 56) & 0xFF);
-        write((int)(val >>> 48) & 0xFF);
-        write((int)(val >>> 40) & 0xFF);
-        write((int)(val >>> 32) & 0xFF);
-        write((int)(val >>> 24) & 0xFF);
-        write((int)(val >>> 16) & 0xFF);
-        write((int)(val >>>  8) & 0xFF);
+    public void writeLong(long val) throws IOException
+    {
+        write((int) (val >>> 56) & 0xFF);
+        write((int) (val >>> 48) & 0xFF);
+        write((int) (val >>> 40) & 0xFF);
+        write((int) (val >>> 32) & 0xFF);
+        write((int) (val >>> 24) & 0xFF);
+        write((int) (val >>> 16) & 0xFF);
+        write((int) (val >>> 8) & 0xFF);
         write((int) (val >>> 0) & 0xFF);
     }
 
@@ -259,225 +232,129 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
      * Writes the specified 16-bit short to the OutputStream. Only the lower 2
      * bytes are written with the higher of the 2 bytes written first.
      *
-     * @param val
-     *            the short to be written
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param val the short to be written
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public void writeShort(int val) throws IOException {
+    public void writeShort(int val) throws IOException
+    {
         writeChar(val);
     }
-
-    private static final ThreadLocal<byte[]> utfBytesLocal = new ThreadLocal<byte[]>() {
-        @Override
-        public byte[] initialValue()
-        {
-            return new byte[16];
-        }
-    };
 
     /**
      * Writes the specified String out in UTF format to the provided DataOutput
      *
-     * @param str
-     *            the String to be written in UTF format.
-     * @param out
-     *            the DataOutput to write the UTF encoded string to
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param str the String to be written in UTF format.
+     * @param out the DataOutput to write the UTF encoded string to
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public static void writeUTF(String str, DataOutput out) throws IOException {
-        int utfCount = 0, length = str.length();
-        utfCount = calculateUTFLength(str, utfCount, length);
+    public static void writeUTF(String str, DataOutput out) throws IOException
+    {
+        int length = str.length();
+        int utfCount = calculateUTFLength(str, length);
 
         if (utfCount > 65535)
             throw new UTFDataFormatException(); //$NON-NLS-1$
 
-        byte[] utfBytes = retrieveOutputBuffer(utfCount + 2);
+        byte[] utfBytes = retrieveTemporaryBuffer(utfCount + 2);
 
-        if (utfCount + 2 < utfBytes.length)
-            fastPathEncode(str, out, utfCount, length, utfBytes);
-        else
-            slowPathEncode(str, out, utfCount, length, utfBytes);
-    }
-
-    /*
-     * Factored out into separate method to create more flexibility around inlining
-     */
-    private static int calculateUTFLength(String str, int utfCount, int length)
-    {
-        for (int i = 0; i < length; i++)
-        {
-            int charValue = str.charAt(i);
-            if (charValue > 0 && charValue <= 127)
-                utfCount++;
-            else if (charValue <= 2047)
-                utfCount += 2;
-            else
-                utfCount += 3;
-        }
-        return utfCount;
-    }
-
-    public static final int MAX_BUFFER_SIZE =
-            Integer.getInteger(Config.PROPERTY_PREFIX + "oaciu.abstract_data_output_max_buffer_size", 1024 * 8);
-
-    /*
-     * Factored out into separate method to create more flexibility around inlining
-     */
-    private static byte[] retrieveOutputBuffer(int utfCount)
-    {
-        byte utfBytes[] = utfBytesLocal.get();
-        if (utfBytes.length < utfCount)
-        {
-            utfBytes = new byte[Math.min(MAX_BUFFER_SIZE, utfCount * 2)];
-            utfBytesLocal.set(utfBytes);
-        }
-        return utfBytes;
-    }
-
-    /*
-     * Not knowing what the distribution of multi-byte values is, can't fill the entire buffer when encoding.
-     * Opting to not fill the buffer so the loop body would stay simple and maybe run faster.
-     * TODO microbenchmark checking in the loop whether there are three bytes of buffer space remaining, and is
-     * that faster than not checking but not filling the entire buffer
-     */
-    private static void slowPathEncode(String str, DataOutput out, int utfCount, int length, byte[] utfBytes)
-            throws IOException
-    {
-        int totalWritten = 0;
-        int utfIndex = 0;
-        out.writeShort(utfCount);
-        int charIndex = 0;
-        while (totalWritten < utfCount)
-        {
-            int nextLength = Math.min(utfBytes.length / 3, length - charIndex );
-            for (int i = 0; i < nextLength; i++)
-            {
-                int charValue = str.charAt(charIndex);
-                charIndex++;
-                if (charValue > 0 && charValue <= 127)
-                {
-                    utfBytes[utfIndex++] = (byte) charValue;
-                }
-                else if (charValue <= 2047)
-                {
-                    utfBytes[utfIndex++] = (byte) (0xc0 | (0x1f & (charValue >> 6)));
-                    utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
-                }
-                else
-                {
-                    utfBytes[utfIndex++] = (byte) (0xe0 | (0x0f & (charValue >> 12)));
-                    utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & (charValue >> 6)));
-                    utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
-                }
-            }
-            out.write(utfBytes, 0, utfIndex);
-            totalWritten += utfIndex;
-            utfIndex = 0;
-        }
-    }
-
-    /*
-     * Know it will fit the buffer so we can use the entire buffer
-     */
-    private static void fastPathEncode(String str, DataOutput out, int utfCount, int length, byte[] utfBytes)
-            throws IOException
-    {
         int utfIndex = 2;
-        for (int i = 0; i < length; i++)
-        {
-            int charValue = str.charAt(i);
-            if (charValue > 0 && charValue <= 127)
-            {
-                utfBytes[utfIndex++] = (byte) charValue;
-            }
-            else if (charValue <= 2047)
-            {
-                utfBytes[utfIndex++] = (byte) (0xc0 | (0x1f & (charValue >> 6)));
-                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
-            }
-            else
-            {
-                utfBytes[utfIndex++] = (byte) (0xe0 | (0x0f & (charValue >> 12)));
-                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & (charValue >> 6)));
-                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
-            }
-        }
         utfBytes[0] = (byte) (utfCount >> 8);
         utfBytes[1] = (byte) utfCount;
+        int bufferLength = utfBytes.length;
+
+        if (utfCount == length && utfCount + utfIndex < bufferLength)
+        {
+            for (int charIndex = 0 ; charIndex < length ; charIndex++)
+                utfBytes[utfIndex++] = (byte) str.charAt(charIndex);
+        }
+        else
+        {
+            int charIndex = 0;
+            while (charIndex < length)
+            {
+                char ch = str.charAt(charIndex);
+                int sizeOfChar = sizeOfChar(ch);
+                if (utfIndex + sizeOfChar > bufferLength)
+                {
+                    out.write(utfBytes, 0, utfIndex);
+                    utfIndex = 0;
+                }
+
+                switch (sizeOfChar)
+                {
+                    case 3:
+                        utfBytes[utfIndex] = (byte) (0xe0 | (0x0f & (ch >> 12)));
+                        utfBytes[utfIndex + 1] = (byte) (0x80 | (0x3f & (ch >> 6)));
+                        utfBytes[utfIndex + 2] = (byte) (0x80 | (0x3f & ch));
+                        break;
+                    case 2:
+                        utfBytes[utfIndex] = (byte) (0xc0 | (0x1f & (ch >> 6)));
+                        utfBytes[utfIndex + 1] = (byte) (0x80 | (0x3f & ch));
+                        break;
+                    case 1:
+                        utfBytes[utfIndex] = (byte) ch;
+                        break;
+                    default:
+                        throw new IllegalStateException();
+                }
+                utfIndex += sizeOfChar;
+                charIndex++;
+            }
+        }
         out.write(utfBytes, 0, utfIndex);
     }
 
-    static void writeUTFLegacy(String str, DataOutput out) throws IOException {
-        int utfCount = 0, length = str.length();
-        for (int i = 0; i < length; i++) {
-            int charValue = str.charAt(i);
-            if (charValue > 0 && charValue <= 127) {
-                utfCount++;
-            } else if (charValue <= 2047) {
-                utfCount += 2;
-            } else {
-                utfCount += 3;
-            }
-        }
-        if (utfCount > 65535) {
-            throw new UTFDataFormatException(); //$NON-NLS-1$
-        }
-        byte utfBytes[] = new byte[utfCount + 2];
-        int utfIndex = 2;
-        for (int i = 0; i < length; i++) {
-            int charValue = str.charAt(i);
-            if (charValue > 0 && charValue <= 127) {
-                utfBytes[utfIndex++] = (byte) charValue;
-            } else if (charValue <= 2047) {
-                utfBytes[utfIndex++] = (byte) (0xc0 | (0x1f & (charValue >> 6)));
-                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
-            } else {
-                utfBytes[utfIndex++] = (byte) (0xe0 | (0x0f & (charValue >> 12)));
-                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & (charValue >> 6)));
-                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
-            }
-        }
-        utfBytes[0] = (byte) (utfCount >> 8);
-        utfBytes[1] = (byte) utfCount;
-        out.write(utfBytes);
+    /*
+     * Factored out into separate method to create more flexibility around inlining
+     */
+    private static int calculateUTFLength(String str, int length)
+    {
+        int utfCount = 0;
+        for (int i = 0; i < length; i++)
+            utfCount += sizeOfChar(str.charAt(i));
+        return utfCount;
+    }
+
+    private static int sizeOfChar(char ch)
+    {
+        if ((ch > 0) & (ch <= 127))
+            return 1;
+        else if (ch <= 2047)
+            return 2;
+        else
+            return 3;
     }
 
     /**
      * Writes the specified String out in UTF format.
      *
-     * @param str
-     *            the String to be written in UTF format.
-     *
-     * @throws IOException
-     *             If an error occurs attempting to write to this
-     *             DataOutputStream.
+     * @param str the String to be written in UTF format.
+     * @throws IOException If an error occurs attempting to write to this
+     *                     DataOutputStream.
      */
-    public final void writeUTF(String str) throws IOException {
+    public final void writeUTF(String str) throws IOException
+    {
         writeUTF(str, this);
     }
 
-
     // ByteBuffer to use for defensive copies
     private final ByteBuffer hollowBufferD = MemoryUtil.getHollowDirectByteBuffer();
-    private final ByteBuffer hollowBuffer = MemoryUtil.getHollowByteBuffer();
 
     @Override
     public void write(ByteBuffer buf) throws IOException
     {
-        if (buf.isDirect()) {
+        if (buf.hasArray())
+        {
+            write(buf.array(), buf.arrayOffset() + buf.position(), buf.remaining());
+        }
+        else
+        {
+            assert buf.isDirect();
             MemoryUtil.duplicateDirectByteBuffer(buf, hollowBufferD);
             while (hollowBufferD.hasRemaining())
                 channel.write(hollowBufferD);
-        } else {
-            MemoryUtil.duplicateByteBuffer(buf, hollowBuffer);
-            while (hollowBuffer.hasRemaining())
-                channel.write(hollowBuffer);
         }
     }
 

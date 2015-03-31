@@ -21,6 +21,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.WritableByteChannel;
 
 import com.google.common.base.Function;
@@ -38,9 +39,9 @@ import org.apache.cassandra.utils.memory.MemoryUtil;
  */
 public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
 {
-    ByteBuffer buffer;
-
     private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + "nio_data_output_stream_plus_buffer_size", 1024 * 32);
+
+    ByteBuffer buffer;
 
     public BufferedDataOutputStreamPlus(RandomAccessFile ras)
     {
@@ -71,7 +72,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     {
         this(wbc, ByteBuffer.allocateDirect(bufferSize));
         Preconditions.checkNotNull(wbc);
-        Preconditions.checkArgument(bufferSize >= 8, "Buffer size must be large enough to accomadate a long/double");
+        Preconditions.checkArgument(bufferSize >= 8, "Buffer size must be large enough to accommodate a long/double");
     }
 
     public BufferedDataOutputStreamPlus(WritableByteChannel channel, ByteBuffer buffer)
@@ -134,28 +135,32 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public void write(ByteBuffer toWrite) throws IOException
     {
-        if (toWrite.isDirect() && toWrite.remaining() > buffer.remaining())
+        if (toWrite.hasArray())
         {
-            doFlush();
-            MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
-            if (toWrite.remaining() > buffer.remaining())
-            {
-                while (hollowBuffer.hasRemaining())
-                    channel.write(hollowBuffer);
-            }
-            else
-            {
-                buffer.put(hollowBuffer);
-            }
-        }
-        else if (toWrite.isDirect())
-        {
-            MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
-            buffer.put(hollowBuffer);
+            write(toWrite.array(), toWrite.arrayOffset() + toWrite.position(), toWrite.remaining());
         }
         else
         {
-            write(toWrite.array(), toWrite.arrayOffset() + toWrite.position(), toWrite.remaining());
+            assert toWrite.isDirect();
+            if (toWrite.remaining() > buffer.remaining())
+            {
+                doFlush();
+                MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
+                if (toWrite.remaining() > buffer.remaining())
+                {
+                    while (hollowBuffer.hasRemaining())
+                        channel.write(hollowBuffer);
+                }
+                else
+                {
+                    buffer.put(hollowBuffer);
+                }
+            }
+            else
+            {
+                MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
+                buffer.put(hollowBuffer);
+            }
         }
     }
 
@@ -184,14 +189,14 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     public void writeShort(int v) throws IOException
     {
         ensureRemaining(2);
-        buffer.putShort((short)v);
+        buffer.putShort((short) v);
     }
 
     @Override
     public void writeChar(int v) throws IOException
     {
         ensureRemaining(2);
-        buffer.putChar((char)v);
+        buffer.putChar((char) v);
     }
 
     @Override
@@ -286,5 +291,11 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         //Don't allow writes to the underlying channel while data is buffered
         flush();
         return f.apply(channel);
+    }
+
+    public BufferedDataOutputStreamPlus order(ByteOrder order)
+    {
+        this.buffer.order(order);
+        return this;
     }
 }

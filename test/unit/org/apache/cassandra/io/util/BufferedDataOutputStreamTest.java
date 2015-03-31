@@ -1,7 +1,9 @@
 package org.apache.cassandra.io.util;
 
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutput;
 import java.io.IOException;
+import java.io.UTFDataFormatException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
@@ -261,7 +263,7 @@ public class BufferedDataOutputStreamTest
                     sb.append(simple + twoByte + threeByte + fourByte);
                 }
                 String str = sb.toString();
-                UnbufferedDataOutputStreamPlus.writeUTFLegacy(str, dosp);
+                writeUTFLegacy(str, dosp);
                 ndosp.writeUTF(str);
                 break;
             }
@@ -312,6 +314,55 @@ public class BufferedDataOutputStreamTest
         }
 
         assertSameOutput(0, -1, iteration);
+    }
+
+    static void writeUTFLegacy(String str, DataOutput out) throws IOException
+    {
+        int utfCount = 0, length = str.length();
+        for (int i = 0; i < length; i++)
+        {
+            int charValue = str.charAt(i);
+            if (charValue > 0 && charValue <= 127)
+            {
+                utfCount++;
+            }
+            else if (charValue <= 2047)
+            {
+                utfCount += 2;
+            }
+            else
+            {
+                utfCount += 3;
+            }
+        }
+        if (utfCount > 65535)
+        {
+            throw new UTFDataFormatException(); //$NON-NLS-1$
+        }
+        byte utfBytes[] = new byte[utfCount + 2];
+        int utfIndex = 2;
+        for (int i = 0; i < length; i++)
+        {
+            int charValue = str.charAt(i);
+            if (charValue > 0 && charValue <= 127)
+            {
+                utfBytes[utfIndex++] = (byte) charValue;
+            }
+            else if (charValue <= 2047)
+            {
+                utfBytes[utfIndex++] = (byte) (0xc0 | (0x1f & (charValue >> 6)));
+                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
+            }
+            else
+            {
+                utfBytes[utfIndex++] = (byte) (0xe0 | (0x0f & (charValue >> 12)));
+                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & (charValue >> 6)));
+                utfBytes[utfIndex++] = (byte) (0x80 | (0x3f & charValue));
+            }
+        }
+        utfBytes[0] = (byte) (utfCount >> 8);
+        utfBytes[1] = (byte) utfCount;
+        out.write(utfBytes);
     }
 
     private int assertSameOutput(int bytesChecked, int lastAction, int iteration) throws Exception

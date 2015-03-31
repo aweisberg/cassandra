@@ -115,7 +115,7 @@ public class BigTableWriter extends SSTableWriter
         return (lastWrittenKey == null) ? 0 : dataFile.getFilePointer();
     }
 
-    private void afterAppend(DecoratedKey decoratedKey, long dataEnd, RowIndexEntry index)
+    private void afterAppend(DecoratedKey decoratedKey, long dataEnd, RowIndexEntry index) throws IOException
     {
         metadataCollector.addKey(decoratedKey.getKey());
         lastWrittenKey = decoratedKey;
@@ -142,15 +142,15 @@ public class BigTableWriter extends SSTableWriter
             entry = row.write(startPosition, dataFile);
             if (entry == null)
                 return null;
+            long endPosition = dataFile.getFilePointer();
+            metadataCollector.update(endPosition - startPosition, row.columnStats());
+            afterAppend(row.key, endPosition, entry);
+            return entry;
         }
         catch (IOException e)
         {
             throw new FSWriteError(e, dataFile.getPath());
         }
-        long endPosition = dataFile.getFilePointer();
-        metadataCollector.update(endPosition - startPosition, row.columnStats());
-        afterAppend(row.key, endPosition, entry);
-        return entry;
     }
 
     public void append(DecoratedKey decoratedKey, ColumnFamily cf)
@@ -512,7 +512,7 @@ public class BigTableWriter extends SSTableWriter
             return summary.getLastReadableBoundary();
         }
 
-        public void append(DecoratedKey key, RowIndexEntry indexEntry, long dataEnd)
+        public void append(DecoratedKey key, RowIndexEntry indexEntry, long dataEnd) throws IOException
         {
             bf.add(key);
             long indexStart = indexFile.getFilePointer();
