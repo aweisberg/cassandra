@@ -277,11 +277,13 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
             int firstIndex = 2;
             for (int offset = 0 ; offset < length ; offset += bufferLength)
             {
-                int runLength = Math.min(bufferLength, length - offset);
+                int runLength = Math.min(bufferLength - firstIndex, length - offset) + firstIndex;
+                offset -= firstIndex;
                 for (int i = firstIndex ; i < runLength; i++)
                     utfBytes[i] = (byte) str.charAt(offset + i);
-                firstIndex = 0;
                 out.write(utfBytes, 0, runLength);
+                offset += firstIndex;
+                firstIndex = 0;
             }
         }
         else
