@@ -317,14 +317,16 @@ public abstract class UnbufferedDataOutputStreamPlus extends DataOutputStreamPlu
         return utfCount;
     }
 
-    private static int sizeOfChar(char ch)
+    private static int sizeOfChar(int ch)
     {
-        if ((ch > 0) & (ch <= 127))
-            return 1;
-        else if (ch <= 2047)
-            return 2;
-        else
-            return 3;
+        // wrap 0 around to max, because it requires 3 bytes
+        return 1
+               // if >= 128, we need an extra byte, so we divide by 128 and check the value is > 0
+               // (by negating it and taking the sign bit)
+               + (-(ch / 128) >>> 31)
+               // if >= 2048, or == 0, we need another extra byte; we subtract one and wrap around,
+               // so we only then need to confirm it is greater than 2047
+               + (-(((ch - 1) & 0xffff) / 2047) >>> 31);
     }
 
     /**

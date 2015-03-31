@@ -258,9 +258,10 @@ public class BufferedDataOutputStreamTest
             {
                 StringBuilder sb = new StringBuilder();
                 int length = r.nextInt(500);
+                sb.append(simple + twoByte + threeByte + fourByte);
                 for (int ii = 0; ii < length; ii++)
                 {
-                    sb.append(simple + twoByte + threeByte + fourByte);
+                    sb.append((char)(r.nextInt() & 0xffff));
                 }
                 String str = sb.toString();
                 writeUTFLegacy(str, dosp);
