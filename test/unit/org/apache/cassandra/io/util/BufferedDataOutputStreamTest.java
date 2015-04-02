@@ -32,7 +32,7 @@ public class BufferedDataOutputStreamTest
             }
             catch (BufferOverflowException e)
             {
-                fail(Throwables.getStackTraceAsString(e));
+                fail("Should not throw BufferOverflowException yet");
             }
             dob.write(0);
         }
@@ -49,7 +49,7 @@ public class BufferedDataOutputStreamTest
             }
             catch (BufferOverflowException e)
             {
-                fail(Throwables.getStackTraceAsString(e));
+                fail("Should not throw BufferOverflowException yet");
             }
             dob.write(ByteBuffer.allocateDirect(1));
         }
