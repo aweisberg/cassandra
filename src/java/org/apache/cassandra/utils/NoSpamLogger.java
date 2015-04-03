@@ -101,7 +101,7 @@ public class NoSpamLogger
             }
         }
 
-        public void info(long nowNanos, Object... objects)
+        void info(long nowNanos, Object... objects)
         {
             log(Level.INFO, nowNanos, objects);
         }
@@ -111,17 +111,17 @@ public class NoSpamLogger
             info(CLOCK.nanoTime(), objects);
         }
 
-        public void warn(long nowNanos, Object... objects)
+        void warn(long nowNanos, Object... objects)
         {
             log(Level.WARN, nowNanos, objects);
         }
 
-        public void warn(String s, Object... objects)
+        public void warn(Object... objects)
         {
-            warn(CLOCK.nanoTime(), s, objects);
+            warn(CLOCK.nanoTime(), objects);
         }
 
-        public void error(long nowNanos, Object... objects)
+        void error(long nowNanos, Object... objects)
         {
             log(Level.ERROR, nowNanos, objects);
         }
@@ -158,7 +158,7 @@ public class NoSpamLogger
         log(logger, level, minInterval, unit, CLOCK.nanoTime(), message, objects);
     }
 
-    public static void log(Logger logger, Level level, long minInterval, TimeUnit unit, long nowNanos, String message, Object... objects)
+    static void log(Logger logger, Level level, long minInterval, TimeUnit unit, long nowNanos, String message, Object... objects)
     {
         NoSpamLogger wrapped = getLogger(logger, minInterval, unit);
         NoSpamLogStatement statement = wrapped.getStatement(message);
@@ -180,7 +180,7 @@ public class NoSpamLogger
         minIntervalNanos = timeUnit.toNanos(minInterval);
     }
 
-    public void info(long nowNanos, String s, Object... objects)
+    void info(long nowNanos, String s, Object... objects)
     {
         log( Level.INFO, s, nowNanos, objects);
     }
@@ -190,7 +190,7 @@ public class NoSpamLogger
         info(CLOCK.nanoTime(), s, objects);
     }
 
-    public void warn(long nowNanos, String s, Object... objects)
+    void warn(long nowNanos, String s, Object... objects)
     {
         log( Level.WARN, s, nowNanos, objects);
     }
@@ -200,7 +200,7 @@ public class NoSpamLogger
         warn(CLOCK.nanoTime(), s, objects);
     }
 
-    public void error(long nowNanos, String s, Object... objects)
+    void error(long nowNanos, String s, Object... objects)
     {
         log( Level.ERROR, s, nowNanos, objects);
     }
