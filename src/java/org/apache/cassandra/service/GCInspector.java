@@ -17,13 +17,16 @@
  */
 package org.apache.cassandra.service;
 
+import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryUsage;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -99,12 +102,23 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
 
     final AtomicReference<State> state = new AtomicReference<>(new State());
 
+    final Map<String, Long> gctimes = new HashMap<>();
+
+    final Map<String, GarbageCollectorMXBean> beans = new HashMap<>();
+
     public GCInspector()
     {
         MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
 
         try
         {
+            ObjectName gcName = new ObjectName(ManagementFactory.GARBAGE_COLLECTOR_MXBEAN_DOMAIN_TYPE + ",*");
+            for (ObjectName name : mbs.queryNames(gcName, null))
+            {
+                GarbageCollectorMXBean gc = ManagementFactory.newPlatformMXBeanProxy(mbs, name.getCanonicalName(), GarbageCollectorMXBean.class);
+                beans.put(gc.getName(), gc);
+            }
+
             mbs.registerMBean(this, new ObjectName(MBEAN_NAME));
         }
         catch (Exception e)
@@ -125,6 +139,36 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
         }
     }
 
+    /*
+     * Assume that a GC type is at least partially concurrent and so a side channel method
+     * should be used to calculate application stopped time due to the GC.
+     *
+     * If the GC isn't recognized then assume that is concurrent and we need to do our own calculation
+     * via the the side channel.
+     */
+    private static boolean assumeGCIsPartiallyConcurrent(String gc)
+    {
+        switch (gc)
+        {
+        //First two are from the serial collector
+        case "Copy":
+        case "MarkSweepCompact":
+            //Parallel collector
+        case "PS MarkSweep":
+        case "PS Scavenge":
+        case "G1 Young Generation":
+            //CMS young generation collector
+        case "ParNew":
+            return false;
+        case "ConcurrentMarkSweep":
+        case "G1 Old Generation":
+            return true;
+        default:
+            //Assume possibly concurrent if unsure
+            return true;
+        }
+    }
+
     public void handleNotification(Notification notification, Object handback)
     {
         String type = notification.getType();
@@ -135,6 +179,24 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
             GarbageCollectionNotificationInfo info = GarbageCollectionNotificationInfo.from(cd);
 
             long duration = info.getGcInfo().getDuration();
+
+            /*
+             * The duration supplied in the notification info includes more than just
+             * application stopped time for concurrent GCs. Try and do a better job coming up with a good stopped time
+             * value by asking for and tracking cumulative time spent blocked in GC.
+             */
+            String gcName = info.getGcName();
+            GarbageCollectorMXBean bean = beans.get(gcName);
+            if (assumeGCIsPartiallyConcurrent(gcName) && bean != null)
+            {
+                Long previousTotal = gctimes.get(gcName);
+                Long total = bean.getCollectionTime();
+                if (previousTotal == null)
+                    previousTotal = 0L;
+                if (!previousTotal.equals(total))
+                    gctimes.put(bean.getName(), total);
+                duration = total - previousTotal; // may be zero for a really fast collection
+            }
 
             StringBuilder sb = new StringBuilder();
             sb.append(info.getGcName()).append(" GC in ").append(duration).append("ms.  ");
