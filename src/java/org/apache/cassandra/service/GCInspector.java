@@ -21,11 +21,8 @@ import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryUsage;
 import java.lang.reflect.Field;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,6 +37,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.sun.management.GarbageCollectionNotificationInfo;
+import com.sun.management.GcInfo;
 
 import org.apache.cassandra.io.sstable.SSTableDeletingTask;
 import org.apache.cassandra.utils.StatusLogger;
@@ -100,11 +98,37 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
         }
     }
 
+    static final class GCState
+    {
+        final GarbageCollectorMXBean gcBean;
+        final boolean assumeGCIsPartiallyConcurrent;
+        final boolean assumeGCIsOldGen;
+        private String keys[];
+        long lastGcTotalDuration = 0;
+
+
+        GCState(GarbageCollectorMXBean gcBean, boolean assumeGCIsPartiallyConcurrent, boolean assumeGCIsOldGen)
+        {
+            this.gcBean = gcBean;
+            this.assumeGCIsPartiallyConcurrent = assumeGCIsPartiallyConcurrent;
+            this.assumeGCIsOldGen = assumeGCIsOldGen;
+        }
+
+        String[] keys(GarbageCollectionNotificationInfo info)
+        {
+            if (keys != null)
+                return keys;
+
+            keys = info.getGcInfo().getMemoryUsageBeforeGc().keySet().toArray(new String[0]);
+            Arrays.sort(keys);
+
+            return keys;
+        }
+    }
+
     final AtomicReference<State> state = new AtomicReference<>(new State());
 
-    final Map<String, Long> gctimes = new HashMap<>();
-
-    final Map<String, GarbageCollectorMXBean> beans = new HashMap<>();
+    final Map<String, GCState> gcStates = new HashMap<>();
 
     public GCInspector()
     {
@@ -116,7 +140,7 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
             for (ObjectName name : mbs.queryNames(gcName, null))
             {
                 GarbageCollectorMXBean gc = ManagementFactory.newPlatformMXBeanProxy(mbs, name.getCanonicalName(), GarbageCollectorMXBean.class);
-                beans.put(gc.getName(), gc);
+                gcStates.put(gc.getName(), new GCState(gc, assumeGCIsPartiallyConcurrent(gc), assumeGCIsOldGen(gc)));
             }
 
             mbs.registerMBean(this, new ObjectName(MBEAN_NAME));
@@ -146,11 +170,11 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
      * If the GC isn't recognized then assume that is concurrent and we need to do our own calculation
      * via the the side channel.
      */
-    private static boolean assumeGCIsPartiallyConcurrent(String gc)
+    private static boolean assumeGCIsPartiallyConcurrent(GarbageCollectorMXBean gc)
     {
-        switch (gc)
+        switch (gc.getName())
         {
-        //First two are from the serial collector
+            //First two are from the serial collector
         case "Copy":
         case "MarkSweepCompact":
             //Parallel collector
@@ -169,7 +193,34 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
         }
     }
 
-    public void handleNotification(Notification notification, Object handback)
+    /*
+     * Assume that a GC type is an old generation collection so SSTableDeletingTask.rescheduleFailedTasks()
+     * should be invoked.
+     *
+     * Defaults to not invoking SSTableDeletingTask.rescheduleFailedTasks() on unrecognized GC names
+     */
+    private static boolean assumeGCIsOldGen(GarbageCollectorMXBean gc)
+    {
+        switch (gc.getName())
+        {
+        case "Copy":
+        case "PS Scavenge":
+        case "G1 Young Generation":
+        case "ParNew":
+            return false;
+        case "MarkSweepCompact":
+        case "PS MarkSweep":
+        case "ConcurrentMarkSweep":
+        case "G1 Old Generation":
+            return true;
+        default:
+            //Assume not old gen otherwise, don't call
+            //SSTableDeletingTask.rescheduleFailedTasks()
+            return false;
+        }
+    }
+
+    public void handleNotification(final Notification notification, final Object handback)
     {
         String type = notification.getType();
         if (type.equals(GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION))
@@ -177,43 +228,38 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
             // retrieve the garbage collection notification information
             CompositeData cd = (CompositeData) notification.getUserData();
             GarbageCollectionNotificationInfo info = GarbageCollectionNotificationInfo.from(cd);
+            String gcName = info.getGcName();
+            GcInfo gcInfo = info.getGcInfo();
 
-            long duration = info.getGcInfo().getDuration();
+            long duration = gcInfo.getDuration();
 
             /*
              * The duration supplied in the notification info includes more than just
              * application stopped time for concurrent GCs. Try and do a better job coming up with a good stopped time
              * value by asking for and tracking cumulative time spent blocked in GC.
              */
-            String gcName = info.getGcName();
-            GarbageCollectorMXBean bean = beans.get(gcName);
-            if (assumeGCIsPartiallyConcurrent(gcName) && bean != null)
+            GCState gcState = gcStates.get(gcName);
+            if (gcState.assumeGCIsPartiallyConcurrent)
             {
-                Long previousTotal = gctimes.get(gcName);
-                Long total = bean.getCollectionTime();
-                if (previousTotal == null)
-                    previousTotal = 0L;
-                if (!previousTotal.equals(total))
-                    gctimes.put(bean.getName(), total);
+                long previousTotal = gcState.lastGcTotalDuration;
+                long total = gcState.gcBean.getCollectionTime();
+                gcState.lastGcTotalDuration = total;
                 duration = total - previousTotal; // may be zero for a really fast collection
             }
 
             StringBuilder sb = new StringBuilder();
             sb.append(info.getGcName()).append(" GC in ").append(duration).append("ms.  ");
-
             long bytes = 0;
-            List<String> keys = new ArrayList<>(info.getGcInfo().getMemoryUsageBeforeGc().keySet());
-            Collections.sort(keys);
-            for (String key : keys)
+            for (String key : gcState.keys(info))
             {
-                MemoryUsage before = info.getGcInfo().getMemoryUsageBeforeGc().get(key);
-                MemoryUsage after = info.getGcInfo().getMemoryUsageAfterGc().get(key);
+                MemoryUsage before = gcInfo.getMemoryUsageBeforeGc().get(key);
+                MemoryUsage after = gcInfo.getMemoryUsageAfterGc().get(key);
                 if (after != null && after.getUsed() != before.getUsed())
                 {
                     sb.append(key).append(": ").append(before.getUsed());
                     sb.append(" -> ");
                     sb.append(after.getUsed());
-                    if (!key.equals(keys.get(keys.size() - 1)))
+                    if (!key.equals(gcState.keys[gcState.keys.length - 1]))
                         sb.append("; ");
                     bytes += before.getUsed() - after.getUsed();
                 }
@@ -235,8 +281,8 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
             if (duration > MIN_LOG_DURATION_TPSTATS)
                 StatusLogger.log();
 
-            // if we just finished a full collection and we're still using a lot of memory, try to reduce the pressure
-            if (info.getGcName().equals("ConcurrentMarkSweep"))
+            // if we just finished an old gen collection and we're still using a lot of memory, try to reduce the pressure
+            if (gcState.assumeGCIsOldGen)
                 SSTableDeletingTask.rescheduleFailedTasks();
         }
     }
