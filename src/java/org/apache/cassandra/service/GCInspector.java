@@ -250,10 +250,12 @@ public class GCInspector implements NotificationListener, GCInspectorMXBean
             StringBuilder sb = new StringBuilder();
             sb.append(info.getGcName()).append(" GC in ").append(duration).append("ms.  ");
             long bytes = 0;
+            Map<String, MemoryUsage> beforeMemoryUsage = gcInfo.getMemoryUsageBeforeGc();
+            Map<String, MemoryUsage> afterMemoryUsage = gcInfo.getMemoryUsageAfterGc();
             for (String key : gcState.keys(info))
             {
-                MemoryUsage before = gcInfo.getMemoryUsageBeforeGc().get(key);
-                MemoryUsage after = gcInfo.getMemoryUsageAfterGc().get(key);
+                MemoryUsage before = beforeMemoryUsage.get(key);
+                MemoryUsage after = afterMemoryUsage.get(key);
                 if (after != null && after.getUsed() != before.getUsed())
                 {
                     sb.append(key).append(": ").append(before.getUsed());
