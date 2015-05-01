@@ -61,9 +61,12 @@ public class LongLeveledCompactionStrategyTest
         ColumnFamilyStore store = keyspace.getColumnFamilyStore(cfname);
         store.disableAutoCompaction();
 
-        LeveledCompactionStrategy lcs = (LeveledCompactionStrategy)store.getCompactionStrategy();
+        LeveledCompactionStrategy lcs = (LeveledCompactionStrategy)((WrappingCompactionStrategy)store.getCompactionStrategy()).getWrappedStrategies().get(1);
 
         ByteBuffer value = ByteBuffer.wrap(new byte[100 * 1024]); // 100 KB value, make it easy to have multiple files
+
+        //In case compression is used ensure that it can't shrink the data and break the test
+        new Random().nextBytes(value.array());
 
         // Enough data to have a level 1 and 2
         int rows = 128;
@@ -91,9 +94,14 @@ public class LongLeveledCompactionStrategyTest
         {
             while (true)
             {
-                final AbstractCompactionTask t = lcs.getMaximalTask(Integer.MIN_VALUE, false).iterator().next();
+                Collection<AbstractCompactionTask> compactionTasks = lcs.getMaximalTask(Integer.MIN_VALUE, false);
+                if (compactionTasks == null)
+                    break;
+
+                final AbstractCompactionTask t = compactionTasks.iterator().next();
                 if (t == null)
                     break;
+
                 tasks.add(new Runnable()
                 {
                     public void run()
