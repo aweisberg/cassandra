@@ -45,10 +45,6 @@ public class SyncUtil
         Field fdClosedFieldTemp = null;
         try
         {
-            for (Field f : FileDescriptor.class.getDeclaredFields())
-            {
-                System.out.println(f.getName());
-            }
             fdClosedFieldTemp = FileDescriptor.class.getDeclaredField("closed");
             fdClosedFieldTemp.setAccessible(true);
         }
