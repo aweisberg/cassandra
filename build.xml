@@ -1213,7 +1213,8 @@
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
-      <jvmarg value="-Djava.io.tmpdir=${tmp.dir}"/>
+      <jvmarg value="-Djava.io.tmpdir=${tmp.dir}"/>A
+      <jvmarg value="-Dcassandra.skip_sync=true" />
     </testmacro>
     <fileset dir="${test.unit.src}">
         <exclude name="**/pig/*.java" />
@@ -1229,6 +1230,7 @@
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
       <jvmarg value="-Dcassandra.config.loader=org.apache.cassandra.OffsetAwareConfigurationLoader"/>
+      <jvmarg value="-Dcassandra.skip_sync=true" />
     </testmacro>
   </target>
 
@@ -1256,6 +1258,7 @@
       <jvmarg value="-Dmigration-sstable-root=${test.data}/migration-sstables"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
+      <jvmarg value="-Dcassandra.skip_sync=true" />
     </testmacro>
   </target>
     
@@ -1275,6 +1278,7 @@
       <jvmarg value="-Dcassandra.ring_delay_ms=1000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
       <jvmarg value="-Dcassandra.config=file:///${compressed_yaml}"/>
+      <jvmarg value="-Dcassandra.skip_sync=true" />
     </testmacro>
     <fileset dir="${test.unit.src}">
         <exclude name="**/pig/*.java" />
@@ -1335,6 +1339,7 @@
         <jvmarg value="-Xss256k"/>
         <jvmarg value="-Dcassandra.memtable_row_overhead_computation_step=100"/>
         <jvmarg value="-Dcassandra.test.use_prepared=${cassandra.test.use_prepared}"/>
+        <jvmarg value="-Dcassandra.skip_sync=true" />
         <classpath>
           <path refid="cassandra.classpath" />
           <pathelement location="${test.classes}"/>
@@ -1378,6 +1383,7 @@
         <jvmarg value="-Xss256k"/>
         <jvmarg value="-Dcassandra.test.use_prepared=${cassandra.test.use_prepared}"/>
         <jvmarg value="-Dcassandra.memtable_row_overhead_computation_step=100"/>
+        <jvmarg value="-Dcassandra.skip_sync=true" />
         <classpath>
           <path refid="cassandra.classpath" />
           <pathelement location="${test.classes}"/>
