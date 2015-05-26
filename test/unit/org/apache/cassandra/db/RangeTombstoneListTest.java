@@ -31,7 +31,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 public class RangeTombstoneListTest
 {
     private static final Comparator<Composite> cmp = new SimpleDenseCellNameType(IntegerType.instance);
-    private static final Random rand = new Random();
 
     @Test
     public void testDiff()
@@ -462,7 +461,7 @@ public class RangeTombstoneListTest
         assertEquals(6, l.maxMarkedAt());
     }
 
-    private RangeTombstoneList makeRandom(int size, int maxItSize, int maxItDistance, int maxMarkedAt)
+    private RangeTombstoneList makeRandom(Random rand, int size, int maxItSize, int maxItDistance, int maxMarkedAt)
     {
         RangeTombstoneList l = new RangeTombstoneList(cmp, size);
 
@@ -495,10 +494,14 @@ public class RangeTombstoneListTest
         int MAX_IT_DISTANCE = 10;
         int MAX_MARKEDAT = 10;
 
+        long seed = System.nanoTime();
+        Random rand = new Random(seed);
+        System.out.println("Seed " + seed);
+
         for (int i = 0; i < TEST_COUNT; i++)
         {
-            RangeTombstoneList l1 = makeRandom(rand.nextInt(MAX_LIST_SIZE) + 1, rand.nextInt(MAX_IT_SIZE) + 1, rand.nextInt(MAX_IT_DISTANCE) + 1, rand.nextInt(MAX_MARKEDAT) + 1);
-            RangeTombstoneList l2 = makeRandom(rand.nextInt(MAX_LIST_SIZE) + 1, rand.nextInt(MAX_IT_SIZE) + 1, rand.nextInt(MAX_IT_DISTANCE) + 1, rand.nextInt(MAX_MARKEDAT) + 1);
+            RangeTombstoneList l1 = makeRandom(rand, rand.nextInt(MAX_LIST_SIZE) + 1, rand.nextInt(MAX_IT_SIZE) + 1, rand.nextInt(MAX_IT_DISTANCE) + 1, rand.nextInt(MAX_MARKEDAT) + 1);
+            RangeTombstoneList l2 = makeRandom(rand, rand.nextInt(MAX_LIST_SIZE) + 1, rand.nextInt(MAX_IT_SIZE) + 1, rand.nextInt(MAX_IT_DISTANCE) + 1, rand.nextInt(MAX_MARKEDAT) + 1);
 
             RangeTombstoneList l1Initial = l1.copy();
 
@@ -516,6 +519,31 @@ public class RangeTombstoneListTest
                 throw e;
             }
         }
+    }
+
+    @Test
+    public void test9485() throws Exception
+    {
+        int l1Starts[] = new int[] { 0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15,16,16,17,17,18,18,19 };
+        int l1Ends[] = new int[] { 0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15,16,16,17,17,18,18,19,19 };
+        long l1DeletedAt[] = new long[] { 0,5,2,4,2,1,2,2,5,3,0,3,1,0,0,3,2,0,2,2,0,5,0,3,3,2,2,1,3,5,2,1,4,3,5,4,5,4,3 };
+
+        RangeTombstoneList l1 = new RangeTombstoneList(cmp, l1Starts.length);
+        for (int ii = 0; ii < l1Starts.length; ii++)
+            l1.add(rt(l1Starts[ii], l1Ends[ii], l1DeletedAt[ii]));
+
+        RangeTombstoneList l2 = new RangeTombstoneList(cmp, 3);
+        l2.add(rt(7, 7, 3));
+        l2.add(rt(13, 13, 1));
+        l2.add(rt(19,19,0));
+
+        System.out.println(toString(l1));
+        System.out.println(toString(l2));
+
+        l1.addAll(l2);
+        assertValid(l1);
+
+        System.out.println(toString(l1));
     }
 
     private static void assertRT(RangeTombstone expected, RangeTombstone actual)

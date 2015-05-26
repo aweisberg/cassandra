@@ -27,9 +27,9 @@ import java.util.Iterator;
 
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterators;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.db.composites.CType;
 import org.apache.cassandra.db.composites.CellName;
@@ -145,7 +145,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
     /**
      * Adds a new range tombstone.
      *
-     * This method will be faster if the new tombstone sort after all the currently existing ones (this is a common use case), 
+     * This method will be faster if the new tombstone sort after all the currently existing ones (this is a common use case),
      * but it doesn't assume it.
      */
     public void add(Composite start, Composite end, long markedAt, int delTime)
@@ -159,7 +159,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
         int c = comparator.compare(ends[size-1], start);
 
         // Fast path if we add in sorted order
-        if (c <= 0)
+        if (c < 0)
         {
             addInternal(size, start, end, markedAt, delTime);
         }
@@ -456,7 +456,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
 
         return diff;
     }
-    
+
     /**
      * Calculates digest for triggering read repair on mismatch
      */
@@ -484,7 +484,7 @@ public class RangeTombstoneList implements Iterable<RangeTombstone>, IMeasurable
         RangeTombstoneList that = (RangeTombstoneList)o;
         if (size != that.size)
             return false;
-        
+
         for (int i = 0; i < size; i++)
         {
             if (!starts[i].equals(that.starts[i]))
