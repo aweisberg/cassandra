@@ -51,6 +51,9 @@ public class CrcCheckChanceTest extends CQLTester
         ColumnFamilyStore indexCfs = cfs.indexManager.getIndexesBackedByCfs().iterator().next();
         cfs.forceBlockingFlush();
 
+        //Check for stack overflow
+        cfs.setCrcCheckChance(0.99);
+
         Assert.assertEquals(0.99, cfs.metadata.compressionParameters.getCrcCheckChance());
         Assert.assertEquals(0.99, cfs.getSSTables().iterator().next().getCompressionMetadata().parameters.getCrcCheckChance());
         Assert.assertEquals(0.99, indexCfs.metadata.compressionParameters.getCrcCheckChance());
