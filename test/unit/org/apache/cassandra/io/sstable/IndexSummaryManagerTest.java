@@ -68,10 +68,10 @@ public class IndexSummaryManagerTest
     int originalMaxIndexInterval;
     long originalCapacity;
 
-    private static final String KEYSPACE1 = "IndexSummaryManagerTest";
+    protected static final String KEYSPACE1 = "IndexSummaryManagerTest";
     // index interval of 8, no key caching
     private static final String CF_STANDARDLOWiINTERVAL = "StandardLowIndexInterval";
-    private static final String CF_STANDARDRACE = "StandardRace";
+    protected static final String CF_STANDARDRACE = "StandardRace";
 
     @BeforeClass
     public static void defineSchema() throws ConfigurationException
@@ -115,7 +115,7 @@ public class IndexSummaryManagerTest
         IndexSummaryManager.instance.setMemoryPoolCapacityInMB(originalCapacity);
     }
 
-    private static long totalOffHeapSize(List<SSTableReader> sstables)
+    protected static long totalOffHeapSize(List<SSTableReader> sstables)
     {
         long total = 0;
         for (SSTableReader sstable : sstables)
@@ -160,7 +160,7 @@ public class IndexSummaryManagerTest
         }
     };
 
-    private void createSSTables(String ksname, String cfname, int numSSTables, int numRows)
+    protected void createSSTables(String ksname, String cfname, int numSSTables, int numRows)
     {
         Keyspace keyspace = Keyspace.open(ksname);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
@@ -580,77 +580,5 @@ public class IndexSummaryManagerTest
             if (entry.getKey().contains(CF_STANDARDLOWiINTERVAL))
                 assertTrue(entry.getValue() >= cfs.metadata.getMinIndexInterval());
         }
-    }
-
-    //This test runs last, since cleaning up compactions and tp is a pain
-    @Test
-    public void testCompactionRace() throws InterruptedException, ExecutionException
-    {
-        String ksname = KEYSPACE1;
-        String cfname = CF_STANDARDRACE; // index interval of 8, no key caching
-        Keyspace keyspace = Keyspace.open(ksname);
-        ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(cfname);
-        int numSSTables = 50;
-        int numRows = 1 << 10;
-        createSSTables(ksname, cfname, numSSTables, numRows);
-
-        List<SSTableReader> sstables = new ArrayList<>(cfs.getSSTables());
-
-        ExecutorService tp = Executors.newFixedThreadPool(2);
-
-        final AtomicBoolean failed = new AtomicBoolean(false);
-
-        for (int i = 0; i < 2; i++)
-        {
-            tp.submit(new Runnable()
-            {
-                @Override
-                public void run()
-                {
-                    while(!failed.get())
-                    {
-                        try
-                        {
-                            IndexSummaryManager.instance.redistributeSummaries();
-                        }
-                        catch (Throwable e)
-                        {
-                            failed.set(true);
-                        }
-                    }
-                }
-            });
-        }
-
-        while ( cfs.getSSTables().size() != 1 )
-            cfs.forceMajorCompaction();
-
-        try
-        {
-            Assert.assertFalse(failed.getAndSet(true));
-
-            for (SSTableReader sstable : sstables)
-            {
-                Assert.assertEquals(true, sstable.isMarkedCompacted());
-            }
-
-            Assert.assertEquals(numSSTables, sstables.size());
-
-            try
-            {
-                totalOffHeapSize(sstables);
-                Assert.fail("This should have failed");
-            } catch (AssertionError e)
-            {
-
-            }
-        }
-        finally
-        {
-            tp.shutdownNow();
-            CompactionManager.instance.finishCompactionsAndShutdown(10, TimeUnit.SECONDS);
-        }
-
-        cfs.truncateBlocking();
     }
 }
