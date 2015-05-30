@@ -132,11 +132,23 @@
       <format property="YEAR" pattern="yyyy"/>
     </tstamp>
 
+    <!-- JUnit formatters are not compatible across different versions of ant so pick one suitable for the current version" -->
+    <antversion atleast="1.9" property="isAtLeastAnt1.9"/>
+    <script language="javascript">
+        if (project.getProperty("isAtLeastAnt1.9") != null) {
+            project.setProperty("xmljunitformatter", "org.apache.cassandra.CassandraXMLJUnitResultFormatter");
+            project.setProperty("briefjunitformatter", "org.apache.cassandra.CassandraBriefJUnitResultFormatter");
+        } else {
+            project.setProperty("xmljunitformatter", "org.apache.cassandra.CassandraXMLJUnitResultFormatterOneDotEight");
+            project.setProperty("briefjunitformatter", "org.apache.cassandra.CassandraBriefJUnitResultFormatterOneDotEight");
+        }
+    </script>
+
     <!--
          Add all the dependencies.
     -->
     <path id="maven-ant-tasks.classpath" path="${build.dir}/maven-ant-tasks-${maven-ant-tasks.version}.jar" />
-    <path id="cassandra.classpath">
+    <path id="cassandra.build.classpath">
         <pathelement location="${cobertura.classes.dir}"/>
         <pathelement location="${build.classes.main}" />
         <pathelement location="${build.classes.thrift}" />
@@ -149,7 +161,22 @@
           <exclude name="**/*-sources.jar"/>
         </fileset>
     </path>
-	
+
+    <path id="cassandra.run.classpath">
+        <pathelement location="${cobertura.classes.dir}"/>
+        <pathelement location="${build.classes.main}" />
+        <pathelement location="${build.classes.thrift}" />
+        <fileset dir="${build.lib}">
+          <include name="**/*.jar" />
+          <exclude name="**/*-sources.jar"/>
+        </fileset>
+        <fileset dir="${build.dir.lib}">
+          <include name="**/*.jar" />
+          <exclude name="**/*-sources.jar"/>
+          <exclude name="**/ant*.jar"/>
+        </fileset>
+    </path>
+
 	<path id="cobertura.classpath">
 		<pathelement location="${cobertura.classes.dir}"/>
 	</path>
@@ -159,7 +186,7 @@
     <element name="filesets"/>
     <sequential>
       <javadoc destdir="@{destdir}" author="true" version="true" use="true"
-        windowtitle="${ant.project.name} API" classpathref="cassandra.classpath"
+        windowtitle="${ant.project.name} API" classpathref="cassandra.build.classpath"
         bottom="Copyright &amp;copy; ${YEAR} The Apache Software Foundation"
         useexternalfile="yes"
         maxmemory="256m">
@@ -709,7 +736,7 @@
             description="Run in test mode.  Not for production use!">
       <java classname="org.apache.cassandra.service.CassandraDaemon" fork="true">
         <classpath>
-          <path refid="cassandra.classpath"/>  
+          <path refid="cassandra.build.classpath"/>
           <pathelement location="${test.conf}"/>
         </classpath>
         <jvmarg value="-Dstorage-config=${test.conf}"/>
@@ -734,7 +761,7 @@
                destdir="${build.classes.thrift}" includeantruntime="false" source="${source.version}" target="${target.version}"
                memorymaximumsize="512M">
             <src path="${interface.thrift.dir}/gen-java"/>
-            <classpath refid="cassandra.classpath"/>
+            <classpath refid="cassandra.build.classpath"/>
         </javac>
         <javac fork="true"
                debug="true" debuglevel="${debuglevel}"
@@ -744,7 +771,7 @@
             <src path="${build.src.gen-java}"/>
         	<compilerarg value="-XDignore.symbol.file"/>
                 <compilerarg value="-Xbootclasspath/p:${build.src.jdkoverride}"/>
-            <classpath refid="cassandra.classpath"/>
+            <classpath refid="cassandra.build.classpath"/>
         </javac>
         <antcall target="createVersionPropFile"/>
         <copy todir="${build.classes.main}">
@@ -1100,7 +1127,7 @@
      source="${source.version}" 
      target="${target.version}">
      <classpath>
-        <path refid="cassandra.classpath"/>
+        <path refid="cassandra.build.classpath"/>
      </classpath>
 	 <compilerarg value="-XDignore.symbol.file"/>
      <src path="${test.unit.src}"/>
@@ -1127,8 +1154,8 @@
     <attribute name="filelist" default="" />
     <attribute name="poffset" default="0"/>
     <attribute name="testtag" default=""/>
-    
     <attribute name="usejacoco" default="no"/>
+
     <sequential>
       <condition property="additionalagent"
                  value="-javaagent:${build.dir.lib}/jars/jacocoagent.jar=destfile=${jacoco.execfile}"
@@ -1141,8 +1168,8 @@
       <mkdir dir="${build.test.dir}/output/@{testtag}"/>
       <junit fork="on" forkmode="@{forkmode}" failureproperty="testfailed" maxmemory="1024m" timeout="@{timeout}">
         <sysproperty key="net.sourceforge.cobertura.datafile" file="${cobertura.datafile}"/>
-        <formatter classname="org.apache.cassandra.CassandraXMLJUnitResultFormatter" extension=".xml" usefile="true"/>
-        <formatter classname="org.apache.cassandra.CassandraBriefJUnitResultFormatter" usefile="false"/>
+        <formatter classname="${xmljunitformatter}" extension=".xml" usefile="true"/>
+        <formatter classname="${briefjunitformatter}" usefile="false"/>
         <jvmarg value="-Dstorage-config=${test.conf}"/>
         <jvmarg value="-Djava.awt.headless=true"/>
         <!-- Cassandra 3.0+ needs <jvmarg line="... ${additionalagent}" /> here! (not value=) -->
@@ -1157,7 +1184,7 @@
         <jvmarg value="-Dcassandra.testtag=@{testtag}"/>
 	<optjvmargs/>
         <classpath>
-          <path refid="cassandra.classpath" />
+          <path refid="cassandra.run.classpath" />
           <pathelement location="${test.classes}"/>
           <path refid="cobertura.classpath"/>
           <pathelement location="${test.conf}"/>
@@ -1353,7 +1380,7 @@
         <jvmarg value="-Dcassandra.test.use_prepared=${cassandra.test.use_prepared}"/>
         <jvmarg value="-Dcassandra.skip_sync=true" />
         <classpath>
-          <path refid="cassandra.classpath" />
+          <path refid="cassandra.build.classpath" />
           <pathelement location="${test.classes}"/>
           <path refid="cobertura.classpath"/>
           <pathelement location="${test.conf}"/>
@@ -1397,7 +1424,7 @@
         <jvmarg value="-Dcassandra.memtable_row_overhead_computation_step=100"/>
         <jvmarg value="-Dcassandra.skip_sync=true" />
         <classpath>
-          <path refid="cassandra.classpath" />
+          <path refid="cassandra.build.classpath" />
           <pathelement location="${test.classes}"/>
           <path refid="cobertura.classpath"/>
           <pathelement location="${test.conf}"/>
@@ -1462,7 +1489,7 @@
   <target name="cobertura-instrument" depends="build,build-test">
     <taskdef resource="tasks.properties">
       <classpath refid="cobertura.classpath"/>
-      <classpath refid="cassandra.classpath"/>
+      <classpath refid="cassandra.build.classpath"/>
     </taskdef>
 
     <delete file="${cobertura.datafile}"/>
@@ -1602,7 +1629,7 @@
             fork="true"
             failonerror="true">
           <classpath>
-              <path refid="cassandra.classpath" />
+              <path refid="cassandra.build.classpath" />
               <pathelement location="${test.classes}"/>
               <path refid="cobertura.classpath"/>
               <pathelement location="${test.conf}"/>
@@ -1660,7 +1687,7 @@
         <fileset dir="ide/idea"/>
     </copy>
   	<property name="idea-project-libs" refid="idea-project-libs-path"/>
-  	<script language="javascript" classpathref="cassandra.classpath"> <![CDATA[
+  	<script language="javascript" classpathref="cassandra.build.classpath"> <![CDATA[
   		var File = java.io.File;
   		var FilenameUtils = Packages.org.apache.commons.io.FilenameUtils;
   		var basedir = project.getProperty("basedir");
@@ -1862,7 +1889,7 @@
   	 </fileset>
   	</path>
   	<property name="eclipse-project-libs" refid="eclipse-project-libs-path"/>
-  	<script language="javascript" classpathref="cassandra.classpath"> <![CDATA[
+  	<script language="javascript" classpathref="cassandra.build.classpath"> <![CDATA[
   		var File = java.io.File;
   		var FilenameUtils = Packages.org.apache.commons.io.FilenameUtils;
   		jars = project.getProperty("eclipse-project-libs").split(project.getProperty("path.separator"));
