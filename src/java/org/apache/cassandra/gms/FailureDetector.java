@@ -22,6 +22,7 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import javax.management.MBeanServer;
@@ -71,7 +72,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     // change.
     private final double PHI_FACTOR = 1.0 / Math.log(10.0); // 0.434...
 
-    private final Map<InetAddress, ArrivalWindow> arrivalSamples = new Hashtable<InetAddress, ArrivalWindow>();
+    private final ConcurrentHashMap<InetAddress, ArrivalWindow> arrivalSamples = new ConcurrentHashMap<InetAddress, ArrivalWindow>();
     private final List<IFailureDetectionEventListener> fdEvntListeners = new CopyOnWriteArrayList<IFailureDetectionEventListener>();
 
     public FailureDetector()
@@ -228,7 +229,10 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
             // avoid adding an empty ArrivalWindow to the Map
             heartbeatWindow = new ArrivalWindow(SAMPLE_SIZE);
             heartbeatWindow.add(now, ep);
-            arrivalSamples.put(ep, heartbeatWindow);
+            heartbeatWindow = arrivalSamples.putIfAbsent(ep, heartbeatWindow);
+            if (heartbeatWindow != null) {
+                heartbeatWindow.add(now, ep);
+            }
         }
         else
         {
