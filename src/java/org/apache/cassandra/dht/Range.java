@@ -73,24 +73,42 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
             return true;
         }
 
-        boolean thiswraps = isWrapAround(left, right);
-        boolean thatwraps = isWrapAround(that.left, that.right);
-        if (thiswraps == thatwraps)
-        {
-            return left.compareTo(that.left) <= 0 && that.right.compareTo(right) <= 0;
+        /*
+         * The approach for checking containment is to unwrap both sides
+         * and then check for containment within the unwrapped things in a very naive way.
+         */
+        List<Range<T>> thisUnwrapped = unwrap();
+        List<Range<T>> thatUnwrapped = that.unwrap();
+
+        //Assume that everything is contained, loop and if something isn't contained set to false
+        boolean isContained = true;
+
+        for (Range<T> thatRange : thatUnwrapped) {
+            //Try and find a place where this range is contained
+            boolean containedThisTime = false;
+
+            for (Range<T> thisRange : thisUnwrapped) {
+                int leftCompare = thisRange.left.compareTo(thatRange.left);
+                int rightCompare = thisRange.right.compareTo(thatRange.right);
+
+                //min() is max() on the right, everything is <= it and ranges are inclusive right
+                if (thisRange.right.isMinimum())
+                    rightCompare = 0;
+
+                //If that's right is min() then comparison gives a wrong answer
+                //If that's right is min() then this right must also be min() for there
+                //to be a chance that it contains.
+                if (thatRange.right.isMinimum() && !thisRange.right.isMinimum())
+                    continue;
+
+                containedThisTime |= leftCompare <= 0 && rightCompare >= 0;
+            }
+
+            //If any unwrapped range fails to be contained then the entire contains fails
+            isContained = isContained & containedThisTime;
         }
-        else if (thiswraps)
-        {
-            // wrapping might contain non-wrapping
-            // that is contained if both its tokens are in one of our wrap segments
-            return left.compareTo(that.left) <= 0 || that.right.compareTo(right) <= 0;
-        }
-        else
-        {
-            // (thatwraps)
-            // non-wrapping cannot contain wrapping
-            return false;
-        }
+
+        return isContained;
     }
 
     /**
@@ -108,18 +126,18 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
      * @param that range to check for intersection
      * @return true if the given range intersects with this range.
      */
-    public boolean intersects(Range<T> that)
+    public boolean intersectsLegacy(Range<T> that)
     {
         return intersectionWith(that).size() > 0;
     }
 
-    public boolean intersects(AbstractBounds<T> that)
+    public boolean intersectsLegacy(AbstractBounds<T> that)
     {
         // implemented for cleanup compaction membership test, so only Range + Bounds are supported for now
         if (that instanceof Range)
-            return intersects((Range<T>) that);
+            return intersectsLegacy((Range<T>) that);
         if (that instanceof Bounds)
-            return intersects((Bounds<T>) that);
+            return intersectsLegacy((Bounds<T>) that);
         throw new UnsupportedOperationException("Intersection is only supported for Bounds and Range objects; found " + that.getClass());
     }
 
@@ -127,12 +145,12 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
      * @param that range to check for intersection
      * @return true if the given range intersects with this range.
      */
-    public boolean intersects(Bounds<T> that)
+    public boolean intersectsLegacy(Bounds<T> that)
     {
-        // Same punishment than in Bounds.contains(), we must be carefull if that.left == that.right as
+        // Same punishment than in Bounds.contains(), we must be careful if that.left == that.right as
         // as new Range<T>(that.left, that.right) will then cover the full ring which is not what we
         // want.
-        return contains(that.left) || (!that.left.equals(that.right) && intersects(new Range<T>(that.left, that.right)));
+        return contains(that.left) || (!that.left.equals(that.right) && intersectsLegacy(new Range<T>(that.left, that.right)));
     }
 
     @SafeVarargs
@@ -242,14 +260,6 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         unwrapped.add(new Range<T>(left, minValue));
         unwrapped.add(new Range<T>(minValue, right));
         return unwrapped;
-    }
-
-    /**
-     * Tells if the given range is a wrap around.
-     */
-    public static <T extends RingPosition<T>> boolean isWrapAround(T left, T right)
-    {
-       return left.compareTo(right) >= 0;
     }
 
     public int compareTo(Range<T> rhs)
@@ -378,11 +388,6 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         ret.add(left.toString());
         ret.add(right.toString());
         return ret;
-    }
-
-    public boolean isWrapAround()
-    {
-        return isWrapAround(left, right);
     }
 
     /**

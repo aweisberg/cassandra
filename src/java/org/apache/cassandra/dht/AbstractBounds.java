@@ -48,6 +48,7 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
 
     public AbstractBounds(T left, T right)
     {
+        assert left.compareTo(right) <= 0 || right.isMinimum() || this instanceof Range;
         assert left.getPartitioner() == right.getPartitioner();
         this.left = left;
         this.right = right;
@@ -86,6 +87,36 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
                 return true;
         }
         return false;
+    }
+
+    public boolean intersects(AbstractBounds<T> test)
+    {
+        if (test.isWrapAround()) {
+            boolean intersects = false;
+            for (AbstractBounds<T> ab : test.unwrap()) {
+                intersects |= intersects(ab);
+            }
+            return intersects;
+        }
+
+        if (isWrapAround())
+        {
+            boolean intersects = false;
+            for (AbstractBounds<T> ab : unwrap()) {
+                intersects |= ab.intersects(test);
+            }
+            return intersects;
+        }
+
+        Boundary<T> left = leftBoundary();
+        Boundary<T> right = rightBoundary();
+
+        if (isEmpty(left, right))
+            return false;
+
+        boolean lessThanLeft = isLessThan(test.leftBoundary(), right);
+        boolean lessThanRight = isLessThan(left, test.rightBoundary());
+        return lessThanLeft && lessThanRight;
     }
 
     public abstract boolean contains(T start);
@@ -184,7 +215,7 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
     }
 
     // represents one side of a bounds (which side is not encoded)
-    public static class Boundary<T extends RingPosition<T>>
+    public static class Boundary<T extends RingPosition<? super T>>
     {
         public final T boundary;
         public final boolean inclusive;
@@ -192,6 +223,12 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
         {
             this.boundary = boundary;
             this.inclusive = inclusive;
+        }
+
+        @Override
+        public String toString()
+        {
+            return boundary + " : " + inclusive;
         }
     }
 
@@ -205,10 +242,25 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
         return new Boundary<>(right, inclusiveRight());
     }
 
+    /**
+     * Written to return the correct answer for an UNWRAPPED bound. If it wraps you get the wrong answer.
+     */
     public static <T extends RingPosition<T>> boolean isEmpty(Boundary<T> left, Boundary<T> right)
     {
+        if (right.boundary.isMinimum()) return false;
         int c = left.boundary.compareTo(right.boundary);
-        return c > 0 || (c == 0 && !(left.inclusive && right.inclusive));
+        if (c == 0)
+        {
+            //Bounds, range of one
+            if (left.inclusive && right.inclusive)
+                return false;
+            //Range, wrapping the entire ring
+            if (!left.inclusive && right.inclusive)
+                return false;
+            //ExcludingBounds, IncludingExcludingBounds, don't wrap
+            return true;
+        }
+        return c > 0;
     }
 
     public static <T extends RingPosition<T>> Boundary<T> minRight(Boundary<T> right1, T right2, boolean isInclusiveRight2)
@@ -225,6 +277,21 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
         return right2.inclusive ? right1 : right2;
     }
 
+    /**
+     * Written to return the correct answer for an UNWRAPPED bound. If it wraps you get the wrong answer.
+     * @return true iff left is after right
+     */
+    public static <T extends RingPosition<? super T>> boolean isLessThan(Boundary<T> left, Boundary<T> right)
+    {
+        //min()/min() is the entire ring. min() is max() when it is the right (there is no max() defined)
+        //Since it's max() everything is < than it. Regardless of inclusive/exclusive?
+        if (right.boundary.isMinimum()) return true;
+        int c = left.boundary.compareTo(right.boundary);
+        if (c != 0)
+            return c < 0;
+        return left.inclusive && right.inclusive;
+    }
+
     public static <T extends RingPosition<T>> Boundary<T> maxLeft(Boundary<T> left1, T left2, boolean isInclusiveLeft2)
     {
         return maxLeft(left1, new Boundary<T>(left2, isInclusiveLeft2));
@@ -237,5 +304,25 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
             return c > 0 ? left1 : left2;
         // return the exclusive version, if either
         return left2.inclusive ? left1 : left2;
+    }
+
+    /**
+     * Tells if the given range is a wrap around.
+     */
+    public static <T extends RingPosition<T>> boolean isWrapAround(T left, T right)
+    {
+       if (right.isMinimum())
+           return false;
+       return left.compareTo(right) >= 0;
+    }
+
+    public boolean isWrapAround()
+    {
+        //Only Ranges can wrap
+        if (this instanceof Range)
+        {
+            return isWrapAround(left, right);
+        }
+        return false;
     }
 }

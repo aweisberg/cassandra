@@ -72,6 +72,15 @@ public class ViewTest
                     }
                 }
             }
+            for (int j = 0 ; j < i ; j++)
+            {
+                RowPosition min = MockSchema.readerBounds(i);
+                RowPosition max = MockSchema.readerBounds(j);
+                boolean minInc = false;
+                boolean maxInc = true;
+                List<SSTableReader> r = initialView.sstablesInBounds(AbstractBounds.bounds(min, minInc, max, maxInc));
+                Assert.assertEquals(String.format("%d(%s) %d(%s)", i, minInc, j, maxInc), j + (5 - i) + (minInc ? 0 : -1) + (maxInc ? 1 : 0), r.size());
+            }
         }
     }
 

@@ -32,6 +32,8 @@ import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.dht.ByteOrderedPartitioner.BytesToken;
 
 import static org.apache.cassandra.Util.range;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 
 public class RangeTest
@@ -145,6 +147,18 @@ public class RangeTest
         Range<Token> two = new Range<Token>(new BigIntegerToken("0"), new BigIntegerToken("8"));
         Range<Token> not = new Range<Token>(new BigIntegerToken("10"), new BigIntegerToken("12"));
 
+        assert all.intersectsLegacy(one);
+        assert all.intersectsLegacy(two);
+
+        assert one.intersectsLegacy(two);
+        assert two.intersectsLegacy(one);
+
+        assert !one.intersectsLegacy(not);
+        assert !not.intersectsLegacy(one);
+
+        assert !two.intersectsLegacy(not);
+        assert !not.intersectsLegacy(two);
+
         assert all.intersects(one);
         assert all.intersects(two);
 
@@ -167,6 +181,19 @@ public class RangeTest
         Range<Token> oneendswith = new Range<Token>(new BigIntegerToken("1"), onewrap.right);
         Range<Token> twowrap = new Range<Token>(new BigIntegerToken("5"), new BigIntegerToken("3"));
         Range<Token> not = new Range<Token>(new BigIntegerToken("2"), new BigIntegerToken("6"));
+
+        assert !onewrap.intersectsLegacy(onecomplement);
+        assert onewrap.intersectsLegacy(onestartswith);
+        assert onewrap.intersectsLegacy(oneendswith);
+
+        assert onewrap.intersectsLegacy(twowrap);
+        assert twowrap.intersectsLegacy(onewrap);
+
+        assert !onewrap.intersectsLegacy(not);
+        assert !not.intersectsLegacy(onewrap);
+
+        assert twowrap.intersectsLegacy(not);
+        assert not.intersectsLegacy(twowrap);
 
         assert !onewrap.intersects(onecomplement);
         assert onewrap.intersects(onestartswith);
@@ -326,6 +353,21 @@ public class RangeTest
     private Range<Token> makeRange(String token1, String token2)
     {
         return new Range<Token>(new BigIntegerToken(token1), new BigIntegerToken(token2));
+    }
+
+    private Bounds<Token> makeBounds(String token1, String token2)
+    {
+        return new Bounds<Token>(new BigIntegerToken(token1), new BigIntegerToken(token2));
+    }
+
+    private ExcludingBounds<Token> makeExcludingBounds(String token1, String token2)
+    {
+        return new ExcludingBounds<Token>(new BigIntegerToken(token1), new BigIntegerToken(token2));
+    }
+
+    private IncludingExcludingBounds<Token> makeIncludingExcludingBounds(String token1, String token2)
+    {
+        return new IncludingExcludingBounds<Token>(new BigIntegerToken(token1), new BigIntegerToken(token2));
     }
 
     private Set<Range<Token>> makeRanges(String[][] tokenPairs)
@@ -539,5 +581,175 @@ public class RangeTest
         input = asList(range ("", "1"), range("1", "4"), range("4", "5"), range("5", ""));
         expected = asList(range("", ""));
         assertNormalize(input, expected);
+    }
+
+    @Test(expected=AssertionError.class)
+    public void testBoundsDoesntWrap() throws Exception
+    {
+        new Bounds<Token>(new BigIntegerToken("2"), new BigIntegerToken("1"));
+    }
+
+    @Test(expected=AssertionError.class)
+    public void testExcludingBoundsDoesntWrap() throws Exception
+    {
+        new ExcludingBounds<Token>(new BigIntegerToken("2"), new BigIntegerToken("1"));
+    }
+
+    @Test(expected=AssertionError.class)
+    public void testIncludingExcludingBoundsDoesntWrap() throws Exception
+    {
+        new IncludingExcludingBounds<Token>(new BigIntegerToken("2"), new BigIntegerToken("1"));
+    }
+
+    static Token token(String s)
+    {
+        return new BigIntegerToken(s);
+    }
+
+    static AbstractBounds.Boundary<Token> bound(String s, boolean inclusive)
+    {
+        return  new AbstractBounds.Boundary<Token>(token(s), inclusive);
+    }
+
+    static final String MIN = RandomPartitioner.MINIMUM.toString();
+
+    @Test
+    public void testIsLessThan() throws Exception
+    {
+        //If the right is min() everything should always be less than it
+        assertTrue(AbstractBounds.isLessThan(bound("10", true), bound(MIN, true)));
+        assertTrue(AbstractBounds.isLessThan(bound("10", true), bound(MIN, false)));
+        assertTrue(AbstractBounds.isLessThan(bound(MIN, true), bound(MIN, true)));
+        assertTrue(AbstractBounds.isLessThan(bound(MIN, true), bound(MIN, false)));
+
+        //Genuinely less than
+        assertTrue(AbstractBounds.isLessThan(bound("10", true), bound("11", true)));
+
+        //Genuinely greater than
+        assertFalse(AbstractBounds.isLessThan(bound("12", true), bound("11", true)));
+
+        //Equal but inclusive
+        assertTrue(AbstractBounds.isLessThan(bound("11", true), bound("11", true)));
+
+        //Equal but not inclusive
+        assertFalse(AbstractBounds.isLessThan(bound("11", false), bound("11", true)));
+        assertFalse(AbstractBounds.isLessThan(bound("11", true), bound("11", false)));
+    }
+
+    @Test
+    public void testIsEmpty() throws Exception
+    {
+        //min() on the right is never empty since min()/min() is the entire ring because no max() is defined
+        assertFalse(AbstractBounds.isEmpty(bound(MIN, true), bound(MIN, true)));
+        assertFalse(AbstractBounds.isEmpty(bound(MIN, false), bound(MIN, true)));
+        assertFalse(AbstractBounds.isEmpty(bound(MIN, false), bound(MIN, false)));
+        assertFalse(AbstractBounds.isEmpty(bound(MIN, true), bound(MIN, false)));
+
+        //Doesn't matter what left is
+        assertFalse(AbstractBounds.isEmpty(bound("1", true), bound(MIN, true)));
+        assertFalse(AbstractBounds.isEmpty(bound("1", false), bound(MIN, true)));
+        assertFalse(AbstractBounds.isEmpty(bound("1", false), bound(MIN, false)));
+        assertFalse(AbstractBounds.isEmpty(bound("1", true), bound(MIN, false)));
+
+        //Bounds equivalent, a range of 1
+        assertFalse(AbstractBounds.isEmpty(bound("1", true), bound("1", true)));
+
+        //Range, this means wrap
+        assertFalse(AbstractBounds.isEmpty(bound("1", false), bound("1", true)));
+
+        //ExcludingBounds
+        assertTrue(AbstractBounds.isEmpty(bound("1", false), bound("1", false)));
+
+        //IncludingBounds
+        assertTrue(AbstractBounds.isEmpty(bound("1", true), bound("1", false)));
+
+        //Left is > right, we are assuming no wrapping (already unwrapped) so it's empty
+        assertTrue(AbstractBounds.isEmpty(bound("2", true), bound("1", true)));
+        assertTrue(AbstractBounds.isEmpty(bound("2", false), bound("1", true)));
+        assertTrue(AbstractBounds.isEmpty(bound("2", false), bound("1", false)));
+        assertTrue(AbstractBounds.isEmpty(bound("2", true), bound("1", false)));
+    }
+
+    @Test
+    public void testIsWrapAround() throws Exception
+    {
+        assertTrue(makeRange("3", "2").isWrapAround());
+        assertTrue(makeRange("3", "3").isWrapAround());
+        assertFalse(makeRange(MIN, MIN).isWrapAround());
+        assertFalse(makeRange(MIN, "3").isWrapAround());
+        assertFalse(makeRange("3", MIN).isWrapAround());
+
+        //The rest can't wrap right now
+        assertFalse(makeBounds("3", "3").isWrapAround());
+        assertFalse(makeBounds(MIN, MIN).isWrapAround());
+        assertFalse(makeBounds(MIN, "3").isWrapAround());
+        assertFalse(makeBounds("3", MIN).isWrapAround());
+
+        assertFalse(makeExcludingBounds(MIN, MIN).isWrapAround());
+        assertFalse(makeExcludingBounds(MIN, "3").isWrapAround());
+        assertFalse(makeExcludingBounds("3", MIN).isWrapAround());
+
+        assertFalse(makeIncludingExcludingBounds(MIN, MIN).isWrapAround());
+        assertFalse(makeIncludingExcludingBounds(MIN, "3").isWrapAround());
+        assertFalse(makeIncludingExcludingBounds("3", MIN).isWrapAround());
+    }
+
+    @Test
+    public void testContainsRangeWithMin() throws Exception
+    {
+        assertFalse(makeRange("2","3").contains(makeRange("5", MIN)));
+    }
+
+    @Test
+    public void testAbstractBoundsIntersects() throws Exception
+    {
+        //Everything intersects with MIN, MIN
+        assertTrue(makeRange(MIN, MIN).intersects(makeRange("1", "2")));
+        assertTrue(makeRange(MIN, MIN).intersectsLegacy(makeRange("1", "2")));
+        assertTrue(makeRange(MIN, MIN).intersects(makeRange(MIN, MIN)));
+        assertTrue(makeRange(MIN, MIN).intersectsLegacy(makeRange(MIN, MIN)));
+
+        //But not just one min()
+        assertFalse(makeRange("5", MIN).intersects(makeRange("2", "3")));
+        assertFalse(makeRange("5", MIN).intersectsLegacy(makeRange("2", "3")));
+        assertFalse(makeRange(MIN, "1").intersects(makeRange("2", "3")));
+        assertFalse(makeRange(MIN, "1").intersectsLegacy(makeRange("2", "3")));
+
+        //Empty intersects with nothing
+        assertTrue(new ExcludingBounds<Token>(token("1"), token("2")).intersects(makeRange(MIN, MIN)));
+
+
+        //Completely enclosed
+        assertTrue(makeRange("5", "10").intersects(makeRange("7", "8")));
+        assertTrue(makeRange("5", "10").intersectsLegacy(makeRange("7", "8")));
+
+        //Sharing edges
+        assertTrue(makeRange("5", "10").intersects(makeRange("5", "10")));
+        assertTrue(makeRange("5", "10").intersectsLegacy(makeRange("5", "10")));
+
+        //Sharing right edge
+        assertTrue(makeRange("5", "10").intersects(makeRange("7", "10")));
+        assertTrue(makeRange("5", "10").intersectsLegacy(makeRange("7", "10")));
+
+        //Sharing left edge
+        assertTrue(makeRange("5", "10").intersects(makeRange("5", "8")));
+        assertTrue(makeRange("5", "10").intersectsLegacy(makeRange("5", "8")));
+
+        //Not intersecting on left
+        assertTrue(makeRange("5", "10").intersects(makeRange("4", "8")));
+        assertTrue(makeRange("5", "10").intersectsLegacy(makeRange("4", "8")));
+
+        //Not intersecting on right
+        assertTrue(makeRange("5", "10").intersects(makeRange("7", "11")));
+        assertTrue(makeRange("5", "10").intersectsLegacy(makeRange("7", "11")));
+
+        //Intersecting right only
+        assertFalse(makeRange("5", "10").intersects(makeRange("10", "11")));
+        assertFalse(makeRange("5", "10").intersectsLegacy(makeRange("10", "11")));
+
+        //Intersecting left only
+        assertFalse(makeRange("5", "10").intersects(makeRange("4", "5")));
+        assertFalse(makeRange("5", "10").intersectsLegacy(makeRange("4", "5")));
+
     }
 }

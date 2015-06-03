@@ -30,7 +30,7 @@ public class ExcludingBounds<T extends RingPosition<T>> extends AbstractBounds<T
     public ExcludingBounds(T left, T right)
     {
         super(left, right);
-        // unlike a Range, an ExcludingBounds may not wrap, nor be empty
+        // unlike a Range, an ExcludingBounds may not wrap, nor can left == right, unless right == min() aka max()
         assert left.compareTo(right) < 0 || right.isMinimum() : "(" + left + "," + right + ")";
     }
 

@@ -31,7 +31,7 @@ public class IncludingExcludingBounds<T extends RingPosition<T>> extends Abstrac
     {
         super(left, right);
         // unlike a Range, an IncludingExcludingBounds may not wrap, nor have
-        // right == left unless the right is the min token
+        // right == left unless the right is the min token aka max()
         assert left.compareTo(right) < 0 || right.isMinimum() : "[" + left + "," + right + ")";
     }
 
