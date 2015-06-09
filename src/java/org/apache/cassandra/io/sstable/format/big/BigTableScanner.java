@@ -135,7 +135,8 @@ public class BigTableScanner implements ISSTableScanner
                 if (!isEmpty(left, right))
                     boundsList.add(AbstractBounds.bounds(left, right));
             }
-            if (requested.left.compareTo(sstable.last) <= 0)
+            //Used to be <=, but that doesn't seem to be correct, Range is not left inclusive
+            if (requested.left.compareTo(sstable.last) < 0)
             {
                 // since we wrap, we must contain the whole sstable after dataRange.startKey()
                 Boundary<RowPosition> right = new Boundary<RowPosition>(sstable.last, true);

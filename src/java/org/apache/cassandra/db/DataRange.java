@@ -149,6 +149,15 @@ public class DataRange
         columnFilter.updateColumnsLimit(count);
     }
 
+    @Override
+    public String toString()
+    {
+        return Objects.toStringHelper(this)
+                .add("keyRange", keyRange)
+                .add("columnFilter", columnFilter)
+                .toString();
+    }
+
     public static class Paging extends DataRange
     {
         // The slice of columns that we want to fetch for each row, ignoring page start/end issues.
