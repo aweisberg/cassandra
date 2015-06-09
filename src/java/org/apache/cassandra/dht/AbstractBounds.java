@@ -311,6 +311,7 @@ public abstract class AbstractBounds<T extends RingPosition<T>> implements Seria
      */
     public static <T extends RingPosition<T>> boolean isWrapAround(T left, T right)
     {
+       //If min() in the right() is max, then min()/min() can't wrap around
        if (right.isMinimum())
            return false;
        return left.compareTo(right) >= 0;

@@ -46,15 +46,14 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
     {
         boolean leftIsMinimum = left.isMinimum();
         boolean rightIsMinimum = right.isMinimum();
+        boolean pointIsMinimum = point.isMinimum();
 
         if (leftIsMinimum && rightIsMinimum)
             return true;
 
         boolean isWrapAround = isWrapAround(left, right);
 
-        Preconditions.checkArgument(!point.isMinimum() || isWrapAround); //Undefined?
-
-        if (isWrapAround(left, right))
+        if (isWrapAround)
         {
             /*
              * We are wrapping around, so the interval is (a,b] where a >= b,
@@ -63,10 +62,13 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
              * (2) k <= b -- return true
              * (3) b < k <= a -- return false
              */
-            if (point.compareTo(left) > 0)
+            int compareLeft = point.compareTo(left);
+            int compareRight = point.compareTo(right);
+
+            if (compareLeft > 0)
                 return true;
             else
-                return right.compareTo(point) >= 0;
+                return compareRight <= 0;
         }
         else
         {
@@ -79,6 +81,14 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
             //If the right is min() it's max()
             if (rightIsMinimum)
                 rightCompare = 0;
+
+            //If the point is min() it's max() so the left compare doesn't matter
+            if (pointIsMinimum)
+                leftCompare = 1;
+
+            //If the point is min() it's max() so the right also has to be max() for it be in
+            if (pointIsMinimum && !rightIsMinimum)
+                return false;
 
             return leftCompare > 0 && rightCompare <= 0;
         }
@@ -497,5 +507,38 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
     public static Range<RowPosition> makeRowRange(Range<Token> tokenBounds)
     {
         return makeRowRange(tokenBounds.left, tokenBounds.right);
+    }
+
+    /**
+     * Tells if the given range is a wrap around.
+     */
+    public static <T extends RingPosition<T>> boolean isWrapAroundLegacy(T left, T right)
+    {
+       return left.compareTo(right) >= 0;
+    }
+
+    public static <T extends RingPosition<T>> boolean containsLegacy(T left, T right, T point)
+    {
+        if (isWrapAroundLegacy(left, right))
+        {
+            /*
+             * We are wrapping around, so the interval is (a,b] where a >= b,
+             * then we have 3 cases which hold for any given token k:
+             * (1) a < k -- return true
+             * (2) k <= b -- return true
+             * (3) b < k <= a -- return false
+             */
+            if (point.compareTo(left) > 0)
+                return true;
+            else
+                return right.compareTo(point) >= 0;
+        }
+        else
+        {
+            /*
+             * This is the range (a, b] where a < b.
+             */
+            return point.compareTo(left) > 0 && right.compareTo(point) >= 0;
+        }
     }
 }
