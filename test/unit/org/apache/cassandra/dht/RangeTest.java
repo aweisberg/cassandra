@@ -752,4 +752,54 @@ public class RangeTest
         assertFalse(makeRange("5", "10").intersectsLegacy(makeRange("4", "5")));
 
     }
+
+    private static boolean rangeContains(String left, String right, String point)
+    {
+        return Range.contains(token(left), token(right), token(point));
+    }
+
+    @Test
+    public void testRangeContainsPoint()
+    {
+        assertTrue(rangeContains("5", "5", "10"));
+        assertTrue(rangeContains("5", "5", MIN));
+        assertTrue(rangeContains(MIN, MIN, MIN));
+        assertTrue(rangeContains(MIN, MIN, "10"));
+        assertTrue(rangeContains("6", "5", "10"));
+        assertTrue(rangeContains("6", "5", MIN));
+
+        //Left edge exclusive
+        assertFalse(rangeContains("6", "5", "6"));
+
+        //Right edge inclusive
+        assertTrue(rangeContains("6", "5", "5"));
+
+        assertTrue(rangeContains(MIN, "10", "5"));
+        assertTrue(rangeContains("0", MIN, "5"));
+
+        //This is undefined?
+        boolean threw = false;
+        try
+        {
+            rangeContains("0", MIN, MIN);
+        }
+        catch (IllegalArgumentException e)
+        {
+            threw = true;
+        }
+        assertTrue(threw);
+
+        //Also undefined?
+        threw = false;
+        try
+        {
+            rangeContains(MIN, "10", MIN);
+        }
+        catch (IllegalArgumentException e)
+        {
+            threw = true;
+        }
+        assertTrue(threw);
+
+    }
 }

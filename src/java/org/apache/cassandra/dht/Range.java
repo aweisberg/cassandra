@@ -24,6 +24,8 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.cassandra.db.RowPosition;
 import org.apache.cassandra.utils.Pair;
 
+import com.google.common.base.Preconditions;
+
 /**
  * A representation of the range that a node is responsible for on the DHT ring.
  *
@@ -42,6 +44,16 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
 
     public static <T extends RingPosition<T>> boolean contains(T left, T right, T point)
     {
+        boolean leftIsMinimum = left.isMinimum();
+        boolean rightIsMinimum = right.isMinimum();
+
+        if (leftIsMinimum && rightIsMinimum)
+            return true;
+
+        boolean isWrapAround = isWrapAround(left, right);
+
+        Preconditions.checkArgument(!point.isMinimum() || isWrapAround); //Undefined?
+
         if (isWrapAround(left, right))
         {
             /*
@@ -61,7 +73,14 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
             /*
              * This is the range (a, b] where a < b.
              */
-            return point.compareTo(left) > 0 && right.compareTo(point) >= 0;
+            int leftCompare = point.compareTo(left);
+            int rightCompare = point.compareTo(right);
+
+            //If the right is min() it's max()
+            if (rightIsMinimum)
+                rightCompare = 0;
+
+            return leftCompare > 0 && rightCompare <= 0;
         }
     }
 
