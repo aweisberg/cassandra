@@ -274,8 +274,8 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
         {
             heartbeatWindow.add(now, ep);
         }
-        if (logger.isTraceEnabled())
-            logger.info("Average for {} is {}", ep, arrivalSamples.get(ep).mean());
+        if (logger.isTraceEnabled() && heartbeatWindow != null)
+            logger.info("Average for {} is {}", ep, heartbeatWindow.mean());
     }
 
     public void interpret(InetAddress ep)
@@ -305,8 +305,8 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
 
         if (PHI_FACTOR * phi > getPhiConvictThreshold())
         {
-            logger.trace("notifying listeners that {} is down", ep);
-            logger.trace("intervals: {} mean: {}", hbWnd, hbWnd.mean());
+            if (logger.isTraceEnabled())
+                logger.trace("Node {} phi {} > {}; intervals: {} mean: {}", new Object[]{ep, PHI_FACTOR * phi, getPhiConvictThreshold(), hbWnd, hbWnd.mean()});
             for (IFailureDetectionEventListener listener : fdEvntListeners)
             {
                 listener.convict(ep, phi);
@@ -362,10 +362,6 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
         }
         sb.append("-----------------------------------------------------------------------");
         return sb.toString();
-    }
-
-    public static void main(String[] args)
-    {
     }
 }
 
