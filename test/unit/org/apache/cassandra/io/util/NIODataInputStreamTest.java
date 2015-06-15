@@ -226,6 +226,30 @@ public class NIODataInputStreamTest
         assertEquals(0, is.available());
     }
 
+    private static ReadableByteChannel wrap(final byte bytes[])
+    {
+        final ByteBuffer buf = ByteBuffer.wrap(bytes);
+        return new ReadableByteChannel()
+        {
+
+            @Override
+            public boolean isOpen() {return false;}
+
+            @Override
+            public void close() throws IOException {}
+
+            @Override
+            public int read(ByteBuffer dst) throws IOException
+            {
+                buf.limit(buf.position() + Math.min(dst.remaining(), buf.remaining()));
+                dst.put(buf);
+                buf.limit(buf.capacity());
+                return bytes.length;
+            }
+
+        };
+    }
+
     @SuppressWarnings("resource")
     @Test
     public void testReadUTF() throws Exception
@@ -244,28 +268,31 @@ public class NIODataInputStreamTest
         daos.writeUTF(BufferedDataOutputStreamTest.threeByte);
         daos.writeUTF(BufferedDataOutputStreamTest.fourByte);
 
-        NIODataInputStream is = new NIODataInputStream(new ReadableByteChannel()
-        {
-
-            @Override
-            public boolean isOpen() {return false;}
-
-            @Override
-            public void close() throws IOException {}
-
-            @Override
-            public int read(ByteBuffer dst) throws IOException
-            {
-                dst.put(baos.toByteArray());
-                return baos.toByteArray().length;
-            }
-
-        }, 4096);
+        NIODataInputStream is = new NIODataInputStream(wrap(baos.toByteArray()), 4096);
 
         assertEquals(simple, is.readUTF());
         assertEquals(BufferedDataOutputStreamTest.twoByte, is.readUTF());
         assertEquals(BufferedDataOutputStreamTest.threeByte, is.readUTF());
         assertEquals(BufferedDataOutputStreamTest.fourByte, is.readUTF());
+    }
+
+    @SuppressWarnings("resource")
+    @Test
+    public void testReadVInt() throws Exception {
+        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStreamPlus daos = new WrappedDataOutputStreamPlus(baos);
+
+        long values[] = new long[] { 0, 1, -1, Long.MIN_VALUE, Long.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE, Short.MIN_VALUE, Short.MAX_VALUE, Byte.MIN_VALUE, Byte.MAX_VALUE };
+
+        for (long v : values)
+            daos.writeVInt(v);
+
+        daos.flush();
+
+        NIODataInputStream is = new NIODataInputStream(wrap(baos.toByteArray()), 8);
+
+        for (long v : values)
+            assertEquals(v, is.readVInt());
     }
 
     @Test

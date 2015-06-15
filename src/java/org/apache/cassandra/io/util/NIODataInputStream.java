@@ -27,6 +27,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.SeekableByteChannel;
 
+import org.apache.cassandra.utils.vint.EncodedDataInputStream;
+
 import com.google.common.base.Preconditions;
 
 /**
@@ -246,6 +248,25 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     {
         prepareReadPrimitive(8);
         return buf.getLong();
+    }
+
+    public long readVInt() throws IOException
+    {
+        byte firstByte = readByte();
+        int len = EncodedDataInputStream.vintDecodeSize(firstByte) - 1;
+        if (len == 0)
+            return firstByte;
+
+        prepareReadPrimitive(len);
+
+        long i = 0;
+        for (int idx = 0; idx < len; idx++)
+        {
+            byte b = buf.get();
+            i = i << 8;
+            i = i | (b & 0xFF);
+        }
+        return (EncodedDataInputStream.vintIsNegative(firstByte) ? (i ^ -1L) : i);
     }
 
     @Override

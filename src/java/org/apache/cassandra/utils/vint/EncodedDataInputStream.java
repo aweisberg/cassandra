@@ -19,6 +19,7 @@ package org.apache.cassandra.utils.vint;
 
 import java.io.DataInput;
 import java.io.IOException;
+import java.io.InputStream;
 
 import org.apache.cassandra.io.util.AbstractDataInput;
 
@@ -71,25 +72,25 @@ public class EncodedDataInputStream extends AbstractDataInput implements DataInp
 
     public int readInt() throws IOException
     {
-        return (int) vintDecode();
+        return (int) vintDecode(input);
     }
 
     public long readLong() throws IOException
     {
-        return vintDecode();
+        return vintDecode(input);
     }
 
     public int readUnsignedShort() throws IOException
     {
-        return (short) vintDecode();
-    }
-    
-    public short readShort() throws IOException
-    {
-        return (short) vintDecode();
+        return (short) vintDecode(input);
     }
 
-    private long vintDecode() throws IOException
+    public short readShort() throws IOException
+    {
+        return (short) vintDecode(input);
+    }
+
+    public static long vintDecode(DataInput input) throws IOException
     {
         byte firstByte = input.readByte();
         int len = vintDecodeSize(firstByte);
@@ -105,7 +106,7 @@ public class EncodedDataInputStream extends AbstractDataInput implements DataInp
         return (vintIsNegative(firstByte) ? (i ^ -1L) : i);
     }
 
-    private int vintDecodeSize(byte value)
+    public static int vintDecodeSize(byte value)
     {
         if (value >= -112)
         {
@@ -118,7 +119,7 @@ public class EncodedDataInputStream extends AbstractDataInput implements DataInp
         return -111 - value;
     }
 
-    private boolean vintIsNegative(byte value)
+    public static boolean vintIsNegative(byte value)
     {
         return value < -120 || (value >= -112 && value < 0);
     }

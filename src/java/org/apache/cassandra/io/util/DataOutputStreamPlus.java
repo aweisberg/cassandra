@@ -64,7 +64,7 @@ public abstract class DataOutputStreamPlus extends OutputStream implements DataO
         return bytes;
     }
 
-    private static final ThreadLocal<byte[]> tempBuffer = new ThreadLocal<byte[]>()
+    protected static final ThreadLocal<byte[]> tempBuffer = new ThreadLocal<byte[]>()
     {
         @Override
         public byte[] initialValue()

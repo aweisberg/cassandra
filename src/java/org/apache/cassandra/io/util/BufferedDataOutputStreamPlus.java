@@ -29,6 +29,7 @@ import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.memory.MemoryUtil;
+import org.apache.cassandra.utils.vint.EncodedDataInputStream;
 
 
 /**
@@ -211,6 +212,48 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     {
         ensureRemaining(8);
         buffer.putLong(v);
+    }
+
+    @Override
+    public void writeVInt(long i) throws IOException
+    {
+        if (i >= -112 && i <= 127)
+        {
+            writeByte((byte) i);
+            return;
+        }
+        int len = -112;
+        if (i < 0)
+        {
+            i ^= -1L; // take one's complement'
+            len = -120;
+        }
+
+        int lengthInBytes = 1;
+        long tmp = i;
+        while (tmp != 0)
+        {
+            tmp = tmp >> 8;
+            len--;
+            lengthInBytes++;
+        }
+
+        ensureRemaining(lengthInBytes);
+
+        byte encodingSpace[] = tempBuffer.get();
+
+        int encodingOffset = 1;
+        encodingSpace[0] = (byte)len;
+
+        len = (len < -120) ? -(len + 120) : -(len + 112);
+        for (int idx = len; idx != 0; idx--)
+        {
+            int shiftbits = (idx - 1) * 8;
+            long mask = 0xFFL << shiftbits;
+            encodingSpace[encodingOffset++] = (byte) ((i & mask) >> shiftbits);
+        }
+
+        buffer.put(encodingSpace, 0, encodingOffset);
     }
 
     @Override
