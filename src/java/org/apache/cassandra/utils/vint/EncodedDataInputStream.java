@@ -74,21 +74,21 @@ public class EncodedDataInputStream extends AbstractDataInput implements DataInp
 
     public int readInt() throws IOException
     {
-        return (int) VIntDecoding.vintDecode(input);
+        return (int) VIntCoding.readVInt(input);
     }
 
     public long readLong() throws IOException
     {
-        return VIntDecoding.vintDecode(input);
+        return VIntCoding.readVInt(input);
     }
 
     public int readUnsignedShort() throws IOException
     {
-        return (short) VIntDecoding.vintDecode(input);
+        return (short) VIntCoding.readVInt(input);
     }
 
     public short readShort() throws IOException
     {
-        return (short) VIntDecoding.vintDecode(input);
+        return (short) VIntCoding.readVInt(input);
     }
 }

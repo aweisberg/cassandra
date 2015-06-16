@@ -10,7 +10,12 @@ import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 import java.util.Random;
 
+import org.apache.cassandra.utils.vint.VIntCoding;
 import org.junit.Test;
+
+import com.google.common.primitives.UnsignedBytes;
+import com.google.common.primitives.UnsignedInteger;
+import com.google.common.primitives.UnsignedLong;
 
 import static org.junit.Assert.*;
 
@@ -454,17 +459,50 @@ public class BufferedDataOutputStreamTest
                 Short.MIN_VALUE, Short.MIN_VALUE + 1, Short.MAX_VALUE, Short.MAX_VALUE - 1,
                 Byte.MIN_VALUE, Byte.MIN_VALUE + 1, Byte.MAX_VALUE, Byte.MAX_VALUE - 1 };
 
+        int expectedSize = 0;
         for (long v : testValues)
+        {
+            expectedSize += VIntCoding.computeVIntSize(v);
             ndosp.writeVInt(v);
+        }
 
         ndosp.flush();
 
         @SuppressWarnings("resource")
         ByteBufferDataInput bbdi = new ByteBufferDataInput(ByteBuffer.wrap(generated.toByteArray()), "", 0, 0);
 
-        assertEquals(77, generated.toByteArray().length);
+        assertEquals(expectedSize, generated.toByteArray().length);
 
         for (long v : testValues)
             assertEquals(v, bbdi.readVInt());
+    }
+
+    @Test
+    public void testUnsignedVInt() throws Exception
+    {
+        setUp();
+        long testValues[] = new long[] {
+                0, 1
+                , UnsignedLong.MAX_VALUE.longValue(), UnsignedLong.MAX_VALUE.longValue() - 1, UnsignedLong.MAX_VALUE.longValue() + 1
+                , UnsignedInteger.MAX_VALUE.longValue(), UnsignedInteger.MAX_VALUE.longValue() - 1, UnsignedInteger.MAX_VALUE.longValue() + 1
+                , UnsignedBytes.MAX_VALUE, UnsignedBytes.MAX_VALUE - 1, UnsignedBytes.MAX_VALUE + 1
+                , 65536, 65536 - 1, 65536 + 1 };
+
+        int expectedSize = 0;
+        for (long v : testValues)
+        {
+            expectedSize += VIntCoding.computeUnsignedVIntSize(v);
+            ndosp.writeUnsignedVInt(v);
+        }
+
+        ndosp.flush();
+
+        @SuppressWarnings("resource")
+        ByteBufferDataInput bbdi = new ByteBufferDataInput(ByteBuffer.wrap(generated.toByteArray()), "", 0, 0);
+
+        assertEquals(expectedSize, generated.toByteArray().length);
+
+        for (long v : testValues)
+            assertEquals(v, bbdi.readUnsignedVInt());
     }
 }

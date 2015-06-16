@@ -27,7 +27,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.SeekableByteChannel;
 
-import org.apache.cassandra.utils.vint.VIntDecoding;
+import org.apache.cassandra.utils.vint.VIntCoding;
 
 import com.google.common.base.Preconditions;
 
@@ -252,57 +252,67 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
 
     public long readVInt() throws IOException
     {
-        //Limit to set on exit in case padding was added
-        int limitToSet = buf.limit();
-        try
-        {
-            //Want to have all 9 bytes available, pad if necessary
-            if (buf.remaining() < 9)
-            {
-                int totalRead = buf.remaining();
-                while (buf.remaining() < 9)
-                {
-                    int read = readNext();
-                    if (read == -1)
-                    {
-                        //No data read, nothing already in the buffer, EOF
-                        if (totalRead == 0 && buf.position() == 0)
-                        {
-                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
-                            buf.position(0);
-                            buf.limit(0);
-                            throw new EOFException();
-                        }
-                        //This is the real amount of data available, so it has to be the limit on exit
-                        limitToSet = buf.limit();
-                        //Pad
-                        buf.limit(buf.limit() + (9 - totalRead));
-                        break;
-                    }
-                    limitToSet = buf.limit();
-                    totalRead += read;
-                }
-            }
-
-            byte firstByte = buf.get();
-
-            if (firstByte >= -112)
-                return firstByte;
-
-            int len = VIntDecoding.vintDecodeSize(firstByte) - 1;
-
-            int shift = (64 - (len * 8));
-            long i = buf.getLong(buf.position()) >>> shift;
-
-            buf.position(buf.position() + len);
-
-            return (VIntDecoding.vintIsNegative(firstByte) ? (i ^ -1L) : i);
-        }
-        finally
-        {
-            buf.limit(limitToSet);
-        }
+        return VIntCoding.readVInt(this);
     }
+
+    public long readUnsignedVInt() throws IOException
+    {
+        return VIntCoding.readUnsignedVInt(this);
+    }
+
+//    public long readVInt() throws IOException
+//    {
+//        //Limit to set on exit in case padding was added
+//        int limitToSet = buf.limit();
+//        try
+//        {
+//            //Want to have all 9 bytes available, pad if necessary
+//            if (buf.remaining() < 9)
+//            {
+//                int totalRead = buf.remaining();
+//                while (buf.remaining() < 9)
+//                {
+//                    int read = readNext();
+//                    if (read == -1)
+//                    {
+//                        //No data read, nothing already in the buffer, EOF
+//                        if (totalRead == 0 && buf.position() == 0)
+//                        {
+//                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
+//                            buf.position(0);
+//                            buf.limit(0);
+//                            throw new EOFException();
+//                        }
+//                        //This is the real amount of data available, so it has to be the limit on exit
+//                        limitToSet = buf.limit();
+//                        //Pad
+//                        buf.limit(buf.limit() + (9 - totalRead));
+//                        break;
+//                    }
+//                    limitToSet = buf.limit();
+//                    totalRead += read;
+//                }
+//            }
+//
+//            byte firstByte = buf.get();
+//
+//            if (firstByte >= -112)
+//                return firstByte;
+//
+//            int len = VIntDecoding.vintDecodeSize(firstByte) - 1;
+//
+//            int shift = (64 - (len * 8));
+//            long i = buf.getLong(buf.position()) >>> shift;
+//
+//            buf.position(buf.position() + len);
+//
+//            return (VIntDecoding.vintIsNegative(firstByte) ? (i ^ -1L) : i);
+//        }
+//        finally
+//        {
+//            buf.limit(limitToSet);
+//        }
+//    }
 
     @Override
     public float readFloat() throws IOException

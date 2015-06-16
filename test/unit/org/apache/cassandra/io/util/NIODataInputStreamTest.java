@@ -18,6 +18,9 @@ import org.apache.cassandra.io.util.NIODataInputStream;
 import org.junit.Test;
 
 import com.google.common.base.Charsets;
+import com.google.common.primitives.UnsignedBytes;
+import com.google.common.primitives.UnsignedInteger;
+import com.google.common.primitives.UnsignedLong;
 
 import static org.junit.Assert.*;
 
@@ -304,6 +307,41 @@ public class NIODataInputStreamTest
         try
         {
             is.readVInt();
+        }
+        catch (EOFException e)
+        {
+            threw = true;
+        }
+        assertTrue(threw);
+    }
+
+    @SuppressWarnings("resource")
+    @Test
+    public void testReadUnsignedVInt() throws Exception {
+        final ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStreamPlus daos = new WrappedDataOutputStreamPlus(baos);
+
+        long values[] = new long[] {
+                0, 1
+                , UnsignedLong.MAX_VALUE.longValue(), UnsignedLong.MAX_VALUE.longValue() - 1, UnsignedLong.MAX_VALUE.longValue() + 1
+                , UnsignedInteger.MAX_VALUE.longValue(), UnsignedInteger.MAX_VALUE.longValue() - 1, UnsignedInteger.MAX_VALUE.longValue() + 1
+                , UnsignedBytes.MAX_VALUE, UnsignedBytes.MAX_VALUE - 1, UnsignedBytes.MAX_VALUE + 1
+                , 65536, 65536 - 1, 65536 + 1 };
+
+        for (long v : values)
+            daos.writeUnsignedVInt(v);
+
+        daos.flush();
+
+        NIODataInputStream is = new NIODataInputStream(wrap(baos.toByteArray()), 9);
+
+        for (long v : values)
+            assertEquals(v, is.readUnsignedVInt());
+
+        boolean threw = false;
+        try
+        {
+            is.readUnsignedVInt();
         }
         catch (EOFException e)
         {

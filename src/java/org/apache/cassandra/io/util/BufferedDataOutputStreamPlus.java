@@ -212,41 +212,41 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         buffer.putLong(v);
     }
 
-    @Override
-    public void writeVInt(long i) throws IOException
-    {
-        if (i >= -112 && i <= 127)
-        {
-            writeByte((byte) i);
-            return;
-        }
-        int len = -112;
-        if (i < 0)
-        {
-            i ^= -1L; // take one's complement'
-            len = -120;
-        }
-
-        int sizeInBytes = 8 - Long.numberOfLeadingZeros(i) / 8;
-        len -= sizeInBytes;
-
-        ensureRemaining(sizeInBytes + 1);
-
-        byte encodingSpace[] = tempBuffer.get();
-
-        int encodingOffset = 1;
-        encodingSpace[0] = (byte)len;
-
-        len = (len < -120) ? -(len + 120) : -(len + 112);
-        for (int idx = len; idx != 0; idx--)
-        {
-            int shiftbits = (idx - 1) * 8;
-            long mask = 0xFFL << shiftbits;
-            encodingSpace[encodingOffset++] = (byte) ((i & mask) >> shiftbits);
-        }
-
-        buffer.put(encodingSpace, 0, encodingOffset);
-    }
+//    @Override
+//    public void writeVInt(long i) throws IOException
+//    {
+//        if (i >= -112 && i <= 127)
+//        {
+//            writeByte((byte) i);
+//            return;
+//        }
+//        int len = -112;
+//        if (i < 0)
+//        {
+//            i ^= -1L; // take one's complement'
+//            len = -120;
+//        }
+//
+//        int sizeInBytes = 8 - Long.numberOfLeadingZeros(i) / 8;
+//        len -= sizeInBytes;
+//
+//        ensureRemaining(sizeInBytes + 1);
+//
+//        byte encodingSpace[] = tempBuffer.get();
+//
+//        int encodingOffset = 1;
+//        encodingSpace[0] = (byte)len;
+//
+//        len = (len < -120) ? -(len + 120) : -(len + 112);
+//        for (int idx = len; idx != 0; idx--)
+//        {
+//            int shiftbits = (idx - 1) * 8;
+//            long mask = 0xFFL << shiftbits;
+//            encodingSpace[encodingOffset++] = (byte) ((i & mask) >> shiftbits);
+//        }
+//
+//        buffer.put(encodingSpace, 0, encodingOffset);
+//    }
 
     @Override
     public void writeFloat(float v) throws IOException

@@ -22,6 +22,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 
+import org.apache.cassandra.utils.vint.VIntCoding;
+
 import com.google.common.base.Function;
 
 /**
@@ -43,26 +45,11 @@ public interface DataOutputPlus extends DataOutput
 
     default void writeVInt(long i) throws IOException
     {
-        if (i >= -112 && i <= 127)
-        {
-            writeByte((byte) i);
-            return;
-        }
-        int len = -112;
-        if (i < 0)
-        {
-            i ^= -1L; // take one's complement'
-            len = -120;
-        }
-        int sizeInBytes = 8 - Long.numberOfLeadingZeros(i) / 8;
-        len -= sizeInBytes;
-        writeByte((byte) len);
-        len = (len < -120) ? -(len + 120) : -(len + 112);
-        for (int idx = len; idx != 0; idx--)
-        {
-            int shiftbits = (idx - 1) * 8;
-            long mask = 0xFFL << shiftbits;
-            writeByte((byte) ((i & mask) >> shiftbits));
-        }
+        VIntCoding.writeVInt(i, this);
+    }
+
+    default void writeUnsignedVInt(long i) throws IOException
+    {
+        VIntCoding.writeUnsignedVInt(i, this);
     }
 }
