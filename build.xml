@@ -1173,6 +1173,9 @@
             <filelist dir="@{inputdir}" files="@{filelist}"/>
         </batchtest>
       </junit>
+      <delete quiet="true" failonerror="false" dir="${build.test.dir}/cassandra/commitlog:@{poffset}"/>
+      <delete quiet="true" failonerror="false" dir="${build.test.dir}/cassandra/data:@{poffset}"/>
+      <delete quiet="true" failonerror="false" dir="${build.test.dir}/cassandra/saved_caches:@{poffset}"/>
     </sequential>
   </macrodef>
 
