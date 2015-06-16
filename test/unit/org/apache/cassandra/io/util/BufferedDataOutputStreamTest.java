@@ -447,7 +447,12 @@ public class BufferedDataOutputStreamTest
     public void testVInt() throws Exception
     {
         setUp();
-        long testValues[] = new long[] { 0, 1, -1, Long.MIN_VALUE, Long.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE, Short.MIN_VALUE, Short.MAX_VALUE, Byte.MIN_VALUE, Byte.MAX_VALUE };
+        long testValues[] = new long[] {
+                0, 1, -1,
+                Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MAX_VALUE, Long.MAX_VALUE - 1,
+                Integer.MIN_VALUE, Integer.MIN_VALUE + 1, Integer.MAX_VALUE, Integer.MAX_VALUE - 1,
+                Short.MIN_VALUE, Short.MIN_VALUE + 1, Short.MAX_VALUE, Short.MAX_VALUE - 1,
+                Byte.MIN_VALUE, Byte.MIN_VALUE + 1, Byte.MAX_VALUE, Byte.MAX_VALUE - 1 };
 
         for (long v : testValues)
             ndosp.writeVInt(v);
@@ -457,7 +462,7 @@ public class BufferedDataOutputStreamTest
         @SuppressWarnings("resource")
         ByteBufferDataInput bbdi = new ByteBufferDataInput(ByteBuffer.wrap(generated.toByteArray()), "", 0, 0);
 
-        assertEquals(3 + 9 + 9 + 5 + 5 + 3 + 3 + 2 + 1, generated.toByteArray().length);
+        assertEquals(77, generated.toByteArray().length);
 
         for (long v : testValues)
             assertEquals(v, bbdi.readVInt());

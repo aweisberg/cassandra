@@ -29,8 +29,6 @@ import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.memory.MemoryUtil;
-import org.apache.cassandra.utils.vint.EncodedDataInputStream;
-
 
 /**
  * An implementation of the DataOutputStreamPlus interface using a ByteBuffer to stage writes

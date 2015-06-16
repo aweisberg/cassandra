@@ -252,68 +252,56 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
 
     public long readVInt() throws IOException
     {
-//        //Limit to set on exit in case padding was added
-//        int limitToSet = buf.limit();
-//        try
-//        {
-//            //Want to have all 9 bytes available, pad if necessary
-//            if (buf.remaining() < 9)
-//            {
-//                int totalRead = buf.remaining();
-//                while (buf.remaining() < 9)
-//                {
-//                    int read = readNext();
-//                    if (read == -1)
-//                    {
-//                        //No data read, nothing already in the buffer, EOF
-//                        if (totalRead == 0 && buf.position() == 0)
-//                        {
-//                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
-//                            buf.position(0);
-//                            buf.limit(0);
-//                            throw new EOFException();
-//                        }
-//                        //This is the real amount of data available, so it has to be the limit on exit
-//                        limitToSet = buf.limit();
-//                        //Pad
-//                        buf.limit(buf.limit() + (9 - totalRead));
-//                        break;
-//                    }
-//                    limitToSet = buf.limit();
-//                    totalRead += read;
-//                }
-//            }
+        //Limit to set on exit in case padding was added
+        int limitToSet = buf.limit();
+        try
+        {
+            //Want to have all 9 bytes available, pad if necessary
+            if (buf.remaining() < 9)
+            {
+                int totalRead = buf.remaining();
+                while (buf.remaining() < 9)
+                {
+                    int read = readNext();
+                    if (read == -1)
+                    {
+                        //No data read, nothing already in the buffer, EOF
+                        if (totalRead == 0 && buf.position() == 0)
+                        {
+                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
+                            buf.position(0);
+                            buf.limit(0);
+                            throw new EOFException();
+                        }
+                        //This is the real amount of data available, so it has to be the limit on exit
+                        limitToSet = buf.limit();
+                        //Pad
+                        buf.limit(buf.limit() + (9 - totalRead));
+                        break;
+                    }
+                    limitToSet = buf.limit();
+                    totalRead += read;
+                }
+            }
 
-//            byte firstByte = buf.get();
-            byte firstByte = readByte();
+            byte firstByte = buf.get();
 
             if (firstByte >= -112)
                 return firstByte;
 
             int len = VIntDecoding.vintDecodeSize(firstByte) - 1;
 
-            prepareReadPrimitive(len);
+            int shift = (64 - (len * 8));
+            long i = buf.getLong(buf.position()) >>> shift;
 
-
-//            long i = buf.getLong(buf.position());
-//            i &= (-1L >>> (64 - (len * 8)));
-//
-//            buf.position(buf.position() + len);
-
-            long i = 0;
-            for (int idx = 0; idx < len; idx++)
-            {
-                byte b = buf.get();
-                i = i << 8;
-                i = i | (b & 0xFF);
-            }
+            buf.position(buf.position() + len);
 
             return (VIntDecoding.vintIsNegative(firstByte) ? (i ^ -1L) : i);
-//        }
-//        finally
-//        {
-//            buf.limit(limitToSet);
-//        }
+        }
+        finally
+        {
+            buf.limit(limitToSet);
+        }
     }
 
     @Override

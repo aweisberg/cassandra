@@ -283,7 +283,12 @@ public class NIODataInputStreamTest
         final ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutputStreamPlus daos = new WrappedDataOutputStreamPlus(baos);
 
-        long values[] = new long[] { 0, 1, -1, Long.MIN_VALUE, Long.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE, Short.MIN_VALUE, Short.MAX_VALUE, Byte.MIN_VALUE, Byte.MAX_VALUE };
+        long values[] = new long[] {
+                0, 1, -1,
+                Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MAX_VALUE, Long.MAX_VALUE - 1,
+                Integer.MIN_VALUE, Integer.MIN_VALUE + 1, Integer.MAX_VALUE, Integer.MAX_VALUE - 1,
+                Short.MIN_VALUE, Short.MIN_VALUE + 1, Short.MAX_VALUE, Short.MAX_VALUE - 1,
+                Byte.MIN_VALUE, Byte.MIN_VALUE + 1, Byte.MAX_VALUE, Byte.MAX_VALUE - 1 };
 
         for (long v : values)
             daos.writeVInt(v);
@@ -294,6 +299,17 @@ public class NIODataInputStreamTest
 
         for (long v : values)
             assertEquals(v, is.readVInt());
+
+        boolean threw = false;
+        try
+        {
+            is.readVInt();
+        }
+        catch (EOFException e)
+        {
+            threw = true;
+        }
+        assertTrue(threw);
     }
 
     @Test
