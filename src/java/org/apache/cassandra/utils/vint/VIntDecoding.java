@@ -32,10 +32,10 @@ public class VIntDecoding
         if (firstByte >= -112)
             return firstByte;
 
-        int len = vintDecodeSize(firstByte);
+        int len = vintDecodeSize(firstByte) - 1;
 
         long i = 0;
-        for (int idx = 0; idx < len - 1; idx++)
+        for (int idx = 0; idx < len; idx++)
         {
             byte b = input.readByte();
             i = i << 8;
@@ -52,9 +52,12 @@ public class VIntDecoding
         return value < -120 ? -119 - value : -111 - value;
     }
 
+    /*
+     * This assumes that you have already discarded values > -112 which are indeed negative
+     */
     public static boolean vintIsNegative(byte value)
     {
-        assert((value < -120 || (value >= -112 && value < 0)) == value < -120);
+        assert(value < -112);
         return value < -120;
     }
 }

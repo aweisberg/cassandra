@@ -54,12 +54,8 @@ public interface DataOutputPlus extends DataOutput
             i ^= -1L; // take one's complement'
             len = -120;
         }
-        long tmp = i;
-        while (tmp != 0)
-        {
-            tmp = tmp >> 8;
-            len--;
-        }
+        int sizeInBytes = 8 - Long.numberOfLeadingZeros(i) / 8;
+        len -= sizeInBytes;
         writeByte((byte) len);
         len = (len < -120) ? -(len + 120) : -(len + 112);
         for (int idx = len; idx != 0; idx--)

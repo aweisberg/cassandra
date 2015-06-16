@@ -52,7 +52,7 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     public NIODataInputStream(ReadableByteChannel rbc, int bufferSize)
     {
         Preconditions.checkNotNull(rbc);
-        Preconditions.checkArgument(bufferSize >= 8, "Buffer size must be large enough to accomadate a long/double");
+        Preconditions.checkArgument(bufferSize >= 9, "Buffer size must be large enough to accomadate a varint");
         this.rbc = rbc;
         buf = ByteBuffer.allocateDirect(bufferSize);
         buf.position(0);
@@ -118,7 +118,7 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     private int readNext() throws IOException
     {
         Preconditions.checkState(buf.remaining() != buf.capacity());
-        assert(buf.remaining() < 8);
+        assert(buf.remaining() < 9);
 
         /*
          * If there is data already at the start of the buffer, move the position to the end
@@ -252,22 +252,68 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
 
     public long readVInt() throws IOException
     {
-        byte firstByte = readByte();
+//        //Limit to set on exit in case padding was added
+//        int limitToSet = buf.limit();
+//        try
+//        {
+//            //Want to have all 9 bytes available, pad if necessary
+//            if (buf.remaining() < 9)
+//            {
+//                int totalRead = buf.remaining();
+//                while (buf.remaining() < 9)
+//                {
+//                    int read = readNext();
+//                    if (read == -1)
+//                    {
+//                        //No data read, nothing already in the buffer, EOF
+//                        if (totalRead == 0 && buf.position() == 0)
+//                        {
+//                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
+//                            buf.position(0);
+//                            buf.limit(0);
+//                            throw new EOFException();
+//                        }
+//                        //This is the real amount of data available, so it has to be the limit on exit
+//                        limitToSet = buf.limit();
+//                        //Pad
+//                        buf.limit(buf.limit() + (9 - totalRead));
+//                        break;
+//                    }
+//                    limitToSet = buf.limit();
+//                    totalRead += read;
+//                }
+//            }
 
-        if (firstByte >= -112)
-            return firstByte;
+//            byte firstByte = buf.get();
+            byte firstByte = readByte();
 
-        int len = VIntDecoding.vintDecodeSize(firstByte) - 1;
-        prepareReadPrimitive(len);
+            if (firstByte >= -112)
+                return firstByte;
 
-        long i = 0;
-        for (int idx = 0; idx < len; idx++)
-        {
-            byte b = buf.get();
-            i = i << 8;
-            i = i | (b & 0xFF);
-        }
-        return (VIntDecoding.vintIsNegative(firstByte) ? (i ^ -1L) : i);
+            int len = VIntDecoding.vintDecodeSize(firstByte) - 1;
+
+            prepareReadPrimitive(len);
+
+
+//            long i = buf.getLong(buf.position());
+//            i &= (-1L >>> (64 - (len * 8)));
+//
+//            buf.position(buf.position() + len);
+
+            long i = 0;
+            for (int idx = 0; idx < len; idx++)
+            {
+                byte b = buf.get();
+                i = i << 8;
+                i = i | (b & 0xFF);
+            }
+
+            return (VIntDecoding.vintIsNegative(firstByte) ? (i ^ -1L) : i);
+//        }
+//        finally
+//        {
+//            buf.limit(limitToSet);
+//        }
     }
 
     @Override

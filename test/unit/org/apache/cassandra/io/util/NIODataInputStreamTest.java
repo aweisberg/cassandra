@@ -126,7 +126,7 @@ public class NIODataInputStreamTest
 
     }
 
-    NIODataInputStream fakeStream = new NIODataInputStream(new FakeChannel(), 8);
+    NIODataInputStream fakeStream = new NIODataInputStream(new FakeChannel(), 9);
 
     @Test(expected = IOException.class)
     public void testResetThrows() throws Exception
@@ -212,7 +212,7 @@ public class NIODataInputStreamTest
         fos.write(new byte[10]);
         fos.seek(0);
 
-        is = new NIODataInputStream(fos.getChannel(), 8);
+        is = new NIODataInputStream(fos.getChannel(), 9);
 
         int remaining = 10;
         assertEquals(10, is.available());
@@ -241,10 +241,11 @@ public class NIODataInputStreamTest
             @Override
             public int read(ByteBuffer dst) throws IOException
             {
-                buf.limit(buf.position() + Math.min(dst.remaining(), buf.remaining()));
+                int read = Math.min(dst.remaining(), buf.remaining());
+                buf.limit(buf.position() + read);
                 dst.put(buf);
                 buf.limit(buf.capacity());
-                return bytes.length;
+                return read == 0 ? -1 : read;
             }
 
         };
@@ -289,7 +290,7 @@ public class NIODataInputStreamTest
 
         daos.flush();
 
-        NIODataInputStream is = new NIODataInputStream(wrap(baos.toByteArray()), 8);
+        NIODataInputStream is = new NIODataInputStream(wrap(baos.toByteArray()), 9);
 
         for (long v : values)
             assertEquals(v, is.readVInt());
