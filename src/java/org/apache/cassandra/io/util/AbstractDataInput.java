@@ -19,7 +19,7 @@ package org.apache.cassandra.io.util;
 
 import java.io.*;
 
-import org.apache.cassandra.utils.vint.EncodedDataInputStream;
+import org.apache.cassandra.utils.vint.VIntDecoding;
 
 public abstract class AbstractDataInput extends InputStream implements DataInput
 {
@@ -279,7 +279,7 @@ public abstract class AbstractDataInput extends InputStream implements DataInput
      */
     public long readVInt() throws IOException
     {
-        return EncodedDataInputStream.vintDecode(this);
+        return VIntDecoding.vintDecode(this);
     }
 
     /**

@@ -19,7 +19,6 @@ package org.apache.cassandra.utils.vint;
 
 import java.io.DataInput;
 import java.io.IOException;
-import java.io.InputStream;
 
 import org.apache.cassandra.io.util.AbstractDataInput;
 
@@ -28,6 +27,9 @@ import org.apache.cassandra.io.util.AbstractDataInput;
  * https://developers.google.com/protocol-buffers/docs/encoding#varints
  *
  * Should be used with EncodedDataOutputStream
+ *
+ * @deprecated Where possible use NIODataInputStream which has a more efficient implementation of buffered input
+ *             for most read methods
  */
 public class EncodedDataInputStream extends AbstractDataInput implements DataInput
 {
@@ -72,55 +74,21 @@ public class EncodedDataInputStream extends AbstractDataInput implements DataInp
 
     public int readInt() throws IOException
     {
-        return (int) vintDecode(input);
+        return (int) VIntDecoding.vintDecode(input);
     }
 
     public long readLong() throws IOException
     {
-        return vintDecode(input);
+        return VIntDecoding.vintDecode(input);
     }
 
     public int readUnsignedShort() throws IOException
     {
-        return (short) vintDecode(input);
+        return (short) VIntDecoding.vintDecode(input);
     }
 
     public short readShort() throws IOException
     {
-        return (short) vintDecode(input);
-    }
-
-    public static long vintDecode(DataInput input) throws IOException
-    {
-        byte firstByte = input.readByte();
-        int len = vintDecodeSize(firstByte);
-        if (len == 1)
-            return firstByte;
-        long i = 0;
-        for (int idx = 0; idx < len - 1; idx++)
-        {
-            byte b = input.readByte();
-            i = i << 8;
-            i = i | (b & 0xFF);
-        }
-        return (vintIsNegative(firstByte) ? (i ^ -1L) : i);
-    }
-
-    public static int vintDecodeSize(byte value)
-    {
-        if (value >= -112)
-        {
-            return 1;
-        }
-        else if (value < -120)
-        {
-            return -119 - value;
-        }
-        return -111 - value;
-    }
-
-    public static boolean vintIsNegative(byte value)
-    {
-        return value < -120 || (value >= -112 && value < 0);
+        return (short) VIntDecoding.vintDecode(input);
     }
 }

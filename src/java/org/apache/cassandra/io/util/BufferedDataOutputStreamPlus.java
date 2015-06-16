@@ -229,16 +229,10 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
             len = -120;
         }
 
-        int lengthInBytes = 1;
-        long tmp = i;
-        while (tmp != 0)
-        {
-            tmp = tmp >> 8;
-            len--;
-            lengthInBytes++;
-        }
+        int sizeInBytes = 8 - Long.numberOfLeadingZeros(i) / 8;
+        len -= sizeInBytes;
 
-        ensureRemaining(lengthInBytes);
+        ensureRemaining(sizeInBytes + 1);
 
         byte encodingSpace[] = tempBuffer.get();
 
