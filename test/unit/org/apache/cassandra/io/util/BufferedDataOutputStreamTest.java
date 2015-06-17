@@ -453,11 +453,11 @@ public class BufferedDataOutputStreamTest
     {
         setUp();
         long testValues[] = new long[] {
-                0, 1, -1,
-                Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MAX_VALUE, Long.MAX_VALUE - 1,
-                Integer.MIN_VALUE, Integer.MIN_VALUE + 1, Integer.MAX_VALUE, Integer.MAX_VALUE - 1,
-                Short.MIN_VALUE, Short.MIN_VALUE + 1, Short.MAX_VALUE, Short.MAX_VALUE - 1,
-                Byte.MIN_VALUE, Byte.MIN_VALUE + 1, Byte.MAX_VALUE, Byte.MAX_VALUE - 1 };
+                0, 1, -1
+                ,Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MAX_VALUE, Long.MAX_VALUE - 1
+                ,Integer.MIN_VALUE, Integer.MIN_VALUE + 1, Integer.MAX_VALUE, Integer.MAX_VALUE - 1
+                ,Short.MIN_VALUE, Short.MIN_VALUE + 1, Short.MAX_VALUE, Short.MAX_VALUE - 1
+                ,Byte.MIN_VALUE, Byte.MIN_VALUE + 1, Byte.MAX_VALUE, Byte.MAX_VALUE - 1 };
 
         int expectedSize = 0;
         for (long v : testValues)
@@ -474,7 +474,9 @@ public class BufferedDataOutputStreamTest
         assertEquals(expectedSize, generated.toByteArray().length);
 
         for (long v : testValues)
+        {
             assertEquals(v, bbdi.readVInt());
+        }
     }
 
     @Test

@@ -57,6 +57,30 @@ import java.io.IOException;
 public class VIntCoding
 {
 
+    static final boolean debug = false;
+
+    static void print(String s)
+    {
+        if (debug)
+            System.out.print(s);
+    }
+
+    static void println(String s)
+    {
+        if (debug)
+            System.out.println(s);
+    }
+
+    static String toString (long l)
+    {
+        String s = padToEight(Long.toBinaryString(l & 0xff));
+        for (int ii = 1; ii < 8; ii++)
+        {
+            s += " " + padToEight(Long.toBinaryString((l >> 8 * ii) & 0xff));
+        }
+        return s;
+    }
+
     /**
      * Think hard before opting for an unsigned encoding. Is this going to bite someone because some day
      * they might need to pass in a sentinel value using negative numbers? Is the risk worth it
@@ -65,19 +89,89 @@ public class VIntCoding
      * Signed, not a fan of unsigned values in protocols and formats
      */
     public static long readUnsignedVInt(DataInput input) throws IOException {
-      long result = 0;
-      for (int shift = 0; shift < 64; shift += 7) {
-        final byte b = input.readByte();
-        result |= (long) (b & 0x7F) << shift;
-        if ((b & 0x80) == 0) {
-          return result;
+        byte firstByte = input.readByte();
+        println("First byte " + padToEight(Integer.toBinaryString(firstByte & 0xff)));
+
+        //Bail out early if this is one byte, necessary or it fails later
+        if ((firstByte & 1 << 7) == 0)
+            return firstByte & ~(1 << 7);
+
+        final int mask = 0xffffffff;
+        println("For number of leading zeroes " + padToEight(Integer.toBinaryString(firstByte ^ mask)));
+        int size = Integer.numberOfLeadingZeros(firstByte ^ mask) - 24;
+        println("Number of leading 0s " + size);
+
+        long shift = 0;
+        long retval = 0;
+        if (size < 8)
+        {
+            println("&ing retval with mask " + toString(~masks[size + 1] & 0xff));
+            retval = firstByte & (~masks[size + 1] & 0xff);
+            println("Retval starts as " + toString(retval));
+            shift = 7 - size;
         }
-      }
-      throw new RuntimeException("Malformed varint");
+
+        for (int ii = 0; ii < size; ii++)
+        {
+            byte b = input.readByte();
+            println("Incorporating byte " + padToEight(Long.toBinaryString(b & 0xff)));
+            println("Incorporated as " + toString(((long)b & 0xffL) << shift));
+            println("Shift is " + shift);
+            retval |= ((long)b & 0xffL) << shift;
+            println("Retval is " + toString(retval));
+            shift += 8;
+        }
+
+        return retval;
     }
 
     public static long readVInt(DataInput input) throws IOException {
         return decodeZigZag64(readUnsignedVInt(input));
+    }
+
+    static final long masks[] = new long[9];
+
+    static
+    {
+        long val = 0;
+
+        masks[0] = val;
+
+        val |= 1 << 7;
+        masks[1] = val;
+
+        val |= 1 << 6;
+        masks[2] = val;
+
+        val |= 1 << 5;
+        masks[3] = val;
+
+        val |= 1 << 4;
+        masks[4] = val;
+
+        val |= 1 << 3;
+        masks[5]= val;
+
+        val |= 1 << 2;
+        masks[6] = val;
+
+        val |= 1 << 1;
+        masks[7] = val;
+
+        val |= 1;
+        masks[8] = val;
+        for (long mask : masks) {
+            println(toString(mask));
+        }
+    }
+
+    static String padToEight(String s)
+    {
+        while (s.length() < 8)
+        {
+            s = "0" + s;
+        }
+        return s;
     }
 
     /**
@@ -88,15 +182,27 @@ public class VIntCoding
      * Signed, not a fan of unsigned values in protocols and formats
      */
     public static void writeUnsignedVInt(long value, DataOutput output) throws IOException {
-      while (true) {
-        if ((value & ~0x7FL) == 0) {
-          output.write((int)value);
-          return;
-        } else {
-          output.write(((int)value & 0x7F) | 0x80);
-          value >>>= 7;
+        int size = computeUnsignedVIntSize(value);
+        println("Value " + toString(value));
+
+        long baseMask = masks[size - 1];
+        println("Base mask " + toString(baseMask));
+        long zeroMask = ~(1L << (8 - size));
+        println("Zero mask " + toString(baseMask));
+        int firstByte = (int)((value | baseMask) & zeroMask) & 0xff;
+        output.writeByte(firstByte);
+        print("Code  " + padToEight(Long.toBinaryString(firstByte & 0xff)));
+        if (firstByte != 255)
+            value = value >> (8 - size);
+
+        for (int ii = 0; ii < size - 1; ii++)
+        {
+            int b = (int)(value >> (ii * 8));
+            output.writeByte(b);
+            print(" " + padToEight(Long.toBinaryString(b & 0xff)));
         }
-      }
+        print("\n");
+        System.out.flush();
     }
 
     public static void writeVInt(long value, DataOutput output) throws IOException {
@@ -114,7 +220,7 @@ public class VIntCoding
      * @return A signed 64-bit integer.
      */
     public static long decodeZigZag64(final long n) {
-      return (n >>> 1) ^ -(n & 1);
+        return (n >>> 1) ^ -(n & 1);
     }
 
     /**
@@ -128,36 +234,20 @@ public class VIntCoding
      *         Java has no explicit unsigned support.
      */
     public static long encodeZigZag64(final long n) {
-      // Note:  the right-shift must be arithmetic
-      return (n << 1) ^ (n >> 63);
+        // Note:  the right-shift must be arithmetic
+        return (n << 1) ^ (n >> 63);
     }
 
     /** Compute the number of bytes that would be needed to encode a varint. */
     public static int computeVIntSize(final long param) {
-      final long value = encodeZigZag64(param);
-      if ((value & (0xffffffffffffffffL <<  7)) == 0) return 1;
-      if ((value & (0xffffffffffffffffL << 14)) == 0) return 2;
-      if ((value & (0xffffffffffffffffL << 21)) == 0) return 3;
-      if ((value & (0xffffffffffffffffL << 28)) == 0) return 4;
-      if ((value & (0xffffffffffffffffL << 35)) == 0) return 5;
-      if ((value & (0xffffffffffffffffL << 42)) == 0) return 6;
-      if ((value & (0xffffffffffffffffL << 49)) == 0) return 7;
-      if ((value & (0xffffffffffffffffL << 56)) == 0) return 8;
-      if ((value & (0xffffffffffffffffL << 63)) == 0) return 9;
-      return 10;
+        return computeUnsignedVIntSize(encodeZigZag64(param));
     }
 
     /** Compute the number of bytes that would be needed to encode an unsigned varint. */
     public static int computeUnsignedVIntSize(final long value) {
-      if ((value & (0xffffffffffffffffL <<  7)) == 0) return 1;
-      if ((value & (0xffffffffffffffffL << 14)) == 0) return 2;
-      if ((value & (0xffffffffffffffffL << 21)) == 0) return 3;
-      if ((value & (0xffffffffffffffffL << 28)) == 0) return 4;
-      if ((value & (0xffffffffffffffffL << 35)) == 0) return 5;
-      if ((value & (0xffffffffffffffffL << 42)) == 0) return 6;
-      if ((value & (0xffffffffffffffffL << 49)) == 0) return 7;
-      if ((value & (0xffffffffffffffffL << 56)) == 0) return 8;
-      if ((value & (0xffffffffffffffffL << 63)) == 0) return 9;
-      return 10;
+        if ((value & (1 << 7)) != 0)
+            return Math.max(2, 9 - (Long.numberOfLeadingZeros(value) / 7));
+        else
+            return Math.max(1, 9 - (Long.numberOfLeadingZeros(value) / 7));
     }
 }
