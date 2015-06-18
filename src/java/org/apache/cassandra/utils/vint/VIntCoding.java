@@ -57,21 +57,21 @@ import java.io.IOException;
 public class VIntCoding
 {
 
-    static final boolean debug = false;
+    public static boolean debug = false;
 
-    static void print(String s)
+    public static void print(String s)
     {
         if (debug)
             System.out.print(s);
     }
 
-    static void println(String s)
+    public static void println(String s)
     {
         if (debug)
             System.out.println(s);
     }
 
-    static String toString (long l)
+    public static String toString (long l)
     {
         String s = padToEight(Long.toBinaryString(l & 0xff));
         for (int ii = 1; ii < 8; ii++)
@@ -105,8 +105,8 @@ public class VIntCoding
         long retval = 0;
         if (size < 8)
         {
-            println("&ing retval with mask " + toString(~masks[size + 1] & 0xff));
-            retval = firstByte & (~masks[size + 1] & 0xff);
+            println("&ing retval with mask " + toString(~lengthExtensionMasks[size + 1] & 0xff));
+            retval = firstByte & (~lengthExtensionMasks[size + 1] & 0xff);
             println("Retval starts as " + toString(retval));
             shift = 7 - size;
         }
@@ -129,43 +129,32 @@ public class VIntCoding
         return decodeZigZag64(readUnsignedVInt(input));
     }
 
-    static final long masks[] = new long[9];
+
+    public static long truncationMask(int pivot)
+    {
+        return ((1L << (pivot + 1)) - 1);
+    }
+
+    public static final long lengthExtensionMasks[] = new long[9];
 
     static
     {
         long val = 0;
 
-        masks[0] = val;
+        lengthExtensionMasks[0] = val;
 
-        val |= 1 << 7;
-        masks[1] = val;
+        for (int ii = 7; ii >= 0; ii--)
+        {
+            val |= 1 << ii;
+            lengthExtensionMasks[8 - ii] = val;
+        }
 
-        val |= 1 << 6;
-        masks[2] = val;
-
-        val |= 1 << 5;
-        masks[3] = val;
-
-        val |= 1 << 4;
-        masks[4] = val;
-
-        val |= 1 << 3;
-        masks[5]= val;
-
-        val |= 1 << 2;
-        masks[6] = val;
-
-        val |= 1 << 1;
-        masks[7] = val;
-
-        val |= 1;
-        masks[8] = val;
-        for (long mask : masks) {
+        for (long mask : lengthExtensionMasks) {
             println(toString(mask));
         }
     }
 
-    static String padToEight(String s)
+    public static String padToEight(String s)
     {
         while (s.length() < 8)
         {
@@ -184,20 +173,25 @@ public class VIntCoding
     public static void writeUnsignedVInt(long value, DataOutput output) throws IOException {
         int size = computeUnsignedVIntSize(value);
         println("Value " + toString(value));
+        println("Size " + size);
 
-        long baseMask = masks[size - 1];
+        long baseMask = lengthExtensionMasks[size - 1];
         println("Base mask " + toString(baseMask));
         long zeroMask = ~(1L << (8 - size));
         println("Zero mask " + toString(baseMask));
         int firstByte = (int)((value | baseMask) & zeroMask) & 0xff;
         output.writeByte(firstByte);
         print("Code  " + padToEight(Long.toBinaryString(firstByte & 0xff)));
-        if (firstByte != 255)
+
+        //Lost one bit per byte and a padding 0 bit
+        if (firstByte != (-1 & 0xff))
             value = value >> (8 - size);
 
         for (int ii = 0; ii < size - 1; ii++)
         {
             int b = (int)(value >> (ii * 8));
+            //A varint that encodes zeroes is not very useful
+            assert((ii + 1 < size) || ((b & 0xff) != 0));
             output.writeByte(b);
             print(" " + padToEight(Long.toBinaryString(b & 0xff)));
         }
@@ -245,9 +239,16 @@ public class VIntCoding
 
     /** Compute the number of bytes that would be needed to encode an unsigned varint. */
     public static int computeUnsignedVIntSize(final long value) {
-        if ((value & (1 << 7)) != 0)
-            return Math.max(2, 9 - (Long.numberOfLeadingZeros(value) / 7));
-        else
-            return Math.max(1, 9 - (Long.numberOfLeadingZeros(value) / 7));
+        long leadingZeroes = Long.numberOfLeadingZeros(value);
+        if (leadingZeroes > 0 + 56 + 1) return 1;
+        if (leadingZeroes > 1 + 48 + 1) return 2;
+        if (leadingZeroes > 2 + 40 + 1) return 3;
+        if (leadingZeroes > 3 + 32 + 1) return 4;
+        if (leadingZeroes > 4 + 24 + 1) return 5;
+        if (leadingZeroes > 5 + 16 + 1) return 6;
+        if (leadingZeroes > 6 + 8 + 1) return 7;
+        if (leadingZeroes > 7 + 1) return 8;
+        return 9;
+        //return (8 - (Long.numberOfLeadingZeros(value) / 8)) + 1;
     }
 }

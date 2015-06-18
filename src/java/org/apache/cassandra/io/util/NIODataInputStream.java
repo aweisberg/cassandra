@@ -252,67 +252,83 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
 
     public long readVInt() throws IOException
     {
-        return VIntCoding.readVInt(this);
+        return VIntCoding.decodeZigZag64(readUnsignedVInt());
     }
 
     public long readUnsignedVInt() throws IOException
     {
-        return VIntCoding.readUnsignedVInt(this);
-    }
+        //  Limit to set on exit in case padding was added
+        int limitToSet = buf.limit();
+        try
+        {
+            //Want to have all 9 bytes available, pad if necessary
+            if (buf.remaining() < 9)
+            {
+                int totalRead = buf.remaining();
+                while (buf.remaining() < 9)
+                {
+                    int read = readNext();
+                    if (read == -1)
+                    {
+                        //No data read, nothing already in the buffer, EOF
+                        if (totalRead == 0 && buf.position() == 0)
+                        {
+                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
+                            buf.position(0);
+                            buf.limit(0);
+                            throw new EOFException();
+                        }
+                        //This is the real amount of data available, so it has to be the limit on exit
+                        limitToSet = buf.limit();
+                        //Pad
+                        buf.limit(buf.limit() + (9 - totalRead));
+                        break;
+                    }
+                    limitToSet = buf.limit();
+                    totalRead += read;
+                }
+            }
 
-//    public long readVInt() throws IOException
-//    {
-//        //Limit to set on exit in case padding was added
-//        int limitToSet = buf.limit();
-//        try
-//        {
-//            //Want to have all 9 bytes available, pad if necessary
-//            if (buf.remaining() < 9)
-//            {
-//                int totalRead = buf.remaining();
-//                while (buf.remaining() < 9)
-//                {
-//                    int read = readNext();
-//                    if (read == -1)
-//                    {
-//                        //No data read, nothing already in the buffer, EOF
-//                        if (totalRead == 0 && buf.position() == 0)
-//                        {
-//                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
-//                            buf.position(0);
-//                            buf.limit(0);
-//                            throw new EOFException();
-//                        }
-//                        //This is the real amount of data available, so it has to be the limit on exit
-//                        limitToSet = buf.limit();
-//                        //Pad
-//                        buf.limit(buf.limit() + (9 - totalRead));
-//                        break;
-//                    }
-//                    limitToSet = buf.limit();
-//                    totalRead += read;
-//                }
-//            }
-//
-//            byte firstByte = buf.get();
-//
-//            if (firstByte >= -112)
-//                return firstByte;
-//
-//            int len = VIntDecoding.vintDecodeSize(firstByte) - 1;
-//
-//            int shift = (64 - (len * 8));
-//            long i = buf.getLong(buf.position()) >>> shift;
-//
-//            buf.position(buf.position() + len);
-//
-//            return (VIntDecoding.vintIsNegative(firstByte) ? (i ^ -1L) : i);
-//        }
-//        finally
-//        {
-//            buf.limit(limitToSet);
-//        }
-//    }
+            byte firstByte = buf.get();
+
+            //Bail out early if this is one byte, necessary or it fails later
+            if ((firstByte & 1 << 7) == 0)
+                return firstByte & ~(1 << 7);
+
+            VIntCoding.println("First byte " + VIntCoding.padToEight(Integer.toBinaryString(firstByte & 0xff)));
+
+            final int mask = 0xffffffff;
+            VIntCoding.println("For number of leading zeroes " + VIntCoding.padToEight(Integer.toBinaryString(firstByte ^ mask)));
+            int size = Integer.numberOfLeadingZeros(firstByte ^ mask) - 24;
+            VIntCoding.println("Number of leading 0s " + size);
+
+            long retval = Long.reverseBytes(buf.getLong(buf.position()));
+            buf.position(buf.position() + size);
+            VIntCoding.println("Initial long " + VIntCoding.toString(retval));
+            if (size > 7)
+                return retval;
+
+            long truncationMask = (1L << (8 * size)) - 1;
+            retval &= truncationMask;
+
+            VIntCoding.println("&ing retval with mask " + VIntCoding.toString(truncationMask));
+            VIntCoding.println("&ing first byte with mask " + VIntCoding.padToEight(Long.toBinaryString((~VIntCoding.lengthExtensionMasks[size + 1] & 0xff))));
+            firstByte &= (~VIntCoding.lengthExtensionMasks[size + 1] & 0xff);
+            VIntCoding.println("retval is now " + VIntCoding.toString(retval));
+            VIntCoding.println("firstByte is now " + VIntCoding.padToEight(Long.toBinaryString(firstByte & 0xff)));
+
+            retval <<= 7 - size;
+            retval |= firstByte;
+
+            VIntCoding.println("After |ing retval is " + VIntCoding.toString(retval));
+
+            return retval;
+        }
+        finally
+        {
+            buf.limit(limitToSet);
+        }
+    }
 
     @Override
     public float readFloat() throws IOException

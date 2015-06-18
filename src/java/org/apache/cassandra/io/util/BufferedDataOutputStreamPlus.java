@@ -29,6 +29,7 @@ import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.memory.MemoryUtil;
+import org.apache.cassandra.utils.vint.VIntCoding;
 
 /**
  * An implementation of the DataOutputStreamPlus interface using a ByteBuffer to stage writes
@@ -212,41 +213,54 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         buffer.putLong(v);
     }
 
-//    @Override
-//    public void writeVInt(long i) throws IOException
-//    {
-//        if (i >= -112 && i <= 127)
-//        {
-//            writeByte((byte) i);
-//            return;
-//        }
-//        int len = -112;
-//        if (i < 0)
-//        {
-//            i ^= -1L; // take one's complement'
-//            len = -120;
-//        }
-//
-//        int sizeInBytes = 8 - Long.numberOfLeadingZeros(i) / 8;
-//        len -= sizeInBytes;
-//
-//        ensureRemaining(sizeInBytes + 1);
-//
-//        byte encodingSpace[] = tempBuffer.get();
-//
-//        int encodingOffset = 1;
-//        encodingSpace[0] = (byte)len;
-//
-//        len = (len < -120) ? -(len + 120) : -(len + 112);
-//        for (int idx = len; idx != 0; idx--)
-//        {
-//            int shiftbits = (idx - 1) * 8;
-//            long mask = 0xFFL << shiftbits;
-//            encodingSpace[encodingOffset++] = (byte) ((i & mask) >> shiftbits);
-//        }
-//
-//        buffer.put(encodingSpace, 0, encodingOffset);
-//    }
+    @Override
+    public void writeVInt(long value) throws IOException
+    {
+        writeUnsignedVInt(VIntCoding.encodeZigZag64(value));
+    }
+
+    @Override
+    public void writeUnsignedVInt(long value) throws IOException
+    {
+        int size = VIntCoding.computeUnsignedVIntSize(value);
+        if (size == 1)
+        {
+            ensureRemaining(1);
+            buffer.put((byte) (value & 0xFF));
+            return;
+        }
+
+        byte encodingSpace[] = tempBuffer.get();
+        int encodingOffset = 1;
+
+        VIntCoding.println("Value " + VIntCoding.toString(value));
+
+        long baseMask = VIntCoding.lengthExtensionMasks[size - 1];
+        VIntCoding.println("Base mask " + VIntCoding.toString(baseMask));
+        long zeroMask = ~(1L << (8 - size));
+        VIntCoding.println("Zero mask " + VIntCoding.toString(baseMask));
+        byte firstByte = (byte)(((value | baseMask) & zeroMask) & 0xff);
+
+        encodingSpace[0] = firstByte;
+        VIntCoding.print("Code  " + VIntCoding.padToEight(Long.toBinaryString(firstByte & 0xff)));
+
+        //Lost one bit per byte and a padding 0 bit
+        if (firstByte != (byte)-1)
+            value = value >> (8 - size);
+
+        for (int ii = 0; ii < size - 1; ii++)
+        {
+            int b = (int)(value >> (ii * 8));
+            //A varint that encodes zeroes is not very useful
+            assert((ii + 1 < size) || ((b & 0xff) != 0));
+            encodingSpace[encodingOffset++] = (byte)(b & 0xff);
+            VIntCoding.print(" " + VIntCoding.padToEight(Long.toBinaryString(b & 0xff)));
+        }
+        VIntCoding.print("\n");
+        System.out.flush();
+
+        write(encodingSpace, 0, encodingOffset);
+    }
 
     @Override
     public void writeFloat(float v) throws IOException

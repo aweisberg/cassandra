@@ -292,6 +292,7 @@ public class NIODataInputStreamTest
                 Integer.MIN_VALUE, Integer.MIN_VALUE + 1, Integer.MAX_VALUE, Integer.MAX_VALUE - 1,
                 Short.MIN_VALUE, Short.MIN_VALUE + 1, Short.MAX_VALUE, Short.MAX_VALUE - 1,
                 Byte.MIN_VALUE, Byte.MIN_VALUE + 1, Byte.MAX_VALUE, Byte.MAX_VALUE - 1 };
+        values = BufferedDataOutputStreamTest.enrich(values);
 
         for (long v : values)
             daos.writeVInt(v);
@@ -327,6 +328,7 @@ public class NIODataInputStreamTest
                 , UnsignedInteger.MAX_VALUE.longValue(), UnsignedInteger.MAX_VALUE.longValue() - 1, UnsignedInteger.MAX_VALUE.longValue() + 1
                 , UnsignedBytes.MAX_VALUE, UnsignedBytes.MAX_VALUE - 1, UnsignedBytes.MAX_VALUE + 1
                 , 65536, 65536 - 1, 65536 + 1 };
+        values = BufferedDataOutputStreamTest.enrich(values);
 
         for (long v : values)
             daos.writeUnsignedVInt(v);
