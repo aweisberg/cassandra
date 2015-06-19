@@ -230,36 +230,24 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
             return;
         }
 
-        byte encodingSpace[] = tempBuffer.get();
-        int encodingOffset = 1;
+        int extraBytes = size - 1;
+        int encodeExtraBytesToRead = VIntCoding.encodeExtraBytesToRead(extraBytes);
+        int firstByteValueMask = ~encodeExtraBytesToRead >>> 1; // see definition of firstByteValueMask() and encodeExtraBytesToRead()
 
-        VIntCoding.println("Value " + VIntCoding.toString(value));
+        byte[] encodingSpace = tempBuffer.get();
+        // we take the part that we can fit into the value by & with the value mask;
+        // the inverse of the value mask is, by definition, the set bits we need to encode the size
+        encodingSpace[0] = (byte) (((int) value & firstByteValueMask) | encodeExtraBytesToRead);
 
-        long baseMask = VIntCoding.lengthExtensionMasks[size - 1];
-        VIntCoding.println("Base mask " + VIntCoding.toString(baseMask));
-        long zeroMask = ~(1L << (8 - size));
-        VIntCoding.println("Zero mask " + VIntCoding.toString(baseMask));
-        byte firstByte = (byte)(((value | baseMask) & zeroMask) & 0xff);
+        if (extraBytes < 8)
+            value >>= 7 - extraBytes;
 
-        encodingSpace[0] = firstByte;
-        VIntCoding.print("Code  " + VIntCoding.padToEight(Long.toBinaryString(firstByte & 0xff)));
-
-        //Lost one bit per byte and a padding 0 bit
-        if (firstByte != (byte)-1)
-            value = value >> (8 - size);
-
-        for (int ii = 0; ii < size - 1; ii++)
+        for (int ii = 0; ii < extraBytes; ii++)
         {
-            int b = (int)(value >> (ii * 8));
-            //A varint that encodes zeroes is not very useful
-            assert((ii + 1 < size) || ((b & 0xff) != 0));
-            encodingSpace[encodingOffset++] = (byte)(b & 0xff);
-            VIntCoding.print(" " + VIntCoding.padToEight(Long.toBinaryString(b & 0xff)));
+            encodingSpace[1 + ii] = (byte) value;
+            value >>= 8;
         }
-        VIntCoding.print("\n");
-        System.out.flush();
-
-        write(encodingSpace, 0, encodingOffset);
+        write(encodingSpace, 0, size);
     }
 
     @Override

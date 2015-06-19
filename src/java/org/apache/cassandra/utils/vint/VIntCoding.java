@@ -90,35 +90,25 @@ public class VIntCoding
      */
     public static long readUnsignedVInt(DataInput input) throws IOException {
         byte firstByte = input.readByte();
-        println("First byte " + padToEight(Integer.toBinaryString(firstByte & 0xff)));
 
         //Bail out early if this is one byte, necessary or it fails later
-        if ((firstByte & 1 << 7) == 0)
-            return firstByte & ~(1 << 7);
+        if (firstByte >= 0)
+            return firstByte;
 
-        final int mask = 0xffffffff;
-        println("For number of leading zeroes " + padToEight(Integer.toBinaryString(firstByte ^ mask)));
-        int size = Integer.numberOfLeadingZeros(firstByte ^ mask) - 24;
-        println("Number of leading 0s " + size);
+        int size = numberOfExtraBytesToRead(firstByte);
+        int shift = 0;
 
-        long shift = 0;
         long retval = 0;
         if (size < 8)
         {
-            println("&ing retval with mask " + toString(~lengthExtensionMasks[size + 1] & 0xff));
-            retval = firstByte & (~lengthExtensionMasks[size + 1] & 0xff);
-            println("Retval starts as " + toString(retval));
+            retval = firstByte & firstByteValueMask(size);
             shift = 7 - size;
         }
 
         for (int ii = 0; ii < size; ii++)
         {
             byte b = input.readByte();
-            println("Incorporating byte " + padToEight(Long.toBinaryString(b & 0xff)));
-            println("Incorporated as " + toString(((long)b & 0xffL) << shift));
-            println("Shift is " + shift);
             retval |= ((long)b & 0xffL) << shift;
-            println("Retval is " + toString(retval));
             shift += 8;
         }
 
@@ -129,29 +119,25 @@ public class VIntCoding
         return decodeZigZag64(readUnsignedVInt(input));
     }
 
-
-    public static long truncationMask(int pivot)
+    // & this with the first byte to give the value part for a given extraBytesToRead encoded in the byte
+    public static int firstByteValueMask(int extraBytesToRead)
     {
-        return ((1L << (pivot + 1)) - 1);
+        // for simplicity, we include the known 0 bit, since this gives us a computation correct for all extraBytsToRead
+        return (1 << (8 - extraBytesToRead)) - 1;
     }
 
-    public static final long lengthExtensionMasks[] = new long[9];
-
-    static
+    public static int encodeExtraBytesToRead(int extraBytesToRead)
     {
-        long val = 0;
+        // because we have an extra bit in the value mask, we just need to invert it
+        return ~firstByteValueMask(extraBytesToRead);
+    }
 
-        lengthExtensionMasks[0] = val;
-
-        for (int ii = 7; ii >= 0; ii--)
-        {
-            val |= 1 << ii;
-            lengthExtensionMasks[8 - ii] = val;
-        }
-
-        for (long mask : lengthExtensionMasks) {
-            println(toString(mask));
-        }
+    public static int numberOfExtraBytesToRead(byte firstByte)
+    {
+        // we count number of set upper bits; so if we simply invert all of the bits, we're golden
+        // this is aided by the fact that we only work with negative numbers, so when upcast to an int all
+        // of the new upper bits are also set, so by inverting we set all of them to zero
+        return Integer.numberOfLeadingZeros(~firstByte) - 24;
     }
 
     public static String padToEight(String s)
@@ -171,32 +157,23 @@ public class VIntCoding
      * Signed, not a fan of unsigned values in protocols and formats
      */
     public static void writeUnsignedVInt(long value, DataOutput output) throws IOException {
-        int size = computeUnsignedVIntSize(value);
-        println("Value " + toString(value));
-        println("Size " + size);
 
-        long baseMask = lengthExtensionMasks[size - 1];
-        println("Base mask " + toString(baseMask));
-        long zeroMask = ~(1L << (8 - size));
-        println("Zero mask " + toString(baseMask));
-        int firstByte = (int)((value | baseMask) & zeroMask) & 0xff;
+        int extraBytes = computeUnsignedVIntSize(value) - 1;
+        int encodeExtraBytesToRead = encodeExtraBytesToRead(extraBytes);
+        int firstByteValueMask = ~encodeExtraBytesToRead >>> 1; // see definition of firstByteValueMask() and encodeExtraBytesToRead()
+
+        // we take the part that we can fit into the value by & with the value mask;
+        // the inverse of the value mask is, by definition, the set bits we need to encode the size
+        int firstByte = ((int) value & firstByteValueMask) | encodeExtraBytesToRead;
         output.writeByte(firstByte);
-        print("Code  " + padToEight(Long.toBinaryString(firstByte & 0xff)));
 
-        //Lost one bit per byte and a padding 0 bit
-        if (firstByte != (-1 & 0xff))
-            value = value >> (8 - size);
-
-        for (int ii = 0; ii < size - 1; ii++)
+        if (extraBytes < 8)
+            value >>= 7 - extraBytes;
+        for (int ii = 0; ii < extraBytes; ii++)
         {
-            int b = (int)(value >> (ii * 8));
-            //A varint that encodes zeroes is not very useful
-            assert((ii + 1 < size) || ((b & 0xff) != 0));
-            output.writeByte(b);
-            print(" " + padToEight(Long.toBinaryString(b & 0xff)));
+            output.writeByte((byte) value);
+            value >>= 8;
         }
-        print("\n");
-        System.out.flush();
     }
 
     public static void writeVInt(long value, DataOutput output) throws IOException {
@@ -239,16 +216,7 @@ public class VIntCoding
 
     /** Compute the number of bytes that would be needed to encode an unsigned varint. */
     public static int computeUnsignedVIntSize(final long value) {
-        long leadingZeroes = Long.numberOfLeadingZeros(value);
-        if (leadingZeroes > 0 + 56 + 1) return 1;
-        if (leadingZeroes > 1 + 48 + 1) return 2;
-        if (leadingZeroes > 2 + 40 + 1) return 3;
-        if (leadingZeroes > 3 + 32 + 1) return 4;
-        if (leadingZeroes > 4 + 24 + 1) return 5;
-        if (leadingZeroes > 5 + 16 + 1) return 6;
-        if (leadingZeroes > 6 + 8 + 1) return 7;
-        if (leadingZeroes > 7 + 1) return 8;
-        return 9;
-        //return (8 - (Long.numberOfLeadingZeros(value) / 8)) + 1;
+        int magnitude = Long.numberOfLeadingZeros(value);
+        return 9 - ((magnitude - 2) / 7);
     }
 }

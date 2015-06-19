@@ -292,36 +292,23 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
             byte firstByte = buf.get();
 
             //Bail out early if this is one byte, necessary or it fails later
-            if ((firstByte & 1 << 7) == 0)
-                return firstByte & ~(1 << 7);
+            if (firstByte >= 0)
+                return firstByte;
 
-            VIntCoding.println("First byte " + VIntCoding.padToEight(Integer.toBinaryString(firstByte & 0xff)));
+            int position = buf.position();
+            int extraBytes = VIntCoding.numberOfExtraBytesToRead(firstByte);
 
-            final int mask = 0xffffffff;
-            VIntCoding.println("For number of leading zeroes " + VIntCoding.padToEight(Integer.toBinaryString(firstByte ^ mask)));
-            int size = Integer.numberOfLeadingZeros(firstByte ^ mask) - 24;
-            VIntCoding.println("Number of leading 0s " + size);
-
-            long retval = Long.reverseBytes(buf.getLong(buf.position()));
-            buf.position(buf.position() + size);
-            VIntCoding.println("Initial long " + VIntCoding.toString(retval));
-            if (size > 7)
+            long retval = Long.reverseBytes(buf.getLong(position));
+            buf.position(position + extraBytes);
+            if (extraBytes > 7)
                 return retval;
 
-            long truncationMask = (1L << (8 * size)) - 1;
-            retval &= truncationMask;
-
-            VIntCoding.println("&ing retval with mask " + VIntCoding.toString(truncationMask));
-            VIntCoding.println("&ing first byte with mask " + VIntCoding.padToEight(Long.toBinaryString((~VIntCoding.lengthExtensionMasks[size + 1] & 0xff))));
-            firstByte &= (~VIntCoding.lengthExtensionMasks[size + 1] & 0xff);
-            VIntCoding.println("retval is now " + VIntCoding.toString(retval));
-            VIntCoding.println("firstByte is now " + VIntCoding.padToEight(Long.toBinaryString(firstByte & 0xff)));
-
-            retval <<= 7 - size;
-            retval |= firstByte;
-
-            VIntCoding.println("After |ing retval is " + VIntCoding.toString(retval));
-
+            // truncate the bytes we read in excess of those we needed
+            retval &= -1L >>> (64 - extraBytes * 8);
+            // remove the non-value bits from the first byte
+            firstByte &= VIntCoding.firstByteValueMask(extraBytes);
+            // shift the value we read upwards to make room for the value bits in the first byte
+            retval = (retval << 7 - extraBytes) | (firstByte & 0xFF);
             return retval;
         }
         finally
