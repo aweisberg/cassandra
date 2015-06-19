@@ -57,13 +57,6 @@ import java.io.IOException;
 public class VIntCoding
 {
 
-    /**
-     * Think hard before opting for an unsigned encoding. Is this going to bite someone because some day
-     * they might need to pass in a sentinel value using negative numbers? Is the risk worth it
-     * to save a few bytes?
-     *
-     * Signed, not a fan of unsigned values in protocols and formats
-     */
     public static long readUnsignedVInt(DataInput input) throws IOException {
         int firstByte = input.readByte();
 
@@ -108,13 +101,6 @@ public class VIntCoding
         return Integer.numberOfLeadingZeros(~firstByte) - 24;
     }
 
-    /**
-     * Think hard before opting for an unsigned encoding. Is this going to bite someone because some day
-     * they might need to pass in a sentinel value using negative numbers? Is the risk worth it
-     * to save a few bytes?
-     *
-     * Signed, not a fan of unsigned values in protocols and formats
-     */
     public static void writeUnsignedVInt(long value, DataOutput output) throws IOException {
 
         int extraBytes = computeUnsignedVIntSize(value) - 1;

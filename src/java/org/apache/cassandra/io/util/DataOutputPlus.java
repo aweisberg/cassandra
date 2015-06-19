@@ -48,6 +48,13 @@ public interface DataOutputPlus extends DataOutput
         VIntCoding.writeVInt(i, this);
     }
 
+    /**
+     * Think hard before opting for an unsigned encoding. Is this going to bite someone because some day
+     * they might need to pass in a sentinel value using negative numbers? Is the risk worth it
+     * to save a few bytes?
+     *
+     * Signed, not a fan of unsigned values in protocols and formats
+     */
     default void writeUnsignedVInt(long i) throws IOException
     {
         VIntCoding.writeUnsignedVInt(i, this);
