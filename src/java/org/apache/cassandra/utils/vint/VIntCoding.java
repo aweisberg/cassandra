@@ -91,7 +91,7 @@ public class VIntCoding
     public static int firstByteValueMask(int extraBytesToRead)
     {
         // for simplicity, we include the known 0 bit, since this gives us a computation correct for all extraBytesToRead
-        return (1 << (8 - extraBytesToRead)) - 1;
+        return 0xff >> extraBytesToRead;
     }
 
     public static int encodeExtraBytesToRead(int extraBytesToRead)
