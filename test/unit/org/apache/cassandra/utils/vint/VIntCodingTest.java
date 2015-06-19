@@ -53,7 +53,7 @@ public class VIntCodingTest
 
         long val = 0;
         for (int ii = 0; ii < 64; ii++) {
-            val |= 1L << ii - 1;
+            val |= 1L << ii;
             int expectedSize = alternateSize(val);
             assertEquals( expectedSize, VIntCoding.computeUnsignedVIntSize(val));
             assertEncodedAtExpectedSize(val, expectedSize);
@@ -81,4 +81,19 @@ public class VIntCodingTest
             Assert.assertEquals(i, VIntCoding.numberOfExtraBytesToRead((byte) ((0xFF << (8 - i)) & 0xFF)));
     }
 
+    @Test
+    public void testOneByteCapacity() throws Exception {
+        byte biggestOneByte = 63;
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+        VIntCoding.writeUnsignedVInt(biggestOneByte, dos);
+        dos.flush();
+        assertEquals( 1, baos.toByteArray().length);
+
+        DataOutputBuffer dob = new DataOutputBuffer();
+        dob.writeUnsignedVInt(biggestOneByte);
+        assertEquals( 1, dob.buffer().remaining());
+        dob.close();
+    }
 }

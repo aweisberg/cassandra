@@ -240,7 +240,8 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         }
         encodingSpace[0] |= VIntCoding.encodeExtraBytesToRead(extraBytes);
 
-        write(encodingSpace, 0, size);
+        ensureRemaining(size);
+        buffer.put(encodingSpace, 0, size);
     }
 
     @Override
