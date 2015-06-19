@@ -57,30 +57,6 @@ import java.io.IOException;
 public class VIntCoding
 {
 
-    public static boolean debug = false;
-
-    public static void print(String s)
-    {
-        if (debug)
-            System.out.print(s);
-    }
-
-    public static void println(String s)
-    {
-        if (debug)
-            System.out.println(s);
-    }
-
-    public static String toString (long l)
-    {
-        String s = padToEight(Long.toBinaryString(l & 0xff));
-        for (int ii = 1; ii < 8; ii++)
-        {
-            s += " " + padToEight(Long.toBinaryString((l >> 8 * ii) & 0xff));
-        }
-        return s;
-    }
-
     /**
      * Think hard before opting for an unsigned encoding. Is this going to bite someone because some day
      * they might need to pass in a sentinel value using negative numbers? Is the risk worth it
@@ -138,15 +114,6 @@ public class VIntCoding
         // this is aided by the fact that we only work with negative numbers, so when upcast to an int all
         // of the new upper bits are also set, so by inverting we set all of them to zero
         return Integer.numberOfLeadingZeros(~firstByte) - 24;
-    }
-
-    public static String padToEight(String s)
-    {
-        while (s.length() < 8)
-        {
-            s = "0" + s;
-        }
-        return s;
     }
 
     /**

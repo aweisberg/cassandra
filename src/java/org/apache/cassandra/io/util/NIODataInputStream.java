@@ -154,30 +154,63 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
     }
 
     /*
-     * Read at least minimum bytes and throw EOF if that fails
+     * Read at least minimum bytes and throw EOF if that fails.
+     * If padding is requested EOF will not be thrown unless 0 bytes are read before EOF
+     * is reached
      */
-    private void readMinimum(int minimum) throws IOException
+    private int readMinimum(int minimum, boolean pad) throws IOException
     {
-        assert(buf.remaining() < 8);
-        while (buf.remaining() < minimum)
+        //  Limit to set on exit in case padding was added
+        int limitToSet = buf.limit();
+
+        if (buf.remaining() < minimum)
         {
-            int read = readNext();
-            if (read == -1)
+            int totalRead = buf.remaining();
+            while (buf.remaining() < minimum)
             {
-                //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
-                buf.position(0);
-                buf.limit(0);
-                throw new EOFException();
+                int read = readNext();
+                if (read == -1)
+                {
+                    //No data read, nothing already in the buffer, EOF
+                    //Unless you want padding in which case pad if there are at least some bytes
+                    if (!pad || (totalRead == 0 && buf.position() == 0))
+                    {
+                        //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
+                        buf.position(0);
+                        buf.limit(0);
+                        throw new EOFException();
+                    }
+                    //This is the real amount of data available, so it has to be the limit on exit
+                    limitToSet = buf.limit();
+                    //Move limit forward to pad
+                    buf.limit(buf.limit() + (minimum - totalRead));
+                    break;
+                }
+                //Limit changed in readNext()
+                limitToSet = buf.limit();
+                totalRead += read;
             }
         }
+
+        return limitToSet;
     }
 
     /*
-     * Ensure the buffer contains the minimum number of readable bytes
+     * Ensure the buffer contains the minimum number of readable bytes, throws EOF if enough bytes aren't available
+     * Add padding if requested and return the limit of the buffer without any padding that is added.
+     */
+    private int prepareReadPrimitive(int minimum, boolean pad) throws IOException
+    {
+        if (buf.remaining() < minimum) return readMinimum(minimum, pad);
+        return buf.limit();
+    }
+
+    /*
+     * Ensure the buffer contains the minimum number of readable bytes, throws EOF if enough bytes aren't available
      */
     private void prepareReadPrimitive(int minimum) throws IOException
     {
-        if (buf.remaining() < minimum) readMinimum(minimum);
+        prepareReadPrimitive(minimum, false);
     }
 
     @Override
@@ -257,64 +290,31 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
 
     public long readUnsignedVInt() throws IOException
     {
-        //  Limit to set on exit in case padding was added
-        int limitToSet = buf.limit();
-        try
-        {
-            //Want to have all 9 bytes available, pad if necessary
-            if (buf.remaining() < 9)
-            {
-                int totalRead = buf.remaining();
-                while (buf.remaining() < 9)
-                {
-                    int read = readNext();
-                    if (read == -1)
-                    {
-                        //No data read, nothing already in the buffer, EOF
-                        if (totalRead == 0 && buf.position() == 0)
-                        {
-                            //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
-                            buf.position(0);
-                            buf.limit(0);
-                            throw new EOFException();
-                        }
-                        //This is the real amount of data available, so it has to be the limit on exit
-                        limitToSet = buf.limit();
-                        //Pad
-                        buf.limit(buf.limit() + (9 - totalRead));
-                        break;
-                    }
-                    limitToSet = buf.limit();
-                    totalRead += read;
-                }
-            }
+        byte firstByte = readByte();
 
-            byte firstByte = buf.get();
+        //Bail out early if this is one byte, necessary or it fails later
+        if (firstByte >= 0)
+            return firstByte;
 
-            //Bail out early if this is one byte, necessary or it fails later
-            if (firstByte >= 0)
-                return firstByte;
+        //If padding was added, the limit to set after to get rid of the padding
+        int limitToSet = prepareReadPrimitive(8, true);
 
-            int position = buf.position();
-            int extraBytes = VIntCoding.numberOfExtraBytesToRead(firstByte);
+        int position = buf.position();
+        int extraBytes = VIntCoding.numberOfExtraBytesToRead(firstByte);
 
-            long retval = Long.reverseBytes(buf.getLong(position));
-            buf.position(position + extraBytes);
-            if (extraBytes > 7)
-                return retval;
-
-            // truncate the bytes we read in excess of those we needed
-            retval &= -1L >>> (64 - extraBytes * 8);
-            // remove the non-value bits from the first byte
-            firstByte &= VIntCoding.firstByteValueMask(extraBytes);
-            // shift the value we read upwards to make room for the value bits in the first byte
-            retval = (retval << 7 - extraBytes) | (firstByte & 0xFF);
+        long retval = Long.reverseBytes(buf.getLong(position));
+        buf.position(position + extraBytes);
+        if (extraBytes > 7)
             return retval;
-        }
-        finally
-        {
-            buf.limit(limitToSet);
-        }
+
+        // truncate the bytes we read in excess of those we needed
+        retval &= -1L >>> (64 - extraBytes * 8);
+        // remove the non-value bits from the first byte
+        firstByte &= VIntCoding.firstByteValueMask(extraBytes);
+        // shift the value we read upwards to make room for the value bits in the first byte
+        retval = (retval << 7 - extraBytes) | (firstByte & 0xFF);
+        buf.limit(limitToSet);
+        return retval;
     }
 
     @Override

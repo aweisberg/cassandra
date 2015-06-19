@@ -173,16 +173,8 @@ public class BufferedDataOutputStreamTest
     @Test
     public void testFuzz() throws Exception
     {
-        boolean oldValue = VIntCoding.debug;
-        VIntCoding.debug = false;
-        try {
-            for (int ii = 0; ii < 30; ii++)
-                fuzzOnce();
-        }
-        finally
-        {
-            VIntCoding.debug = oldValue;
-        }
+        for (int ii = 0; ii < 30; ii++)
+            fuzzOnce();
     }
 
     String simple = "foobar42";
