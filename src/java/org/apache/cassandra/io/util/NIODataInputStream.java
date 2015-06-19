@@ -301,19 +301,18 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
 
         int position = buf.position();
         int extraBytes = VIntCoding.numberOfExtraBytesToRead(firstByte);
+        int extraBits = extraBytes * 8;
 
-        long retval = Long.reverseBytes(buf.getLong(position));
+        long retval = buf.getLong(position);
         buf.position(position + extraBytes);
-        if (extraBytes > 7)
-            return retval;
+        buf.limit(limitToSet);
 
         // truncate the bytes we read in excess of those we needed
-        retval &= -1L >>> (64 - extraBytes * 8);
+        retval >>>= 64 - extraBits;
         // remove the non-value bits from the first byte
         firstByte &= VIntCoding.firstByteValueMask(extraBytes);
-        // shift the value we read upwards to make room for the value bits in the first byte
-        retval = (retval << 7 - extraBytes) | (firstByte & 0xFF);
-        buf.limit(limitToSet);
+        // shift the first byte up to its correct position
+        retval |= (long) firstByte << extraBits;
         return retval;
     }
 

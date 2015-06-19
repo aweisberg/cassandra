@@ -65,27 +65,19 @@ public class VIntCoding
      * Signed, not a fan of unsigned values in protocols and formats
      */
     public static long readUnsignedVInt(DataInput input) throws IOException {
-        byte firstByte = input.readByte();
+        int firstByte = input.readByte();
 
         //Bail out early if this is one byte, necessary or it fails later
         if (firstByte >= 0)
             return firstByte;
 
         int size = numberOfExtraBytesToRead(firstByte);
-        int shift = 0;
-
-        long retval = 0;
-        if (size < 8)
-        {
-            retval = firstByte & firstByteValueMask(size);
-            shift = 7 - size;
-        }
-
+        long retval = firstByte & firstByteValueMask(size);;
         for (int ii = 0; ii < size; ii++)
         {
             byte b = input.readByte();
-            retval |= ((long)b & 0xffL) << shift;
-            shift += 8;
+            retval <<= 8;
+            retval |= b & 0xff;
         }
 
         return retval;
@@ -98,7 +90,7 @@ public class VIntCoding
     // & this with the first byte to give the value part for a given extraBytesToRead encoded in the byte
     public static int firstByteValueMask(int extraBytesToRead)
     {
-        // for simplicity, we include the known 0 bit, since this gives us a computation correct for all extraBytsToRead
+        // for simplicity, we include the known 0 bit, since this gives us a computation correct for all extraBytesToRead
         return (1 << (8 - extraBytesToRead)) - 1;
     }
 
@@ -108,7 +100,7 @@ public class VIntCoding
         return ~firstByteValueMask(extraBytesToRead);
     }
 
-    public static int numberOfExtraBytesToRead(byte firstByte)
+    public static int numberOfExtraBytesToRead(int firstByte)
     {
         // we count number of set upper bits; so if we simply invert all of the bits, we're golden
         // this is aided by the fact that we only work with negative numbers, so when upcast to an int all
@@ -127,20 +119,15 @@ public class VIntCoding
 
         int extraBytes = computeUnsignedVIntSize(value) - 1;
         int encodeExtraBytesToRead = encodeExtraBytesToRead(extraBytes);
-        int firstByteValueMask = ~encodeExtraBytesToRead >>> 1; // see definition of firstByteValueMask() and encodeExtraBytesToRead()
+        int extraBits = extraBytes * 8;
 
         // we take the part that we can fit into the value by & with the value mask;
         // the inverse of the value mask is, by definition, the set bits we need to encode the size
-        int firstByte = ((int) value & firstByteValueMask) | encodeExtraBytesToRead;
+        int firstByte = (int) (value >>> extraBits) | encodeExtraBytesToRead;
         output.writeByte(firstByte);
 
-        if (extraBytes < 8)
-            value >>= 7 - extraBytes;
-        for (int ii = 0; ii < extraBytes; ii++)
-        {
-            output.writeByte((byte) value);
-            value >>= 8;
-        }
+        for (int i = 0; i < extraBytes; i++)
+            output.writeByte((byte) (value >>> 8 * (extraBytes - (i + 1))));
     }
 
     public static void writeVInt(long value, DataOutput output) throws IOException {

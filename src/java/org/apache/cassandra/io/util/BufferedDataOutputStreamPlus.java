@@ -231,22 +231,15 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         }
 
         int extraBytes = size - 1;
-        int encodeExtraBytesToRead = VIntCoding.encodeExtraBytesToRead(extraBytes);
-        int firstByteValueMask = ~encodeExtraBytesToRead >>> 1; // see definition of firstByteValueMask() and encodeExtraBytesToRead()
-
         byte[] encodingSpace = tempBuffer.get();
-        // we take the part that we can fit into the value by & with the value mask;
-        // the inverse of the value mask is, by definition, the set bits we need to encode the size
-        encodingSpace[0] = (byte) (((int) value & firstByteValueMask) | encodeExtraBytesToRead);
 
-        if (extraBytes < 8)
-            value >>= 7 - extraBytes;
-
-        for (int ii = 0; ii < extraBytes; ii++)
+        for (int i = extraBytes ; i >= 0; --i)
         {
-            encodingSpace[1 + ii] = (byte) value;
+            encodingSpace[i] = (byte) value;
             value >>= 8;
         }
+        encodingSpace[0] |= VIntCoding.encodeExtraBytesToRead(extraBytes);
+
         write(encodingSpace, 0, size);
     }
 
