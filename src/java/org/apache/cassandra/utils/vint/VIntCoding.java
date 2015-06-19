@@ -90,7 +90,7 @@ public class VIntCoding
     // & this with the first byte to give the value part for a given extraBytesToRead encoded in the byte
     public static int firstByteValueMask(int extraBytesToRead)
     {
-        // for simplicity, we include the known 0 bit, since this gives us a computation correct for all extraBytesToRead
+        // by including the known 0bit in the mask, we can use this for encodeExtraBytesToRead
         return 0xff >> extraBytesToRead;
     }
 
