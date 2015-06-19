@@ -226,7 +226,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         if (size == 1)
         {
             ensureRemaining(1);
-            buffer.put((byte) (value & 0xFF));
+            buffer.put((byte) value);
             return;
         }
 
