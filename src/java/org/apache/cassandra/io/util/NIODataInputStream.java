@@ -307,6 +307,7 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         buf.position(position + extraBytes);
         buf.limit(limitToSet);
 
+
         // truncate the bytes we read in excess of those we needed
         retval >>>= 64 - extraBits;
         // remove the non-value bits from the first byte
