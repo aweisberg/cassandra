@@ -18,8 +18,6 @@
 */
 package org.apache.cassandra.utils.vint;
 
-import static org.junit.Assert.*;
-
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 
@@ -31,46 +29,31 @@ import junit.framework.Assert;
 public class VIntCodingTest
 {
 
-
-    static int alternateSize(long value)
-    {
-        long leadingZeroes = Long.numberOfLeadingZeros(value);
-        if (leadingZeroes > 0 + 56 + 1) return 1;
-        if (leadingZeroes > 1 + 48 + 1) return 2;
-        if (leadingZeroes > 2 + 40 + 1) return 3;
-        if (leadingZeroes > 3 + 32 + 1) return 4;
-        if (leadingZeroes > 4 + 24 + 1) return 5;
-        if (leadingZeroes > 5 + 16 + 1) return 6;
-        if (leadingZeroes > 6 + 8 + 1) return 7;
-        if (leadingZeroes > 7 + 1) return 8;
-        return 9;
-    }
-
     @Test
     public void testComputeSize() throws Exception
     {
-        assertEquals(alternateSize(0L), VIntCoding.computeUnsignedVIntSize(0L));
+        assertEncodedAtExpectedSize(0L, 1);
 
-        long val = 0;
-        for (int ii = 0; ii < 64; ii++) {
-            val |= 1L << ii;
-            int expectedSize = alternateSize(val);
-            assertEquals( expectedSize, VIntCoding.computeUnsignedVIntSize(val));
-            assertEncodedAtExpectedSize(val, expectedSize);
+        for (int size = 1 ; size < 8 ; size++)
+        {
+            assertEncodedAtExpectedSize((1L << 7 * size) - 1, size);
+            assertEncodedAtExpectedSize(1L << 7 * size, size + 1);
         }
+        Assert.assertEquals(9, VIntCoding.computeUnsignedVIntSize(Long.MAX_VALUE));
     }
 
     private void assertEncodedAtExpectedSize(long value, int expectedSize) throws Exception
     {
+        Assert.assertEquals(expectedSize, VIntCoding.computeUnsignedVIntSize(value));
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(baos);
         VIntCoding.writeUnsignedVInt(value, dos);
         dos.flush();
-        assertEquals( expectedSize, baos.toByteArray().length);
+        Assert.assertEquals( expectedSize, baos.toByteArray().length);
 
         DataOutputBuffer dob = new DataOutputBuffer();
         dob.writeUnsignedVInt(value);
-        assertEquals( expectedSize, dob.buffer().remaining());
+        Assert.assertEquals( expectedSize, dob.buffer().remaining());
         dob.close();
     }
 
@@ -81,19 +64,22 @@ public class VIntCodingTest
             Assert.assertEquals(i, VIntCoding.numberOfExtraBytesToRead((byte) ((0xFF << (8 - i)) & 0xFF)));
     }
 
+    /*
+     * Quick sanity check that 1 byte encodes up to 127 as expected
+     */
     @Test
     public void testOneByteCapacity() throws Exception {
-        byte biggestOneByte = 63;
+        int biggestOneByte = 127;
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         DataOutputStream dos = new DataOutputStream(baos);
         VIntCoding.writeUnsignedVInt(biggestOneByte, dos);
         dos.flush();
-        assertEquals( 1, baos.toByteArray().length);
+        Assert.assertEquals( 1, baos.toByteArray().length);
 
         DataOutputBuffer dob = new DataOutputBuffer();
         dob.writeUnsignedVInt(biggestOneByte);
-        assertEquals( 1, dob.buffer().remaining());
+        Assert.assertEquals( 1, dob.buffer().remaining());
         dob.close();
     }
 }

@@ -156,7 +156,7 @@ public class VIntCoding
 
     /** Compute the number of bytes that would be needed to encode an unsigned varint. */
     public static int computeUnsignedVIntSize(final long value) {
-        int magnitude = Long.numberOfLeadingZeros(value);
-        return 9 - ((magnitude - 2) / 7);
+        int magnitude = Long.numberOfLeadingZeros(value | 1); // | with 1 to ensure magntiude <= 63, so (63 - 1) / 7 <= 8
+        return 9 - ((magnitude - 1) / 7);
     }
 }
