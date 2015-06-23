@@ -153,56 +153,46 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
         return read;
     }
 
-    /*
-     * Read at least minimum bytes and throw EOF if that fails.
-     * If padding is requested EOF will not be thrown unless 0 bytes are read before EOF
-     * is reached
-     */
-    private int readMinimum(int minimum, boolean pad) throws IOException
+   /*
+    * Read at least minimum bytes and throw EOF if that fails
+    */
+    private void readMinimum(int attempt, int require) throws IOException
     {
-        //  Limit to set on exit in case padding was added
-        int limitToSet = buf.limit();
-
-        if (buf.remaining() < minimum)
+        assert(buf.remaining() < 8);
+        int remaining;
+        while ((remaining = buf.remaining()) < attempt)
         {
-            int totalRead = buf.remaining();
-            while (buf.remaining() < minimum)
+            int read = readNext();
+            if (read == -1)
             {
-                int read = readNext();
-                if (read == -1)
+                if (remaining < require)
                 {
-                    //No data read, nothing already in the buffer, EOF
-                    //Unless you want padding in which case pad if there are at least some bytes
-                    if (!pad || (totalRead == 0 && buf.position() == 0))
-                    {
-                        //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
-                        buf.position(0);
-                        buf.limit(0);
-                        throw new EOFException();
-                    }
-                    //This is the real amount of data available, so it has to be the limit on exit
-                    limitToSet = buf.limit();
-                    //Move limit forward to pad
-                    buf.limit(buf.limit() + (minimum - totalRead));
-                    break;
+                    //DataInputStream consumes the bytes even if it doesn't get the entire value, match the behavior here
+                    buf.position(0);
+                    buf.limit(0);
+                    throw new EOFException();
                 }
-                //Limit changed in readNext()
-                limitToSet = buf.limit();
-                totalRead += read;
             }
         }
-
-        return limitToSet;
     }
 
     /*
      * Ensure the buffer contains the minimum number of readable bytes, throws EOF if enough bytes aren't available
      * Add padding if requested and return the limit of the buffer without any padding that is added.
      */
-    private int prepareReadPrimitive(int minimum, boolean pad) throws IOException
+    private int prepareReadPaddedPrimitive(int minimum) throws IOException
     {
-        if (buf.remaining() < minimum) return readMinimum(minimum, pad);
-        return buf.limit();
+        int limitToSet = buf.limit();
+        int position = buf.position();
+        if (limitToSet - position < minimum)
+        {
+            readMinimum(minimum, 1);
+            limitToSet = buf.limit();
+            position = buf.position();
+            if (limitToSet - position < minimum)
+                buf.limit(position + minimum);
+        }
+        return limitToSet;
     }
 
     /*
@@ -210,7 +200,8 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
      */
     private void prepareReadPrimitive(int minimum) throws IOException
     {
-        prepareReadPrimitive(minimum, false);
+        if (buf.remaining() < minimum)
+            readMinimum(minimum, minimum);
     }
 
     @Override
@@ -297,7 +288,7 @@ public class NIODataInputStream extends InputStream implements DataInput, Closea
             return firstByte;
 
         //If padding was added, the limit to set after to get rid of the padding
-        int limitToSet = prepareReadPrimitive(8, true);
+        int limitToSet = prepareReadPaddedPrimitive(8);
 
         int position = buf.position();
         int extraBytes = VIntCoding.numberOfExtraBytesToRead(firstByte);
