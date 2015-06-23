@@ -50,6 +50,8 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 
+import net.nicoulaj.compilecommand.annotations.Inline;
+
 /**
  * Borrows idea from
  * https://developers.google.com/protocol-buffers/docs/encoding#varints
@@ -101,19 +103,38 @@ public class VIntCoding
         return Integer.numberOfLeadingZeros(~firstByte) - 24;
     }
 
+    protected static final ThreadLocal<byte[]> encodingBuffer = new ThreadLocal<byte[]>()
+    {
+        @Override
+        public byte[] initialValue()
+        {
+            return new byte[9];
+        }
+    };
+
     public static void writeUnsignedVInt(long value, DataOutput output) throws IOException {
+        int size = VIntCoding.computeUnsignedVIntSize(value);
+        if (size == 1)
+        {
+            output.write((int)value);
+            return;
+        }
 
-        int extraBytes = computeUnsignedVIntSize(value) - 1;
-        int encodeExtraBytesToRead = encodeExtraBytesToRead(extraBytes);
-        int extraBits = extraBytes * 8;
+        output.write(VIntCoding.encodeVInt(value, size), 0, size);
+    }
 
-        // we take the part that we can fit into the value by & with the value mask;
-        // the inverse of the value mask is, by definition, the set bits we need to encode the size
-        int firstByte = (int) (value >>> extraBits) | encodeExtraBytesToRead;
-        output.writeByte(firstByte);
+    @Inline
+    public static byte[] encodeVInt(long value, int size) {
+        byte encodingSpace[] = encodingBuffer.get();
+        int extraBytes = size - 1;
 
-        for (int i = 0; i < extraBytes; i++)
-            output.writeByte((byte) (value >>> 8 * (extraBytes - (i + 1))));
+        for (int i = extraBytes ; i >= 0; --i)
+        {
+            encodingSpace[i] = (byte) value;
+            value >>= 8;
+        }
+        encodingSpace[0] |= VIntCoding.encodeExtraBytesToRead(extraBytes);
+        return encodingSpace;
     }
 
     public static void writeVInt(long value, DataOutput output) throws IOException {

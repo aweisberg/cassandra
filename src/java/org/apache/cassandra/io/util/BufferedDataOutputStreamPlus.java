@@ -230,21 +230,8 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
             return;
         }
 
-        //ensureRemaining must precede usage of the tempBuffer since
-        //it could clobber the contents of the tempBuffer
         ensureRemaining(size);
-
-        int extraBytes = size - 1;
-        byte[] encodingSpace = tempBuffer.get();
-
-        for (int i = extraBytes ; i >= 0; --i)
-        {
-            encodingSpace[i] = (byte) value;
-            value >>= 8;
-        }
-        encodingSpace[0] |= VIntCoding.encodeExtraBytesToRead(extraBytes);
-
-        buffer.put(encodingSpace, 0, size);
+        buffer.put(VIntCoding.encodeVInt(value, size), 0, size);
     }
 
     @Override
