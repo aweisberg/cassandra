@@ -85,15 +85,14 @@ public class PrepareMessage extends RepairMessage
         public long serializedSize(PrepareMessage message, int version)
         {
             long size;
-            TypeSizes sizes = TypeSizes.NATIVE;
-            size = sizes.sizeof(message.cfIds.size());
+            size = TypeSizes.sizeof(message.cfIds.size());
             for (UUID cfId : message.cfIds)
                 size += UUIDSerializer.serializer.serializedSize(cfId, version);
             size += UUIDSerializer.serializer.serializedSize(message.parentRepairSession, version);
-            size += sizes.sizeof(message.ranges.size());
+            size += TypeSizes.sizeof(message.ranges.size());
             for (Range<Token> r : message.ranges)
                 size += Range.tokenSerializer.serializedSize(r, version);
-            size += sizes.sizeof(message.isIncremental);
+            size += TypeSizes.sizeof(message.isIncremental);
             return size;
         }
     }

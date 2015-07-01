@@ -193,22 +193,22 @@ public class FileMessageHeader
         public long serializedSize(FileMessageHeader header, int version)
         {
             long size = UUIDSerializer.serializer.serializedSize(header.cfId, version);
-            size += TypeSizes.NATIVE.sizeof(header.sequenceNumber);
-            size += TypeSizes.NATIVE.sizeof(header.version.toString());
+            size += TypeSizes.sizeof(header.sequenceNumber);
+            size += TypeSizes.sizeof(header.version.toString());
 
             if (version >= StreamMessage.VERSION_22)
-                size += TypeSizes.NATIVE.sizeof(header.format.name);
+                size += TypeSizes.sizeof(header.format.name);
 
-            size += TypeSizes.NATIVE.sizeof(header.estimatedKeys);
+            size += TypeSizes.sizeof(header.estimatedKeys);
 
-            size += TypeSizes.NATIVE.sizeof(header.sections.size());
+            size += TypeSizes.sizeof(header.sections.size());
             for (Pair<Long, Long> section : header.sections)
             {
-                size += TypeSizes.NATIVE.sizeof(section.left);
-                size += TypeSizes.NATIVE.sizeof(section.right);
+                size += TypeSizes.sizeof(section.left);
+                size += TypeSizes.sizeof(section.right);
             }
             size += CompressionInfo.serializer.serializedSize(header.compressionInfo, version);
-            size += TypeSizes.NATIVE.sizeof(header.sstableLevel);
+            size += TypeSizes.sizeof(header.sstableLevel);
 
             if (version >= StreamMessage.VERSION_30)
                 size += SerializationHeader.serializer.serializedSize(header.header);

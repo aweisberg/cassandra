@@ -231,12 +231,12 @@ public class StatsMetadata extends MetadataComponent
         public int serializedSize(StatsMetadata component) throws IOException
         {
             int size = 0;
-            size += EstimatedHistogram.serializer.serializedSize(component.estimatedRowSize, TypeSizes.NATIVE);
-            size += EstimatedHistogram.serializer.serializedSize(component.estimatedColumnCount, TypeSizes.NATIVE);
-            size += ReplayPosition.serializer.serializedSize(component.replayPosition, TypeSizes.NATIVE);
+            size += EstimatedHistogram.serializer.serializedSize(component.estimatedRowSize);
+            size += EstimatedHistogram.serializer.serializedSize(component.estimatedColumnCount);
+            size += ReplayPosition.serializer.serializedSize(component.replayPosition);
             size += 8 + 8 + 4 + 4 + 4 + 4 + 8 + 8; // mix/max timestamp(long), min/maxLocalDeletionTime(int), min/max TTL, compressionRatio(double), repairedAt (long)
-            size += StreamingHistogram.serializer.serializedSize(component.estimatedTombstoneDropTime, TypeSizes.NATIVE);
-            size += TypeSizes.NATIVE.sizeof(component.sstableLevel);
+            size += StreamingHistogram.serializer.serializedSize(component.estimatedTombstoneDropTime);
+            size += TypeSizes.sizeof(component.sstableLevel);
             // min column names
             size += 4;
             for (ByteBuffer value : component.minClusteringValues)
@@ -245,7 +245,7 @@ public class StatsMetadata extends MetadataComponent
             size += 4;
             for (ByteBuffer value : component.maxClusteringValues)
                 size += 2 + value.remaining(); // with short length
-            size += TypeSizes.NATIVE.sizeof(component.hasLegacyCounterShards);
+            size += TypeSizes.sizeof(component.hasLegacyCounterShards);
             size += 8 + 8; // totalColumnsSet, totalRows
             return size;
         }

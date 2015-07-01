@@ -86,17 +86,17 @@ public class StreamRequest
 
         public long serializedSize(StreamRequest request, int version)
         {
-            int size = TypeSizes.NATIVE.sizeof(request.keyspace);
-            size += TypeSizes.NATIVE.sizeof(request.repairedAt);
-            size += TypeSizes.NATIVE.sizeof(request.ranges.size());
+            int size = TypeSizes.sizeof(request.keyspace);
+            size += TypeSizes.sizeof(request.repairedAt);
+            size += TypeSizes.sizeof(request.ranges.size());
             for (Range<Token> range : request.ranges)
             {
                 size += Token.serializer.serializedSize(range.left, version);
                 size += Token.serializer.serializedSize(range.right, version);
             }
-            size += TypeSizes.NATIVE.sizeof(request.columnFamilies.size());
+            size += TypeSizes.sizeof(request.columnFamilies.size());
             for (String cf : request.columnFamilies)
-                size += TypeSizes.NATIVE.sizeof(cf);
+                size += TypeSizes.sizeof(cf);
             return size;
         }
     }

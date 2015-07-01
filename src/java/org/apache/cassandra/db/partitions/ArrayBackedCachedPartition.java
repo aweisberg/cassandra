@@ -240,15 +240,15 @@ public class ArrayBackedCachedPartition extends ArrayBackedPartition implements 
             return partition;
         }
 
-        public long serializedSize(CachedPartition partition, TypeSizes sizes)
+        public long serializedSize(CachedPartition partition)
         {
             assert partition instanceof ArrayBackedCachedPartition;
             ArrayBackedCachedPartition p = (ArrayBackedCachedPartition)partition;
 
             try (UnfilteredRowIterator iter = p.sliceableUnfilteredIterator())
             {
-                return sizes.sizeof(p.createdAtInSec)
-                     + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, MessagingService.current_version, p.rows, sizes);
+                return TypeSizes.sizeof(p.createdAtInSec)
+                     + UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, MessagingService.current_version, p.rows);
             }
         }
     }

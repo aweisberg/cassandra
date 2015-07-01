@@ -691,7 +691,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
             return upd;
         }
 
-        public long serializedSize(PartitionUpdate update, int version, TypeSizes sizes)
+        public long serializedSize(PartitionUpdate update, int version)
         {
             if (version < MessagingService.VERSION_30)
             {
@@ -699,11 +699,11 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
                 throw new UnsupportedOperationException("Version is " + version);
                 //if (cf == null)
                 //{
-                //    return typeSizes.sizeof(false);
+                //    return TypeSizes.sizeof(false);
                 //}
                 //else
                 //{
-                //    return typeSizes.sizeof(true)  /* nullness bool */
+                //    return TypeSizes.sizeof(true)  /* nullness bool */
                 //        + cfIdSerializedSize(cf.id(), typeSizes, version)  /* id */
                 //        + contentSerializedSize(cf, typeSizes, version);
                 //}
@@ -711,7 +711,7 @@ public class PartitionUpdate extends AbstractPartitionData implements Sorting.So
 
             try (UnfilteredRowIterator iter = update.sliceableUnfilteredIterator())
             {
-                return UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, version, update.rows, sizes);
+                return UnfilteredRowIteratorSerializer.serializer.serializedSize(iter, version, update.rows);
             }
         }
     }

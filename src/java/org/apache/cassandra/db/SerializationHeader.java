@@ -377,13 +377,13 @@ public class SerializationHeader
             return new SerializationHeader(keyType, clusteringTypes, new PartitionColumns(statics, regulars), stats, null);
         }
 
-        public long serializedSizeForMessaging(SerializationHeader header, TypeSizes sizes, boolean hasStatic)
+        public long serializedSizeForMessaging(SerializationHeader header, boolean hasStatic)
         {
-            long size = RowStats.serializer.serializedSize(header.stats, sizes);
+            long size = RowStats.serializer.serializedSize(header.stats);
 
             if (hasStatic)
-                size += Columns.serializer.serializedSize(header.columns.statics, sizes);
-            size += Columns.serializer.serializedSize(header.columns.regulars, sizes);
+                size += Columns.serializer.serializedSize(header.columns.statics);
+            size += Columns.serializer.serializedSize(header.columns.regulars);
             return size;
         }
 
@@ -424,16 +424,15 @@ public class SerializationHeader
         // For SSTables
         public int serializedSize(Component header)
         {
-            TypeSizes sizes = TypeSizes.NATIVE;
-            int size = RowStats.serializer.serializedSize(header.stats, sizes);
+            int size = RowStats.serializer.serializedSize(header.stats);
 
-            size += sizeofType(header.keyType, sizes);
-            size += sizes.sizeof((short)header.clusteringTypes.size());
+            size += sizeofType(header.keyType);
+            size += TypeSizes.sizeof((short)header.clusteringTypes.size());
             for (AbstractType<?> type : header.clusteringTypes)
-                size += sizeofType(type, sizes);
+                size += sizeofType(type);
 
-            size += sizeofColumnsWithTypes(header.staticColumns, sizes);
-            size += sizeofColumnsWithTypes(header.regularColumns, sizes);
+            size += sizeofColumnsWithTypes(header.staticColumns);
+            size += sizeofColumnsWithTypes(header.regularColumns);
             return size;
         }
 
@@ -447,13 +446,13 @@ public class SerializationHeader
             }
         }
 
-        private long sizeofColumnsWithTypes(Map<ByteBuffer, AbstractType<?>> columns, TypeSizes sizes)
+        private long sizeofColumnsWithTypes(Map<ByteBuffer, AbstractType<?>> columns)
         {
-            long size = sizes.sizeof((short)columns.size());
+            long size = TypeSizes.sizeof((short)columns.size());
             for (Map.Entry<ByteBuffer, AbstractType<?>> entry : columns.entrySet())
             {
-                size += sizes.sizeofWithShortLength(entry.getKey());
-                size += sizeofType(entry.getValue(), sizes);
+                size += TypeSizes.sizeofWithShortLength(entry.getKey());
+                size += sizeofType(entry.getValue());
             }
             return size;
         }
@@ -480,9 +479,9 @@ public class SerializationHeader
             return TypeParser.parse(UTF8Type.instance.compose(raw));
         }
 
-        private int sizeofType(AbstractType<?> type, TypeSizes sizes)
+        private int sizeofType(AbstractType<?> type)
         {
-            return sizes.sizeofWithLength(UTF8Type.instance.decompose(type.toString()));
+            return TypeSizes.sizeofWithLength(UTF8Type.instance.decompose(type.toString()));
         }
     }
 }

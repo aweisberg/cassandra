@@ -355,21 +355,16 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
             }
         }
 
-        public long serializedSize(IntervalTree<C, D, I> it, TypeSizes typeSizes, int version)
-        {
-            long size = typeSizes.sizeof(0);
-            for (Interval<C, D> interval : it)
-            {
-                size += pointSerializer.serializedSize(interval.min, typeSizes);
-                size += pointSerializer.serializedSize(interval.max, typeSizes);
-                size += dataSerializer.serializedSize(interval.data, typeSizes);
-            }
-            return size;
-        }
-
         public long serializedSize(IntervalTree<C, D, I> it, int version)
         {
-            return serializedSize(it, TypeSizes.NATIVE, version);
+            long size = TypeSizes.sizeof(0);
+            for (Interval<C, D> interval : it)
+            {
+                size += pointSerializer.serializedSize(interval.min);
+                size += pointSerializer.serializedSize(interval.max);
+                size += dataSerializer.serializedSize(interval.data);
+            }
+            return size;
         }
     }
 }

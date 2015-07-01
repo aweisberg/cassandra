@@ -42,6 +42,6 @@ public class UUIDSerializer implements IVersionedSerializer<UUID>
 
     public long serializedSize(UUID uuid, int version)
     {
-        return TypeSizes.NATIVE.sizeof(uuid.getMostSignificantBits()) + TypeSizes.NATIVE.sizeof(uuid.getLeastSignificantBits());
+        return TypeSizes.sizeof(uuid.getMostSignificantBits()) + TypeSizes.sizeof(uuid.getLeastSignificantBits());
     }
 }

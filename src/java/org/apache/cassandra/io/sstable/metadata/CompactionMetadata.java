@@ -75,11 +75,11 @@ public class CompactionMetadata extends MetadataComponent
         public int serializedSize(CompactionMetadata component) throws IOException
         {
             int size = 0;
-            size += TypeSizes.NATIVE.sizeof(component.ancestors.size());
+            size += TypeSizes.sizeof(component.ancestors.size());
             for (int g : component.ancestors)
-                size += TypeSizes.NATIVE.sizeof(g);
+                size += TypeSizes.sizeof(g);
             byte[] serializedCardinality = component.cardinalityEstimator.getBytes();
-            size += TypeSizes.NATIVE.sizeof(serializedCardinality.length) + serializedCardinality.length;
+            size += TypeSizes.sizeof(serializedCardinality.length) + serializedCardinality.length;
             return size;
         }
 

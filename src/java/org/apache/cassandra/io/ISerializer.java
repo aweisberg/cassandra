@@ -20,7 +20,6 @@ package org.apache.cassandra.io;
 import java.io.DataInput;
 import java.io.IOException;
 
-import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
 public interface ISerializer<T>
@@ -43,5 +42,5 @@ public interface ISerializer<T>
      */
     public T deserialize(DataInput in) throws IOException;
 
-    public long serializedSize(T t, TypeSizes type);
+    public long serializedSize(T t);
 }

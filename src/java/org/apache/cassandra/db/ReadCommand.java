@@ -504,12 +504,10 @@ public abstract class ReadCommand implements ReadQuery
             if (version < MessagingService.VERSION_30)
                 throw new UnsupportedOperationException();
 
-            TypeSizes sizes = TypeSizes.NATIVE;
-
             return 2 // kind + flags
-                 + CFMetaData.serializer.serializedSize(command.metadata(), version, sizes)
-                 + sizes.sizeof(command.nowInSec())
-                 + ColumnFilter.serializer.serializedSize(command.columnFilter(), version, sizes)
+                 + CFMetaData.serializer.serializedSize(command.metadata(), version)
+                 + TypeSizes.sizeof(command.nowInSec())
+                 + ColumnFilter.serializer.serializedSize(command.columnFilter(), version)
                  + RowFilter.serializer.serializedSize(command.rowFilter(), version)
                  + DataLimits.serializer.serializedSize(command.limits(), version)
                  + command.selectionSerializedSize(version);

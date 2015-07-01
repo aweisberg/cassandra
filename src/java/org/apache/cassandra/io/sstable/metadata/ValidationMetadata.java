@@ -73,7 +73,7 @@ public class ValidationMetadata extends MetadataComponent
     {
         public int serializedSize(ValidationMetadata component) throws IOException
         {
-            return TypeSizes.NATIVE.sizeof(component.partitioner) + 8;
+            return TypeSizes.sizeof(component.partitioner) + 8;
         }
 
         public void serialize(ValidationMetadata component, DataOutputPlus out) throws IOException

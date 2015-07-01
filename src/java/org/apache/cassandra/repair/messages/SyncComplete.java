@@ -73,7 +73,7 @@ public class SyncComplete extends RepairMessage
         {
             long size = RepairJobDesc.serializer.serializedSize(message.desc, version);
             size += NodePair.serializer.serializedSize(message.nodes, version);
-            size += TypeSizes.NATIVE.sizeof(message.success);
+            size += TypeSizes.sizeof(message.success);
             return size;
         }
     }

@@ -99,8 +99,8 @@ public class StreamSummary implements Serializable
         public long serializedSize(StreamSummary summary, int version)
         {
             long size = UUIDSerializer.serializer.serializedSize(summary.cfId, MessagingService.current_version);
-            size += TypeSizes.NATIVE.sizeof(summary.files);
-            size += TypeSizes.NATIVE.sizeof(summary.totalSize);
+            size += TypeSizes.sizeof(summary.files);
+            size += TypeSizes.sizeof(summary.totalSize);
             return size;
         }
     }

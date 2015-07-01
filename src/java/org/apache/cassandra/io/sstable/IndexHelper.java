@@ -180,19 +180,19 @@ public class IndexHelper
                 return new IndexInfo(firstName, lastName, offset, width, endOpenMarker);
             }
 
-            public long serializedSize(IndexInfo info, SerializationHeader header, TypeSizes typeSizes)
+            public long serializedSize(IndexInfo info, SerializationHeader header)
             {
                 ISerializer<ClusteringPrefix> clusteringSerializer = metadata.serializers().clusteringPrefixSerializer(version, header);
-                long size = clusteringSerializer.serializedSize(info.firstName, typeSizes)
-                          + clusteringSerializer.serializedSize(info.lastName, typeSizes)
-                          + typeSizes.sizeof(info.offset)
-                          + typeSizes.sizeof(info.width);
+                long size = clusteringSerializer.serializedSize(info.firstName)
+                          + clusteringSerializer.serializedSize(info.lastName)
+                          + TypeSizes.sizeof(info.offset)
+                          + TypeSizes.sizeof(info.width);
 
                 if (version.storeRows())
                 {
-                    size += typeSizes.sizeof(info.endOpenMarker != null);
+                    size += TypeSizes.sizeof(info.endOpenMarker != null);
                     if (info.endOpenMarker != null)
-                        size += DeletionTime.serializer.serializedSize(info.endOpenMarker, typeSizes);
+                        size += DeletionTime.serializer.serializedSize(info.endOpenMarker);
                 }
                 return size;
             }

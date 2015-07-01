@@ -195,11 +195,11 @@ public class StreamingHistogram
             return new StreamingHistogram(maxBinSize, tmp);
         }
 
-        public long serializedSize(StreamingHistogram histogram, TypeSizes typeSizes)
+        public long serializedSize(StreamingHistogram histogram)
         {
-            long size = typeSizes.sizeof(histogram.maxBinSize);
+            long size = TypeSizes.sizeof(histogram.maxBinSize);
             Map<Double, Long> entries = histogram.getAsMap();
-            size += typeSizes.sizeof(entries.size());
+            size += TypeSizes.sizeof(entries.size());
             // size of entries = size * (8(double) + 8(long))
             size += entries.size() * (8L + 8L);
             return size;

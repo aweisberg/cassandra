@@ -469,8 +469,8 @@ public class CompressionMetadata
 
         public long serializedSize(Chunk chunk, int version)
         {
-            long size = TypeSizes.NATIVE.sizeof(chunk.offset);
-            size += TypeSizes.NATIVE.sizeof(chunk.length);
+            long size = TypeSizes.sizeof(chunk.offset);
+            size += TypeSizes.sizeof(chunk.length);
             return size;
         }
     }

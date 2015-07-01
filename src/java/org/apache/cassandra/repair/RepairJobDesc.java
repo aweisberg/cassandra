@@ -124,13 +124,13 @@ public class RepairJobDesc
             int size = 0;
             if (version >= MessagingService.VERSION_21)
             {
-                size += TypeSizes.NATIVE.sizeof(desc.parentSessionId != null);
+                size += TypeSizes.sizeof(desc.parentSessionId != null);
                 if (desc.parentSessionId != null)
                     size += UUIDSerializer.serializer.serializedSize(desc.parentSessionId, version);
             }
             size += UUIDSerializer.serializer.serializedSize(desc.sessionId, version);
-            size += TypeSizes.NATIVE.sizeof(desc.keyspace);
-            size += TypeSizes.NATIVE.sizeof(desc.columnFamily);
+            size += TypeSizes.sizeof(desc.keyspace);
+            size += TypeSizes.sizeof(desc.columnFamily);
             size += AbstractBounds.tokenSerializer.serializedSize(desc.range, version);
             return size;
         }

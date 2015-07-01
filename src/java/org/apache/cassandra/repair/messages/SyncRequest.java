@@ -90,7 +90,7 @@ public class SyncRequest extends RepairMessage
         {
             long size = RepairJobDesc.serializer.serializedSize(message.desc, version);
             size += 3 * CompactEndpointSerializationHelper.serializedSize(message.initiator);
-            size += TypeSizes.NATIVE.sizeof(message.ranges.size());
+            size += TypeSizes.sizeof(message.ranges.size());
             for (Range<Token> range : message.ranges)
                 size += AbstractBounds.tokenSerializer.serializedSize(range, version);
             return size;

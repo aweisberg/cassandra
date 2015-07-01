@@ -131,12 +131,12 @@ public class StreamInitMessage
         public long serializedSize(StreamInitMessage message, int version)
         {
             long size = CompactEndpointSerializationHelper.serializedSize(message.from);
-            size += TypeSizes.NATIVE.sizeof(message.sessionIndex);
+            size += TypeSizes.sizeof(message.sessionIndex);
             size += UUIDSerializer.serializer.serializedSize(message.planId, MessagingService.current_version);
-            size += TypeSizes.NATIVE.sizeof(message.description);
-            size += TypeSizes.NATIVE.sizeof(message.isForOutgoing);
-            size += TypeSizes.NATIVE.sizeof(message.keepSSTableLevel);
-            size += TypeSizes.NATIVE.sizeof(message.isIncremental);
+            size += TypeSizes.sizeof(message.description);
+            size += TypeSizes.sizeof(message.isForOutgoing);
+            size += TypeSizes.sizeof(message.keepSSTableLevel);
+            size += TypeSizes.sizeof(message.isIncremental);
             return size;
         }
     }

@@ -534,7 +534,7 @@ public class MigrationManager
 
         public long serializedSize(Collection<Mutation> schema, int version)
         {
-            int size = TypeSizes.NATIVE.sizeof(schema.size());
+            int size = TypeSizes.sizeof(schema.size());
             for (Mutation mutation : schema)
                 size += Mutation.serializer.serializedSize(mutation, version);
             return size;

@@ -234,7 +234,7 @@ public class BootStrapper extends ProgressEventNotifierSupport
 
         public long serializedSize(String s, int version)
         {
-            return TypeSizes.NATIVE.sizeof(s);
+            return TypeSizes.sizeof(s);
         }
     }
 }

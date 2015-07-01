@@ -55,16 +55,15 @@ class BloomFilterSerializer implements ISerializer<BloomFilter>
 
     /**
      * Calculates a serialized size of the given Bloom Filter
-     * @see org.apache.cassandra.io.ISerializer#serialize(Object, org.apache.cassandra.io.util.DataOutputPlus)
-     *
      * @param bf Bloom filter to calculate serialized size
+     * @see org.apache.cassandra.io.ISerializer#serialize(Object, org.apache.cassandra.io.util.DataOutputPlus)
      *
      * @return serialized size of the given bloom filter
      */
-    public long serializedSize(BloomFilter bf, TypeSizes typeSizes)
+    public long serializedSize(BloomFilter bf)
     {
-        int size = typeSizes.sizeof(bf.hashCount); // hash count
-        size += bf.bitset.serializedSize(typeSizes);
+        int size = TypeSizes.sizeof(bf.hashCount); // hash count
+        size += bf.bitset.serializedSize();
         return size;
     }
 }

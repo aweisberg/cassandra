@@ -120,9 +120,9 @@ public class MerkleTree implements Serializable
         public long serializedSize(MerkleTree mt, int version)
         {
             long size = 1 // mt.hashdepth
-                 + TypeSizes.NATIVE.sizeof(mt.maxsize)
-                 + TypeSizes.NATIVE.sizeof(mt.size)
-                 + TypeSizes.NATIVE.sizeof(mt.partitioner.getClass().getCanonicalName());
+                 + TypeSizes.sizeof(mt.maxsize)
+                 + TypeSizes.sizeof(mt.size)
+                 + TypeSizes.sizeof(mt.partitioner.getClass().getCanonicalName());
 
             // full range
             size += Token.serializer.serializedSize(mt.fullRange.left, version);
@@ -843,8 +843,8 @@ public class MerkleTree implements Serializable
             public long serializedSize(Inner inner, int version)
             {
                 int size = inner.hash == null
-                ? TypeSizes.NATIVE.sizeof(-1)
-                        : TypeSizes.NATIVE.sizeof(inner.hash().length) + inner.hash().length;
+                ? TypeSizes.sizeof(-1)
+                        : TypeSizes.sizeof(inner.hash().length) + inner.hash().length;
 
                 size += Token.serializer.serializedSize(inner.token, version)
                 + Hashable.serializer.serializedSize(inner.lchild, version)
@@ -920,8 +920,8 @@ public class MerkleTree implements Serializable
             public long serializedSize(Leaf leaf, int version)
             {
                 return leaf.hash == null
-                     ? TypeSizes.NATIVE.sizeof(-1)
-                     : TypeSizes.NATIVE.sizeof(leaf.hash().length) + leaf.hash().length;
+                     ? TypeSizes.sizeof(-1)
+                     : TypeSizes.sizeof(leaf.hash().length) + leaf.hash().length;
             }
         }
     }

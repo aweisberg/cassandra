@@ -31,8 +31,6 @@ import java.util.Collections;
 import java.util.List;
 
 import org.junit.Test;
-
-import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
@@ -160,7 +158,7 @@ public class IntervalTreeTest
                         return in.readInt();
                     }
 
-                    public long serializedSize(Integer i, TypeSizes s)
+                    public long serializedSize(Integer i)
                     {
                         return 4;
                     }
@@ -177,7 +175,7 @@ public class IntervalTreeTest
                         return in.readUTF();
                     }
 
-                    public long serializedSize(String v, TypeSizes s)
+                    public long serializedSize(String v)
                     {
                         return v.length();
                     }

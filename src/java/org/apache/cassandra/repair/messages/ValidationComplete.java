@@ -81,7 +81,7 @@ public class ValidationComplete extends RepairMessage
         public long serializedSize(ValidationComplete message, int version)
         {
             long size = RepairJobDesc.serializer.serializedSize(message.desc, version);
-            size += TypeSizes.NATIVE.sizeof(message.success);
+            size += TypeSizes.sizeof(message.success);
             if (message.success)
                 size += MerkleTree.serializer.serializedSize(message.tree, version);
             return size;

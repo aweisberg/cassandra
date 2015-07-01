@@ -300,21 +300,20 @@ public class Mutation implements IMutation
 
         public long serializedSize(Mutation mutation, int version)
         {
-            TypeSizes sizes = TypeSizes.NATIVE;
             int size = 0;
 
             if (version < MessagingService.VERSION_20)
-                size += sizes.sizeof(mutation.getKeyspaceName());
+                size += TypeSizes.sizeof(mutation.getKeyspaceName());
 
             if (version < MessagingService.VERSION_30)
             {
                 int keySize = mutation.key().getKey().remaining();
-                size += sizes.sizeof((short) keySize) + keySize;
+                size += TypeSizes.sizeof((short) keySize) + keySize;
             }
 
-            size += sizes.sizeof(mutation.modifications.size());
+            size += TypeSizes.sizeof(mutation.modifications.size());
             for (Map.Entry<UUID, PartitionUpdate> entry : mutation.modifications.entrySet())
-                size += PartitionUpdate.serializer.serializedSize(entry.getValue(), version, sizes);
+                size += PartitionUpdate.serializer.serializedSize(entry.getValue(), version);
 
             return size;
         }

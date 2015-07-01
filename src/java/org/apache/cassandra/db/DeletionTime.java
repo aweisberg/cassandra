@@ -158,10 +158,10 @@ public abstract class DeletionTime implements Comparable<DeletionTime>, IMeasura
             FileUtils.skipBytesFully(in, 4 + 8);
         }
 
-        public long serializedSize(DeletionTime delTime, TypeSizes typeSizes)
+        public long serializedSize(DeletionTime delTime)
         {
-            return typeSizes.sizeof(delTime.localDeletionTime())
-                 + typeSizes.sizeof(delTime.markedForDeleteAt());
+            return TypeSizes.sizeof(delTime.localDeletionTime())
+                 + TypeSizes.sizeof(delTime.markedForDeleteAt());
         }
     }
 }

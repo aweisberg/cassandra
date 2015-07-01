@@ -332,7 +332,7 @@ public class CounterMutation implements IMutation
         public long serializedSize(CounterMutation cm, int version)
         {
             return Mutation.serializer.serializedSize(cm.mutation, version)
-                 + TypeSizes.NATIVE.sizeof(cm.consistency.name());
+                 + TypeSizes.sizeof(cm.consistency.name());
         }
     }
 }

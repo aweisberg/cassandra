@@ -42,8 +42,8 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
     {
         OHCacheBuilder<RowCacheKey, IRowCacheEntry> builder = OHCacheBuilder.newBuilder();
         builder.capacity(DatabaseDescriptor.getRowCacheSizeInMB() * 1024 * 1024)
-               .keySerializer(new KeySerializer())
-               .valueSerializer(new ValueSerializer())
+               .keySerializer(KeySerializer.instance)
+               .valueSerializer(ValueSerializer.instance)
                .throwOOME(true);
 
         return new OHCacheAdapter(builder.build());
@@ -70,7 +70,7 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
 
         public void put(RowCacheKey key, IRowCacheEntry value)
         {
-            ohCache.put(key, value);
+            ohCache.put(key,  value);
         }
 
         public boolean putIfAbsent(RowCacheKey key, IRowCacheEntry value)
@@ -126,6 +126,7 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
 
     private static class KeySerializer implements org.caffinitas.ohc.CacheSerializer<RowCacheKey>
     {
+        private static KeySerializer instance = new KeySerializer();
         public void serialize(RowCacheKey rowCacheKey, DataOutput dataOutput) throws IOException
         {
             dataOutput.writeLong(rowCacheKey.cfId.getMostSignificantBits());
@@ -151,6 +152,7 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
 
     private static class ValueSerializer implements org.caffinitas.ohc.CacheSerializer<IRowCacheEntry>
     {
+        private static ValueSerializer instance = new ValueSerializer();
         public void serialize(IRowCacheEntry entry, DataOutput out) throws IOException
         {
             assert entry != null; // unlike CFS we don't support nulls, since there is no need for that in the cache
@@ -172,12 +174,11 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
 
         public int serializedSize(IRowCacheEntry entry)
         {
-            TypeSizes typeSizes = TypeSizes.NATIVE;
-            int size = typeSizes.sizeof(true);
+            int size = TypeSizes.sizeof(true);
             if (entry instanceof RowCacheSentinel)
-                size += typeSizes.sizeof(((RowCacheSentinel) entry).sentinelId);
+                size += TypeSizes.sizeof(((RowCacheSentinel) entry).sentinelId);
             else
-                size += CachedPartition.cacheSerializer.serializedSize((CachedPartition) entry, typeSizes);
+                size += CachedPartition.cacheSerializer.serializedSize((CachedPartition) entry);
             return size;
         }
     }

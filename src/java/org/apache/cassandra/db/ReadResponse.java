@@ -186,9 +186,8 @@ public abstract class ReadResponse
                 throw new UnsupportedOperationException();
             }
 
-            TypeSizes sizes = TypeSizes.NATIVE;
             boolean isDigest = response.isDigestQuery();
-            long size = ByteBufferUtil.serializedSizeWithShortLength(isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER, sizes);
+            long size = ByteBufferUtil.serializedSizeWithShortLength(isDigest ? response.digest() : ByteBufferUtil.EMPTY_BYTE_BUFFER);
 
             if (!isDigest)
             {
@@ -196,7 +195,7 @@ public abstract class ReadResponse
                 // version, we'll have to deserialize/re-serialize the data to be in the proper version.
                 assert version == MessagingService.VERSION_30;
                 ByteBuffer data = ((DataResponse)response).data;
-                size += ByteBufferUtil.serializedSizeWithLength(data, sizes);
+                size += ByteBufferUtil.serializedSizeWithLength(data);
             }
             return size;
         }
@@ -228,7 +227,7 @@ public abstract class ReadResponse
         {
             // TODO
             throw new UnsupportedOperationException();
-            //        int size = TypeSizes.NATIVE.sizeof(rsr.rows.size());
+            //        int size = TypeSizes.sizeof(rsr.rows.size());
             //        for (Row row : rsr.rows)
             //            size += Row.serializer.serializedSize(row, version);
             //        return size;

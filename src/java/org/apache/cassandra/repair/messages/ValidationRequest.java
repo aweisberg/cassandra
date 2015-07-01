@@ -82,7 +82,7 @@ public class ValidationRequest extends RepairMessage
         public long serializedSize(ValidationRequest message, int version)
         {
             long size = RepairJobDesc.serializer.serializedSize(message.desc, version);
-            size += TypeSizes.NATIVE.sizeof(message.gcBefore);
+            size += TypeSizes.sizeof(message.gcBefore);
             return size;
         }
     }

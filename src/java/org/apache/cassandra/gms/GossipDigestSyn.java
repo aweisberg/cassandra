@@ -70,7 +70,7 @@ class GossipDigestSerializationHelper
 
     static int serializedSize(List<GossipDigest> digests, int version)
     {
-        int size = TypeSizes.NATIVE.sizeof(digests.size());
+        int size = TypeSizes.sizeof(digests.size());
         for (GossipDigest digest : digests)
             size += GossipDigest.serializer.serializedSize(digest, version);
         return size;
@@ -97,8 +97,8 @@ class GossipDigestSynSerializer implements IVersionedSerializer<GossipDigestSyn>
 
     public long serializedSize(GossipDigestSyn syn, int version)
     {
-        long size = TypeSizes.NATIVE.sizeof(syn.clusterId);
-        size += TypeSizes.NATIVE.sizeof(syn.partioner);
+        long size = TypeSizes.sizeof(syn.clusterId);
+        size += TypeSizes.sizeof(syn.partioner);
         size += GossipDigestSerializationHelper.serializedSize(syn.gDigests, version);
         return size;
     }
