@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.io.sstable.metadata;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -26,9 +25,9 @@ import java.util.List;
 import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
-
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.commitlog.ReplayPosition;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.EstimatedHistogram;
@@ -277,7 +276,7 @@ public class StatsMetadata extends MetadataComponent
             out.writeLong(component.totalRows);
         }
 
-        public StatsMetadata deserialize(Version version, DataInput in) throws IOException
+        public StatsMetadata deserialize(Version version, DataInputPlus in) throws IOException
         {
             EstimatedHistogram rowSizes = EstimatedHistogram.serializer.deserialize(in);
             EstimatedHistogram columnCounts = EstimatedHistogram.serializer.deserialize(in);

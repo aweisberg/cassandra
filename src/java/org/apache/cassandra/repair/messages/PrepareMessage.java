@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.repair.messages;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -27,6 +26,7 @@ import java.util.UUID;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.UUIDSerializer;
@@ -67,7 +67,7 @@ public class PrepareMessage extends RepairMessage
             out.writeBoolean(message.isIncremental);
         }
 
-        public PrepareMessage deserialize(DataInput in, int version) throws IOException
+        public PrepareMessage deserialize(DataInputPlus in, int version) throws IOException
         {
             int cfIdCount = in.readInt();
             List<UUID> cfIds = new ArrayList<>(cfIdCount);

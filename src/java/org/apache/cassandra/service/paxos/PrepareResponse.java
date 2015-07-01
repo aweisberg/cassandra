@@ -21,7 +21,6 @@ package org.apache.cassandra.service.paxos;
  */
 
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.util.UUID;
 
@@ -29,6 +28,7 @@ import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.rows.SerializationHelper;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.UUIDSerializer;
@@ -81,7 +81,7 @@ public class PrepareResponse
             }
         }
 
-        public PrepareResponse deserialize(DataInput in, int version) throws IOException
+        public PrepareResponse deserialize(DataInputPlus in, int version) throws IOException
         {
             boolean success = in.readBoolean();
             Commit inProgress = Commit.serializer.deserialize(in, version);

@@ -21,9 +21,9 @@ import java.io.DataInput;
 import java.io.IOException;
 
 import com.google.common.collect.Iterables;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -32,6 +32,7 @@ import org.apache.cassandra.db.filter.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.metrics.ColumnFamilyMetrics;
 import org.apache.cassandra.net.MessageOut;
@@ -481,7 +482,7 @@ public abstract class ReadCommand implements ReadQuery
             command.serializeSelection(out, version);
         }
 
-        public ReadCommand deserialize(DataInput in, int version) throws IOException
+        public ReadCommand deserialize(DataInputPlus in, int version) throws IOException
         {
             if (version < MessagingService.VERSION_30)
                 throw new UnsupportedOperationException();

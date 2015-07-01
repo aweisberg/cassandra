@@ -26,6 +26,7 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.sstable.format.Version;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileDataInput;
 import org.apache.cassandra.io.util.FileUtils;
@@ -165,7 +166,7 @@ public class IndexHelper
                 }
             }
 
-            public IndexInfo deserialize(DataInput in, SerializationHeader header) throws IOException
+            public IndexInfo deserialize(DataInputPlus in, SerializationHeader header) throws IOException
             {
                 ISerializer<ClusteringPrefix> clusteringSerializer = metadata.serializers().clusteringPrefixSerializer(version, header);
 

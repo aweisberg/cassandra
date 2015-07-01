@@ -21,7 +21,6 @@ package org.apache.cassandra.service.paxos;
  */
 
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.util.UUID;
 
@@ -33,6 +32,7 @@ import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.rows.*;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
@@ -164,7 +164,7 @@ public class Commit
             PartitionUpdate.serializer.serialize(commit.update, out, version);
         }
 
-        public Commit deserialize(DataInput in, int version) throws IOException
+        public Commit deserialize(DataInputPlus in, int version) throws IOException
         {
             DecoratedKey key = null;
             if (version < MessagingService.VERSION_30)

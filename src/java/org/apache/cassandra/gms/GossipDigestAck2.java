@@ -24,6 +24,7 @@ import java.util.Map;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 
@@ -61,7 +62,7 @@ class GossipDigestAck2Serializer implements IVersionedSerializer<GossipDigestAck
         }
     }
 
-    public GossipDigestAck2 deserialize(DataInput in, int version) throws IOException
+    public GossipDigestAck2 deserialize(DataInputPlus in, int version) throws IOException
     {
         int size = in.readInt();
         Map<InetAddress, EndpointState> epStateMap = new HashMap<InetAddress, EndpointState>(size);

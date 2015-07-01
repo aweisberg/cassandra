@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.utils;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
@@ -26,12 +25,13 @@ import java.util.*;
 import com.google.common.base.Joiner;
 import com.google.common.collect.AbstractIterator;
 import com.google.common.collect.Iterators;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AsymmetricOrdering.Op;
 
@@ -329,12 +329,12 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
          * tree is to use a custom comparator, as the comparator is *not*
          * serialized.
          */
-        public IntervalTree<C, D, I> deserialize(DataInput in, int version) throws IOException
+        public IntervalTree<C, D, I> deserialize(DataInputPlus in, int version) throws IOException
         {
             return deserialize(in, version, null);
         }
 
-        public IntervalTree<C, D, I> deserialize(DataInput in, int version, Comparator<C> comparator) throws IOException
+        public IntervalTree<C, D, I> deserialize(DataInputPlus in, int version, Comparator<C> comparator) throws IOException
         {
             try
             {

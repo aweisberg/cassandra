@@ -22,6 +22,7 @@ import java.io.IOException;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.obs.IBitSet;
 import org.apache.cassandra.utils.obs.OffHeapBitSet;
@@ -35,7 +36,7 @@ class BloomFilterSerializer implements ISerializer<BloomFilter>
         bf.bitset.serialize(out);
     }
 
-    public BloomFilter deserialize(DataInput in) throws IOException
+    public BloomFilter deserialize(DataInputPlus in) throws IOException
     {
         return deserialize(in, false);
     }

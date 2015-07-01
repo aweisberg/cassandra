@@ -21,9 +21,6 @@ package org.apache.cassandra.utils;
  */
 
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInput;
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
@@ -33,8 +30,10 @@ import java.util.List;
 import org.junit.Test;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.io.util.NIODataInputStream;
 
 import static org.junit.Assert.assertEquals;
 
@@ -153,7 +152,7 @@ public class IntervalTreeTest
                         out.writeInt(i);
                     }
 
-                    public Integer deserialize(DataInput in) throws IOException
+                    public Integer deserialize(DataInputPlus in) throws IOException
                     {
                         return in.readInt();
                     }
@@ -170,7 +169,7 @@ public class IntervalTreeTest
                         out.writeUTF(v);
                     }
 
-                    public String deserialize(DataInput in) throws IOException
+                    public String deserialize(DataInputPlus in) throws IOException
                     {
                         return in.readUTF();
                     }
@@ -187,7 +186,7 @@ public class IntervalTreeTest
 
         serializer.serialize(it, out, 0);
 
-        DataInputStream in = new DataInputStream(new ByteArrayInputStream(out.toByteArray()));
+        DataInputPlus in = new NIODataInputStream(out.toByteArray());
 
         IntervalTree<Integer, String, Interval<Integer, String>> it2 = serializer.deserialize(in, 0);
         List<Interval<Integer, String>> intervals2 = new ArrayList<Interval<Integer, String>>();

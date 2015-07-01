@@ -22,11 +22,10 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 /**
@@ -156,7 +155,7 @@ class EndpointStateSerializer implements IVersionedSerializer<EndpointState>
         }
     }
 
-    public EndpointState deserialize(DataInput in, int version) throws IOException
+    public EndpointState deserialize(DataInputPlus in, int version) throws IOException
     {
         HeartBeatState hbState = HeartBeatState.serializer.deserialize(in, version);
         EndpointState epState = new EndpointState(hbState);

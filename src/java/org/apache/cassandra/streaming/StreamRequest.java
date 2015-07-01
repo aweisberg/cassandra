@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.streaming;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -28,6 +27,7 @@ import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 
@@ -65,7 +65,7 @@ public class StreamRequest
                 out.writeUTF(cf);
         }
 
-        public StreamRequest deserialize(DataInput in, int version) throws IOException
+        public StreamRequest deserialize(DataInputPlus in, int version) throws IOException
         {
             String keyspace = in.readUTF();
             long repairedAt = in.readLong();

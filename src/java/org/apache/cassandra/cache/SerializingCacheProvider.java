@@ -17,13 +17,13 @@
  */
 package org.apache.cassandra.cache;
 
-import java.io.DataInput;
 import java.io.IOException;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.partitions.CachedPartition;
 import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
 public class SerializingCacheProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
@@ -47,7 +47,7 @@ public class SerializingCacheProvider implements CacheProvider<RowCacheKey, IRow
                 CachedPartition.cacheSerializer.serialize((CachedPartition)entry, out);
         }
 
-        public IRowCacheEntry deserialize(DataInput in) throws IOException
+        public IRowCacheEntry deserialize(DataInputPlus in) throws IOException
         {
             boolean isSentinel = in.readBoolean();
             if (isSentinel)

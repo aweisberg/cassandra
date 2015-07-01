@@ -23,6 +23,7 @@ import java.util.List;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
 /**
@@ -59,7 +60,7 @@ class GossipDigestSerializationHelper
             GossipDigest.serializer.serialize(gDigest, out, version);
     }
 
-    static List<GossipDigest> deserialize(DataInput in, int version) throws IOException
+    static List<GossipDigest> deserialize(DataInputPlus in, int version) throws IOException
     {
         int size = in.readInt();
         List<GossipDigest> gDigests = new ArrayList<GossipDigest>(size);
@@ -86,7 +87,7 @@ class GossipDigestSynSerializer implements IVersionedSerializer<GossipDigestSyn>
         GossipDigestSerializationHelper.serialize(gDigestSynMessage.gDigests, out, version);
     }
 
-    public GossipDigestSyn deserialize(DataInput in, int version) throws IOException
+    public GossipDigestSyn deserialize(DataInputPlus in, int version) throws IOException
     {
         String clusterId = in.readUTF();
         String partioner = null;

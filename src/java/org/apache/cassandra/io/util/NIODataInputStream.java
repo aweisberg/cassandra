@@ -82,12 +82,29 @@ public class NIODataInputStream extends InputStream implements DataInputPlus, Cl
         buf.limit(0);
     }
 
-    public NIODataInputStream(ByteBuffer buf)
+    /**
+     *
+     * @param buf
+     * @param duplicate Whether or not to duplicate the buffer to ensure thread safety
+     */
+    public NIODataInputStream(ByteBuffer buf, boolean duplicate)
     {
         Preconditions.checkNotNull(buf);
         Preconditions.checkArgument(buf.capacity() >= 9, "Buffer size must be large enough to accomadate a varint");
-        this.buf = buf;
+        if (duplicate)
+            this.buf = buf.duplicate();
+        else
+            this.buf = buf;
         this.rbc = emptyReadableByteChannel;
+    }
+
+    /*
+     * The decision to duplicate or not really needs to conscious since it a real impact
+     * in terms of thread safety so don't expose this constructor with an implicit default.
+     */
+    private NIODataInputStream(ByteBuffer buf)
+    {
+        this(buf, false);
     }
 
     private static ByteBuffer slice(byte buffer[], int offset, int length)
@@ -105,6 +122,11 @@ public class NIODataInputStream extends InputStream implements DataInputPlus, Cl
     public NIODataInputStream(byte buffer[], int offset, int length)
     {
         this(slice(buffer, offset, length));
+    }
+
+    public NIODataInputStream(byte buffer[])
+    {
+        this(ByteBuffer.wrap(buffer));
     }
 
     @Override

@@ -31,6 +31,7 @@ import org.apache.cassandra.cache.IMeasurableMemory;
 import org.apache.cassandra.io.ISerializer;
 import org.apache.cassandra.io.sstable.IndexHelper;
 import org.apache.cassandra.io.sstable.format.Version;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.ObjectSizes;
@@ -101,7 +102,7 @@ public class RowIndexEntry<T> implements IMeasurableMemory
     public static interface IndexSerializer<T>
     {
         void serialize(RowIndexEntry<T> rie, DataOutputPlus out) throws IOException;
-        RowIndexEntry<T> deserialize(DataInput in) throws IOException;
+        RowIndexEntry<T> deserialize(DataInputPlus in) throws IOException;
         public int serializedSize(RowIndexEntry<T> rie);
     }
 
@@ -133,7 +134,7 @@ public class RowIndexEntry<T> implements IMeasurableMemory
             }
         }
 
-        public RowIndexEntry<IndexHelper.IndexInfo> deserialize(DataInput in) throws IOException
+        public RowIndexEntry<IndexHelper.IndexInfo> deserialize(DataInputPlus in) throws IOException
         {
             long position = in.readLong();
 

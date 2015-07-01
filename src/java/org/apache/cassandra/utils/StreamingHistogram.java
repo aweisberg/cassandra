@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.utils;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.util.*;
 
@@ -25,6 +24,7 @@ import com.google.common.base.Objects;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
 /**
@@ -182,7 +182,7 @@ public class StreamingHistogram
             }
         }
 
-        public StreamingHistogram deserialize(DataInput in) throws IOException
+        public StreamingHistogram deserialize(DataInputPlus in) throws IOException
         {
             int maxBinSize = in.readInt();
             int size = in.readInt();

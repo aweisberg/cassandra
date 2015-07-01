@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.streaming.messages;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
@@ -25,6 +24,7 @@ import java.util.UUID;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -116,7 +116,7 @@ public class StreamInitMessage
             out.writeBoolean(message.isIncremental);
         }
 
-        public StreamInitMessage deserialize(DataInput in, int version) throws IOException
+        public StreamInitMessage deserialize(DataInputPlus in, int version) throws IOException
         {
             InetAddress from = CompactEndpointSerializationHelper.deserialize(in);
             int sessionIndex = in.readInt();

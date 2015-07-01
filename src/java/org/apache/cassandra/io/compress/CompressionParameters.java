@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.io.compress;
 
-import java.io.DataInput;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -37,6 +36,7 @@ import org.apache.cassandra.config.ParameterizedClass;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
 public class CompressionParameters
@@ -338,7 +338,7 @@ public class CompressionParameters
             out.writeInt(parameters.chunkLength());
         }
 
-        public CompressionParameters deserialize(DataInput in, int version) throws IOException
+        public CompressionParameters deserialize(DataInputPlus in, int version) throws IOException
         {
             String compressorName = in.readUTF();
             int optionCount = in.readInt();

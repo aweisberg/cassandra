@@ -38,6 +38,7 @@ import org.apache.cassandra.io.sstable.format.Version;
 import org.apache.cassandra.io.sstable.metadata.MetadataType;
 import org.apache.cassandra.io.sstable.metadata.MetadataComponent;
 import org.apache.cassandra.io.sstable.metadata.IMetadataComponentSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -402,7 +403,7 @@ public class SerializationHeader
         }
 
         // For SSTables
-        public Component deserialize(Version version, DataInput in) throws IOException
+        public Component deserialize(Version version, DataInputPlus in) throws IOException
         {
             RowStats stats = RowStats.serializer.deserialize(in);
 

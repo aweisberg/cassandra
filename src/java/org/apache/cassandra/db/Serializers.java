@@ -21,6 +21,7 @@ import java.io.*;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.io.ISerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.io.sstable.format.Version;
 
@@ -57,7 +58,7 @@ public class Serializers
                 ClusteringPrefix.serializer.serialize(clustering, out, version.correspondingMessagingVersion(), header.clusteringTypes());
             }
 
-            public ClusteringPrefix deserialize(DataInput in) throws IOException
+            public ClusteringPrefix deserialize(DataInputPlus in) throws IOException
             {
                 return ClusteringPrefix.serializer.deserialize(in, version.correspondingMessagingVersion(), header.clusteringTypes());
             }

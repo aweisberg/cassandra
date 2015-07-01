@@ -33,6 +33,7 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 
 /**
@@ -91,7 +92,7 @@ public class MerkleTree implements Serializable
             Hashable.serializer.serialize(mt.root, out, version);
         }
 
-        public MerkleTree deserialize(DataInput in, int version) throws IOException
+        public MerkleTree deserialize(DataInputPlus in, int version) throws IOException
         {
             byte hashdepth = in.readByte();
             long maxsize = in.readLong();
