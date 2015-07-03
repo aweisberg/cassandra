@@ -268,7 +268,8 @@ public final class SchemaKeyspace
     public static List<KeyspaceMetadata> readSchemaFromSystemTables()
     {
         ReadCommand cmd = getReadCommandForTableSchema(KEYSPACES);
-        try (ReadOrderGroup orderGroup = cmd.startOrderGroup(); PartitionIterator schema = cmd.executeInternal(orderGroup))
+        try (ReadExecutionController executionController = cmd.executionController();
+             PartitionIterator schema = cmd.executeInternal(executionController))
         {
             List<KeyspaceMetadata> keyspaces = new ArrayList<>();
 
@@ -324,8 +325,8 @@ public final class SchemaKeyspace
         for (String table : ALL)
         {
             ReadCommand cmd = getReadCommandForTableSchema(table);
-            try (ReadOrderGroup orderGroup = cmd.startOrderGroup();
-                 PartitionIterator schema = cmd.executeInternal(orderGroup))
+            try (ReadExecutionController executionController = cmd.executionController();
+                 PartitionIterator schema = cmd.executeInternal(executionController))
             {
                 while (schema.hasNext())
                 {
@@ -372,7 +373,8 @@ public final class SchemaKeyspace
     private static void convertSchemaToMutations(Map<DecoratedKey, Mutation> mutationMap, String schemaTableName)
     {
         ReadCommand cmd = getReadCommandForTableSchema(schemaTableName);
-        try (ReadOrderGroup orderGroup = cmd.startOrderGroup(); UnfilteredPartitionIterator iter = cmd.executeLocally(orderGroup))
+        try (ReadExecutionController executionController = cmd.executionController();
+             UnfilteredPartitionIterator iter = cmd.executeLocally(executionController))
         {
             while (iter.hasNext())
             {

@@ -479,8 +479,8 @@ public class View
                 // Add all of the rows which were recovered from the query to the row set
                 while (!pager.isExhausted())
                 {
-                    try (ReadOrderGroup orderGroup = pager.startOrderGroup();
-                         PartitionIterator iter = pager.fetchPageInternal(128, orderGroup))
+                    try (ReadExecutionController executionController = pager.executionController();
+                         PartitionIterator iter = pager.fetchPageInternal(128, executionController))
                     {
                         if (!iter.hasNext())
                             break;
@@ -536,8 +536,8 @@ public class View
 
         while (!pager.isExhausted())
         {
-            try (ReadOrderGroup orderGroup = pager.startOrderGroup();
-                 PartitionIterator iter = pager.fetchPageInternal(128, orderGroup))
+            try (ReadExecutionController executionController = pager.executionController();
+                 PartitionIterator iter = pager.fetchPageInternal(128, executionController))
             {
                 while (iter.hasNext())
                 {
