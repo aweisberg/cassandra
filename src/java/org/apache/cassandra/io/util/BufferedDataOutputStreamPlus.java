@@ -41,7 +41,12 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
 {
     private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + "nio_data_output_stream_plus_buffer_size", 1024 * 32);
 
-    ByteBuffer buffer;
+    protected ByteBuffer buffer;
+
+    //Allow derived classes to specify writing to the channel
+    //directly shouldn't happen because they intercept via doFlush for things
+    //like compression or checksumming
+    protected boolean allowDirectWritesToChannel = true;
 
     public BufferedDataOutputStreamPlus(RandomAccessFile ras)
     {
@@ -142,18 +147,33 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         else
         {
             assert toWrite.isDirect();
-            if (toWrite.remaining() > buffer.remaining())
+            final int toWriteRemaining = toWrite.remaining();
+            if (toWriteRemaining > buffer.remaining())
             {
                 doFlush();
                 MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
-                if (toWrite.remaining() > buffer.remaining())
+                int bufferRemaining = buffer.remaining();
+                if (toWrite.remaining() > bufferRemaining && allowDirectWritesToChannel)
                 {
                     while (hollowBuffer.hasRemaining())
                         channel.write(hollowBuffer);
                 }
-                else
+                else if (bufferRemaining >= toWriteRemaining)
                 {
                     buffer.put(hollowBuffer);
+                } else {
+                    //Slow path when we aren't allow to flush to the channel directly because the derived class intercepts
+                    //writes and does something such as compress or checksum
+                    while(hollowBuffer.hasRemaining())
+                    {
+                        int originalLimit = hollowBuffer.limit();
+                        int toPut = Math.min(hollowBuffer.remaining(), buffer.remaining());
+                        hollowBuffer.limit(hollowBuffer.position() + toPut);
+                        buffer.put(hollowBuffer);
+                        hollowBuffer.limit(originalLimit);
+                        if (hollowBuffer.hasRemaining())
+                            doFlush();
+                    }
                 }
             }
             else
@@ -309,6 +329,8 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException
     {
+        if (!allowDirectWritesToChannel)
+            throw new UnsupportedOperationException();
         //Don't allow writes to the underlying channel while data is buffered
         flush();
         return f.apply(channel);
