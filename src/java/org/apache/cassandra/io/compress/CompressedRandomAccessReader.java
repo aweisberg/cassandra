@@ -95,6 +95,8 @@ public class CompressedRandomAccessReader extends RandomAccessReader
         }
     }
 
+    private long lastBufferOffset = 0;
+
     private void reBufferStandard()
     {
         try
@@ -103,6 +105,8 @@ public class CompressedRandomAccessReader extends RandomAccessReader
             assert position < metadata.dataLength;
 
             CompressionMetadata.Chunk chunk = metadata.chunkFor(position);
+            System.out.println("Reading position " + position + " chunk position " + chunk.offset);
+
 
             if (compressed.capacity() < chunk.length)
                 compressed = allocateBuffer(chunk.length, metadata.compressor().preferredBufferType());
@@ -141,8 +145,8 @@ public class CompressedRandomAccessReader extends RandomAccessReader
             }
 
             // buffer offset is always aligned
-            bufferOffset = position & ~(buffer.capacity() - 1);
-            buffer.position((int) (position - bufferOffset));
+            bufferOffset = position; //& ~(buffer.capacity() - 1);
+            //buffer.position((int) (position - bufferOffset));
             // the length() can be provided at construction time, to override the true (uncompressed) length of the file;
             // this is permitted to occur within a compressed segment, so we truncate validBufferBytes if we cross the imposed length
             if (bufferOffset + buffer.limit() > length())

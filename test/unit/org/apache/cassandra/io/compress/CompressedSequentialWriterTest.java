@@ -92,9 +92,10 @@ public class CompressedSequentialWriterTest extends SequentialWriterTest
 
             byte[] dataPre = new byte[bytesToTest];
             byte[] rawPost = new byte[bytesToTest];
+            System.out.println("Test is writing " + bytesToTest + " twice " + (bytesToTest * 2));
             try (CompressedSequentialWriter writer = new CompressedSequentialWriter(f, filename + ".metadata", compressionParameters, sstableMetadataCollector);)
             {
-                Random r = new Random();
+                Random r = new Random(42);
 
                 // Test both write with byte[] and ByteBuffer
                 r.nextBytes(dataPre);

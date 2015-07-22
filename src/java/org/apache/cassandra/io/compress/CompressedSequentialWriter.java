@@ -17,6 +17,8 @@
  */
 package org.apache.cassandra.io.compress;
 
+import static org.apache.cassandra.utils.Throwables.merge;
+
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
@@ -24,6 +26,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.util.zip.CRC32;
+import java.nio.channels.WritableByteChannel;
 
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
@@ -31,8 +34,11 @@ import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.DataIntegrityMetadata;
 import org.apache.cassandra.io.util.FileMark;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.schema.CompressionParams;
+
+import com.google.common.base.Function;
 
 public class CompressedSequentialWriter extends SequentialWriter
 {
@@ -48,6 +54,10 @@ public class CompressedSequentialWriter extends SequentialWriter
 
     // used to store compressed data
     private ByteBuffer compressed;
+
+    //If buffer is not full, stage the bytes for compression because the format doesn't handle
+    //non-uniform compressed block sizes
+    private ByteBuffer stagedForCompression;
 
     // holds a number of already written chunks
     private int chunkCount = 0;
@@ -69,6 +79,8 @@ public class CompressedSequentialWriter extends SequentialWriter
         // buffer for compression should be the same size as buffer itself
         compressed = compressor.preferredBufferType().allocate(compressor.initialCompressedBufferLength(buffer.capacity()));
 
+        stagedForCompression = compressor.preferredBufferType().allocate(buffer.capacity());
+
         /* Index File (-CompressionInfo.db component) and it's header */
         metadataWriter = CompressionMetadata.Writer.open(parameters, offsetsPath);
 
@@ -81,7 +93,7 @@ public class CompressedSequentialWriter extends SequentialWriter
     {
         try
         {
-            return channel.position();
+            return fchannel.position();
         }
         catch (IOException e)
         {
@@ -95,8 +107,52 @@ public class CompressedSequentialWriter extends SequentialWriter
         throw new UnsupportedOperationException();
     }
 
+    /*
+     * When flushing data as part of resetAndTruncateMark it is ok to flush the partial bytes
+     * and then let truncation do its thing
+     */
     @Override
-    protected void flushData()
+    protected void flushData(boolean definitelyFlush)
+    {
+        //Do we need to copy the bytes in order to create completely full blocks
+        //for the compressed format?
+        if (!buffer.hasRemaining() && stagedForCompression.position() == 0 && !definitelyFlush)
+        {
+            //No it's already full and no bytes are staged
+            flushDataOfBuffer(buffer);
+        }
+        else
+        {
+            //Need to arrange perfectly aligned blocks for compression, bytes may be staged already
+            buffer.flip();
+            while (buffer.hasRemaining())
+            {
+                if (stagedForCompression.hasRemaining())
+                {
+                    int originalLimit = buffer.limit();
+                    int toCopy = Math.min(stagedForCompression.remaining(), buffer.remaining());
+                    buffer.limit(buffer.position() + toCopy);
+                    stagedForCompression.put(buffer);
+                    buffer.limit(originalLimit);
+                }
+                else
+                {
+                    flushDataOfBuffer(stagedForCompression);
+                    stagedForCompression.clear();
+                }
+            }
+
+            //Could exit the loop with the staging buffer full because buffer is empty
+            //and filled it exactly.
+            if (!stagedForCompression.hasRemaining() || definitelyFlush)
+            {
+                flushDataOfBuffer(stagedForCompression);
+                stagedForCompression.clear();
+            }
+        }
+    }
+
+    private void flushDataOfBuffer(ByteBuffer buffer)
     {
         seekToChunkStart(); // why is this necessary? seems like it should always be at chunk start in normal operation
 
@@ -118,6 +174,7 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         try
         {
+            System.out.println("Writing chunk at " + chunkOffset);
             // write an offset of the newly written chunk to the index file
             metadataWriter.addOffset(chunkOffset);
             chunkCount++;
@@ -130,9 +187,6 @@ public class CompressedSequentialWriter extends SequentialWriter
             compressed.rewind();
             crcMetadata.appendDirect(compressed, true);
             lastFlushOffset += compressedLength + 4;
-
-            // adjust our bufferOffset to account for the new uncompressed data we've now written out
-            resetBuffer();
         }
         catch (IOException e)
         {
@@ -189,8 +243,8 @@ public class CompressedSequentialWriter extends SequentialWriter
         {
             compressed.clear();
             compressed.limit(chunkSize);
-            channel.position(chunkOffset);
-            channel.read(compressed);
+            fchannel.position(chunkOffset);
+            fchannel.read(compressed);
 
             try
             {
@@ -209,7 +263,7 @@ public class CompressedSequentialWriter extends SequentialWriter
             checksum.update(compressed);
 
             crcCheckBuffer.clear();
-            channel.read(crcCheckBuffer);
+            fchannel.read(crcCheckBuffer);
             crcCheckBuffer.flip();
             if (crcCheckBuffer.getInt() != (int) checksum.getValue())
                 throw new CorruptBlockException(getPath(), chunkOffset, chunkSize);
@@ -229,7 +283,6 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         // Mark as dirty so we can guarantee the newly buffered bytes won't be lost on a rebuffer
         buffer.position(realMark.validBufferBytes);
-        isDirty = true;
 
         bufferOffset = truncateTarget - buffer.position();
         chunkCount = realMark.nextChunkIndex - 1;
@@ -248,7 +301,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         {
             try
             {
-                channel.position(chunkOffset);
+                fchannel.position(chunkOffset);
             }
             catch (IOException e)
             {
@@ -281,6 +334,27 @@ public class CompressedSequentialWriter extends SequentialWriter
             sstableMetadataCollector.addCompressionRatio(compressedSize, uncompressedSize);
             metadataWriter.finalizeLength(current(), chunkCount).prepareToCommit();
         }
+
+        @Override
+        protected Throwable doPreCleanup(Throwable accumulate)
+        {
+            super.doPreCleanup(accumulate);
+            if (compressed != null)
+            {
+                try { FileUtils.clean(compressed); }
+                catch (Throwable t) { accumulate = merge(accumulate, t); }
+                compressed = null;
+            }
+
+            if (stagedForCompression != null)
+            {
+                try { FileUtils.clean(stagedForCompression); }
+                catch (Throwable t) { accumulate = merge(accumulate, t); }
+                stagedForCompression = null;
+            }
+
+            return accumulate;
+        }
     }
 
     @Override
@@ -309,5 +383,10 @@ public class CompressedSequentialWriter extends SequentialWriter
             this.validBufferBytes = validBufferBytes;
             this.nextChunkIndex = nextChunkIndex;
         }
+    }
+
+    @Override
+    public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException {
+        throw new UnsupportedOperationException();
     }
 }
