@@ -109,7 +109,8 @@ public class CompressedSequentialWriter extends SequentialWriter
 
     /*
      * When flushing data as part of resetAndTruncateMark it is ok to flush the partial bytes
-     * and then let truncation do its thing
+     * and then let truncation do its thing hence the definitelyFlush parameter. Also definitely
+     * need to flush when closing.
      */
     @Override
     protected void flushData(boolean definitelyFlush)
@@ -174,7 +175,6 @@ public class CompressedSequentialWriter extends SequentialWriter
 
         try
         {
-            System.out.println("Writing chunk at " + chunkOffset);
             // write an offset of the newly written chunk to the index file
             metadataWriter.addOffset(chunkOffset);
             chunkCount++;
