@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
 import java.util.zip.CRC32;
-import java.nio.channels.WritableByteChannel;
 
 import org.apache.cassandra.io.FSReadError;
 import org.apache.cassandra.io.FSWriteError;
@@ -37,8 +36,6 @@ import org.apache.cassandra.io.util.FileMark;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.SequentialWriter;
 import org.apache.cassandra.schema.CompressionParams;
-
-import com.google.common.base.Function;
 
 public class CompressedSequentialWriter extends SequentialWriter
 {
@@ -383,10 +380,5 @@ public class CompressedSequentialWriter extends SequentialWriter
             this.validBufferBytes = validBufferBytes;
             this.nextChunkIndex = nextChunkIndex;
         }
-    }
-
-    @Override
-    public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException {
-        throw new UnsupportedOperationException();
     }
 }

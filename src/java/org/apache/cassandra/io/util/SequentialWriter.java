@@ -282,7 +282,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     {
         try
         {
-            return Math.max(current(), (fchannel).size());
+            return Math.max(current(), fchannel.size());
         }
         catch (IOException e)
         {
@@ -338,7 +338,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
 
         try
         {
-            (fchannel).position(truncateTarget);
+            fchannel.position(truncateTarget);
         }
         catch (IOException e)
         {
@@ -357,7 +357,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     {
         try
         {
-            (fchannel).truncate(toSize);
+            fchannel.truncate(toSize);
         }
         catch (IOException e)
         {
