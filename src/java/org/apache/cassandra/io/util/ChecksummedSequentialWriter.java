@@ -18,13 +18,9 @@
 package org.apache.cassandra.io.util;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.WritableByteChannel;
 
 import org.apache.cassandra.io.compress.BufferType;
-
-import com.google.common.base.Function;
 
 public class ChecksummedSequentialWriter extends SequentialWriter
 {
@@ -79,10 +75,5 @@ public class ChecksummedSequentialWriter extends SequentialWriter
     protected SequentialWriter.TransactionalProxy txnProxy()
     {
         return new TransactionalProxy();
-    }
-
-    @Override
-    public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException {
-        throw new UnsupportedOperationException();
     }
 }
