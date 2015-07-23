@@ -192,6 +192,11 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         }
     }
 
+    /*
+     * This is only safe to call before truncation or close for CompressedSequentialWriter
+     * Otherwise it will leave a non-uniform size compressed block in the middle of the file
+     * and the compressed format can't handle that.
+     */
     protected void syncInternal()
     {
         doFlush(true);
