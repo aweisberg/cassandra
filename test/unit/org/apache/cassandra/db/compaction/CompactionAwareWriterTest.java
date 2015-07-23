@@ -189,7 +189,7 @@ public class CompactionAwareWriterTest extends CQLTester
 
     private void populate(int count) throws Throwable
     {
-        byte [] payload = new byte[1000];
+        byte [] payload = new byte[5000];
         new Random().nextBytes(payload);
         ByteBuffer b = ByteBuffer.wrap(payload);
 
