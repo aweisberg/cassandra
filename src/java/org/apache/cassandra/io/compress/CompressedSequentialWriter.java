@@ -142,7 +142,8 @@ public class CompressedSequentialWriter extends SequentialWriter
 
             //Could exit the loop with the staging buffer full because buffer is empty
             //and filled it exactly.
-            if (!stagedForCompression.hasRemaining() || definitelyFlush)
+            //Alternatively if we are definitely supposed to flush and there are bytes to flush, do it
+            if (!stagedForCompression.hasRemaining() || (definitelyFlush && stagedForCompression.position() > 0))
             {
                 flushDataOfBuffer(stagedForCompression);
                 stagedForCompression.clear();
