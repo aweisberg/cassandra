@@ -39,9 +39,9 @@ public class ChecksummedSequentialWriter extends SequentialWriter
         crcMetadata.writeChunkSize(buffer.capacity());
     }
 
-    protected void flushData()
+    protected void flushData(boolean definitelyFlush)
     {
-        super.flushData(false);
+        super.flushData(definitelyFlush);
         ByteBuffer toAppend = buffer.duplicate();
         toAppend.position(0);
         toAppend.limit(buffer.position());
