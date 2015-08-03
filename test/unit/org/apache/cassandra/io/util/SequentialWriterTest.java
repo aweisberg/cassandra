@@ -68,7 +68,7 @@ public class SequentialWriterTest extends AbstractTransactionalTest
 
         protected TestableSW(File file) throws IOException
         {
-            this(file, new SequentialWriter(file, 8 << 10, BufferType.OFF_HEAP));
+            this(file, new SequentialWriter(file, 8 << 10, BufferType.OFF_HEAP, false));
         }
 
         protected TestableSW(File file, SequentialWriter sw) throws IOException
