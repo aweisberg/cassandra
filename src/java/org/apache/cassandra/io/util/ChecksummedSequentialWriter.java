@@ -29,15 +29,16 @@ public class ChecksummedSequentialWriter extends SequentialWriter
 
     public ChecksummedSequentialWriter(File file, int bufferSize, File crcPath)
     {
-        super(file, bufferSize, BufferType.ON_HEAP);
-        crcWriter = new SequentialWriter(crcPath, 8 * 1024, BufferType.ON_HEAP);
+        super(file, bufferSize, BufferType.ON_HEAP, true);
+        crcWriter = new SequentialWriter(crcPath, 8 * 1024, BufferType.ON_HEAP, false);
         crcMetadata = new DataIntegrityMetadata.ChecksumWriter(crcWriter);
         crcMetadata.writeChunkSize(buffer.capacity());
     }
 
-    protected void flushData(boolean definitelyFlush)
+    @Override
+    protected void flushData(ByteBuffer buffer)
     {
-        super.flushData(definitelyFlush);
+        super.flushData(buffer);
         ByteBuffer toAppend = buffer.duplicate();
         toAppend.position(0);
         toAppend.limit(buffer.position());

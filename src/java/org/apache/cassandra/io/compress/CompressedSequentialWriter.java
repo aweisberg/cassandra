@@ -52,10 +52,6 @@ public class CompressedSequentialWriter extends SequentialWriter
     // used to store compressed data
     private ByteBuffer compressed;
 
-    //If buffer is not full, stage the bytes for compression because the format doesn't handle
-    //non-uniform compressed block sizes
-    private ByteBuffer stagedForCompression;
-
     // holds a number of already written chunks
     private int chunkCount = 0;
 
@@ -70,13 +66,11 @@ public class CompressedSequentialWriter extends SequentialWriter
                                       CompressionParams parameters,
                                       MetadataCollector sstableMetadataCollector)
     {
-        super(file, parameters.chunkLength(), parameters.getSstableCompressor().preferredBufferType());
+        super(file, parameters.chunkLength(), parameters.getSstableCompressor().preferredBufferType(), true);
         this.compressor = parameters.getSstableCompressor();
 
         // buffer for compression should be the same size as buffer itself
         compressed = compressor.preferredBufferType().allocate(compressor.initialCompressedBufferLength(buffer.capacity()));
-
-        stagedForCompression = compressor.preferredBufferType().allocate(buffer.capacity());
 
         /* Index File (-CompressionInfo.db component) and it's header */
         metadataWriter = CompressionMetadata.Writer.open(parameters, offsetsPath);
@@ -104,54 +98,8 @@ public class CompressedSequentialWriter extends SequentialWriter
         throw new UnsupportedOperationException();
     }
 
-    /*
-     * When flushing data as part of resetAndTruncateMark it is ok to flush the partial bytes
-     * and then let truncation do its thing hence the definitelyFlush parameter. Also definitely
-     * need to flush when closing.
-     */
     @Override
-    protected void flushData(boolean definitelyFlush)
-    {
-        //Do we need to copy the bytes in order to create completely full blocks
-        //for the compressed format?
-        if (!buffer.hasRemaining() && stagedForCompression.position() == 0 && !definitelyFlush)
-        {
-            //No it's already full and no bytes are staged
-            flushDataOfBuffer(buffer);
-        }
-        else
-        {
-            //Need to arrange perfectly aligned blocks for compression, bytes may be staged already
-            buffer.flip();
-            while (buffer.hasRemaining())
-            {
-                if (stagedForCompression.hasRemaining())
-                {
-                    int originalLimit = buffer.limit();
-                    int toCopy = Math.min(stagedForCompression.remaining(), buffer.remaining());
-                    buffer.limit(buffer.position() + toCopy);
-                    stagedForCompression.put(buffer);
-                    buffer.limit(originalLimit);
-                }
-                else
-                {
-                    flushDataOfBuffer(stagedForCompression);
-                    stagedForCompression.clear();
-                }
-            }
-
-            //Could exit the loop with the staging buffer full because buffer is empty
-            //and filled it exactly.
-            //Alternatively if we are definitely supposed to flush and there are bytes to flush, do it
-            if (!stagedForCompression.hasRemaining() || (definitelyFlush && stagedForCompression.position() > 0))
-            {
-                flushDataOfBuffer(stagedForCompression);
-                stagedForCompression.clear();
-            }
-        }
-    }
-
-    private void flushDataOfBuffer(ByteBuffer buffer)
+    protected void flushData(ByteBuffer buffer)
     {
         seekToChunkStart(); // why is this necessary? seems like it should always be at chunk start in normal operation
 
@@ -342,13 +290,6 @@ public class CompressedSequentialWriter extends SequentialWriter
                 try { FileUtils.clean(compressed); }
                 catch (Throwable t) { accumulate = merge(accumulate, t); }
                 compressed = null;
-            }
-
-            if (stagedForCompression != null)
-            {
-                try { FileUtils.clean(stagedForCompression); }
-                catch (Throwable t) { accumulate = merge(accumulate, t); }
-                stagedForCompression = null;
             }
 
             return accumulate;
