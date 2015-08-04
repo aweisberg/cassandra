@@ -154,9 +154,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
 
         filePath = file.getAbsolutePath();
 
-        // Allow children to allocate buffer as direct (snappy compression) if necessary
-        buffer = bufferType.allocate(bufferSize);
-
         this.trickleFsync = DatabaseDescriptor.getTrickleFsync();
         this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024;
 
@@ -261,7 +258,10 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     {
         //No block aligned flushing was requested
         if (stagingBuffer == null)
+        {
             flushData(buffer);
+            return;
+        }
 
         //Do we need to copy the bytes in order to create completely full blocks
         //for the compressed format?
