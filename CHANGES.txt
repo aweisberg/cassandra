@@ -3,6 +3,7 @@
  * Avoid grouping sstables for anticompaction with DTCS (CASSANDRA-9900)
  * UDF / UDA execution time in trace (CASSANDRA-9723)
  * Fix broken internode SSL (CASSANDRA-9884)
+ * Add checksum to saved cache files (CASSANDRA-9265)
 Merged from 2.1:
  * Cannot replace token does not exist - DN node removed as Fat Client (CASSANDRA-9871)
  * Fix handling of enable/disable autocompaction (CASSANDRA-9899)
