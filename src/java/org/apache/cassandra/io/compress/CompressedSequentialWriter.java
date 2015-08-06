@@ -66,7 +66,7 @@ public class CompressedSequentialWriter extends SequentialWriter
                                       CompressionParams parameters,
                                       MetadataCollector sstableMetadataCollector)
     {
-        super(file, parameters.chunkLength(), parameters.getSstableCompressor().preferredBufferType(), true);
+        super(file, parameters.chunkLength(), parameters.getSstableCompressor().preferredBufferType());
         this.compressor = parameters.getSstableCompressor();
 
         // buffer for compression should be the same size as buffer itself
@@ -99,7 +99,7 @@ public class CompressedSequentialWriter extends SequentialWriter
     }
 
     @Override
-    protected void flushData(ByteBuffer buffer)
+    protected void flushData()
     {
         seekToChunkStart(); // why is this necessary? seems like it should always be at chunk start in normal operation
 

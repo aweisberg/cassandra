@@ -70,10 +70,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     private final TransactionalProxy txnProxy = txnProxy();
     protected Descriptor descriptor;
 
-    //If buffer is not full, stage the bytes for compression/checksumming because the format doesn't handle
-    //non-uniform block sizes
-    private ByteBuffer stagingBuffer;
-
     // due to lack of multiple-inheritance, we proxy our transactional implementation
     protected class TransactionalProxy extends AbstractTransactional
     {
@@ -98,13 +94,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
                 try { FileUtils.clean(buffer); }
                 catch (Throwable t) { accumulate = merge(accumulate, t); }
                 buffer = null;
-            }
-
-            if (stagingBuffer != null)
-            {
-                try { FileUtils.clean(stagingBuffer); }
-                catch (Throwable t) { accumulate = merge(accumulate, t); }
-                stagingBuffer = null;
             }
 
             return accumulate;
@@ -146,7 +135,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         }
     }
 
-    public SequentialWriter(File file, int bufferSize, BufferType bufferType, boolean requiresBlockAlignedFlushing)
+    public SequentialWriter(File file, int bufferSize, BufferType bufferType)
     {
         super(openChannel(file), bufferType.allocate(bufferSize));
         allowDirectWritesToChannel = false;
@@ -158,7 +147,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024;
 
         directoryFD = CLibrary.tryOpenDirectory(file.getParent());
-        stagingBuffer = requiresBlockAlignedFlushing ? bufferType.allocate(buffer.capacity()) : null;
     }
 
     /**
@@ -166,7 +154,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
      */
     public static SequentialWriter open(File file)
     {
-        return new SequentialWriter(file, DEFAULT_BUFFER_SIZE, BufferType.ON_HEAP, false);
+        return new SequentialWriter(file, DEFAULT_BUFFER_SIZE, BufferType.ON_HEAP);
     }
 
     public static ChecksummedSequentialWriter open(File file, File crcPath)
@@ -209,7 +197,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
      */
     protected void syncInternal()
     {
-        doFlush(true);
+        doFlush();
         syncDataOnlyInternal();
 
         if (!directorySynced)
@@ -222,12 +210,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     @Override
     protected void doFlush()
     {
-        doFlush(false);
-    }
-
-    private void doFlush(boolean definitelyFlush)
-    {
-        stageAndMaybeFlush(definitelyFlush);
+        flushData();
 
         if (trickleFsync)
         {
@@ -249,64 +232,11 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         this.runPostFlush = runPostFlush;
     }
 
-    /*
-     * When flushing data as part of resetAndTruncateMark it is ok to flush the partial bytes
-     * and then let truncation do its thing hence the definitelyFlush parameter. Also definitely
-     * need to flush when closing.
-     */
-    protected void stageAndMaybeFlush(boolean definitelyFlush)
-    {
-        //No block aligned flushing was requested
-        if (stagingBuffer == null)
-        {
-            flushData(buffer);
-            return;
-        }
-
-        //Do we need to copy the bytes in order to create completely full blocks
-        //for the compressed format?
-        if (!buffer.hasRemaining() && stagingBuffer.position() == 0 && !definitelyFlush)
-        {
-            //No it's already full and no bytes are staged
-            flushData(buffer);
-        }
-        else
-        {
-            //Need to arrange perfectly aligned blocks for compression/checksumming, bytes may be staged already
-            buffer.flip();
-            while (buffer.hasRemaining())
-            {
-                if (stagingBuffer.hasRemaining())
-                {
-                    int originalLimit = buffer.limit();
-                    int toCopy = Math.min(stagingBuffer.remaining(), buffer.remaining());
-                    buffer.limit(buffer.position() + toCopy);
-                    stagingBuffer.put(buffer);
-                    buffer.limit(originalLimit);
-                }
-                else
-                {
-                    flushData(stagingBuffer);
-                    stagingBuffer.clear();
-                }
-            }
-
-            //Could exit the loop with the staging buffer full because buffer is empty
-            //and filled it exactly.
-            //Alternatively if we are definitely supposed to flush and there are bytes to flush, do it
-            if (!stagingBuffer.hasRemaining() || (definitelyFlush && stagingBuffer.position() > 0))
-            {
-                flushData(stagingBuffer);
-                stagingBuffer.clear();
-            }
-        }
-    }
-
     /**
      * Override this method instead of overriding flush()
      * @throws FSWriteError on any I/O error.
      */
-    protected void flushData(ByteBuffer buffer)
+    protected void flushData()
     {
         try
         {

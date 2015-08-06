@@ -27,6 +27,8 @@ import java.nio.channels.WritableByteChannel;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 
+import net.nicoulaj.compilecommand.annotations.DontInline;
+
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.memory.MemoryUtil;
 import org.apache.cassandra.utils.vint.VIntCoding;
@@ -46,7 +48,15 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     //Allow derived classes to specify writing to the channel
     //directly shouldn't happen because they intercept via doFlush for things
     //like compression or checksumming
+    //Another hack for this value is that it also indicates that flushing early
+    //should not occur, flushes aligned with buffer size are desired
+    //Unless... it's the last flush. Compression and checksum formats
+    //expect block (same as buffer size) alignment for everything except the last block
     protected boolean allowDirectWritesToChannel = true;
+
+    //Cache the difference between native byte order and the order of the buffer
+    //The slow path writes byte at a time and needs to do it correctly
+    private final boolean swapBytes;
 
     public BufferedDataOutputStreamPlus(RandomAccessFile ras)
     {
@@ -84,12 +94,14 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     {
         super(channel);
         this.buffer = buffer;
+        swapBytes = ByteOrder.nativeOrder() == buffer.order();
     }
 
     protected BufferedDataOutputStreamPlus(ByteBuffer buffer)
     {
         super();
         this.buffer = buffer;
+        swapBytes = ByteOrder.nativeOrder() == buffer.order();
     }
 
     @Override
@@ -150,7 +162,9 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
             final int toWriteRemaining = toWrite.remaining();
             if (toWriteRemaining > buffer.remaining())
             {
-                doFlush();
+                if (allowDirectWritesToChannel)
+                    doFlush();
+
                 MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
                 int bufferRemaining = buffer.remaining();
                 if (toWrite.remaining() > bufferRemaining && allowDirectWritesToChannel)
@@ -161,7 +175,9 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
                 else if (bufferRemaining >= toWriteRemaining)
                 {
                     buffer.put(hollowBuffer);
-                } else {
+                }
+                else
+                {
                     //Slow path when we aren't allow to flush to the channel directly because the derived class intercepts
                     //writes and does something such as compress or checksum
                     while(hollowBuffer.hasRemaining())
@@ -188,14 +204,16 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public void write(int b) throws IOException
     {
-        ensureRemaining(1);
+        if (buffer.remaining() < 1)
+            doFlush();
         buffer.put((byte) (b & 0xFF));
     }
 
     @Override
     public void writeBoolean(boolean v) throws IOException
     {
-        ensureRemaining(1);
+        if (buffer.remaining() < 1)
+            doFlush();
         buffer.put(v ? (byte)1 : (byte)0);
     }
 
@@ -208,30 +226,74 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public void writeShort(int v) throws IOException
     {
-        ensureRemaining(2);
-        buffer.putShort((short) v);
+        if (buffer.remaining() < 2)
+            writeChar(v);
+        else
+            buffer.putShort((short) v);
     }
 
     @Override
     public void writeChar(int v) throws IOException
     {
-        ensureRemaining(2);
-        buffer.putChar((char) v);
+        if (buffer.remaining() < 2)
+            writeCharSlow(v);
+        else
+            buffer.putChar((char) v);
+    }
+
+    @DontInline
+    private void writeCharSlow(int v) throws IOException
+    {
+        if (swapBytes)
+            v = Short.reverseBytes((short)v);
+        write((v >>> 8) & 0xFF);
+        write((v >>> 0) & 0xFF);
     }
 
     @Override
     public void writeInt(int v) throws IOException
     {
-        ensureRemaining(4);
-        buffer.putInt(v);
+        if (buffer.remaining() < 4)
+            writeIntSlow(v);
+        else
+            buffer.putInt(v);
+    }
+
+    @DontInline
+    private void writeIntSlow(int v) throws IOException
+    {
+        if (swapBytes)
+            v = Integer.reverseBytes(v);
+        write((v >>> 24) & 0xFF);
+        write((v >>> 16) & 0xFF);
+        write((v >>> 8) & 0xFF);
+        write((v >>> 0) & 0xFF);
     }
 
     @Override
     public void writeLong(long v) throws IOException
     {
-        ensureRemaining(8);
-        buffer.putLong(v);
+        if (buffer.remaining() < 8)
+            writeLongSlow(v);
+        else
+            buffer.putLong(v);
     }
+
+    @DontInline
+    private void writeLongSlow(long v) throws IOException
+    {
+        if (swapBytes)
+            v = Long.reverseBytes(v);
+        write((int) (v >>> 56) & 0xFF);
+        write((int) (v >>> 48) & 0xFF);
+        write((int) (v >>> 40) & 0xFF);
+        write((int) (v >>> 32) & 0xFF);
+        write((int) (v >>> 24) & 0xFF);
+        write((int) (v >>> 16) & 0xFF);
+        write((int) (v >>> 8) & 0xFF);
+        write((int) (v >>> 0) & 0xFF);
+    }
+
 
     @Override
     public void writeVInt(long value) throws IOException
@@ -245,27 +307,41 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         int size = VIntCoding.computeUnsignedVIntSize(value);
         if (size == 1)
         {
-            ensureRemaining(1);
-            buffer.put((byte) value);
+            write((int) value);
             return;
         }
 
-        ensureRemaining(size);
-        buffer.put(VIntCoding.encodeVInt(value, size), 0, size);
+        write(VIntCoding.encodeVInt(value, size), 0, size);
     }
 
     @Override
     public void writeFloat(float v) throws IOException
     {
-        ensureRemaining(4);
-        buffer.putFloat(v);
+        if (buffer.remaining() < 4)
+            writeFloatSlow(v);
+        else
+            buffer.putFloat(v);
+    }
+
+    @DontInline
+    private void writeFloatSlow(float val) throws IOException
+    {
+        writeInt(Float.floatToIntBits(val));
     }
 
     @Override
     public void writeDouble(double v) throws IOException
     {
-        ensureRemaining(8);
-        buffer.putDouble(v);
+        if (buffer.remaining() < 8)
+            writeDoubleSlow(v);
+        else
+            buffer.putDouble(v);
+    }
+
+    @DontInline
+    private void writeDoubleSlow(double v) throws IOException
+    {
+        writeLong(Double.doubleToLongBits(v));
     }
 
     @Override
@@ -295,6 +371,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
             write(buffer);
     }
 
+    @DontInline
     protected void doFlush() throws IOException
     {
         buffer.flip();
@@ -318,12 +395,6 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         channel.close();
         FileUtils.clean(buffer);
         buffer = null;
-    }
-
-    protected void ensureRemaining(int minimum) throws IOException
-    {
-        if (buffer.remaining() < minimum)
-            doFlush();
     }
 
     @Override
