@@ -178,7 +178,7 @@ public class DataOutputTest
     public void testSequentialWriter() throws IOException
     {
         File file = FileUtils.createTempFile("dataoutput", "test");
-        final SequentialWriter writer = new SequentialWriter(file, 32, BufferType.ON_HEAP, false);
+        final SequentialWriter writer = new SequentialWriter(file, 32, BufferType.ON_HEAP);
         DataOutputStreamPlus write = new WrappedDataOutputStreamPlus(writer);
         DataInput canon = testWrite(write);
         write.flush();
