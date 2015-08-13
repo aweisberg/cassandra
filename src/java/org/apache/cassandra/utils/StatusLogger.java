@@ -74,8 +74,13 @@ public class StatusLogger
         {
             pendingSmallMessages += n;
         }
+        int pendingGossipMessages = 0;
+        for (int n : MessagingService.instance().getGossipMessagePendingTasks().values())
+        {
+            pendingGossipMessages += n;
+        }
         logger.info(String.format("%-25s%10s%10s",
-                                  "MessagingService", "n/a", pendingLargeMessages + "/" + pendingSmallMessages));
+                                  "MessagingService", "n/a", pendingLargeMessages + "/" + pendingSmallMessages + "/" + pendingGossipMessages));
 
         // Global key/row cache information
         AutoSavingCache<KeyCacheKey, RowIndexEntry> keyCache = CacheService.instance.keyCache;
