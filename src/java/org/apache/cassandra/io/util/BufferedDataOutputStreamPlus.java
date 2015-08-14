@@ -52,7 +52,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     //should not occur, flushes aligned with buffer size are desired
     //Unless... it's the last flush. Compression and checksum formats
     //expect block (same as buffer size) alignment for everything except the last block
-    protected boolean strictFlushing = true;
+    protected boolean strictFlushing = false;
 
     public BufferedDataOutputStreamPlus(RandomAccessFile ras)
     {
@@ -157,7 +157,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
 
             if (toWrite.remaining() > buffer.remaining())
             {
-                if (!strictFlushing)
+                if (strictFlushing)
                 {
                     writeExcessSlow();
                 }
@@ -339,7 +339,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException
     {
-        if (!strictFlushing)
+        if (strictFlushing)
             throw new UnsupportedOperationException();
         //Don't allow writes to the underlying channel while data is buffered
         flush();
