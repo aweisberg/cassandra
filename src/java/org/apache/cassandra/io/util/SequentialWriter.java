@@ -140,7 +140,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     public SequentialWriter(File file, int bufferSize, BufferType bufferType)
     {
         super(openChannel(file), bufferType.allocate(bufferSize));
-        strictFlushing = false;
+        strictFlushing = true;
         fchannel = (FileChannel)channel;
 
         filePath = file.getAbsolutePath();
