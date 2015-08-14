@@ -155,6 +155,8 @@ public class CompressedSequentialWriter extends SequentialWriter
     @Override
     public FileMark mark()
     {
+        if (!buffer.hasRemaining())
+            doFlush();
         return new CompressedFileWriterMark(chunkOffset, current(), buffer.position(), chunkCount + 1);
     }
 
@@ -284,7 +286,7 @@ public class CompressedSequentialWriter extends SequentialWriter
         @Override
         protected Throwable doPreCleanup(Throwable accumulate)
         {
-            super.doPreCleanup(accumulate);
+            accumulate = super.doPreCleanup(accumulate);
             if (compressed != null)
             {
                 try { FileUtils.clean(compressed); }

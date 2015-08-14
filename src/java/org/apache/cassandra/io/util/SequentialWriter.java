@@ -18,7 +18,6 @@
 package org.apache.cassandra.io.util;
 
 import java.io.*;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.StandardOpenOption;
 
@@ -138,7 +137,7 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     public SequentialWriter(File file, int bufferSize, BufferType bufferType)
     {
         super(openChannel(file), bufferType.allocate(bufferSize));
-        allowDirectWritesToChannel = false;
+        permitMisalignedFlushes = false;
         fchannel = (FileChannel)channel;
 
         filePath = file.getAbsolutePath();

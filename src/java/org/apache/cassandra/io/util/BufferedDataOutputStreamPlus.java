@@ -30,6 +30,7 @@ import com.google.common.base.Preconditions;
 import net.nicoulaj.compilecommand.annotations.DontInline;
 
 import org.apache.cassandra.config.Config;
+import org.apache.cassandra.utils.FastByteOperations;
 import org.apache.cassandra.utils.memory.MemoryUtil;
 import org.apache.cassandra.utils.vint.VIntCoding;
 
@@ -52,11 +53,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     //should not occur, flushes aligned with buffer size are desired
     //Unless... it's the last flush. Compression and checksum formats
     //expect block (same as buffer size) alignment for everything except the last block
-    protected boolean allowDirectWritesToChannel = true;
-
-    //Cache the difference between native byte order and the order of the buffer
-    //The slow path writes byte at a time and needs to do it correctly
-    private final boolean swapBytes;
+    protected boolean permitMisalignedFlushes = true;
 
     public BufferedDataOutputStreamPlus(RandomAccessFile ras)
     {
@@ -94,14 +91,12 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     {
         super(channel);
         this.buffer = buffer;
-        swapBytes = ByteOrder.nativeOrder() == buffer.order();
     }
 
     protected BufferedDataOutputStreamPlus(ByteBuffer buffer)
     {
         super();
         this.buffer = buffer;
-        swapBytes = ByteOrder.nativeOrder() == buffer.order();
     }
 
     @Override
@@ -159,52 +154,44 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
         else
         {
             assert toWrite.isDirect();
-            final int toWriteRemaining = toWrite.remaining();
-            if (toWriteRemaining > buffer.remaining())
-            {
-                if (allowDirectWritesToChannel)
-                    doFlush();
+            MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
 
-                MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
-                int bufferRemaining = buffer.remaining();
-                if (toWrite.remaining() > bufferRemaining && allowDirectWritesToChannel)
+            if (toWrite.remaining() > buffer.remaining())
+            {
+                if (!permitMisalignedFlushes)
                 {
-                    while (hollowBuffer.hasRemaining())
-                        channel.write(hollowBuffer);
-                }
-                else if (bufferRemaining >= toWriteRemaining)
-                {
-                    buffer.put(hollowBuffer);
+                    writeExcessSlow();
                 }
                 else
                 {
-                    //Slow path when we aren't allow to flush to the channel directly because the derived class intercepts
-                    //writes and does something such as compress or checksum
-                    while(hollowBuffer.hasRemaining())
-                    {
-                        int originalLimit = hollowBuffer.limit();
-                        int toPut = Math.min(hollowBuffer.remaining(), buffer.remaining());
-                        hollowBuffer.limit(hollowBuffer.position() + toPut);
-                        buffer.put(hollowBuffer);
-                        hollowBuffer.limit(originalLimit);
-                        if (hollowBuffer.hasRemaining())
-                            doFlush();
-                    }
+                    doFlush();
+                    while (hollowBuffer.remaining() > buffer.capacity())
+                        channel.write(hollowBuffer);
                 }
             }
-            else
-            {
-                MemoryUtil.duplicateDirectByteBuffer(toWrite, hollowBuffer);
-                buffer.put(hollowBuffer);
-            }
+
+            buffer.put(hollowBuffer);
         }
     }
 
+    // writes anything we can't fit into the buffer
+    @DontInline
+    private void writeExcessSlow() throws IOException
+    {
+        int originalLimit = hollowBuffer.limit();
+        while (originalLimit - hollowBuffer.position() > buffer.remaining())
+        {
+            hollowBuffer.limit(hollowBuffer.position() + buffer.remaining());
+            buffer.put(hollowBuffer);
+            doFlush();
+        }
+        hollowBuffer.limit(originalLimit);
+    }
 
     @Override
     public void write(int b) throws IOException
     {
-        if (buffer.remaining() < 1)
+        if (!buffer.hasRemaining())
             doFlush();
         buffer.put((byte) (b & 0xFF));
     }
@@ -212,7 +199,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public void writeBoolean(boolean v) throws IOException
     {
-        if (buffer.remaining() < 1)
+        if (!buffer.hasRemaining())
             doFlush();
         buffer.put(v ? (byte)1 : (byte)0);
     }
@@ -226,74 +213,35 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public void writeShort(int v) throws IOException
     {
-        if (buffer.remaining() < 2)
-            writeChar(v);
-        else
-            buffer.putShort((short) v);
+        writeChar(v);
     }
 
     @Override
     public void writeChar(int v) throws IOException
     {
         if (buffer.remaining() < 2)
-            writeCharSlow(v);
+            writeSlow(v, 2);
         else
             buffer.putChar((char) v);
-    }
-
-    @DontInline
-    private void writeCharSlow(int v) throws IOException
-    {
-        if (swapBytes)
-            v = Short.reverseBytes((short)v);
-        write((v >>> 8) & 0xFF);
-        write((v >>> 0) & 0xFF);
     }
 
     @Override
     public void writeInt(int v) throws IOException
     {
         if (buffer.remaining() < 4)
-            writeIntSlow(v);
+            writeSlow(v, 4);
         else
             buffer.putInt(v);
-    }
-
-    @DontInline
-    private void writeIntSlow(int v) throws IOException
-    {
-        if (swapBytes)
-            v = Integer.reverseBytes(v);
-        write((v >>> 24) & 0xFF);
-        write((v >>> 16) & 0xFF);
-        write((v >>> 8) & 0xFF);
-        write((v >>> 0) & 0xFF);
     }
 
     @Override
     public void writeLong(long v) throws IOException
     {
         if (buffer.remaining() < 8)
-            writeLongSlow(v);
+            writeSlow(v, 8);
         else
             buffer.putLong(v);
     }
-
-    @DontInline
-    private void writeLongSlow(long v) throws IOException
-    {
-        if (swapBytes)
-            v = Long.reverseBytes(v);
-        write((int) (v >>> 56) & 0xFF);
-        write((int) (v >>> 48) & 0xFF);
-        write((int) (v >>> 40) & 0xFF);
-        write((int) (v >>> 32) & 0xFF);
-        write((int) (v >>> 24) & 0xFF);
-        write((int) (v >>> 16) & 0xFF);
-        write((int) (v >>> 8) & 0xFF);
-        write((int) (v >>> 0) & 0xFF);
-    }
-
 
     @Override
     public void writeVInt(long value) throws IOException
@@ -317,31 +265,23 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public void writeFloat(float v) throws IOException
     {
-        if (buffer.remaining() < 4)
-            writeFloatSlow(v);
-        else
-            buffer.putFloat(v);
-    }
-
-    @DontInline
-    private void writeFloatSlow(float val) throws IOException
-    {
-        writeInt(Float.floatToIntBits(val));
+        writeInt(Float.floatToRawIntBits(v));
     }
 
     @Override
     public void writeDouble(double v) throws IOException
     {
-        if (buffer.remaining() < 8)
-            writeDoubleSlow(v);
-        else
-            buffer.putDouble(v);
+        writeLong(Double.doubleToRawLongBits(v));
     }
 
     @DontInline
-    private void writeDoubleSlow(double v) throws IOException
+    private void writeSlow(long bytes, int count) throws IOException
     {
-        writeLong(Double.doubleToLongBits(v));
+        int origCount = count;
+        if (ByteOrder.BIG_ENDIAN == buffer.order())
+            while (count > 0) writeByte((int) (bytes >>> (8 * --count)));
+        else
+            while (count > 0) writeByte((int) (bytes >>> (8 * (origCount - count--))));
     }
 
     @Override
@@ -400,7 +340,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     @Override
     public <R> R applyToChannel(Function<WritableByteChannel, R> f) throws IOException
     {
-        if (!allowDirectWritesToChannel)
+        if (!permitMisalignedFlushes)
             throw new UnsupportedOperationException();
         //Don't allow writes to the underlying channel while data is buffered
         flush();
