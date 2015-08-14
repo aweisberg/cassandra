@@ -29,7 +29,6 @@ import org.apache.cassandra.io.compress.CompressedSequentialWriter;
 import org.apache.cassandra.schema.CompressionParams;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
-import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.concurrent.Transactional;
 
 import static org.apache.cassandra.utils.Throwables.merge;
@@ -46,10 +45,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
 
     // absolute path to the given file
     private final String filePath;
-
-    private int directoryFD;
-    // directory should be synced only after first file sync, in other words, only once per file
-    private boolean directorySynced = false;
 
     // Offset for start of buffer relative to underlying file
     protected long bufferOffset;
@@ -77,13 +72,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         @Override
         protected Throwable doPreCleanup(Throwable accumulate)
         {
-            if (directoryFD >= 0)
-            {
-                try { CLibrary.tryCloseFD(directoryFD); }
-                catch (Throwable t) { accumulate = merge(accumulate, t); }
-                directoryFD = -1;
-            }
-
             // close is idempotent
             try { channel.close(); }
             catch (Throwable t) { accumulate = merge(accumulate, t); }
@@ -120,13 +108,28 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
         }
     }
 
+    // TODO: we should specify as a parameter if we permit an existing file or not
     private static FileChannel openChannel(File file) {
         try
         {
             if (file.exists())
+            {
                 return FileChannel.open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE);
+            }
             else
-                return FileChannel.open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+            {
+                FileChannel channel = FileChannel.open(file.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW);
+                try
+                {
+                    SyncUtil.trySyncDir(file.getParentFile());
+                }
+                catch (Throwable t)
+                {
+                    try { channel.close(); }
+                    catch (Throwable t2) { t.addSuppressed(t2); }
+                }
+                return channel;
+            }
         }
         catch (IOException e)
         {
@@ -144,8 +147,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
 
         this.trickleFsync = DatabaseDescriptor.getTrickleFsync();
         this.trickleFsyncByteInterval = DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024;
-
-        directoryFD = CLibrary.tryOpenDirectory(file.getParent());
     }
 
     /**
@@ -198,12 +199,6 @@ public class SequentialWriter extends BufferedDataOutputStreamPlus implements Tr
     {
         doFlush();
         syncDataOnlyInternal();
-
-        if (!directorySynced)
-        {
-            SyncUtil.trySync(directoryFD);
-            directorySynced = true;
-        }
     }
 
     @Override
