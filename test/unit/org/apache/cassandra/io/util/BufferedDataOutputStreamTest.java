@@ -555,7 +555,7 @@ public class BufferedDataOutputStreamTest
     {
         try (DataOutputBuffer dob = new DataOutputBuffer(4))
         {
-            dob.strictFlushing = false;
+            dob.strictFlushing = true;
             ByteBuffer buf = ByteBuffer.allocateDirect(8);
             buf.putLong(0, 42);
             dob.write(buf);
@@ -589,7 +589,7 @@ public class BufferedDataOutputStreamTest
     public void testApplyToChannelThrowsForMisaligned() throws Exception
     {
         setUp();
-        ndosp.strictFlushing = false;
+        ndosp.strictFlushing = true;
         ndosp.applyToChannel( channel -> {
             return null;
         });
