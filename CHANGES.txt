@@ -64,6 +64,7 @@ Merged from 2.0:
  * Avoid grouping sstables for anticompaction with DTCS (CASSANDRA-9900)
  * UDF / UDA execution time in trace (CASSANDRA-9723)
  * Fix broken internode SSL (CASSANDRA-9884)
+ * Expose phi values from failure detector via JMX and tweak debug and trace logging (CASSANDRA-9526)
 Merged from 2.1:
  * Change streaming_socket_timeout_in_ms default to 1 hour (CASSANDRA-8611)
  * (cqlsh) update list of CQL keywords (CASSANDRA-9232)
