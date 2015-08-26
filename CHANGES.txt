@@ -11,6 +11,7 @@
  * Avoid grouping sstables for anticompaction with DTCS (CASSANDRA-9900)
  * UDF / UDA execution time in trace (CASSANDRA-9723)
  * Fix broken internode SSL (CASSANDRA-9884)
+ * Fix broken UnbufferedDataOutputStreamPlus.writeUTF (CASSANDRA-10203)
 Merged from 2.1:
  * Change streaming_socket_timeout_in_ms default to 1 hour (CASSANDRA-8611)
  * (cqlsh) update list of CQL keywords (CASSANDRA-9232)
