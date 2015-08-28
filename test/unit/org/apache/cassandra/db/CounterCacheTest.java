@@ -111,7 +111,7 @@ public class CounterCacheTest
         assertEquals(0, CacheService.instance.counterCache.size());
 
         // load from cache and validate
-        CacheService.instance.counterCache.loadSaved(cfs);
+        CacheService.instance.counterCache.loadSaved();
         assertEquals(4, CacheService.instance.counterCache.size());
 
         Clustering c1 = CBuilder.create(cfs.metadata.comparator).add(ByteBufferUtil.bytes(1)).build();

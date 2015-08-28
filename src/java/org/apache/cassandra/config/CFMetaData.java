@@ -73,6 +73,7 @@ public final class CFMetaData
     public final UUID cfId;                           // internal id, never exposed to user
     public final String ksName;                       // name of keyspace
     public final String cfName;                       // name of this column family
+    public final Pair<String, String> ksAndCFName;
 
     private final ImmutableSet<Flag> flags;
     private final boolean isDense;
@@ -247,6 +248,7 @@ public final class CFMetaData
         this.cfId = cfId;
         this.ksName = keyspace;
         this.cfName = name;
+        this.ksAndCFName = Pair.create(ksName, cfName);
 
         this.isDense = isDense;
         this.isCompound = isCompound;

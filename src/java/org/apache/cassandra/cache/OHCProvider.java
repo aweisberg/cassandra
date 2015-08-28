@@ -19,6 +19,7 @@ package org.apache.cassandra.cache;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Iterator;
 import java.util.UUID;
 
@@ -28,8 +29,11 @@ import org.apache.cassandra.db.partitions.CachedPartition;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.NIODataInputStream;
+import org.apache.cassandra.utils.Pair;
 import org.caffinitas.ohc.OHCache;
 import org.caffinitas.ohc.OHCacheBuilder;
+
+import com.google.common.base.Throwables;
 
 public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
 {
@@ -119,29 +123,64 @@ public class OHCProvider implements CacheProvider<RowCacheKey, IRowCacheEntry>
         }
     }
 
+    private static void serializeKSAndCFName(Pair<String, String> p, ByteBuffer buf)
+    {
+        @SuppressWarnings("resource")
+        DataOutputBufferFixed dataOut = new DataOutputBufferFixed(buf);
+        try {
+            dataOut.writeUTF(p.left);
+            dataOut.writeUTF(p.right);
+        }
+        catch (IOException e)
+        {
+            Throwables.propagate(e);
+        }
+    }
+
+    private static Pair<String, String> deserializeKSAndCFName(ByteBuffer buf)
+    {
+        ByteOrder originalOrder = buf.order();
+        buf.order(ByteOrder.BIG_ENDIAN);
+        try
+        {
+            @SuppressWarnings("resource")
+            DataInputBuffer di = new DataInputBuffer(buf, false);
+            return Pair.create(di.readUTF(), di.readUTF());
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        finally
+        {
+            buf.order(originalOrder);
+        }
+    }
+
     private static class KeySerializer implements org.caffinitas.ohc.CacheSerializer<RowCacheKey>
     {
         private static KeySerializer instance = new KeySerializer();
         public void serialize(RowCacheKey rowCacheKey, ByteBuffer buf)
         {
-            buf.putLong(rowCacheKey.cfId.getMostSignificantBits());
-            buf.putLong(rowCacheKey.cfId.getLeastSignificantBits());
+            serializeKSAndCFName(rowCacheKey.ksAndCFName, buf);
             buf.putInt(rowCacheKey.key.length);
             buf.put(rowCacheKey.key);
         }
 
         public RowCacheKey deserialize(ByteBuffer buf)
         {
-            long msb = buf.getLong();
-            long lsb = buf.getLong();
+            Pair<String, String> ksAndCFName = deserializeKSAndCFName(buf);
             byte[] key = new byte[buf.getInt()];
             buf.get(key);
-            return new RowCacheKey(new UUID(msb, lsb), key);
+            return new RowCacheKey(ksAndCFName, key);
         }
 
         public int serializedSize(RowCacheKey rowCacheKey)
         {
-            return 20 + rowCacheKey.key.length;
+            return TypeSizes.sizeof(rowCacheKey.ksAndCFName.left) +
+                    TypeSizes.sizeof(rowCacheKey.ksAndCFName.right) +
+                    4 +
+                    rowCacheKey.key.length;
         }
     }
 

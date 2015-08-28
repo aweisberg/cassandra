@@ -317,12 +317,12 @@ public class Schema
     }
 
     /**
-     * @param cfId The identifier of the ColumnFamily to lookup
-     * @return true if the CF id is a known one, false otherwise.
+     * @param ksAndCFName The identifier of the ColumnFamily to lookup
+     * @return true if the KS and CF pair is a known one, false otherwise.
      */
-    public boolean hasCF(UUID cfId)
+    public boolean hasCF(Pair<String, String> ksAndCFName)
     {
-        return cfIdMap.containsValue(cfId);
+        return cfIdMap.containsKey(ksAndCFName);
     }
 
     /**
@@ -349,6 +349,9 @@ public class Schema
         Pair<String, String> key = Pair.create(cfm.ksName, cfm.cfName);
 
         if (cfIdMap.containsKey(key))
+            throw new RuntimeException(String.format("Attempting to load already loaded table %s.%s", cfm.ksName, cfm.cfName));
+
+        if (cfIdMap.inverse().containsKey(cfm.cfId))
             throw new RuntimeException(String.format("Attempting to load already loaded table %s.%s", cfm.ksName, cfm.cfName));
 
         logger.debug("Adding {} to cfIdMap", cfm);

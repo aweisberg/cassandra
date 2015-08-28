@@ -270,13 +270,13 @@ public class CacheService implements CacheServiceMBean
         keyCache.clear();
     }
 
-    public void invalidateKeyCacheForCf(UUID cfId)
+    public void invalidateKeyCacheForCf(Pair<String, String> ksAndCFName)
     {
         Iterator<KeyCacheKey> keyCacheIterator = keyCache.keyIterator();
         while (keyCacheIterator.hasNext())
         {
             KeyCacheKey key = keyCacheIterator.next();
-            if (key.cfId.equals(cfId))
+            if (key.ksAndCFName.equals(ksAndCFName))
                 keyCacheIterator.remove();
         }
     }
@@ -286,24 +286,24 @@ public class CacheService implements CacheServiceMBean
         rowCache.clear();
     }
 
-    public void invalidateRowCacheForCf(UUID cfId)
+    public void invalidateRowCacheForCf(Pair<String, String> ksAndCFName)
     {
         Iterator<RowCacheKey> rowCacheIterator = rowCache.keyIterator();
         while (rowCacheIterator.hasNext())
         {
             RowCacheKey rowCacheKey = rowCacheIterator.next();
-            if (rowCacheKey.cfId.equals(cfId))
+            if (rowCacheKey.ksAndCFName.equals(ksAndCFName))
                 rowCacheIterator.remove();
         }
     }
 
-    public void invalidateCounterCacheForCf(UUID cfId)
+    public void invalidateCounterCacheForCf(Pair<String, String> ksAndCFName)
     {
         Iterator<CounterCacheKey> counterCacheIterator = counterCache.keyIterator();
         while (counterCacheIterator.hasNext())
         {
             CounterCacheKey counterCacheKey = counterCacheIterator.next();
-            if (counterCacheKey.cfId.equals(cfId))
+            if (counterCacheKey.ksAndCFName.equals(ksAndCFName))
                 counterCacheIterator.remove();
         }
     }
@@ -366,6 +366,9 @@ public class CacheService implements CacheServiceMBean
         {
             final ByteBuffer partitionKey = ByteBufferUtil.readWithLength(in);
             final ByteBuffer cellName = ByteBufferUtil.readWithLength(in);
+            if (!cfs.isCounterCacheEnabled())
+                return null;
+
             return StageManager.getStage(Stage.READ).submit(new Callable<Pair<CounterCacheKey, ClockAndCount>>()
             {
                 public Pair<CounterCacheKey, ClockAndCount> call() throws Exception
@@ -402,7 +405,7 @@ public class CacheService implements CacheServiceMBean
                             return null;
 
                         ClockAndCount clockAndCount = CounterContext.instance().getLocalClockAndCount(cell.value());
-                        return Pair.create(CounterCacheKey.create(cfs.metadata.cfId, partitionKey, name.clustering, column, path), clockAndCount);
+                        return Pair.create(CounterCacheKey.create(cfs.metadata.ksAndCFName, partitionKey, name.clustering, column, path), clockAndCount);
                     }
                 }
             });
@@ -419,6 +422,9 @@ public class CacheService implements CacheServiceMBean
         public Future<Pair<RowCacheKey, IRowCacheEntry>> deserialize(DataInputPlus in, final ColumnFamilyStore cfs) throws IOException
         {
             final ByteBuffer buffer = ByteBufferUtil.readWithLength(in);
+            if (!cfs.isRowCacheEnabled())
+                return null;
+
             final int rowsToCache = cfs.metadata.params.caching.rowsPerPartitionToCache();
 
             return StageManager.getStage(Stage.READ).submit(new Callable<Pair<RowCacheKey, IRowCacheEntry>>()
@@ -430,7 +436,7 @@ public class CacheService implements CacheServiceMBean
                     try (OpOrder.Group op = cfs.readOrdering.start(); UnfilteredRowIterator iter = SinglePartitionReadCommand.fullPartitionRead(cfs.metadata, nowInSec, key).queryMemtableAndDisk(cfs, op))
                     {
                         CachedPartition toCache = CachedBTreePartition.create(DataLimits.cqlLimits(rowsToCache).filter(iter, nowInSec), nowInSec);
-                        return Pair.create(new RowCacheKey(cfs.metadata.cfId, key), (IRowCacheEntry)toCache);
+                        return Pair.create(new RowCacheKey(cfs.metadata.ksAndCFName, key), (IRowCacheEntry)toCache);
                     }
                 }
             });
@@ -445,7 +451,7 @@ public class CacheService implements CacheServiceMBean
             if (entry == null)
                 return;
 
-            CFMetaData cfm = Schema.instance.getCFMetaData(key.cfId);
+            CFMetaData cfm = Schema.instance.getCFMetaData(key.desc.ksname, key.desc.cfname);
             if (cfm == null)
                 return; // the table no longer exists.
 
@@ -467,7 +473,7 @@ public class CacheService implements CacheServiceMBean
             int generation = input.readInt();
             SSTableReader reader = findDesc(generation, cfs.getSSTables(SSTableSet.CANONICAL));
             input.readBoolean(); // backwards compatibility for "promoted indexes" boolean
-            if (reader == null)
+            if (reader == null || !cfs.isKeyCacheEnabled())
             {
                 RowIndexEntry.Serializer.skipPromotedIndex(input);
                 return null;
@@ -476,7 +482,7 @@ public class CacheService implements CacheServiceMBean
                                                                                                                 reader.descriptor.version,
                                                                                                                 SerializationHeader.forKeyCache(cfs.metadata));
             RowIndexEntry entry = indexSerializer.deserialize(input);
-            return Futures.immediateFuture(Pair.create(new KeyCacheKey(cfs.metadata.cfId, reader.descriptor, key), entry));
+            return Futures.immediateFuture(Pair.create(new KeyCacheKey(cfs.metadata.ksAndCFName, reader.descriptor, key), entry));
         }
 
         private SSTableReader findDesc(int generation, Iterable<SSTableReader> collection)

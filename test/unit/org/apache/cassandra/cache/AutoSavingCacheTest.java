@@ -78,9 +78,9 @@ public class AutoSavingCacheTest
         Assert.assertEquals(0, keyCache.size());
 
         // then load saved
-        keyCache.loadSaved(cfs);
+        keyCache.loadSavedAsync("key").get();
         Assert.assertEquals(2, keyCache.size());
         for (SSTableReader sstable : cfs.getLiveSSTables())
-            Assert.assertNotNull(keyCache.get(new KeyCacheKey(cfs.metadata.cfId, sstable.descriptor, ByteBufferUtil.bytes("key1"))));
+            Assert.assertNotNull(keyCache.get(new KeyCacheKey(cfs.metadata.ksAndCFName, sstable.descriptor, ByteBufferUtil.bytes("key1"))));
     }
 }
