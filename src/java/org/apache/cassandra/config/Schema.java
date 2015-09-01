@@ -35,6 +35,7 @@ import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.UserType;
+import org.apache.cassandra.index.Index;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.schema.*;
 import org.apache.cassandra.service.MigrationManager;
@@ -161,6 +162,49 @@ public class Schema
     public Keyspace getKeyspaceInstance(String keyspaceName)
     {
         return keyspaceInstances.get(keyspaceName);
+    }
+
+    /**
+     * Retrieve a CFS by name even if that CFS is an index
+     *
+     * An index is identified by looking for '.' in the CF name and separating to find the base table
+     * containing the index
+     * @param ksNameAndCFName
+     * @return The named CFS or null if the keyspace, base table, or index don't exist
+     */
+    public ColumnFamilyStore getColumnFamilyStoreIncludingIndexes(Pair<String, String> ksNameAndCFName) {
+        String ksName = ksNameAndCFName.left;
+        String cfName = ksNameAndCFName.right;
+        Pair<String, String> baseTable;
+
+        /*
+         * Split does special case a one character regex, and it looks like it can detect
+         * if you use two characters to escape '.', but it still allocates a useless array.
+         */
+        int indexOfSeparator = cfName.indexOf('.');
+        if (indexOfSeparator > -1)
+            baseTable = Pair.create(ksName, cfName.substring(0, indexOfSeparator));
+        else
+            baseTable = ksNameAndCFName;
+
+        UUID cfId = cfIdMap.get(baseTable);
+        if (cfId == null)
+            return null;
+
+        Keyspace ks = keyspaceInstances.get(ksName);
+        if (ks == null)
+            return null;
+
+        ColumnFamilyStore baseCFS = ks.getColumnFamilyStore(cfId);
+
+        //Not an index
+        if (indexOfSeparator == -1)
+            return baseCFS;
+
+        Index index = baseCFS.indexManager.getIndexByName(cfName.substring(indexOfSeparator + 1, cfName.length()));
+
+        //Shouldn't ask for the backing table if it doesn't exist so let it throw
+        return index.getBackingTable().get();
     }
 
     public ColumnFamilyStore getColumnFamilyStoreInstance(UUID cfId)
@@ -314,15 +358,6 @@ public class Schema
     public Pair<String,String> getCF(UUID cfId)
     {
         return cfIdMap.inverse().get(cfId);
-    }
-
-    /**
-     * @param ksAndCFName The identifier of the ColumnFamily to lookup
-     * @return true if the KS and CF pair is a known one, false otherwise.
-     */
-    public boolean hasCF(Pair<String, String> ksAndCFName)
-    {
-        return cfIdMap.containsKey(ksAndCFName);
     }
 
     /**

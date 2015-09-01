@@ -38,12 +38,10 @@ import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.Schema;
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.compaction.CompactionInfo;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.compaction.OperationType;
-import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.io.util.ChecksummedRandomAccessReader.CorruptFileException;
@@ -178,7 +176,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         } catch (Throwable t)
         {
             JVMStabilityInspector.inspectThrowable(t);
-            logger.error("An error loading a saved cache occureds");
+            logger.info("A harmless error loading a saved cache occured", t);
         }
         return 0;
     }
@@ -205,13 +203,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                     String ksname = in.readUTF();
                     String cfname = in.readUTF();
 
-                    Keyspace ks = Schema.instance.getKeyspaceInstance(ksname);
-                    if (ks == null)
-                        continue;
-
-                    ColumnFamilyStore cfs = ks.getColumnFamilyStore(cfname);
-                    if (cfs == null)
-                        continue;
+                    ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreIncludingIndexes(Pair.create(ksname, cfname));
 
                     Future<Pair<K, V>> entryFuture = cacheLoader.deserialize(in, cfs);
                     // Key cache entry can return null, if the SSTable doesn't exist.
@@ -256,7 +248,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             catch (Exception e)
             {
                 JVMStabilityInspector.inspectThrowable(e);
-                logger.debug(String.format("harmless error reading saved cache %s", dataPath.getAbsolutePath()), e);
+                logger.info(String.format("Harmless error reading saved cache %s", dataPath.getAbsolutePath()), e);
             }
             finally
             {
@@ -325,7 +317,6 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             return info.forProgress(keysWritten, Math.max(keysWritten, keysEstimate));
         }
 
-        @SuppressWarnings("resource")
         public void saveCache()
         {
             logger.debug("Deleting old {} files.", cacheType);
@@ -357,14 +348,14 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                 while (keyIterator.hasNext())
                 {
                     K key = keyIterator.next();
-                    if (!Schema.instance.hasCF(key.ksAndCFName))
+
+                    ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreIncludingIndexes(key.ksAndCFName);
+                    if (cfs == null)
                         continue; // the table has been dropped.
 
                     try
                     {
-                        writer.writeUTF(key.ksAndCFName.left);
-                        writer.writeUTF(key.ksAndCFName.right);
-                        cacheLoader.serialize(key, writer);
+                        cacheLoader.serialize(key, writer, cfs.metadata.ksAndCFBytes);
                     }
                     catch (IOException e)
                     {
@@ -445,8 +436,8 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
 
     public interface CacheSerializer<K extends CacheKey, V>
     {
-        void serialize(K key, DataOutputPlus out) throws IOException;
+        abstract void serialize(K key, DataOutputPlus out, byte[] ksAndCFBytes) throws IOException;
 
-        Future<Pair<K, V>> deserialize(DataInputPlus in, ColumnFamilyStore cfs) throws IOException;
+        abstract Future<Pair<K, V>> deserialize(DataInputPlus in, ColumnFamilyStore cfs) throws IOException;
     }
 }
