@@ -366,7 +366,7 @@ public class CacheService implements CacheServiceMBean
         {
             final ByteBuffer partitionKey = ByteBufferUtil.readWithLength(in);
             final ByteBuffer cellName = ByteBufferUtil.readWithLength(in);
-            if (!cfs.isCounterCacheEnabled())
+            if (cfs == null || !cfs.isCounterCacheEnabled())
                 return null;
 
             return StageManager.getStage(Stage.READ).submit(new Callable<Pair<CounterCacheKey, ClockAndCount>>()
@@ -423,7 +423,7 @@ public class CacheService implements CacheServiceMBean
         public Future<Pair<RowCacheKey, IRowCacheEntry>> deserialize(DataInputPlus in, final ColumnFamilyStore cfs) throws IOException
         {
             final ByteBuffer buffer = ByteBufferUtil.readWithLength(in);
-            if (!cfs.isRowCacheEnabled())
+            if (cfs == null || !cfs.isRowCacheEnabled())
                 return null;
 
             final int rowsToCache = cfs.metadata.params.caching.rowsPerPartitionToCache();
@@ -475,7 +475,7 @@ public class CacheService implements CacheServiceMBean
             int generation = input.readInt();
             SSTableReader reader = findDesc(generation, cfs.getSSTables(SSTableSet.CANONICAL));
             input.readBoolean(); // backwards compatibility for "promoted indexes" boolean
-            if (reader == null || !cfs.isKeyCacheEnabled())
+            if (reader == null || cfs == null || !cfs.isKeyCacheEnabled())
             {
                 RowIndexEntry.Serializer.skipPromotedIndex(input);
                 return null;
