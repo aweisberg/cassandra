@@ -201,7 +201,12 @@ public class Schema
         if (indexOfSeparator == -1)
             return baseCFS;
 
+        if (baseCFS == null)
+            return null;
+            
         Index index = baseCFS.indexManager.getIndexByName(cfName.substring(indexOfSeparator + 1, cfName.length()));
+        if (index == null)
+            return null;
 
         //Shouldn't ask for the backing table if it doesn't exist so let it throw
         return index.getBackingTable().get();
