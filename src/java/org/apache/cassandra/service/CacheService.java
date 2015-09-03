@@ -366,7 +366,7 @@ public class CacheService implements CacheServiceMBean
         {
             final ByteBuffer partitionKey = ByteBufferUtil.readWithLength(in);
             final ByteBuffer cellName = ByteBufferUtil.readWithLength(in);
-            if (cfs == null || !cfs.isCounterCacheEnabled())
+            if (cfs == null || !cfs.metadata.isCounter() || !cfs.isCounterCacheEnabled())
                 return null;
 
             return StageManager.getStage(Stage.READ).submit(new Callable<Pair<CounterCacheKey, ClockAndCount>>()
