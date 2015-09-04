@@ -46,6 +46,8 @@ import org.apache.cassandra.batchlog.*;
 import org.apache.cassandra.batchlog.LegacyBatchlogMigrator;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.TombstoneOverwhelmingException;
+import org.apache.cassandra.db.monitoring.ConstructionTime;
+import org.apache.cassandra.db.monitoring.MonitorableThreadLocal;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.view.ViewManager;
@@ -68,8 +70,6 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.triggers.TriggerExecutor;
 import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.AbstractIterator;
-import org.apache.cassandra.utils.concurrent.OpMonitoring;
-import org.apache.cassandra.utils.concurrent.OpState;
 
 public class StorageProxy implements StorageProxyMBean
 {
@@ -1655,6 +1655,8 @@ public class StorageProxy implements StorageProxyMBean
 
     static class LocalReadRunnable extends DroppableRunnable
     {
+        private static final MonitorableThreadLocal monitoringTask = new MonitorableThreadLocal();
+
         private final ReadCommand command;
         private final ReadCallback handler;
         private final long start = System.nanoTime();
@@ -1670,18 +1672,18 @@ public class StorageProxy implements StorageProxyMBean
         {
             try
             {
-                OpState state = new OpState(command.toCQLString());
-                ScheduledFuture<?> monitor = OpMonitoring.schedule(constructionTime, timeout, state);
+                command.setMonitoringTime(new ConstructionTime(constructionTime), timeout);
+                monitoringTask.update(command);
+
                 ReadResponse response;
-                try (ReadExecutionController executionController = command.executionController(state);
+                try (ReadExecutionController executionController = command.executionController();
                      UnfilteredPartitionIterator iterator = command.executeLocally(executionController))
                 {
                     response = command.createResponse(iterator, command.columnFilter());
                 }
 
-                if (state.complete())
+                if (command.state().complete())
                 {
-                    monitor.cancel(false);
                     handler.response(response);
                 }
                 else
@@ -1699,6 +1701,10 @@ public class StorageProxy implements StorageProxyMBean
                     logger.error(t.getMessage());
                 else
                     throw t;
+            }
+            finally
+            {
+                monitoringTask.reset();
             }
         }
     }
