@@ -25,11 +25,9 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.server.RMIServerSocketFactory;
-import java.util.Collections;
 import java.util.List;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -42,8 +40,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -346,7 +342,7 @@ public class CassandraDaemon
         catch (Throwable t)
         {
             JVMStabilityInspector.inspectThrowable(t);
-            logger.warn("Error loading row and key cache asynchronously", t);
+            logger.warn("Error loading key or row cache", t);
         }
 
         try
@@ -448,9 +444,9 @@ public class CassandraDaemon
      */
     private ListenableFuture<?> loadRowAndKeyCacheAsync()
     {
-        final ListenableFuture<Integer> keyCacheLoad = CacheService.instance.keyCache.loadSavedAsync("key");
+        final ListenableFuture<Integer> keyCacheLoad = CacheService.instance.keyCache.loadSavedAsync();
 
-        final ListenableFuture<Integer> rowCacheLoad = CacheService.instance.rowCache.loadSavedAsync("row");
+        final ListenableFuture<Integer> rowCacheLoad = CacheService.instance.rowCache.loadSavedAsync();
 
         @SuppressWarnings("unchecked")
         ListenableFuture<List<Integer>> retval = Futures.successfulAsList(keyCacheLoad, rowCacheLoad);

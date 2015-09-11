@@ -26,7 +26,7 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.Pair;
 
-public class RowCacheKey extends CacheKey implements Comparable<RowCacheKey>
+public final class RowCacheKey extends CacheKey implements Comparable<RowCacheKey>
 {
     public final byte[] key;
 

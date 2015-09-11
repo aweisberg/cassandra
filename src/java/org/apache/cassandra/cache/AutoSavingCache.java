@@ -135,7 +135,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         }
     }
 
-    public ListenableFuture<Integer> loadSavedAsync(final String name)
+    public ListenableFuture<Integer> loadSavedAsync()
     {
         final ListeningExecutorService es = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor());
         final long start = System.nanoTime();
@@ -156,7 +156,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                     logger.info("Completed loading ({} ms; {} keys) {} cache",
                             TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start),
                             CacheService.instance.keyCache.size(),
-                            name);
+                            cacheType);
                 es.shutdown();
             }
         }, MoreExecutors.sameThreadExecutor());
@@ -164,25 +164,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
         return cacheLoad;
     }
 
-    /*
-     * A wrapper around the implementation to be extra sure no errors go unobserved.
-     * This is invoked asynchronously in future wrapped tasks which tended to be behave badly WRT
-     * to swallowing exceptions. Rather then repeat the exception handling, just implement it in this method.
-     */
     public int loadSaved()
-    {
-        try
-        {
-            return loadSavedImpl();
-        } catch (Throwable t)
-        {
-            JVMStabilityInspector.inspectThrowable(t);
-            logger.info("A harmless error loading a saved cache occured", t);
-        }
-        return 0;
-    }
-
-    private int loadSavedImpl()
     {
         int count = 0;
         long start = System.nanoTime();
@@ -200,6 +182,9 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
 
                 while (in.available() > 0)
                 {
+                    //ksname and cfname are serialized by the serializers in CacheService
+                    //That is delegated there because there are serializer specific conditions
+                    //where a cache key is skipped and not written
                     String ksname = in.readUTF();
                     String cfname = in.readUTF();
 
@@ -240,10 +225,10 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                         put(entry.left, entry.right);
                 }
             }
-            catch (Exception e)
+            catch (Throwable t)
             {
-                JVMStabilityInspector.inspectThrowable(e);
-                logger.info(String.format("Harmless error reading saved cache %s", path.getAbsolutePath()), e);
+                JVMStabilityInspector.inspectThrowable(t);
+                logger.info(String.format("Harmless error reading saved cache %s", path.getAbsolutePath()), t);
             }
             finally
             {
@@ -315,15 +300,13 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
 
             long start = System.nanoTime();
 
-            DataOutputPlus writer = null;
-            OutputStream os = null;
+            DataOutputStreamPlus writer = null;
             File tempCacheFile = tempCacheFile();
             try
             {
                 try
                 {
-                    os = streamFactory.getOutputStream(tempCacheFile);
-                    writer = new DataOutputStreamPlus(os);
+                    writer = new DataOutputStreamPlus(streamFactory.getOutputStream(tempCacheFile));
                 }
                 catch (FileNotFoundException e)
                 {
@@ -351,8 +334,8 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
             }
             finally
             {
-                if (os != null)
-                    FileUtils.closeQuietly(os);
+                if (writer != null)
+                    FileUtils.closeQuietly(writer);
             }
 
             File cacheFile = getCachePath(CURRENT_VERSION);

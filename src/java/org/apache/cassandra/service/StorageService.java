@@ -721,12 +721,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         try
         {
-            CacheService.instance.counterCache.loadSavedAsync("counter").get();
+            CacheService.instance.counterCache.loadSavedAsync().get();
         }
         catch (Throwable t)
         {
             JVMStabilityInspector.inspectThrowable(t);
-            logger.warn("Error loading counter cache asynchronously", t);
+            logger.warn("Error loading counter cache", t);
         }
 
         if (Boolean.parseBoolean(System.getProperty("cassandra.join_ring", "true")))
