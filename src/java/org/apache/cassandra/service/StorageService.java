@@ -690,12 +690,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // Has to be called after the host id has potentially changed in prepareToJoin().
         try
         {
-            CacheService.instance.counterCache.loadSavedAsync("counter").get();
+            CacheService.instance.counterCache.loadSavedAsync().get();
         }
         catch (Throwable t)
         {
             JVMStabilityInspector.inspectThrowable(t);
-            logger.warn("Error loading counter cache asynchronously", t);
+            logger.warn("Error loading counter cache", t);
         }
 
 

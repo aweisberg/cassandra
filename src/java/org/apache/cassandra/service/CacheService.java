@@ -362,6 +362,8 @@ public class CacheService implements CacheServiceMBean
 
         public Future<Pair<CounterCacheKey, ClockAndCount>> deserialize(DataInputStream in, final ColumnFamilyStore cfs) throws IOException
         {
+            //Keyspace and CF name are deserialized by AutoSaving cache and used to fetch the CFS provided as a
+            //parameter so they aren't deserialized here, even though they are serialized by this serializer
             final ByteBuffer partitionKey = ByteBufferUtil.readWithLength(in);
             ByteBuffer cellNameBuffer = ByteBufferUtil.readWithLength(in);
             if (cfs == null || !cfs.metadata.isCounter() || !cfs.isCounterCacheEnabled())
@@ -401,6 +403,8 @@ public class CacheService implements CacheServiceMBean
 
         public Future<Pair<RowCacheKey, IRowCacheEntry>> deserialize(DataInputStream in, final ColumnFamilyStore cfs) throws IOException
         {
+            //Keyspace and CF name are deserialized by AutoSaving cache and used to fetch the CFS provided as a
+            //parameter so they aren't deserialized here, even though they are serialized by this serializer
             final ByteBuffer buffer = ByteBufferUtil.readWithLength(in);
             if (cfs == null  || !cfs.isRowCacheEnabled())
                 return null;
@@ -436,6 +440,8 @@ public class CacheService implements CacheServiceMBean
 
         public Future<Pair<KeyCacheKey, RowIndexEntry>> deserialize(DataInputStream input, ColumnFamilyStore cfs) throws IOException
         {
+            //Keyspace and CF name are deserialized by AutoSaving cache and used to fetch the CFS provided as a
+            //parameter so they aren't deserialized here, even though they are serialized by this serializer
             int keyLength = input.readInt();
             if (keyLength > FBUtilities.MAX_UNSIGNED_SHORT)
             {

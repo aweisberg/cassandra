@@ -1482,10 +1482,9 @@ public class DatabaseDescriptor
 
     public static File getSerializedCachePath(CacheService.CacheType cacheType, String version, String extension)
     {
-        StringBuilder builder = new StringBuilder();
-        builder.append(cacheType);
-        builder.append((version == null ? "" : "-" + version + "." + extension));
-        return new File(conf.saved_caches_directory, builder.toString());
+        String name = cacheType.toString()
+                + (version == null ? "" : "-" + version + "." + extension);
+        return new File(conf.saved_caches_directory, name);
     }
 
     public static int getDynamicUpdateInterval()
