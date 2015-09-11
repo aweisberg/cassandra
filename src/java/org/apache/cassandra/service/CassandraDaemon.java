@@ -262,7 +262,7 @@ public class CassandraDaemon
         catch (Throwable t)
         {
             JVMStabilityInspector.inspectThrowable(t);
-            logger.warn("Error loading row and key cache asynchronously", t);
+            logger.warn("Error loading key or row cache", t);
         }
 
         try
@@ -385,9 +385,9 @@ public class CassandraDaemon
      */
     private ListenableFuture<?> loadRowAndKeyCacheAsync()
     {
-        final ListenableFuture<Integer> keyCacheLoad = CacheService.instance.keyCache.loadSavedAsync("key");
+        final ListenableFuture<Integer> keyCacheLoad = CacheService.instance.keyCache.loadSavedAsync();
 
-        final ListenableFuture<Integer> rowCacheLoad = CacheService.instance.rowCache.loadSavedAsync("row");
+        final ListenableFuture<Integer> rowCacheLoad = CacheService.instance.rowCache.loadSavedAsync();
 
         @SuppressWarnings("unchecked")
         ListenableFuture<List<Integer>> retval = Futures.successfulAsList(keyCacheLoad, rowCacheLoad);
