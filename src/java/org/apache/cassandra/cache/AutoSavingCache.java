@@ -206,7 +206,7 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                     count++;
 
                     /*
-                     * Kind of unwise to accrue and unbounded number of pending futures
+                     * Kind of unwise to accrue an unbounded number of pending futures
                      * So now there is this loop to keep a bounded number pending.
                      */
                     do
