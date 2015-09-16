@@ -57,12 +57,4 @@ public class Pair<T1, T2>
     {
         return new Pair<X, Y>(x, y);
     }
-
-    public static int compare(Pair<String, String> l, Pair<String, String> r)
-    {
-        int retval = l.left.compareTo(r.left);
-        if (retval !=0)
-            return retval;
-        return l.right.compareTo(r.right);
-    }
 }

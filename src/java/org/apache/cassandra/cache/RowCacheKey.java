@@ -22,11 +22,10 @@ import java.util.Arrays;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.Pair;
 
-public final class RowCacheKey extends CacheKey implements Comparable<RowCacheKey>
+public final class RowCacheKey extends CacheKey
 {
     public final byte[] key;
 
@@ -72,11 +71,6 @@ public final class RowCacheKey extends CacheKey implements Comparable<RowCacheKe
         int result = ksAndCFName.hashCode();
         result = 31 * result + (key != null ? Arrays.hashCode(key) : 0);
         return result;
-    }
-
-    public int compareTo(RowCacheKey otherKey)
-    {
-        return (Pair.compare(ksAndCFName, otherKey.ksAndCFName) < 0) ? -1 : ((ksAndCFName.equals(otherKey.ksAndCFName)) ?  FBUtilities.compareUnsigned(key, otherKey.key, 0, 0, key.length, otherKey.key.length) : 1);
     }
 
     @Override
