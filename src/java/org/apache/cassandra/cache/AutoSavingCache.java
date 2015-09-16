@@ -326,6 +326,11 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
                 {
                     //Need to be able to check schema version because CF names are ambiguous
                     UUID schemaVersion = Schema.instance.getVersion();
+                    if (schemaVersion == null)
+                    {
+                        Schema.instance.updateVersion();
+                        schemaVersion = Schema.instance.getVersion();
+                    }
                     writer.writeLong(schemaVersion.getMostSignificantBits());
                     writer.writeLong(schemaVersion.getLeastSignificantBits());
 
