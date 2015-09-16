@@ -383,8 +383,8 @@ public class AutoSavingCache<K extends CacheKey, V> extends InstrumentingCache<K
 
     public interface CacheSerializer<K extends CacheKey, V>
     {
-        abstract void serialize(K key, DataOutputPlus out, ColumnFamilyStore cfs) throws IOException;
+        void serialize(K key, DataOutputPlus out, ColumnFamilyStore cfs) throws IOException;
 
-        abstract Future<Pair<K, V>> deserialize(DataInputStream in, ColumnFamilyStore cfs) throws IOException;
+        Future<Pair<K, V>> deserialize(DataInputStream in, ColumnFamilyStore cfs) throws IOException;
     }
 }
