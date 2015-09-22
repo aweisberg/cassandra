@@ -47,10 +47,8 @@ import org.apache.cassandra.batchlog.LegacyBatchlogMigrator;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.TombstoneOverwhelmingException;
 import org.apache.cassandra.db.monitoring.ConstructionTime;
-import org.apache.cassandra.db.monitoring.MonitorableThreadLocal;
 import org.apache.cassandra.db.partitions.*;
 import org.apache.cassandra.db.rows.RowIterator;
-import org.apache.cassandra.db.view.ViewManager;
 import org.apache.cassandra.db.view.ViewUtils;
 import org.apache.cassandra.dht.*;
 import org.apache.cassandra.exceptions.*;
@@ -1655,8 +1653,6 @@ public class StorageProxy implements StorageProxyMBean
 
     static class LocalReadRunnable extends DroppableRunnable
     {
-        private static final MonitorableThreadLocal monitoringTask = new MonitorableThreadLocal();
-
         private final ReadCommand command;
         private final ReadCallback handler;
         private final long start = System.nanoTime();
@@ -1673,7 +1669,6 @@ public class StorageProxy implements StorageProxyMBean
             try
             {
                 command.setMonitoringTime(new ConstructionTime(constructionTime), timeout);
-                monitoringTask.update(command);
 
                 ReadResponse response;
                 try (ReadExecutionController executionController = command.executionController();
@@ -1682,7 +1677,7 @@ public class StorageProxy implements StorageProxyMBean
                     response = command.createResponse(iterator, command.columnFilter());
                 }
 
-                if (command.state().complete())
+                if (command.complete())
                 {
                     handler.response(response);
                 }
