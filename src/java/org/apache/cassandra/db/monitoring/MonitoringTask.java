@@ -119,16 +119,14 @@ public class MonitoringTask
     {
         Map<String, FailedOperation> ret = new HashMap<>();
 
-        FailedOperation failedOperation = operationsQueue.poll();
-        while(failedOperation != null)
+        FailedOperation failedOperation = null;
+        while((failedOperation = operationsQueue.poll()) != null)
         {
             FailedOperation existing = ret.get(failedOperation.name());
             if (existing != null)
                 existing.addTimeout(failedOperation);
             else
                 ret.put(failedOperation.name(), failedOperation);
-
-            failedOperation = operationsQueue.poll();
         }
 
         return ret;
