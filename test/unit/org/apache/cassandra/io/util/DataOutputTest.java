@@ -31,7 +31,13 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
+import java.nio.channels.WritableByteChannel;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 import java.util.Random;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.junit.Assert;
@@ -100,6 +106,139 @@ public class DataOutputTest
         DataInput canon = testWrite(write);
         DataInput test = new DataInputStream(new ByteArrayInputStream(ByteBufferUtil.getArray(buf)));
         testRead(test, canon);
+    }
+
+    private static class DataOutputBufferSpy extends DataOutputBuffer
+    {
+        Deque<Long> sizes = new ArrayDeque<>();
+
+        DataOutputBufferSpy()
+        {
+            sizes.offer(128L);
+        }
+
+        void publicFlush() throws IOException
+        {
+            doFlush();
+        }
+
+        @Override
+        protected void reallocate(long newSize)
+        {
+            Long lastSize = sizes.peekLast();
+            sizes.offer(newSize);
+            if (newSize > DataOutputBuffer.MAX_ARRAY_SIZE)
+                throw new RuntimeException();
+            if (newSize < 0)
+                throw new AssertionError();
+            if (lastSize != null && newSize <= lastSize)
+                throw new AssertionError();
+        }
+
+        @Override
+        protected int testableCapacity()
+        {
+            return sizes.peekLast().intValue();
+        }
+    }
+
+    //Check for overflow at the max size, without actually allocating all the memory
+    @Test
+    public void testDataOutputBufferMaxSizeFake() throws IOException
+    {
+        try (DataOutputBufferSpy write = new DataOutputBufferSpy())
+        {
+            try
+            {
+                while (true)
+                    write.publicFlush();
+            }
+            catch (RuntimeException e) {}
+            Assert.assertTrue(write.sizes.peekLast() > DataOutputBuffer.MAX_ARRAY_SIZE);
+        }
+
+        try (DataOutputBufferSpy write = new DataOutputBufferSpy())
+        {
+            @SuppressWarnings("resource")
+            DataOutputBuffer.GrowingChannel channel = write.new GrowingChannel();
+            try
+            {
+                while (true)
+                    channel.reallocateBeforeWrite(8192);
+            }
+            catch (RuntimeException e) {}
+            Assert.assertTrue(write.sizes.peekLast() > DataOutputBuffer.MAX_ARRAY_SIZE);
+        }
+    }
+
+    @Test
+    public void testDataOutputBufferMaxSize() throws IOException
+    {
+        //Need a lot of heap to run this test for real.
+        //Tested everything else as much as possible since we can't do it all the time
+        if (Runtime.getRuntime().maxMemory() < 4427612160L)
+            return;
+
+        try (DataOutputBuffer write = new DataOutputBuffer())
+        {
+            //Doesn't throw up to DataOuptutBuffer.MAX_ARRAY_SIZE which is the array size limit in Java
+            for (int ii = 0; ii < DataOutputBuffer.MAX_ARRAY_SIZE / 8; ii++)
+                write.writeLong(0);
+            write.write(new byte[7]);
+
+            //Should fail due to validation
+            checkThrowsIAE(() -> write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE + 1));
+            //Check that it does throw
+            checkThrowsIAE(() -> { write.write(42); return null; });
+        }
+    }
+
+    //Can't test it for real without tons of heap so test as much validation as possible
+    @Test
+    public void testDataOutputBufferBigReallocation() throws Exception
+    {
+        //Check saturating cast behavior
+        Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, DataOutputBuffer.saturatedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE + 1L));
+        Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, DataOutputBuffer.saturatedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE));
+        Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE - 1, DataOutputBuffer.saturatedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE - 1));
+        Assert.assertEquals(0, DataOutputBuffer.saturatedArraySizeCast(0));
+        Assert.assertEquals(1, DataOutputBuffer.saturatedArraySizeCast(1));
+        checkThrowsIAE(() -> DataOutputBuffer.saturatedArraySizeCast(-1));
+
+        //Check checked cast behavior
+        checkThrowsIAE(() -> DataOutputBuffer.checkedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE + 1L));
+        Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, DataOutputBuffer.checkedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE));
+        Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE - 1, DataOutputBuffer.checkedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE - 1));
+        Assert.assertEquals(0, DataOutputBuffer.checkedArraySizeCast(0));
+        Assert.assertEquals(1, DataOutputBuffer.checkedArraySizeCast(1));
+        checkThrowsIAE(() -> DataOutputBuffer.checkedArraySizeCast(-1));
+
+
+        try (DataOutputBuffer write = new DataOutputBuffer())
+        {
+            //Checked validation performed by DOB
+            Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE + 1L));
+            Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE));
+            Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE - 1, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE - 1));
+            checkThrowsIAE(() -> write.validateReallocation(0));
+            checkThrowsIAE(() -> write.validateReallocation(1));
+            checkThrowsIAE(() -> write.validateReallocation(-1));
+        }
+    }
+
+    private static void checkThrowsIAE(Callable<Object> c)
+    {
+        boolean threw = false;
+        try
+        {
+            c.call();
+        }
+        catch (IllegalArgumentException e)
+        {
+            threw = true;
+        }
+        catch (Exception e) {}
+        Assert.assertTrue(threw);
     }
 
     @Test

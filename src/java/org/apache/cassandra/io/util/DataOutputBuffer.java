@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 
+import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 
 /**
  * An implementation of the DataOutputStream interface using a FastByteArrayOutputStream and exposing
@@ -51,16 +53,51 @@ public class DataOutputBuffer extends BufferedDataOutputStreamPlus
         throw new UnsupportedOperationException();
     }
 
+    //The actual value observed in Hotspot is only -2
+    //ByteArrayOutputStream uses -8
+    @VisibleForTesting
+    static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+
+    @VisibleForTesting
+    static int saturatedArraySizeCast(long size)
+    {
+        Preconditions.checkArgument(size >= 0);
+        return (int)Math.min(MAX_ARRAY_SIZE, size);
+    }
+
+    @VisibleForTesting
+    static int checkedArraySizeCast(long size)
+    {
+        Preconditions.checkArgument(size >= 0);
+        Preconditions.checkArgument(size <= MAX_ARRAY_SIZE);
+        return (int)size;
+    }
+
     @Override
     protected void doFlush() throws IOException
     {
-        reallocate(buffer.capacity() * 2);
+        //The doubling here MUST be long arithmetic to avoid integer overflow
+        reallocate(testableCapacity() * 2L);
+    }
+
+    //Hack for test, make it possible to override checking the buffer capacity
+    @VisibleForTesting
+    int testableCapacity()
+    {
+        return buffer.capacity();
+    }
+
+    @VisibleForTesting
+    int validateReallocation(long newSize)
+    {
+        int saturatedSize = saturatedArraySizeCast(newSize);
+        Preconditions.checkArgument(saturatedSize > buffer.capacity());
+        return saturatedSize;
     }
 
     protected void reallocate(long newSize)
     {
-        assert newSize <= Integer.MAX_VALUE;
-        ByteBuffer newBuffer = ByteBuffer.allocate((int) newSize);
+        ByteBuffer newBuffer = ByteBuffer.allocate(validateReallocation(newSize));
         buffer.flip();
         newBuffer.put(buffer);
         buffer = newBuffer;
@@ -72,14 +109,23 @@ public class DataOutputBuffer extends BufferedDataOutputStreamPlus
         return new GrowingChannel();
     }
 
-    private final class GrowingChannel implements WritableByteChannel
+    @VisibleForTesting
+    final class GrowingChannel implements WritableByteChannel
     {
         public int write(ByteBuffer src) throws IOException
         {
             int count = src.remaining();
-            reallocate(Math.max((buffer.capacity() * 3) / 2, buffer.capacity() + count));
+            reallocateBeforeWrite(count);
             buffer.put(src);
             return count;
+        }
+
+        @VisibleForTesting
+        void reallocateBeforeWrite(int count)
+        {
+            //The arithmetic for both sides of this max MUST be long arithmetic to avoid integer overflow
+            long newSize = Math.max((testableCapacity() * 3L) / 2, testableCapacity() + ((long)count));
+            reallocate(newSize);
         }
 
         public boolean isOpen()
