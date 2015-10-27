@@ -187,9 +187,16 @@ public class DataOutputTest
             write.write(new byte[7]);
 
             //Should fail due to validation
-            checkThrowsIAE(() -> write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE + 1));
+            checkThrowsIAE(validateReallocationCallable( write, DataOutputBuffer.MAX_ARRAY_SIZE + 1));
             //Check that it does throw
-            checkThrowsIAE(() -> { write.write(42); return null; });
+            checkThrowsIAE(new Callable<Object>()
+            {
+                public Object call() throws Exception
+                {
+                    write.write(42);
+                    return null;
+                }
+            });
         }
     }
 
@@ -203,15 +210,15 @@ public class DataOutputTest
         Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE - 1, DataOutputBuffer.saturatedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE - 1));
         Assert.assertEquals(0, DataOutputBuffer.saturatedArraySizeCast(0));
         Assert.assertEquals(1, DataOutputBuffer.saturatedArraySizeCast(1));
-        checkThrowsIAE(() -> DataOutputBuffer.saturatedArraySizeCast(-1));
+        checkThrowsIAE(saturatedArraySizeCastCallable(-1));
 
         //Check checked cast behavior
-        checkThrowsIAE(() -> DataOutputBuffer.checkedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE + 1L));
+        checkThrowsIAE(checkedArraySizeCastCallable(DataOutputBuffer.MAX_ARRAY_SIZE + 1L));
         Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, DataOutputBuffer.checkedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE));
         Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE - 1, DataOutputBuffer.checkedArraySizeCast(DataOutputBuffer.MAX_ARRAY_SIZE - 1));
         Assert.assertEquals(0, DataOutputBuffer.checkedArraySizeCast(0));
         Assert.assertEquals(1, DataOutputBuffer.checkedArraySizeCast(1));
-        checkThrowsIAE(() -> DataOutputBuffer.checkedArraySizeCast(-1));
+        checkThrowsIAE(checkedArraySizeCastCallable(-1));
 
 
         try (DataOutputBuffer write = new DataOutputBuffer())
@@ -220,10 +227,46 @@ public class DataOutputTest
             Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE + 1L));
             Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE));
             Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE - 1, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE - 1));
-            checkThrowsIAE(() -> write.validateReallocation(0));
-            checkThrowsIAE(() -> write.validateReallocation(1));
-            checkThrowsIAE(() -> write.validateReallocation(-1));
+            checkThrowsIAE(validateReallocationCallable( write, 0));
+            checkThrowsIAE(validateReallocationCallable( write, 1));
+            checkThrowsIAE(validateReallocationCallable( write, -1));
         }
+    }
+
+    Callable<Object> saturatedArraySizeCastCallable(final long value)
+    {
+        return new Callable<Object>()
+        {
+            @Override
+            public Object call() throws Exception
+            {
+                return DataOutputBuffer.saturatedArraySizeCast(value);
+            }
+        };
+    }
+
+    Callable<Object> checkedArraySizeCastCallable(final long value)
+    {
+        return new Callable<Object>()
+        {
+            @Override
+            public Object call() throws Exception
+            {
+                return DataOutputBuffer.checkedArraySizeCast(value);
+            }
+        };
+    }
+
+    Callable<Object> validateReallocationCallable(final DataOutputBuffer write, final long value)
+    {
+        return new Callable<Object>()
+        {
+            @Override
+            public Object call() throws Exception
+            {
+                return write.validateReallocation(value);
+            }
+        };
     }
 
     private static void checkThrowsIAE(Callable<Object> c)
