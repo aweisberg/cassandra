@@ -102,6 +102,16 @@ public class MmappedSegmentedFile extends SegmentedFile
         return file;
     }
 
+    @Override
+    public long[] getReadableBounds()
+    {
+        long[] bounds  = new long[segments.length + 1];
+        for (int ii = 0; ii < segments.length; ii++)
+            bounds[ii] = segments[ii].left;
+        bounds[segments.length] = length;
+        return bounds;
+    }
+
     private static final class Cleanup extends SegmentedFile.Cleanup
     {
         final Segment[] segments;

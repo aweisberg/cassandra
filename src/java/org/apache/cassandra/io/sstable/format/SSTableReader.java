@@ -1151,6 +1151,11 @@ public abstract class SSTableReader extends SSTable implements SelfRefCounted<SS
                 try(SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode(), false);
                     SegmentedFile.Builder dbuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode(), compression))
                 {
+                    for (long boundry : dfile.getReadableBounds())
+                        dbuilder.addPotentialBoundary(boundry);
+                    for (long boundry : ifile.getReadableBounds())
+                        ibuilder.addPotentialBoundary(boundry);
+
                     saveSummary(ibuilder, dbuilder, newSummary);
                 }
             }
