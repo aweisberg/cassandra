@@ -525,6 +525,53 @@ public class SSTableReaderTest
     }
 
     @Test
+    public void testIndexSummaryUpsampleAndReload() throws Exception
+    {
+        long originalMaxSegmentSize = MmappedSegmentedFile.MAX_SEGMENT_SIZE;
+        MmappedSegmentedFile.MAX_SEGMENT_SIZE = 40; // each index entry is ~11 bytes, so this will generate lots of segments
+
+        try
+        {
+            testIndexSummaryUpsampleAndReload0();
+        }
+        finally
+        {
+            MmappedSegmentedFile.MAX_SEGMENT_SIZE = originalMaxSegmentSize;
+        }
+    }
+
+    private void testIndexSummaryUpsampleAndReload0() throws Exception
+    {
+        Keyspace keyspace = Keyspace.open(KEYSPACE1);
+        final ColumnFamilyStore store = keyspace.getColumnFamilyStore("StandardLowIndexInterval"); // index interval of 8, no key caching
+        CompactionManager.instance.disableAutoCompaction();
+
+        final int NUM_ROWS = 512;
+        for (int j = 0; j < NUM_ROWS; j++)
+        {
+            ByteBuffer key = ByteBufferUtil.bytes(String.format("%3d", j));
+            Mutation rm = new Mutation(KEYSPACE1, key);
+            rm.add("StandardLowIndexInterval", Util.cellname("0"), ByteBufferUtil.bytes(String.format("%3d", j)), j);
+            rm.applyUnsafe();
+        }
+        store.forceBlockingFlush();
+        CompactionManager.instance.performMaximal(store, false);
+
+        Collection<SSTableReader> sstables = store.getSSTables();
+        assert sstables.size() == 1;
+        final SSTableReader sstable = sstables.iterator().next();
+
+        try (LifecycleTransaction txn = store.getTracker().tryModify(Arrays.asList(sstable), OperationType.UNKNOWN))
+        {
+            SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(store, sstable.getIndexSummarySamplingLevel() + 1);
+            txn.update(replacement, true);
+            txn.finish();
+        }
+        SSTableReader reopen = SSTableReader.open(sstable.descriptor);
+        assert reopen.getIndexSummarySamplingLevel() == sstable.getIndexSummarySamplingLevel() + 1;
+    }
+
+    @Test
     public void testIndexSummaryDownsampleAndReload() throws Exception
     {
         long originalMaxSegmentSize = MmappedSegmentedFile.MAX_SEGMENT_SIZE;
@@ -561,7 +608,12 @@ public class SSTableReaderTest
         assert sstables.size() == 1;
         final SSTableReader sstable = sstables.iterator().next();
 
-        SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(store, sstable.getIndexSummarySamplingLevel() / 2);
+        try (LifecycleTransaction txn = store.getTracker().tryModify(Arrays.asList(sstable), OperationType.UNKNOWN))
+        {
+            SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(store, sstable.getIndexSummarySamplingLevel() / 2);
+            txn.update(replacement, true);
+            txn.finish();
+        }
         SSTableReader reopen = SSTableReader.open(sstable.descriptor);
         assert Arrays.equals(sstable.ifile.getReadableBounds(), reopen.ifile.getReadableBounds());
         assert Arrays.equals(sstable.dfile.getReadableBounds(), reopen.dfile.getReadableBounds());
