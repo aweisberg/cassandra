@@ -206,8 +206,8 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
     public final OpenReason openReason;
 
     // indexfile and datafile: might be null before a call to load()
-    private SegmentedFile ifile;
-    private SegmentedFile dfile;
+    protected SegmentedFile ifile;
+    protected SegmentedFile dfile;
     private IndexSummary indexSummary;
     private IFilter bf;
 
@@ -1166,6 +1166,12 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
                 SegmentedFile.Builder dbuilder = compression
                                                  ? SegmentedFile.getCompressedBuilder()
                                                  : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
+
+                for (long boundry : dfile.getReadableBounds())
+                    dbuilder.addPotentialBoundary(boundry);
+                for (long boundry : ifile.getReadableBounds())
+                    ibuilder.addPotentialBoundary(boundry);
+
                 saveSummary(ibuilder, dbuilder, newSummary);
             }
             else
