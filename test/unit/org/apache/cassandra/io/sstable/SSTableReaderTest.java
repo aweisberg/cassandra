@@ -490,6 +490,48 @@ public class SSTableReaderTest extends SchemaLoader
     }
 
     @Test
+    public void testIndexSummaryUpsampleAndReload() throws Exception
+    {
+        long originalMaxSegmentSize = MmappedSegmentedFile.MAX_SEGMENT_SIZE;
+        MmappedSegmentedFile.MAX_SEGMENT_SIZE = 40; // each index entry is ~11 bytes, so this will generate lots of segments
+
+        try
+        {
+            testIndexSummaryUpsampleAndReload0();
+        }
+        finally
+        {
+            MmappedSegmentedFile.MAX_SEGMENT_SIZE = originalMaxSegmentSize;
+        }
+    }
+
+    private void testIndexSummaryUpsampleAndReload0() throws Exception
+    {
+        Keyspace keyspace = Keyspace.open("Keyspace1");
+        ColumnFamilyStore store = keyspace.getColumnFamilyStore("Standard1");
+
+        // insert a bunch of data and compact to a single sstable
+        CompactionManager.instance.disableAutoCompaction();
+        for (int j = 0; j < 100; j += 2)
+        {
+            ByteBuffer key = ByteBufferUtil.bytes(String.valueOf(j));
+            Mutation rm = new Mutation("Keyspace1", key);
+            rm.add("Standard1", cellname("0"), ByteBufferUtil.EMPTY_BYTE_BUFFER, j);
+            rm.apply();
+        }
+        store.forceBlockingFlush();
+        CompactionManager.instance.performMaximal(store);
+
+        Collection<SSTableReader> sstables = store.getSSTables();
+        final SSTableReader sstable = sstables.iterator().next();
+
+        SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(store, sstable.getIndexSummarySamplingLevel() + 1);
+        store.getDataTracker().replaceWithNewInstances(Arrays.asList(sstable), Arrays.asList(replacement));
+        SSTableReader reopen = SSTableReader.open(sstable.descriptor);
+        assert reopen.getIndexSummarySamplingLevel() == (sstable.getIndexSummarySamplingLevel() + 1);
+    }
+
+    @Test
     public void testIndexSummaryDownsampleAndReload() throws Exception
     {
         long originalMaxSegmentSize = MmappedSegmentedFile.MAX_SEGMENT_SIZE;
@@ -526,11 +568,11 @@ public class SSTableReaderTest extends SchemaLoader
         final SSTableReader sstable = sstables.iterator().next();
 
         SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(store, sstable.getIndexSummarySamplingLevel() / 2);
+        store.getDataTracker().replaceWithNewInstances(Arrays.asList(sstable), Arrays.asList(replacement));
         SSTableReader reopen = SSTableReader.open(sstable.descriptor);
         assert Arrays.equals(sstable.ifile.getReadableBounds(), reopen.ifile.getReadableBounds());
         assert Arrays.equals(sstable.dfile.getReadableBounds(), reopen.dfile.getReadableBounds());
     }
-
 
     private void assertIndexQueryWorks(ColumnFamilyStore indexedCFS)
     {

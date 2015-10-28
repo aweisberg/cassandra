@@ -1161,24 +1161,25 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
             {
                 // we can use the existing index summary to make a smaller one
                 newSummary = IndexSummaryBuilder.downsample(indexSummary, samplingLevel, minIndexInterval, partitioner);
-
-                SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
-                SegmentedFile.Builder dbuilder = compression
-                                                 ? SegmentedFile.getCompressedBuilder()
-                                                 : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
-
-                for (long boundry : dfile.getReadableBounds())
-                    dbuilder.addPotentialBoundary(boundry);
-                for (long boundry : ifile.getReadableBounds())
-                    ibuilder.addPotentialBoundary(boundry);
-
-                saveSummary(ibuilder, dbuilder, newSummary);
             }
             else
             {
                 throw new AssertionError("Attempted to clone SSTableReader with the same index summary sampling level and " +
                                          "no adjustments to min/max_index_interval");
             }
+
+            //Always save the new summary
+            SegmentedFile.Builder ibuilder = SegmentedFile.getBuilder(DatabaseDescriptor.getIndexAccessMode());
+            SegmentedFile.Builder dbuilder = compression
+                                             ? SegmentedFile.getCompressedBuilder()
+                                             : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
+
+            for (long boundry : dfile.getReadableBounds())
+                dbuilder.addPotentialBoundary(boundry);
+            for (long boundry : ifile.getReadableBounds())
+                ibuilder.addPotentialBoundary(boundry);
+
+            saveSummary(ibuilder, dbuilder, newSummary);
 
             long newSize = bytesOnDisk();
             StorageMetrics.load.inc(newSize - oldSize);
