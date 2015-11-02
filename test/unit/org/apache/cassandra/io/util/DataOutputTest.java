@@ -31,11 +31,8 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.Channels;
-import java.nio.channels.WritableByteChannel;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
-import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ThreadLocalRandom;
@@ -119,13 +116,15 @@ public class DataOutputTest
 
         void publicFlush() throws IOException
         {
-            doFlush();
+            //Going to allow it to double instead of specifying a count
+            doFlush(0);
         }
 
         @Override
-        protected void reallocate(long newSize)
+        protected void reallocate(long count)
         {
             Long lastSize = sizes.peekLast();
+            long newSize = calculateNewSize(count);
             sizes.offer(newSize);
             if (newSize > DataOutputBuffer.MAX_ARRAY_SIZE)
                 throw new RuntimeException();
@@ -148,26 +147,18 @@ public class DataOutputTest
     {
         try (DataOutputBufferSpy write = new DataOutputBufferSpy())
         {
+            boolean threw = false;
             try
             {
                 while (true)
                     write.publicFlush();
             }
-            catch (RuntimeException e) {}
-            Assert.assertTrue(write.sizes.peekLast() > DataOutputBuffer.MAX_ARRAY_SIZE);
-        }
-
-        try (DataOutputBufferSpy write = new DataOutputBufferSpy())
-        {
-            @SuppressWarnings("resource")
-            DataOutputBuffer.GrowingChannel channel = write.new GrowingChannel();
-            try
-            {
-                while (true)
-                    channel.reallocateBeforeWrite(8192);
+            catch (RuntimeException e) {
+                if (e.getClass() == RuntimeException.class)
+                    threw = true;
             }
-            catch (RuntimeException e) {}
-            Assert.assertTrue(write.sizes.peekLast() > DataOutputBuffer.MAX_ARRAY_SIZE);
+            Assert.assertTrue(threw);
+            Assert.assertTrue(write.sizes.peekLast() >= DataOutputBuffer.MAX_ARRAY_SIZE);
         }
     }
 
@@ -187,9 +178,9 @@ public class DataOutputTest
             write.write(new byte[7]);
 
             //Should fail due to validation
-            checkThrowsIAE(validateReallocationCallable( write, DataOutputBuffer.MAX_ARRAY_SIZE + 1));
+            checkThrowsRuntimeException(validateReallocationCallable( write, DataOutputBuffer.MAX_ARRAY_SIZE + 1));
             //Check that it does throw
-            checkThrowsIAE(new Callable<Object>()
+            checkThrowsRuntimeException(new Callable<Object>()
             {
                 public Object call() throws Exception
                 {
@@ -227,8 +218,8 @@ public class DataOutputTest
             Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE + 1L));
             Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE));
             Assert.assertEquals(DataOutputBuffer.MAX_ARRAY_SIZE - 1, write.validateReallocation(DataOutputBuffer.MAX_ARRAY_SIZE - 1));
-            checkThrowsIAE(validateReallocationCallable( write, 0));
-            checkThrowsIAE(validateReallocationCallable( write, 1));
+            checkThrowsRuntimeException(validateReallocationCallable( write, 0));
+            checkThrowsRuntimeException(validateReallocationCallable( write, 1));
             checkThrowsIAE(validateReallocationCallable( write, -1));
         }
     }
@@ -271,16 +262,26 @@ public class DataOutputTest
 
     private static void checkThrowsIAE(Callable<Object> c)
     {
+        checkThrowsException(c, IllegalArgumentException.class);
+    }
+
+    private static void checkThrowsRuntimeException(Callable<Object> c)
+    {
+        checkThrowsException(c, RuntimeException.class);
+    }
+
+    private static void checkThrowsException(Callable<Object> c, Class<?> exceptionClass)
+    {
         boolean threw = false;
         try
         {
             c.call();
         }
-        catch (IllegalArgumentException e)
+        catch (Throwable t)
         {
-            threw = true;
+            if (t.getClass() == exceptionClass)
+                threw = true;
         }
-        catch (Exception e) {}
         Assert.assertTrue(threw);
     }
 

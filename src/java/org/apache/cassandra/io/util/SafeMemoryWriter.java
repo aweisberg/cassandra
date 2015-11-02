@@ -42,8 +42,10 @@ public class SafeMemoryWriter extends DataOutputBuffer
         return memory;
     }
 
-    protected void reallocate(long newCapacity)
+    @Override
+    protected void reallocate(long count)
     {
+        long newCapacity = Math.max(capacity() * 2, capacity() + count);
         if (newCapacity != capacity())
         {
             long position = length();

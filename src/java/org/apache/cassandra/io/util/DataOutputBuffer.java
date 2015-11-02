@@ -74,10 +74,9 @@ public class DataOutputBuffer extends BufferedDataOutputStreamPlus
     }
 
     @Override
-    protected void doFlush() throws IOException
+    protected void doFlush(int count) throws IOException
     {
-        //The doubling here MUST be long arithmetic to avoid integer overflow
-        reallocate(testableCapacity() * 2L);
+        reallocate(count);
     }
 
     //Hack for test, make it possible to override checking the buffer capacity
@@ -91,13 +90,24 @@ public class DataOutputBuffer extends BufferedDataOutputStreamPlus
     int validateReallocation(long newSize)
     {
         int saturatedSize = saturatedArraySizeCast(newSize);
-        Preconditions.checkArgument(saturatedSize > buffer.capacity());
+        if (saturatedSize <= testableCapacity())
+            throw new RuntimeException();
         return saturatedSize;
     }
 
-    protected void reallocate(long newSize)
+    @VisibleForTesting
+    int calculateNewSize(long count)
     {
-        ByteBuffer newBuffer = ByteBuffer.allocate(validateReallocation(newSize));
+        long capacity = testableCapacity();
+        //Both sides of this max expression need to use long arithmetic to avoid integer overflow
+        //count and capacity are longs so that ensures it right now.
+        long newSize = Math.max(capacity * 2, capacity + count);
+        return validateReallocation(newSize);
+    }
+
+    protected void reallocate(long count)
+    {
+        ByteBuffer newBuffer = ByteBuffer.allocate(calculateNewSize(count));
         buffer.flip();
         newBuffer.put(buffer);
         buffer = newBuffer;
@@ -115,17 +125,9 @@ public class DataOutputBuffer extends BufferedDataOutputStreamPlus
         public int write(ByteBuffer src) throws IOException
         {
             int count = src.remaining();
-            reallocateBeforeWrite(count);
+            reallocate(count);
             buffer.put(src);
             return count;
-        }
-
-        @VisibleForTesting
-        void reallocateBeforeWrite(int count)
-        {
-            //The arithmetic for both sides of this max MUST be long arithmetic to avoid integer overflow
-            long newSize = Math.max((testableCapacity() * 3L) / 2, testableCapacity() + ((long)count));
-            reallocate(newSize);
         }
 
         public boolean isOpen()
