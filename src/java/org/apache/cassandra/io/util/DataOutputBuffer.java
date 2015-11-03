@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.WritableByteChannel;
 
+import org.apache.cassandra.config.Config;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
@@ -32,6 +34,11 @@ import com.google.common.base.Preconditions;
  */
 public class DataOutputBuffer extends BufferedDataOutputStreamPlus
 {
+    /*
+     * Threshold at which resizing transitions from doubling to increasing by 50%
+     */
+    private static final long DOUBLING_THRESHOLD = Long.getLong(Config.PROPERTY_PREFIX + "DOB_DOUBLING_THRESHOLD_MB", 64);
+
     public DataOutputBuffer()
     {
         this(128);
@@ -81,33 +88,40 @@ public class DataOutputBuffer extends BufferedDataOutputStreamPlus
 
     //Hack for test, make it possible to override checking the buffer capacity
     @VisibleForTesting
-    int testableCapacity()
+    long capacity()
     {
         return buffer.capacity();
     }
 
     @VisibleForTesting
-    int validateReallocation(long newSize)
+    long validateReallocation(long newSize)
     {
         int saturatedSize = saturatedArraySizeCast(newSize);
-        if (saturatedSize <= testableCapacity())
+        if (saturatedSize <= capacity())
             throw new RuntimeException();
         return saturatedSize;
     }
 
     @VisibleForTesting
-    int calculateNewSize(long count)
+    long calculateNewSize(long count)
     {
-        long capacity = testableCapacity();
+        long capacity = capacity();
         //Both sides of this max expression need to use long arithmetic to avoid integer overflow
         //count and capacity are longs so that ensures it right now.
-        long newSize = Math.max(capacity * 2, capacity + count);
+        long newSize = capacity + count;
+
+        //For large buffers don't double, increase by 50%
+        if (capacity > 1024 * 1024 * DOUBLING_THRESHOLD)
+            newSize = Math.max((capacity * 3) / 2, newSize);
+        else
+            newSize = Math.max(capacity * 2, newSize);
+
         return validateReallocation(newSize);
     }
 
     protected void reallocate(long count)
     {
-        ByteBuffer newBuffer = ByteBuffer.allocate(calculateNewSize(count));
+        ByteBuffer newBuffer = ByteBuffer.allocate(checkedArraySizeCast(calculateNewSize(count)));
         buffer.flip();
         newBuffer.put(buffer);
         buffer = newBuffer;

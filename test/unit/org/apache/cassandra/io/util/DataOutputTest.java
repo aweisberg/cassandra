@@ -135,7 +135,7 @@ public class DataOutputTest
         }
 
         @Override
-        protected int testableCapacity()
+        protected long capacity()
         {
             return sizes.peekLast().intValue();
         }

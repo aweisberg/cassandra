@@ -45,7 +45,7 @@ public class SafeMemoryWriter extends DataOutputBuffer
     @Override
     protected void reallocate(long count)
     {
-        long newCapacity = Math.max(capacity() * 2, capacity() + count);
+        long newCapacity = calculateNewSize(count);
         if (newCapacity != capacity())
         {
             long position = length();
@@ -93,6 +93,12 @@ public class SafeMemoryWriter extends DataOutputBuffer
     {
         super.order(order);
         return this;
+    }
+
+    @Override
+    public long validateReallocation(long newSize)
+    {
+        return newSize;
     }
 
     private static long tailOffset(Memory memory)
