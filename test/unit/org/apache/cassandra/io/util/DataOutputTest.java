@@ -167,7 +167,7 @@ public class DataOutputTest
     {
         //Need a lot of heap to run this test for real.
         //Tested everything else as much as possible since we can't do it all the time
-        if (Runtime.getRuntime().maxMemory() < 4427612160L)
+        if (Runtime.getRuntime().maxMemory() < 5033164800L)
             return;
 
         try (DataOutputBuffer write = new DataOutputBuffer())
