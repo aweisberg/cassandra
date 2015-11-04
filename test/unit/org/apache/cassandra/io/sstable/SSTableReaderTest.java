@@ -570,8 +570,8 @@ public class SSTableReaderTest extends SchemaLoader
         SSTableReader replacement = sstable.cloneWithNewSummarySamplingLevel(store, sstable.getIndexSummarySamplingLevel() / 2);
         store.getDataTracker().replaceWithNewInstances(Arrays.asList(sstable), Arrays.asList(replacement));
         SSTableReader reopen = SSTableReader.open(sstable.descriptor);
-        assert Arrays.equals(sstable.ifile.getReadableBounds(), reopen.ifile.getReadableBounds());
-        assert Arrays.equals(sstable.dfile.getReadableBounds(), reopen.dfile.getReadableBounds());
+        assert Arrays.equals(sstable.ifile.copyReadableBounds(), reopen.ifile.copyReadableBounds());
+        assert Arrays.equals(sstable.dfile.copyReadableBounds(), reopen.dfile.copyReadableBounds());
     }
 
     private void assertIndexQueryWorks(ColumnFamilyStore indexedCFS)

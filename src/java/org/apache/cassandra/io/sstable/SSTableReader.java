@@ -1174,9 +1174,9 @@ public class SSTableReader extends SSTable implements SelfRefCounted<SSTableRead
                                              ? SegmentedFile.getCompressedBuilder()
                                              : SegmentedFile.getBuilder(DatabaseDescriptor.getDiskAccessMode());
 
-            for (long boundry : dfile.getReadableBounds())
+            for (long boundry : dfile.copyReadableBounds())
                 dbuilder.addPotentialBoundary(boundry);
-            for (long boundry : ifile.getReadableBounds())
+            for (long boundry : ifile.copyReadableBounds())
                 ibuilder.addPotentialBoundary(boundry);
 
             saveSummary(ibuilder, dbuilder, newSummary);

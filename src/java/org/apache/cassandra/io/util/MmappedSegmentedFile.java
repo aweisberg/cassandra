@@ -104,7 +104,7 @@ public class MmappedSegmentedFile extends SegmentedFile
     }
 
     @Override
-    public long[] getReadableBounds()
+    public long[] copyReadableBounds()
     {
         long[] bounds  = new long[segments.length + 1];
         for (int ii = 0; ii < segments.length; ii++)
