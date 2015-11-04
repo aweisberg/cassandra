@@ -615,8 +615,8 @@ public class SSTableReaderTest
             txn.finish();
         }
         SSTableReader reopen = SSTableReader.open(sstable.descriptor);
-        assert Arrays.equals(sstable.ifile.getReadableBounds(), reopen.ifile.getReadableBounds());
-        assert Arrays.equals(sstable.dfile.getReadableBounds(), reopen.dfile.getReadableBounds());
+        assert Arrays.equals(sstable.ifile.copyReadableBounds(), reopen.ifile.copyReadableBounds());
+        assert Arrays.equals(sstable.dfile.copyReadableBounds(), reopen.dfile.copyReadableBounds());
     }
 
 

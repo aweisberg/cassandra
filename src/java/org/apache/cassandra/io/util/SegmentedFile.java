@@ -159,7 +159,7 @@ public abstract class SegmentedFile extends SharedCloseableImpl
      * as when downsampling an index summary. Readable bounds are in between record locations in a file
      * that are good positions for mapping the file such that records don't cross mappings.
      */
-    public long[] getReadableBounds()
+    public long[] copyReadableBounds()
     {
         return new long[0];
     }
