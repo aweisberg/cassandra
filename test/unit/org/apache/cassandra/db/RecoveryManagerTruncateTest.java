@@ -55,6 +55,7 @@ public class RecoveryManagerTruncateTest extends SchemaLoader
 
         // and now truncate it
         cfs.truncateBlocking();
+        CommitLog.instance.sync(true);
         CommitLog.instance.resetUnsafe();
         CommitLog.instance.recover();
 
@@ -88,6 +89,7 @@ public class RecoveryManagerTruncateTest extends SchemaLoader
         // verify truncation
         assertNull(getFromTable(keyspace, "Standard1", "keymulti", "col2"));
 
+        CommitLog.instance.sync(true);
         try
         {
             // Restore to point in time.
@@ -141,6 +143,7 @@ public class RecoveryManagerTruncateTest extends SchemaLoader
         assertNull(getFromTable(keyspace, "Standard1", "keymulti", "col3"));
         assertNull(getFromTable(keyspace, "Standard2", "keymulti", "col4"));
 
+        CommitLog.instance.sync(true);
         try
         {
             // Restore to point in time.
