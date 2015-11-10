@@ -52,6 +52,7 @@ public class WindowsFailedSnapshotTracker
         {
             try
             {
+                @SuppressWarnings("resource")
                 BufferedReader reader = new BufferedReader(new FileReader(TODELETEFILE));
                 String snapshotDirectory;
                 while ((snapshotDirectory = reader.readLine()) != null)
