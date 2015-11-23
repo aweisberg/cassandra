@@ -86,6 +86,18 @@ public class DataOutputTest
     }
 
     @Test
+    public void testDataOutputBufferZeroReallocate() throws IOException
+    {
+        try (DataOutputBufferSpy write = new DataOutputBufferSpy())
+        {
+            for (int ii = 0; ii < 1000000; ii++)
+            {
+                write.superReallocate(0);
+            }
+        }
+    }
+
+    @Test
     public void testDataOutputDirectByteBuffer() throws IOException
     {
         ByteBuffer buf = wrap(new byte[345], true);
@@ -117,12 +129,19 @@ public class DataOutputTest
         void publicFlush() throws IOException
         {
             //Going to allow it to double instead of specifying a count
-            doFlush(0);
+            doFlush(1);
+        }
+
+        void superReallocate(int count) throws IOException
+        {
+            super.reallocate(count);
         }
 
         @Override
         protected void reallocate(long count)
         {
+            if (count <= 0)
+                return;
             Long lastSize = sizes.peekLast();
             long newSize = calculateNewSize(count);
             sizes.offer(newSize);
