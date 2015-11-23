@@ -111,16 +111,18 @@ public class DataOutputBuffer extends BufferedDataOutputStreamPlus
         long newSize = capacity + count;
 
         //For large buffers don't double, increase by 50%
-        if (capacity > 1024 * 1024 * DOUBLING_THRESHOLD)
-            newSize = Math.max((capacity * 3) / 2, newSize);
+        if (capacity > 1024L * 1024L * DOUBLING_THRESHOLD)
+            newSize = Math.max((capacity * 3L) / 2L, newSize);
         else
-            newSize = Math.max(capacity * 2, newSize);
+            newSize = Math.max(capacity * 2L, newSize);
 
         return validateReallocation(newSize);
     }
 
     protected void reallocate(long count)
     {
+        if (count <= 0)
+            return;
         ByteBuffer newBuffer = ByteBuffer.allocate(checkedArraySizeCast(calculateNewSize(count)));
         buffer.flip();
         newBuffer.put(buffer);
