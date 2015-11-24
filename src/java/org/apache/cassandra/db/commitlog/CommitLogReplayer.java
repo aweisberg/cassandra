@@ -23,11 +23,13 @@ import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Predicate;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Ordering;
+
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,12 +47,17 @@ import org.cliffc.high_scale_lib.NonBlockingHashSet;
 
 public class CommitLogReplayer
 {
+    @VisibleForTesting
+    public static long MAX_OUTSTANDING_REPLAY_BYTES = Long.getLong("cassandra.commitlog_max_outstanding_replay_bytes", 1024 * 1024 * 64);
+    @VisibleForTesting
+    public static MutationInitiator mutationInitiator = new MutationInitiator();
+
     private static final Logger logger = LoggerFactory.getLogger(CommitLogReplayer.class);
     private static final int MAX_OUTSTANDING_REPLAY_COUNT = Integer.getInteger("cassandra.commitlog_max_outstanding_replay_count", 1024);
     private static final int LEGACY_END_OF_SEGMENT_MARKER = 0;
 
     private final Set<Keyspace> keyspacesRecovered;
-    private final List<Future<?>> futures;
+    private final Queue<Future<Integer>> futures;
     private final Map<UUID, AtomicInteger> invalidMutations;
     private final AtomicInteger replayedCount;
     private final Map<UUID, ReplayPosition> cfPositions;
@@ -60,10 +67,69 @@ public class CommitLogReplayer
 
     private final ReplayFilter replayFilter;
 
+    /*
+     * Wrapper around initiating mutations read from the log to make it possible
+     * to spy on initiated mutations for test
+     */
+    @VisibleForTesting
+    public static class MutationInitiator
+    {
+        protected Future<Integer> initiateMutation(final Mutation mutation,
+                                         final long segmentId,
+                                         final int serializedSize,
+                                         final long entryLocation,
+                                         final CommitLogReplayer clr)
+        {
+            Runnable runnable = new WrappedRunnable()
+            {
+                public void runMayThrow() throws IOException
+                {
+                    if (Schema.instance.getKSMetaData(mutation.getKeyspaceName()) == null)
+                        return;
+                    if (pointInTimeExceeded(mutation))
+                        return;
+
+                    final Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
+
+                    // Rebuild the mutation, omitting column families that
+                    //    a) the user has requested that we ignore,
+                    //    b) have already been flushed,
+                    // or c) are part of a cf that was dropped.
+                    // Keep in mind that the cf.name() is suspect. do every thing based on the cfid instead.
+                    Mutation newMutation = null;
+                    for (ColumnFamily columnFamily : clr.replayFilter.filter(mutation))
+                    {
+                        if (Schema.instance.getCF(columnFamily.id()) == null)
+                            continue; // dropped
+
+                        ReplayPosition rp = clr.cfPositions.get(columnFamily.id());
+
+                        // replay if current segment is newer than last flushed one or,
+                        // if it is the last known segment, if we are after the replay position
+                        if (segmentId > rp.segment || (segmentId == rp.segment && entryLocation > rp.position))
+                        {
+                            if (newMutation == null)
+                                newMutation = new Mutation(mutation.getKeyspaceName(), mutation.key());
+                            newMutation.add(columnFamily);
+                            clr.replayedCount.incrementAndGet();
+                        }
+                    }
+                    if (newMutation != null)
+                    {
+                        assert !newMutation.isEmpty();
+                        Keyspace.open(newMutation.getKeyspaceName()).apply(newMutation, false);
+                        clr.keyspacesRecovered.add(keyspace);
+                    }
+                }
+            };
+            return StageManager.getStage(Stage.MUTATION).submit(runnable, serializedSize);
+        }
+    }
+
     public CommitLogReplayer()
     {
         this.keyspacesRecovered = new NonBlockingHashSet<Keyspace>();
-        this.futures = new ArrayList<Future<?>>();
+        this.futures = new ArrayDeque<Future<Integer>>();
         this.buffer = new byte[4096];
         this.invalidMutations = new HashMap<UUID, AtomicInteger>();
         // count the number of replayed mutation. We don't really care about atomicity, but we need it to be a reference.
@@ -130,6 +196,7 @@ public class CommitLogReplayer
 
         // flush replayed keyspaces
         futures.clear();
+        List<Future<?>> futures = new ArrayList<Future<?>>();
         for (Keyspace keyspace : keyspacesRecovered)
             futures.addAll(keyspace.flush());
         FBUtilities.waitOnFutures(futures);
@@ -187,7 +254,8 @@ public class CommitLogReplayer
             return -1;
     }
 
-    private abstract static class ReplayFilter
+    @VisibleForTesting
+    abstract static class ReplayFilter
     {
         public abstract Iterable<ColumnFamily> filter(Mutation mutation);
 
@@ -283,6 +351,7 @@ public class CommitLogReplayer
                 return;
             }
 
+            long totalPendingMutationBytes = 0;
             int prevEnd = CommitLogDescriptor.HEADER_SIZE;
             main: while (true)
             {
@@ -415,53 +484,20 @@ public class CommitLogReplayer
                         logger.debug("replaying mutation for {}.{}: {}", mutation.getKeyspaceName(), ByteBufferUtil.bytesToHex(mutation.key()), "{" + StringUtils.join(mutation.getColumnFamilies().iterator(), ", ") + "}");
 
                     final long entryLocation = reader.getFilePointer();
-                    Runnable runnable = new WrappedRunnable()
+                    totalPendingMutationBytes += serializedSize;
+                    futures.add(mutationInitiator.initiateMutation(mutation,
+                                                                   segmentId,
+                                                                   serializedSize,
+                                                                   entryLocation,
+                                                                   this));
+
+                    //If there are finished mutations, or too many outstanding bytes/mutations
+                    //drain the futures in the queue
+                    while (futures.size() > MAX_OUTSTANDING_REPLAY_COUNT
+                            || totalPendingMutationBytes > MAX_OUTSTANDING_REPLAY_BYTES
+                            || (!futures.isEmpty() && futures.peek().isDone()))
                     {
-                        public void runMayThrow() throws IOException
-                        {
-                            if (Schema.instance.getKSMetaData(mutation.getKeyspaceName()) == null)
-                                return;
-                            if (pointInTimeExceeded(mutation))
-                                return;
-
-                            final Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
-
-                            // Rebuild the mutation, omitting column families that
-                            //    a) the user has requested that we ignore,
-                            //    b) have already been flushed,
-                            // or c) are part of a cf that was dropped.
-                            // Keep in mind that the cf.name() is suspect. do every thing based on the cfid instead.
-                            Mutation newMutation = null;
-                            for (ColumnFamily columnFamily : replayFilter.filter(mutation))
-                            {
-                                if (Schema.instance.getCF(columnFamily.id()) == null)
-                                    continue; // dropped
-
-                                ReplayPosition rp = cfPositions.get(columnFamily.id());
-
-                                // replay if current segment is newer than last flushed one or,
-                                // if it is the last known segment, if we are after the replay position
-                                if (segmentId > rp.segment || (segmentId == rp.segment && entryLocation > rp.position))
-                                {
-                                    if (newMutation == null)
-                                        newMutation = new Mutation(mutation.getKeyspaceName(), mutation.key());
-                                    newMutation.add(columnFamily);
-                                    replayedCount.incrementAndGet();
-                                }
-                            }
-                            if (newMutation != null)
-                            {
-                                assert !newMutation.isEmpty();
-                                Keyspace.open(newMutation.getKeyspaceName()).apply(newMutation, false);
-                                keyspacesRecovered.add(keyspace);
-                            }
-                        }
-                    };
-                    futures.add(StageManager.getStage(Stage.MUTATION).submit(runnable));
-                    if (futures.size() > MAX_OUTSTANDING_REPLAY_COUNT)
-                    {
-                        FBUtilities.waitOnFutures(futures);
-                        futures.clear();
+                        totalPendingMutationBytes -= FBUtilities.waitOnFuture(futures.poll());
                     }
                 }
 
@@ -479,7 +515,7 @@ public class CommitLogReplayer
         }
     }
 
-    protected boolean pointInTimeExceeded(Mutation fm)
+    static boolean pointInTimeExceeded(Mutation fm)
     {
         long restoreTarget = CommitLog.instance.archiver.restorePointInTime;
 

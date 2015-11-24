@@ -20,7 +20,16 @@ package org.apache.cassandra.db;
 
 import java.io.IOException;
 import java.util.Date;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.cassandra.OrderedJUnit4ClassRunner;
 import org.apache.cassandra.Util;
@@ -31,6 +40,8 @@ import org.junit.runner.RunWith;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.commitlog.CommitLogArchiver;
+import org.apache.cassandra.db.commitlog.CommitLogReplayer;
+import org.apache.cassandra.db.commitlog.ReplayPosition;
 
 import static org.apache.cassandra.Util.column;
 import static org.apache.cassandra.db.KeyspaceTest.assertColumns;
@@ -39,12 +50,150 @@ import static org.apache.cassandra.Util.cellname;
 @RunWith(OrderedJUnit4ClassRunner.class)
 public class RecoveryManagerTest extends SchemaLoader
 {
+    static final Semaphore blocker = new Semaphore(0);
+    static final Semaphore blocked = new Semaphore(0);
+    static final CommitLogReplayer.MutationInitiator mockInitiator = new CommitLogReplayer.MutationInitiator()
+    {
+        @Override
+        protected Future<Integer> initiateMutation(final Mutation mutation,
+                final long segmentId,
+                final int serializedSize,
+                final long entryLocation,
+                final CommitLogReplayer clr)
+        {
+            final Future<Integer> toWrap = super.initiateMutation(mutation, segmentId, serializedSize, entryLocation, clr);
+            return new Future<Integer>()
+            {
+
+                @Override
+                public boolean cancel(boolean mayInterruptIfRunning)
+                {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public boolean isCancelled()
+                {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public boolean isDone()
+                {
+                    return blocker.availablePermits() > 0 && toWrap.isDone();
+                }
+
+                @Override
+                public Integer get() throws InterruptedException, ExecutionException
+                {
+                    blocked.release();
+                    blocker.acquire();
+                    return toWrap.get();
+                }
+
+                @Override
+                public Integer get(long timeout, TimeUnit unit)
+                        throws InterruptedException, ExecutionException, TimeoutException
+                {
+                    blocked.release();
+                    blocker.tryAcquire(1, timeout, unit);
+                    return toWrap.get(timeout, unit);
+                }
+
+            };
+        }
+    };
+
     @Test
     public void testNothingToRecover() throws IOException
     {
         CommitLog.instance.resetUnsafe();
         CommitLog.instance.recover();
     }
+
+    @Test
+    public void testRecoverBlocksOnBytesOutstanding() throws Exception
+    {
+        long originalMaxOutstanding = CommitLogReplayer.MAX_OUTSTANDING_REPLAY_BYTES;
+        CommitLogReplayer.MAX_OUTSTANDING_REPLAY_BYTES = 1;
+        CommitLogReplayer.MutationInitiator originalInitiator = CommitLogReplayer.mutationInitiator;
+        CommitLogReplayer.mutationInitiator = mockInitiator;
+        try
+        {
+            CommitLog.instance.resetUnsafe();
+            Keyspace keyspace1 = Keyspace.open("Keyspace1");
+            Keyspace keyspace2 = Keyspace.open("Keyspace2");
+
+            Mutation rm;
+            DecoratedKey dk = Util.dk("keymulti");
+            ColumnFamily cf;
+
+            cf = ArrayBackedSortedColumns.factory.create("Keyspace1", "Standard1");
+            cf.addColumn(column("col1", "val1", 1L));
+            rm = new Mutation("Keyspace1", dk.getKey(), cf);
+            rm.apply();
+
+            cf = ArrayBackedSortedColumns.factory.create("Keyspace2", "Standard3");
+            cf.addColumn(column("col2", "val2", 1L));
+            rm = new Mutation("Keyspace2", dk.getKey(), cf);
+            rm.apply();
+
+            keyspace1.getColumnFamilyStore("Standard1").clearUnsafe();
+            keyspace2.getColumnFamilyStore("Standard3").clearUnsafe();
+
+            Assert.assertNull(Util.getColumnFamily(keyspace1, dk, "Standard1"));
+            Assert.assertNull(Util.getColumnFamily(keyspace2, dk, "Standard3"));
+
+
+            final AtomicReference<Throwable> err = new AtomicReference<Throwable>();
+            Thread t = new Thread() {
+                @Override
+                public void run()
+                {
+                    try
+                    {
+                        CommitLog.instance.resetUnsafe(); // disassociate segments from live CL
+                        CommitLog.instance.recover();
+                    }
+                    catch (Throwable t)
+                    {
+                        err.set(t);
+                    }
+                }
+            };
+            t.start();
+            Assert.assertTrue(blocked.tryAcquire(1, 30, TimeUnit.SECONDS));
+            Thread.sleep(100);
+            Assert.assertTrue(t.isAlive());
+            blocker.release(Integer.MAX_VALUE);
+            t.join(20 * 1000);
+
+            if (err.get() != null)
+                throw new RuntimeException(err.get());
+
+            if (t.isAlive())
+            {
+                Throwable toPrint = new Throwable();
+                toPrint.setStackTrace(Thread.getAllStackTraces().get(t));
+                toPrint.printStackTrace(System.out);
+            }
+
+            if (err.get() != null)
+                throw new RuntimeException(err.get());
+
+            Assert.assertFalse(t.isAlive());
+
+
+            assertColumns(Util.getColumnFamily(keyspace1, dk, "Standard1"), "col1");
+            assertColumns(Util.getColumnFamily(keyspace2, dk, "Standard3"), "col2");
+        }
+        finally
+        {
+            CommitLogReplayer.mutationInitiator = originalInitiator;
+            CommitLogReplayer.MAX_OUTSTANDING_REPLAY_BYTES = originalMaxOutstanding;
+        }
+    }
+
 
     @Test
     public void testOne() throws IOException
