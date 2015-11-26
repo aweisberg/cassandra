@@ -21,6 +21,7 @@ package org.apache.cassandra.utils.concurrent;
 import org.junit.Test;
 
 import junit.framework.Assert;
+
 import org.apache.cassandra.utils.ObjectSizes;
 
 public class RefCountedTest

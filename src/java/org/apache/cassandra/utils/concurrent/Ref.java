@@ -9,7 +9,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
-import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,6 +62,9 @@ public final class Ref<T> implements RefCounted<T>
 {
     static final Logger logger = LoggerFactory.getLogger(Ref.class);
     public static final boolean DEBUG_ENABLED = System.getProperty("cassandra.debugrefcount", "false").equalsIgnoreCase("true");
+    public static final int LOG_KEY_ENTRIES = Integer.getInteger("cassandra.debugrefcount_logkeyentries", 32);
+    public static int MAX_VISIT_DEPTH = Integer.getInteger("cassandra.debugrefcount_visitdepth", 128);
+    public static int MAX_VISIT_COUNT = Integer.getInteger("cassandra.debugrefcount_visitcount", 100000);
 
     final State state;
     final T referent;
@@ -353,9 +357,45 @@ public final class Ref<T> implements RefCounted<T>
         }
     }
 
+    /*
+     * Stack state for walking an object graph.
+     * Field index is the index of the current field being fetched.
+     */
+    static class InProgressVisit
+    {
+        final List<Field> fields;
+        final Object o;
+        int fieldIndex = 0;
+        final Field field;
+
+        InProgressVisit(Object o, List<Field> fields, Field field)
+        {
+            this.o = o;
+            this.fields = fields;
+            this.field = field;
+        }
+
+        Field nextField()
+        {
+            if (fields.isEmpty())
+                return null;
+            if (fieldIndex > fields.size())
+                return null;
+            Field retval = fields.get(fieldIndex);
+            fieldIndex++;
+            return retval;
+        }
+
+        @Override
+        public String toString()
+        {
+            return field == null ? "" : field.toString();
+        }
+    }
+
     static class Visitor implements Runnable
     {
-        final Stack<Field> path = new Stack<>();
+        final Deque<InProgressVisit> path = new ArrayDeque<>();
         final Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         GlobalState visiting;
 
@@ -387,17 +427,69 @@ public final class Ref<T> implements RefCounted<T>
             }
         }
 
-        void visit(final Object object)
+        /*
+         * Searches for an indirect strong reference between rootObject and visiting.
+         * Iterative depth first search bounded in depth and maximum # of visited objects.
+         */
+        void visit(final Object rootObject)
         {
-            for (Field field : getFields(object.getClass()))
+            path.push(new InProgressVisit(rootObject, getFields(rootObject.getClass()), null));
+            InProgressVisit inProgress = null;
+            while (inProgress != null || !path.isEmpty())
             {
-                path.push(field);
+                //If necessary fetch the next object to start tracing
+                if (inProgress == null)
+                    inProgress = path.pop();
+
+                //Fetch the next field to trace, or restart the loop to fetch the next parent object
+                Field field = null;
+                if ((field = inProgress.nextField()) == null)
+                {
+                    inProgress = null;
+                    continue;
+                }
+
+                //Prune and report any time the depth is exceeded. The search still continues.
+                if (path.size() > MAX_VISIT_DEPTH)
+                {
+                    //Using the full path to log and as the log key
+                    //Large, but bounded by  MAX_VISIT_DEPTH
+                    String pathString = Lists.newArrayList(path.descendingIterator()).toString();
+                    NoSpamLogger.log(logger,
+                                     NoSpamLogger.Level.ERROR,
+                                     pathString,
+                                     5,
+                                     TimeUnit.MINUTES,
+                                     "Pruning search due to depth ({})  {}",
+                                     path.size(),
+                                     pathString);
+                    continue;
+                }
+
+                //Bound the space used for visiting objects since this grows the longer it searches.
+                //If the count is exceeded the search aborts.
+                if (visited.size() > MAX_VISIT_COUNT)
+                {
+                    NoSpamLogger.log(logger,
+                            NoSpamLogger.Level.ERROR,
+                            rootObject.getClass().getName(),
+                            5,
+                            TimeUnit.MINUTES,
+                            "Pruning search for object class ({}) due to max visit count ({})  {}",
+                            rootObject.getClass().getName(),
+                            visited.size(),
+                            Lists.newArrayList(path.descendingIterator()));
+                    return;
+                }
+
                 try
                 {
-                    Object child = field.get(object);
+                    Object child = field.get(inProgress.o);
                     if (child != null && visited.add(child))
                     {
-                        visit(child);
+                        path.push(inProgress);
+                        inProgress = new InProgressVisit(child, getFields(child.getClass()), field);
+                        continue;
                     }
                     else if (visiting == child)
                     {
@@ -408,11 +500,6 @@ public final class Ref<T> implements RefCounted<T>
                 {
                     NoSpamLogger.log(logger, NoSpamLogger.Level.ERROR, 5, TimeUnit.MINUTES, "Could not fully check for self-referential leaks", e);
                 }
-                catch (StackOverflowError e)
-                {
-                    logger.error("Stackoverflow {}", path);
-                }
-                path.pop();
             }
         }
     }
