@@ -107,8 +107,8 @@ public class MmappedSegmentedFile extends SegmentedFile
     public long[] copyReadableBounds()
     {
         long[] bounds  = new long[segments.length + 1];
-        for (int ii = 0; ii < segments.length; ii++)
-            bounds[ii] = segments[ii].left;
+        for (int i = 0; i < segments.length; i++)
+            bounds[i] = segments[i].left;
         bounds[segments.length] = length;
         return bounds;
     }
