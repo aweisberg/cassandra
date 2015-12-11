@@ -923,3 +923,11 @@ enable_scripted_user_defined_functions: false
 # below their system default. The sysinternals 'clockres' tool can confirm your system's default
 # setting.
 windows_timer_interval: 1
+
+# The number of bytes pending for write requests queued in MessagingService before
+# reading from client connections is disabled or re-enabled. Doesn't impact thrift connections.
+# 0 disables backpressure
+# -1 has the database pick a default value based on maxmium heap size
+# If one is set to -1 then both must be set to -1. If one is non-zero then both both must be specified.
+#client_backpressure_on_bytes: -1
+#client_backpressure_off_bytes: -1

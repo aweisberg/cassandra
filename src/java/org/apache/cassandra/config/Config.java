@@ -304,12 +304,12 @@ public class Config
 
     /*
      * The number of bytes pending for write requests queued in MessagingService before
-     * reading from client connections is disabled or re-enabled.
+     * reading from client connections is disabled or re-enabled. Thrift connections are not impacted.
      *
      * 0 disables backpressure
      * -1 has the database pick a default value
      *
-     * If one is set to -1 then both must be set to -1. If one is specified then both both must be specified.
+     * If one is set to -1 then both must be set to -1. If one is non-zero then both both must be specified.
      */
     public long client_backpressure_on_bytes = -1;
     public long client_backpressure_off_bytes = -1;
