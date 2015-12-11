@@ -54,6 +54,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.service.*;
 import org.apache.cassandra.transport.messages.EventMessage;
+import org.apache.cassandra.utils.BackpressureMonitor;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class Server implements CassandraDaemon.Server
@@ -123,7 +124,7 @@ public class Server implements CassandraDaemon.Server
 
     public synchronized void start()
     {
-        if(isRunning()) 
+        if(isRunning())
             return;
 
         // Configure the server.
@@ -173,13 +174,18 @@ public class Server implements CassandraDaemon.Server
     {
         return connectionTracker.getConnectedClients();
     }
-    
+
     private void close()
     {
         // Close opened connections
         connectionTracker.closeAll();
-        
+
         logger.info("Stop listening for CQL clients");
+    }
+
+    public BackpressureMonitor.BackpressureListener getBackpressureListener()
+    {
+        return connectionTracker;
     }
 
     public static class Builder
@@ -245,11 +251,15 @@ public class Server implements CassandraDaemon.Server
         }
     }
 
-    public static class ConnectionTracker implements Connection.Tracker
+    public static class ConnectionTracker implements Connection.Tracker, BackpressureMonitor.BackpressureListener
     {
         // TODO: should we be using the GlobalEventExecutor or defining our own?
         public final ChannelGroup allChannels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
         private final EnumMap<Event.Type, ChannelGroup> groups = new EnumMap<>(Event.Type.class);
+
+        //Accessed from synchronized blocks so not volatile
+        //Signal new connections to not read during backpressure
+        private boolean onBackpressure = false;
 
         public ConnectionTracker()
         {
@@ -260,6 +270,11 @@ public class Server implements CassandraDaemon.Server
         public void addConnection(Channel ch, Connection connection)
         {
             allChannels.add(ch);
+            synchronized (this)
+            {
+                if (onBackpressure)
+                    ch.config().setAutoRead(false);
+            }
         }
 
         public void register(Event.Type type, Channel ch)
@@ -280,11 +295,18 @@ public class Server implements CassandraDaemon.Server
         public int getConnectedClients()
         {
             /*
-              - When server is running: allChannels contains all clients' connections (channels) 
+              - When server is running: allChannels contains all clients' connections (channels)
                 plus one additional channel used for the server's own bootstrap.
                - When server is stopped: the size is 0
             */
             return allChannels.size() != 0 ? allChannels.size() - 1 : 0;
+        }
+
+        @Override
+        public synchronized void backpressureStateChange(boolean onBackpressure)
+        {
+            this.onBackpressure = onBackpressure;
+            allChannels.stream().forEach(channel -> channel.config().setAutoRead(!onBackpressure));
         }
     }
 

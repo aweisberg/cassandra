@@ -66,6 +66,7 @@ import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.DefaultNameFactory;
 import org.apache.cassandra.metrics.StorageMetrics;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.LegacySchemaMigrator;
 import org.apache.cassandra.cql3.functions.ThreadAwareSecurityManager;
 import org.apache.cassandra.thrift.ThriftServer;
@@ -377,6 +378,7 @@ public class CassandraDaemon
 
         // Native transport
         nativeTransportService = new NativeTransportService();
+        MessagingService.addBackpressureListener(nativeTransportService);
 
         completeSetup();
     }
@@ -484,7 +486,7 @@ public class CassandraDaemon
         if (nativeTransportService != null)
             nativeTransportService.destroy();
         StorageService.instance.setRpcReady(false);
-        
+
         // On windows, we need to stop the entire system as prunsrv doesn't have the jsvc hooks
         // We rely on the shutdown hook to drain the node
         if (FBUtilities.isWindows())
@@ -730,5 +732,10 @@ public class CassandraDaemon
          * Returns whether the server is currently running.
          */
         public boolean isRunning();
+
+        /**
+         * Get listener for handling backpressure from downstream
+         */
+        public BackpressureMonitor.BackpressureListener getBackpressureListener();
     }
 }

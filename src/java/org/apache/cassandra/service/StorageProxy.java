@@ -69,6 +69,7 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.triggers.TriggerExecutor;
 import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.AbstractIterator;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 
 public class StorageProxy implements StorageProxyMBean
 {
@@ -509,18 +510,21 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         MessageOut<Commit> message = new MessageOut<Commit>(MessagingService.Verb.PAXOS_COMMIT, proposal, Commit.serializer);
-        for (InetAddress destination : Iterables.concat(naturalEndpoints, pendingEndpoints))
+        try (WeightHolder weightHolder = MessagingService.newWeightHolder(message.payloadSize(MessagingService.current_version)))
         {
-            if (FailureDetector.instance.isAlive(destination))
+            for (InetAddress destination : Iterables.concat(naturalEndpoints, pendingEndpoints))
             {
-                if (shouldBlock)
-                    MessagingService.instance().sendRR(message, destination, responseHandler, shouldHint);
-                else
-                    MessagingService.instance().sendOneWay(message, destination);
-            }
-            else if (shouldHint)
-            {
-                submitHint(proposal.makeMutation(), destination, null);
+                if (FailureDetector.instance.isAlive(destination))
+                {
+                    if (shouldBlock)
+                        MessagingService.instance().sendRR(message, destination, responseHandler, shouldHint, weightHolder);
+                    else
+                        MessagingService.instance().sendOneWay(message, destination);
+                }
+                else if (shouldHint)
+                {
+                    submitHint(proposal.makeMutation(), destination, null);
+                }
             }
         }
 
@@ -1130,90 +1134,104 @@ public class StorageProxy implements StorageProxyMBean
                                              Stage stage)
     throws OverloadedException
     {
-        // extra-datacenter replicas, grouped by dc
-        Map<String, Collection<InetAddress>> dcGroups = null;
-        // only need to create a Message for non-local writes
-        MessageOut<Mutation> message = null;
-
-        boolean insertLocal = false;
-        ArrayList<InetAddress> endpointsToHint = null;
-
-        for (InetAddress destination : targets)
+        WeightHolder weightHolder = null;
+        try
         {
-            // avoid OOMing due to excess hints.  we need to do this check even for "live" nodes, since we can
-            // still generate hints for those if it's overloaded or simply dead but not yet known-to-be-dead.
-            // The idea is that if we have over maxHintsInProgress hints in flight, this is probably due to
-            // a small number of nodes causing problems, so we should avoid shutting down writes completely to
-            // healthy nodes.  Any node with no hintsInProgress is considered healthy.
-            if (StorageMetrics.totalHintsInProgress.getCount() > maxHintsInProgress
-                    && (getHintsInProgressFor(destination).get() > 0 && shouldHint(destination)))
-            {
-                throw new OverloadedException("Too many in flight hints: " + StorageMetrics.totalHintsInProgress.getCount());
-            }
+            // extra-datacenter replicas, grouped by dc
+            Map<String, Collection<InetAddress>> dcGroups = null;
+            // only need to create a Message for non-local writes
+            MessageOut<Mutation> message = null;
 
-            if (FailureDetector.instance.isAlive(destination))
+            boolean insertLocal = false;
+            ArrayList<InetAddress> endpointsToHint = null;
+
+            for (InetAddress destination : targets)
             {
-                if (canDoLocalRequest(destination))
+                // avoid OOMing due to excess hints.  we need to do this check even for "live" nodes, since we can
+                // still generate hints for those if it's overloaded or simply dead but not yet known-to-be-dead.
+                // The idea is that if we have over maxHintsInProgress hints in flight, this is probably due to
+                // a small number of nodes causing problems, so we should avoid shutting down writes completely to
+                // healthy nodes.  Any node with no hintsInProgress is considered healthy.
+                if (StorageMetrics.totalHintsInProgress.getCount() > maxHintsInProgress
+                        && (getHintsInProgressFor(destination).get() > 0 && shouldHint(destination)))
                 {
-                    insertLocal = true;
+                    throw new OverloadedException("Too many in flight hints: " + StorageMetrics.totalHintsInProgress.getCount());
                 }
-                else
+
+                if (FailureDetector.instance.isAlive(destination))
                 {
-                    // belongs on a different server
-                    if (message == null)
-                        message = mutation.createMessage();
-                    String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(destination);
-                    // direct writes to local DC or old Cassandra versions
-                    // (1.1 knows how to forward old-style String message IDs; updated to int in 2.0)
-                    if (localDataCenter.equals(dc))
+                    if (canDoLocalRequest(destination))
                     {
-                        MessagingService.instance().sendRR(message, destination, responseHandler, true);
+                        insertLocal = true;
                     }
                     else
                     {
-                        Collection<InetAddress> messages = (dcGroups != null) ? dcGroups.get(dc) : null;
-                        if (messages == null)
+                        // belongs on a different server
+                        if (message == null)
                         {
-                            messages = new ArrayList<>(3); // most DCs will have <= 3 replicas
-                            if (dcGroups == null)
-                                dcGroups = new HashMap<>();
-                            dcGroups.put(dc, messages);
+                            message = mutation.createMessage();
+                            weightHolder = MessagingService.newWeightHolder(message.payloadSize(MessagingService.current_version));
                         }
-                        messages.add(destination);
+
+                        String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(destination);
+                        // direct writes to local DC or old Cassandra versions
+                        // (1.1 knows how to forward old-style String message IDs; updated to int in 2.0)
+                        if (localDataCenter.equals(dc))
+                        {
+                            MessagingService.instance().sendRR(message, destination, responseHandler, true, weightHolder);
+                        }
+                        else
+                        {
+                            Collection<InetAddress> messages = (dcGroups != null) ? dcGroups.get(dc) : null;
+                            if (messages == null)
+                            {
+                                messages = new ArrayList<>(3); // most DCs will have <= 3 replicas
+                                if (dcGroups == null)
+                                    dcGroups = new HashMap<>();
+                                dcGroups.put(dc, messages);
+                            }
+                            messages.add(destination);
+                        }
+                    }
+                }
+                else
+                {
+                    if (shouldHint(destination))
+                    {
+                        if (endpointsToHint == null)
+                            endpointsToHint = new ArrayList<>(Iterables.size(targets));
+                        endpointsToHint.add(destination);
                     }
                 }
             }
-            else
+
+            if (endpointsToHint != null)
+                submitHint(mutation, endpointsToHint, responseHandler);
+
+            if (insertLocal)
+                performLocally(stage, mutation::apply, responseHandler);
+
+            if (dcGroups != null)
             {
-                if (shouldHint(destination))
-                {
-                    if (endpointsToHint == null)
-                        endpointsToHint = new ArrayList<>(Iterables.size(targets));
-                    endpointsToHint.add(destination);
-                }
+                // for each datacenter, send the message to one node to relay the write to other replicas
+                if (message == null)
+                    message = mutation.createMessage();
+
+                for (Collection<InetAddress> dcTargets : dcGroups.values())
+                    sendMessagesToNonlocalDC(message, dcTargets, responseHandler, weightHolder);
             }
         }
-
-        if (endpointsToHint != null)
-            submitHint(mutation, endpointsToHint, responseHandler);
-
-        if (insertLocal)
-            performLocally(stage, mutation::apply, responseHandler);
-
-        if (dcGroups != null)
+        finally
         {
-            // for each datacenter, send the message to one node to relay the write to other replicas
-            if (message == null)
-                message = mutation.createMessage();
-
-            for (Collection<InetAddress> dcTargets : dcGroups.values())
-                sendMessagesToNonlocalDC(message, dcTargets, responseHandler);
+            if (weightHolder != null)
+                weightHolder.close();
         }
     }
 
     private static void sendMessagesToNonlocalDC(MessageOut<? extends IMutation> message,
                                                  Collection<InetAddress> targets,
-                                                 AbstractWriteResponseHandler<IMutation> handler)
+                                                 AbstractWriteResponseHandler<IMutation> handler,
+                                                 WeightHolder weightHolder)
     {
         Iterator<InetAddress> iter = targets.iterator();
         InetAddress target = iter.next();
@@ -1231,13 +1249,14 @@ public class StorageProxy implements StorageProxyMBean
                                                                  destination,
                                                                  message.getTimeout(),
                                                                  handler.consistencyLevel,
-                                                                 true);
+                                                                 true,
+                                                                 weightHolder);
                 out.writeInt(id);
                 logger.trace("Adding FWD message to {}@{}", id, destination);
             }
             message = message.withParameter(Mutation.FORWARD_TO, out.getData());
             // send the combined message + forward headers
-            int id = MessagingService.instance().sendRR(message, target, handler, true);
+            int id = MessagingService.instance().sendRR(message, target, handler, true, weightHolder);
             logger.trace("Sending message to {}@{}", id, target);
         }
         catch (IOException e)
@@ -1323,7 +1342,11 @@ public class StorageProxy implements StorageProxyMBean
             AbstractWriteResponseHandler<IMutation> responseHandler = new WriteResponseHandler<>(endpoint, WriteType.COUNTER);
 
             Tracing.trace("Enqueuing counter update to {}", endpoint);
-            MessagingService.instance().sendRR(cm.makeMutationMessage(), endpoint, responseHandler, false);
+            MessageOut<CounterMutation> message = cm.makeMutationMessage();
+            try (WeightHolder weightHolder = MessagingService.newWeightHolder(message.payloadSize(MessagingService.current_version)))
+            {
+                MessagingService.instance().sendRR(message, endpoint, responseHandler, false, weightHolder);
+            }
             return responseHandler;
         }
     }

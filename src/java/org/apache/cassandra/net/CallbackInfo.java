@@ -20,10 +20,11 @@ package org.apache.cassandra.net;
 import java.net.InetAddress;
 
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 
 /**
  * Encapsulates the callback information.
- * The ability to set the message is useful in cases for when a hint needs 
+ * The ability to set the message is useful in cases for when a hint needs
  * to be written due to a timeout in the response from a replica.
  */
 public class CallbackInfo
@@ -32,6 +33,7 @@ public class CallbackInfo
     protected final IAsyncCallback callback;
     protected final IVersionedSerializer<?> serializer;
     private final boolean failureCallback;
+    public final WeightHolder weightHolder;
 
     /**
      * Create CallbackInfo without sent message
@@ -41,12 +43,14 @@ public class CallbackInfo
      * @param serializer serializer to deserialize response message
      * @param failureCallback True when we have a callback to handle failures
      */
-    public CallbackInfo(InetAddress target, IAsyncCallback callback, IVersionedSerializer<?> serializer, boolean failureCallback)
+    public CallbackInfo(InetAddress target, IAsyncCallback callback, IVersionedSerializer<?> serializer, boolean failureCallback, WeightHolder weightHolder)
     {
+        assert(weightHolder != null);
         this.target = target;
         this.callback = callback;
         this.serializer = serializer;
         this.failureCallback = failureCallback;
+        this.weightHolder = weightHolder;
     }
 
     public boolean shouldHint()

@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.service.CassandraDaemon;
+import org.apache.cassandra.utils.BackpressureMonitor.BackpressureListener;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.thrift.TProcessor;
 import org.apache.thrift.protocol.TBinaryProtocol;
@@ -142,5 +143,16 @@ public class ThriftServer implements CassandraDaemon.Server
             logger.info("Stop listening to thrift clients");
             serverEngine.stop();
         }
+    }
+
+    @Override
+    public BackpressureListener getBackpressureListener()
+    {
+        return new BackpressureListener() {
+
+            @Override
+            public void backpressureStateChange(boolean onBackpressure)
+            {
+            }};
     }
 }

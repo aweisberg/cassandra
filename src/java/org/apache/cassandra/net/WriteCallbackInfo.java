@@ -25,6 +25,7 @@ import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.paxos.Commit;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 
 public class WriteCallbackInfo extends CallbackInfo
 {
@@ -36,9 +37,10 @@ public class WriteCallbackInfo extends CallbackInfo
                              MessageOut message,
                              IVersionedSerializer<?> serializer,
                              ConsistencyLevel consistencyLevel,
-                             boolean allowHints)
+                             boolean allowHints,
+                             WeightHolder weightHolder)
     {
-        super(target, callback, serializer, true);
+        super(target, callback, serializer, true, weightHolder);
         assert message != null;
         this.mutation = shouldHint(allowHints, message, consistencyLevel);
     }

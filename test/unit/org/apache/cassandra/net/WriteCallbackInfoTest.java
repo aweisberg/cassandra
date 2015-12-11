@@ -34,6 +34,7 @@ import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.net.MessagingService.Verb;
 import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 
 public class WriteCallbackInfoTest
 {
@@ -56,7 +57,7 @@ public class WriteCallbackInfoTest
                          ? new Commit(UUID.randomUUID(), new PartitionUpdate(MockSchema.newCFMetaData("", ""), ByteBufferUtil.EMPTY_BYTE_BUFFER, PartitionColumns.NONE, 1))
                          : new Mutation("", new BufferDecoratedKey(new Murmur3Partitioner.LongToken(0), ByteBufferUtil.EMPTY_BYTE_BUFFER));
 
-        WriteCallbackInfo wcbi = new WriteCallbackInfo(InetAddress.getLoopbackAddress(), null, new MessageOut(verb, payload, null), null, cl, allowHints);
+        WriteCallbackInfo wcbi = new WriteCallbackInfo(InetAddress.getLoopbackAddress(), null, new MessageOut(verb, payload, null), null, cl, allowHints, WeightHolder.DUMMY);
         Assert.assertEquals(expectHint, wcbi.shouldHint());
         if (expectHint)
         {

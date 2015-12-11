@@ -104,6 +104,9 @@ public class DatabaseDescriptor
     private static Comparator<InetAddress> localComparator;
     private static EncryptionContext encryptionContext;
 
+    private static long backpressureOnBytes;
+    private static long backpressureOffBytes;
+
     public static void forceStaticInitialization() {}
     static
     {
@@ -165,6 +168,37 @@ public class DatabaseDescriptor
         {
             throw new ConfigurationException("Configured " + configName + " \"" + intf + "\" caused an exception", e);
         }
+    }
+
+    static void applyBackpressureConfig(Config config) throws ConfigurationException
+    {
+        if ((conf.client_backpressure_on_bytes == -1 && conf.client_backpressure_off_bytes != -1) ||
+                (conf.client_backpressure_off_bytes == -1 && conf.client_backpressure_on_bytes != -1) ||
+                (conf.client_backpressure_on_bytes == 0 && conf.client_backpressure_off_bytes != 0) ||
+                (conf.client_backpressure_off_bytes == 0 && conf.client_backpressure_on_bytes != 0))
+        {
+            throw new ConfigurationException("client_backpressure_off_bytes and client_backpressure_on_bytes must either both be specified, or be disabled/default (0/-1)");
+        }
+
+        if (conf.client_backpressure_on_bytes < -1)
+            throw new ConfigurationException("client_backpressure_on_bytes must be >= -1");
+
+        if (conf.client_backpressure_off_bytes < -1)
+            throw new ConfigurationException("client_backpressure_off_bytes must be >= -1");
+
+        long maxMemory = Runtime.getRuntime().maxMemory();
+
+        if (conf.client_backpressure_on_bytes == 0)
+            backpressureOnBytes = Long.MAX_VALUE;
+        else if (conf.client_backpressure_on_bytes == -1)
+            backpressureOnBytes = maxMemory / Long.getLong(Config.PROPERTY_PREFIX + "backpressure_default_divisor", 4);
+        else
+            backpressureOnBytes = conf.client_backpressure_on_bytes;
+
+        if (conf.client_backpressure_off_bytes > 0)
+            backpressureOffBytes = conf.client_backpressure_off_bytes;
+        else
+            backpressureOffBytes = Math.max((long)(backpressureOnBytes * .8), backpressureOnBytes - (1024 * 1024 * 256));
     }
 
     @VisibleForTesting
@@ -703,6 +737,8 @@ public class DatabaseDescriptor
         {
             throw new ConfigurationException("Encryption must be enabled in client_encryption_options for native_transport_port_ssl", false);
         }
+
+        applyBackpressureConfig(config);
     }
 
     private static FileStore guessFileStore(String dir) throws IOException
@@ -1937,7 +1973,7 @@ public class DatabaseDescriptor
     {
         return encryptionContext;
     }
-    
+
     public static long getGCWarnThreshold()
     {
         return conf.gc_warn_threshold_in_ms;
@@ -1947,5 +1983,15 @@ public class DatabaseDescriptor
     public static void setEncryptionContext(EncryptionContext ec)
     {
         encryptionContext = ec;
-    } 
+    }
+
+    public static long getBackpressureOnBytes()
+    {
+        return backpressureOnBytes;
+    }
+
+    public static long getBackpressureOffBytes()
+    {
+        return backpressureOffBytes;
+    }
 }

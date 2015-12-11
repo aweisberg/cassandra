@@ -73,6 +73,8 @@ import org.apache.cassandra.service.paxos.PrepareResponse;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.*;
+import org.apache.cassandra.utils.BackpressureMonitor.BackpressureListener;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
 
 public final class MessagingService implements MessagingServiceMBean
@@ -343,6 +345,9 @@ public final class MessagingService implements MessagingServiceMBean
     // message sinks are a testing hook
     private final Set<IMessageSink> messageSinks = new CopyOnWriteArraySet<>();
 
+    private final BackpressureMonitor backpressureMonitor =
+            new BackpressureMonitor(DatabaseDescriptor.getBackpressureOnBytes(), DatabaseDescriptor.getBackpressureOffBytes());
+
     public void addMessageSink(IMessageSink sink)
     {
         messageSinks.add(sink);
@@ -361,6 +366,16 @@ public final class MessagingService implements MessagingServiceMBean
     public static MessagingService instance()
     {
         return MSHandle.instance;
+    }
+
+    public static WeightHolder newWeightHolder(long initialWeight)
+    {
+        return instance().backpressureMonitor.new WeightHolderImpl(initialWeight);
+    }
+
+    public static void addBackpressureListener(BackpressureListener listener)
+    {
+        instance().backpressureMonitor.addListener(listener);
     }
 
     private static class MSTestHandle
@@ -397,6 +412,7 @@ public final class MessagingService implements MessagingServiceMBean
             public Object apply(Pair<Integer, ExpiringMap.CacheableObject<CallbackInfo>> pair)
             {
                 final CallbackInfo expiredCallbackInfo = pair.right.value;
+                expiredCallbackInfo.weightHolder.decRef();
                 maybeAddLatency(expiredCallbackInfo.callback, expiredCallbackInfo.target, pair.right.timeout);
                 ConnectionMetrics.totalTimeouts.mark();
                 getConnectionPool(expiredCallbackInfo.target).incrementTimeout();
@@ -471,7 +487,7 @@ public final class MessagingService implements MessagingServiceMBean
      */
     public void listen(InetAddress localEp) throws ConfigurationException
     {
-        callbacks.reset(); // hack to allow tests to stop/restart MS
+        clearCallbacksUnsafe(); // hack to allow tests to stop/restart MS
         for (ServerSocket ss : getServerSockets(localEp))
         {
             SocketThread th = new SocketThread(ss, "ACCEPT-" + localEp);
@@ -624,7 +640,7 @@ public final class MessagingService implements MessagingServiceMBean
     {
         assert message.verb != Verb.MUTATION; // mutations need to call the overload with a ConsistencyLevel
         int messageId = nextId();
-        CallbackInfo previous = callbacks.put(messageId, new CallbackInfo(to, cb, callbackDeserializers.get(message.verb), failureCallback), timeout);
+        CallbackInfo previous = callbacks.put(messageId, new CallbackInfo(to, cb, callbackDeserializers.get(message.verb), failureCallback, WeightHolder.DUMMY), timeout);
         assert previous == null : String.format("Callback already exists for id %d! (%s)", messageId, previous);
         return messageId;
     }
@@ -634,20 +650,24 @@ public final class MessagingService implements MessagingServiceMBean
                            InetAddress to,
                            long timeout,
                            ConsistencyLevel consistencyLevel,
-                           boolean allowHints)
+                           boolean allowHints,
+                           WeightHolder weightHolder)
     {
         assert message.verb == Verb.MUTATION
             || message.verb == Verb.COUNTER_MUTATION
             || message.verb == Verb.PAXOS_COMMIT;
         int messageId = nextId();
 
+        //TODO find real weight to put in per request
+        weightHolder.addWeight(256);
         CallbackInfo previous = callbacks.put(messageId,
                                               new WriteCallbackInfo(to,
                                                                     cb,
                                                                     message,
                                                                     callbackDeserializers.get(message.verb),
                                                                     consistencyLevel,
-                                                                    allowHints),
+                                                                    allowHints,
+                                                                    weightHolder),
                                                                     timeout);
         assert previous == null : String.format("Callback already exists for id %d! (%s)", messageId, previous);
         return messageId;
@@ -703,9 +723,10 @@ public final class MessagingService implements MessagingServiceMBean
     public int sendRR(MessageOut<?> message,
                       InetAddress to,
                       AbstractWriteResponseHandler<?> handler,
-                      boolean allowHints)
+                      boolean allowHints,
+                      WeightHolder weightHolder)
     {
-        int id = addCallback(handler, message, to, message.getTimeout(), handler.consistencyLevel, allowHints);
+        int id = addCallback(handler, message, to, message.getTimeout(), handler.consistencyLevel, allowHints, weightHolder);
         sendOneWay(message.withParameter(FAILURE_CALLBACK_PARAM, ONE_BYTE), id, to);
         return id;
     }
@@ -762,6 +783,7 @@ public final class MessagingService implements MessagingServiceMBean
     public void clearCallbacksUnsafe()
     {
         callbacks.reset();
+        backpressureMonitor.reset();
     }
 
     /**
@@ -793,6 +815,10 @@ public final class MessagingService implements MessagingServiceMBean
         catch (IOException e)
         {
             throw new IOError(e);
+        }
+        finally
+        {
+            backpressureMonitor.reset();
         }
     }
 
@@ -826,7 +852,9 @@ public final class MessagingService implements MessagingServiceMBean
 
     public CallbackInfo removeRegisteredCallback(int messageId)
     {
-        return callbacks.remove(messageId);
+        CallbackInfo ci = callbacks.remove(messageId);
+        ci.weightHolder.decRef();
+        return ci;
     }
 
     /**

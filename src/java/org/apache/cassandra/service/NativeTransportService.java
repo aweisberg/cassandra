@@ -37,11 +37,12 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.metrics.ClientMetrics;
 import org.apache.cassandra.transport.RequestThreadPoolExecutor;
 import org.apache.cassandra.transport.Server;
+import org.apache.cassandra.utils.BackpressureMonitor.BackpressureListener;
 
 /**
  * Handles native transport server lifecycle and associated resources. Lazily initialized.
  */
-public class NativeTransportService
+public class NativeTransportService implements BackpressureListener
 {
 
     private static final Logger logger = LoggerFactory.getLogger(NativeTransportService.class);
@@ -195,5 +196,11 @@ public class NativeTransportService
     Collection<Server> getServers()
     {
         return servers;
+    }
+
+    @Override
+    public void backpressureStateChange(boolean onBackpressure)
+    {
+        servers.forEach(server -> server.getBackpressureListener().backpressureStateChange(onBackpressure));
     }
 }

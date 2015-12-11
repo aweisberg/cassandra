@@ -54,6 +54,7 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 
 import static com.google.common.collect.Iterables.transform;
 import static org.apache.cassandra.cql3.QueryProcessor.executeInternal;
@@ -437,8 +438,11 @@ public class BatchlogManager implements BatchlogManagerMBean
 
             ReplayWriteResponseHandler<Mutation> handler = new ReplayWriteResponseHandler<>(liveEndpoints);
             MessageOut<Mutation> message = mutation.createMessage();
-            for (InetAddress endpoint : liveEndpoints)
-                MessagingService.instance().sendRR(message, endpoint, handler, false);
+            try (WeightHolder wh = MessagingService.newWeightHolder(message.payloadSize(MessagingService.current_version)))
+            {
+                for (InetAddress endpoint : liveEndpoints)
+                    MessagingService.instance().sendRR(message, endpoint, handler, false, wh);
+            }
             return handler;
         }
 

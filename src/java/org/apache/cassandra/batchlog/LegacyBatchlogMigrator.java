@@ -35,11 +35,13 @@ import org.apache.cassandra.exceptions.WriteFailureException;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.AbstractWriteResponseHandler;
 import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.UUIDGen;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 
 public final class LegacyBatchlogMigrator
 {
@@ -125,15 +127,20 @@ public final class LegacyBatchlogMigrator
     public static void syncWriteToBatchlog(WriteResponseHandler<?> handler, Batch batch, Collection<InetAddress> endpoints)
     throws WriteTimeoutException, WriteFailureException
     {
-        for (InetAddress target : endpoints)
+        //TODO figure out what to put here
+        try (WeightHolder wh = MessagingService.newWeightHolder(0))
         {
-            logger.trace("Sending legacy batchlog store request {} to {} for {} mutations", batch.id, target, batch.size());
+            for (InetAddress target : endpoints)
+            {
+                logger.trace("Sending legacy batchlog store request {} to {} for {} mutations", batch.id, target, batch.size());
 
-            int targetVersion = MessagingService.instance().getVersion(target);
-            MessagingService.instance().sendRR(getStoreMutation(batch, targetVersion).createMessage(MessagingService.Verb.MUTATION),
-                                               target,
-                                               handler,
-                                               false);
+                int targetVersion = MessagingService.instance().getVersion(target);
+                MessagingService.instance().sendRR(getStoreMutation(batch, targetVersion).createMessage(MessagingService.Verb.MUTATION),
+                                                   target,
+                                                   handler,
+                                                   false,
+                                                   wh);
+            }
         }
     }
 
@@ -146,11 +153,14 @@ public final class LegacyBatchlogMigrator
                                                                                      null,
                                                                                      WriteType.SIMPLE);
         Mutation mutation = getRemoveMutation(uuid);
-
-        for (InetAddress target : endpoints)
+        MessageOut<Mutation> message = mutation.createMessage(MessagingService.Verb.MUTATION);
+        try (WeightHolder weightHolder = MessagingService.newWeightHolder(message.payloadSize(MessagingService.current_version)))
         {
-            logger.trace("Sending legacy batchlog remove request {} to {}", uuid, target);
-            MessagingService.instance().sendRR(mutation.createMessage(MessagingService.Verb.MUTATION), target, handler, false);
+            for (InetAddress target : endpoints)
+            {
+                logger.trace("Sending legacy batchlog remove request {} to {}", uuid, target);
+                MessagingService.instance().sendRR(message, target, handler, false, weightHolder);
+            }
         }
     }
 
