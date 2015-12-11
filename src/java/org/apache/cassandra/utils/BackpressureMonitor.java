@@ -38,8 +38,10 @@ public class BackpressureMonitor
     private final AtomicLong weight = new AtomicLong();
     private final ReentrantLock backpressureLock = new ReentrantLock(false);
     private final List<BackpressureListener> listeners = new CopyOnWriteArrayList<>();
-    private long onWeight = -1;
-    private long offWeight = -1;
+    private final long onWeight;
+    private final long offWeight;
+    private boolean onBackpressure = false;
+
 
     public BackpressureMonitor(long onWeight, long offWeight)
     {
@@ -68,7 +70,7 @@ public class BackpressureMonitor
      */
     void backpressure(long weightChange)
     {
-        if (weightChange == 0)
+        if (weightChange == 0 | onWeight == Long.MAX_VALUE)
             return;
 
         while(true)
@@ -86,10 +88,12 @@ public class BackpressureMonitor
                 {
                     try
                     {
-                        if (weight.compareAndSet(oldWeight, newWeight))
+                        if (weight.compareAndSet(oldWeight, newWeight) & onBackpressure)
                         {
+
                             logger.info ("Backpressure stopped old weight " + oldWeight + " new weight " + newWeight);
                             listeners.stream().forEach(l -> l.backpressureStateChange(false));
+                            onBackpressure = false;
                             return;
                         }
                     }
@@ -108,10 +112,11 @@ public class BackpressureMonitor
                 {
                     try
                     {
-                        if (weight.compareAndSet(oldWeight, newWeight))
+                        if (weight.compareAndSet(oldWeight, newWeight) ^ !onBackpressure)
                         {
                             logger.info ("Backpressure started old weight " + oldWeight + " new weight " + newWeight);
                             listeners.stream().forEach(l -> l.backpressureStateChange(true));
+                            onBackpressure = true;
                             return;
                         }
                     }
