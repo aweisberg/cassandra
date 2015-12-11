@@ -45,6 +45,8 @@ public class BackpressureMonitor
     {
         this.onWeight = onWeight;
         this.offWeight = offWeight;
+        new Thread()
+        { public void run() { while (true) { try { Thread.sleep(2000);} catch (InterruptedException e) { throw new RuntimeException(); } logger.info("Current backpressure {}", weight.get());}}}.start();
     }
 
     public void addListener(BackpressureListener listener)
@@ -86,7 +88,7 @@ public class BackpressureMonitor
                     {
                         if (weight.compareAndSet(oldWeight, newWeight))
                         {
-                            logger.info ("Backpressure stopped old weight {} new weight {}", oldWeight, newWeight, new Throwable());
+                            logger.info ("Backpressure stopped old weight " + oldWeight + " new weight " + newWeight, new Throwable());
                             listeners.stream().forEach(l -> l.backpressureStateChange(false));
                             return;
                         }
@@ -108,7 +110,7 @@ public class BackpressureMonitor
                     {
                         if (weight.compareAndSet(oldWeight, newWeight))
                         {
-                            logger.info ("Backpressure started old weight {} new weight {}", oldWeight, newWeight, new Throwable());
+                            logger.info ("Backpressure started old weight " + oldWeight + " new weight " + newWeight, new Throwable());
                             listeners.stream().forEach(l -> l.backpressureStateChange(true));
                             return;
                         }
