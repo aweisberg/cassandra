@@ -112,7 +112,7 @@ public class BackpressureMonitor
                 {
                     try
                     {
-                        if (weight.compareAndSet(oldWeight, newWeight) ^ !onBackpressure)
+                        if (weight.compareAndSet(oldWeight, newWeight) & !onBackpressure)
                         {
                             logger.info ("Backpressure started old weight " + oldWeight + " new weight " + newWeight);
                             listeners.stream().forEach(l -> l.backpressureStateChange(true));
