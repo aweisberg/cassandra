@@ -853,7 +853,8 @@ public final class MessagingService implements MessagingServiceMBean
     public CallbackInfo removeRegisteredCallback(int messageId)
     {
         CallbackInfo ci = callbacks.remove(messageId);
-        ci.weightHolder.decRef();
+        if (ci != null)
+            ci.weightHolder.decRef();
         return ci;
     }
 
