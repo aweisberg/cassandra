@@ -88,11 +88,13 @@ public class BackpressureMonitor
                 {
                     try
                     {
-                        if (weight.compareAndSet(oldWeight, newWeight) & onBackpressure)
+                        if (weight.compareAndSet(oldWeight, newWeight))
                         {
-
-                            logger.info ("Backpressure stopped old weight " + oldWeight + " new weight " + newWeight);
-                            listeners.stream().forEach(l -> l.backpressureStateChange(false));
+                            if (onBackpressure)
+                            {
+                                logger.info ("Backpressure stopped old weight " + oldWeight + " new weight " + newWeight);
+                                listeners.stream().forEach(l -> l.backpressureStateChange(false));
+                            }
                             onBackpressure = false;
                             return;
                         }
@@ -112,10 +114,13 @@ public class BackpressureMonitor
                 {
                     try
                     {
-                        if (weight.compareAndSet(oldWeight, newWeight) & !onBackpressure)
+                        if (weight.compareAndSet(oldWeight, newWeight))
                         {
-                            logger.info ("Backpressure started old weight " + oldWeight + " new weight " + newWeight);
-                            listeners.stream().forEach(l -> l.backpressureStateChange(true));
+                            if (!onBackpressure)
+                            {
+                                logger.info ("Backpressure started old weight " + oldWeight + " new weight " + newWeight);
+                                listeners.stream().forEach(l -> l.backpressureStateChange(true));
+                            }
                             onBackpressure = true;
                             return;
                         }
@@ -171,8 +176,6 @@ public class BackpressureMonitor
          * Decrement the ref count, and if it reaches 0 reduce the weight of backpressure
          */
         public void decRef();
-
-        public void close();
     }
 
     /**
