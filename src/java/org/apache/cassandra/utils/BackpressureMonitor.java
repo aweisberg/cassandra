@@ -86,7 +86,7 @@ public class BackpressureMonitor
                     {
                         if (weight.compareAndSet(oldWeight, newWeight))
                         {
-                            logger.info ("Backpressure stopped old weight {} new weight {}", oldWeight, newWeight);
+                            logger.info ("Backpressure stopped old weight {} new weight {}", oldWeight, newWeight, new Throwable());
                             listeners.stream().forEach(l -> l.backpressureStateChange(false));
                             return;
                         }
@@ -108,7 +108,7 @@ public class BackpressureMonitor
                     {
                         if (weight.compareAndSet(oldWeight, newWeight))
                         {
-                            logger.info ("Backpressure started old weight {} new weight {}", oldWeight, newWeight);
+                            logger.info ("Backpressure started old weight {} new weight {}", oldWeight, newWeight, new Throwable());
                             listeners.stream().forEach(l -> l.backpressureStateChange(true));
                             return;
                         }
@@ -207,7 +207,7 @@ public class BackpressureMonitor
             {
                 long retval = weight;
                 weight = -1;
-                backpressure(retval);
+                backpressure(-retval);
             }
         }
 
