@@ -176,6 +176,9 @@ public class BackpressureMonitor
          * Decrement the ref count, and if it reaches 0 reduce the weight of backpressure
          */
         public void decRef();
+
+        //Specified here to remove exception from the signature
+        public void close();
     }
 
     /**
