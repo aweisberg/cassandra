@@ -339,6 +339,7 @@ public class Memtable implements Comparable<Memtable>
                                     * 1.2); // bloom filter and row index overhead
             wh.addWeight(estimatedSize);
             wh.close();
+            logger.info("Adding weight for memtable flush " + estimatedSize);
             this.isBatchLogTable = cfs.name.equals(SystemKeyspace.BATCHES) && cfs.keyspace.getName().equals(SystemKeyspace.NAME);
         }
 
@@ -361,6 +362,7 @@ public class Memtable implements Comparable<Memtable>
             finally
             {
                 wh.decRef();
+                logger.info("Removing weight for memtable " + estimatedSize);
             }
         }
 
