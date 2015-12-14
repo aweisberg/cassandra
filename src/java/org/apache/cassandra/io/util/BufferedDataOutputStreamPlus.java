@@ -26,6 +26,7 @@ import java.nio.channels.WritableByteChannel;
 
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
+import com.google.common.util.concurrent.RateLimiter;
 
 import net.nicoulaj.compilecommand.annotations.DontInline;
 
@@ -41,6 +42,8 @@ import org.apache.cassandra.utils.vint.VIntCoding;
  */
 public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
 {
+
+    static final RateLimiter rl = RateLimiter.create(Long.getLong("cassandra.disk_limit_hack", 1024 * 1024 * 32));
     private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + "nio_data_output_stream_plus_buffer_size", 1024 * 32);
 
     protected ByteBuffer buffer;
@@ -318,7 +321,7 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     protected void doFlush(int count) throws IOException
     {
         buffer.flip();
-
+        rl.acquire(buffer.remaining());
         while (buffer.hasRemaining())
             channel.write(buffer);
 
