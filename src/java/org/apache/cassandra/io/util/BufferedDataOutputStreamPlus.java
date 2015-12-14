@@ -321,7 +321,8 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     protected void doFlush(int count) throws IOException
     {
         buffer.flip();
-        rl.acquire(buffer.remaining());
+        if (buffer.remaining() > 0)
+            rl.acquire(buffer.remaining());
         while (buffer.hasRemaining())
             channel.write(buffer);
 
