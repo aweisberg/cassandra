@@ -49,7 +49,9 @@ import org.apache.cassandra.io.sstable.SSTableTxnWriter;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.io.util.DiskAwareRunnable;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.ActiveRepairService;
+import org.apache.cassandra.utils.BackpressureMonitor.WeightHolder;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.ObjectSizes;
@@ -318,6 +320,7 @@ public class Memtable implements Comparable<Memtable>
         private final long estimatedSize;
 
         private final boolean isBatchLogTable;
+        private final WeightHolder wh = MessagingService.newWeightHolder(0);
 
         FlushRunnable(ReplayPosition context)
         {
@@ -334,7 +337,8 @@ public class Memtable implements Comparable<Memtable>
                                     + keySize // keys in data file
                                     + liveDataSize.get()) // data
                                     * 1.2); // bloom filter and row index overhead
-
+            wh.addWeight(estimatedSize);
+            wh.close();
             this.isBatchLogTable = cfs.name.equals(SystemKeyspace.BATCHES) && cfs.keyspace.getName().equals(SystemKeyspace.NAME);
         }
 
@@ -345,12 +349,19 @@ public class Memtable implements Comparable<Memtable>
 
         protected void runMayThrow() throws Exception
         {
-            long writeSize = getExpectedWriteSize();
-            Directories.DataDirectory dataDirectory = getWriteDirectory(writeSize);
-            File sstableDirectory = cfs.getDirectories().getLocationForDisk(dataDirectory);
-            assert sstableDirectory != null : "Flush task is not bound to any disk";
-            Collection<SSTableReader> sstables = writeSortedContents(context, sstableDirectory);
-            cfs.replaceFlushed(Memtable.this, sstables);
+            try
+            {
+                long writeSize = getExpectedWriteSize();
+                Directories.DataDirectory dataDirectory = getWriteDirectory(writeSize);
+                File sstableDirectory = cfs.getDirectories().getLocationForDisk(dataDirectory);
+                assert sstableDirectory != null : "Flush task is not bound to any disk";
+                Collection<SSTableReader> sstables = writeSortedContents(context, sstableDirectory);
+                cfs.replaceFlushed(Memtable.this, sstables);
+            }
+            finally
+            {
+                wh.decRef();
+            }
         }
 
         protected Directories getDirectories()
