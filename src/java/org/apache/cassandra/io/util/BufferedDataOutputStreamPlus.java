@@ -33,6 +33,8 @@ import net.nicoulaj.compilecommand.annotations.DontInline;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.utils.memory.MemoryUtil;
 import org.apache.cassandra.utils.vint.VIntCoding;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An implementation of the DataOutputStreamPlus interface using a ByteBuffer to stage writes
@@ -42,8 +44,14 @@ import org.apache.cassandra.utils.vint.VIntCoding;
  */
 public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
 {
+    private static final Logger logger = LoggerFactory.getLogger(BufferedDataOutputStreamPlus.class);
 
     public static final RateLimiter rl = RateLimiter.create(Long.getLong("cassandra.disk_limit_hack", 1024 * 1024 * 32));
+    static
+    {
+        logger.info("Disk IO rate limit " + rl.getRate());
+    }
+
     public static void limit(int bytes)
     {
         if (bytes > 0)
