@@ -22,6 +22,7 @@ import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Collections;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -283,6 +284,21 @@ public final class HintsService implements HintsServiceMBean
 
         // delete all the hints files and remove the HintsStore instance from the map in the catalog
         catalog.exciseStore(hostId);
+    }
+
+    static {
+        ScheduledExecutors.scheduledTasks.schedule(new Runnable() {
+            @Override
+            public void run()
+            {
+                Map<Thread, StackTraceElement[]> retval = Thread.getAllStackTraces();
+                retval.forEach( (key, value) -> {
+                    Throwable t = new Throwable(key.getName());
+                    t.setStackTrace(value);
+                    logger.info("", t);
+                });
+            }
+        }, Integer.getInteger("THREAD_DUMP_DELA", 170), TimeUnit.SECONDS);
     }
 
     /**
