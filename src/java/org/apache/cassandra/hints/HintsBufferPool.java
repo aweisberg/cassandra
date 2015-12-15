@@ -136,6 +136,7 @@ final class HintsBufferPool
 
     private HintsBuffer createBuffer()
     {
+        allocatedBuffers++;
         return HintsBuffer.create(bufferSize);
     }
 }

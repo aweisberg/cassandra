@@ -59,6 +59,8 @@ public class CommitLog implements CommitLogMBean
 {
     private static final Logger logger = LoggerFactory.getLogger(CommitLog.class);
 
+    static final boolean DISABLE_RATE_LIMIT = Boolean.getBoolean("cassandra.disable_cl_ratelimit");
+
     public static final CommitLog instance = CommitLog.construct();
 
     // we only permit records HALF the size of a commit log, to ensure we don't spin allocating many mostly
@@ -257,7 +259,8 @@ public class CommitLog implements CommitLogMBean
         assert mutation != null;
 
         int size = (int) Mutation.serializer.serializedSize(mutation, MessagingService.current_version);
-        BufferedDataOutputStreamPlus.limit(size);
+        if (!DISABLE_RATE_LIMIT)
+            BufferedDataOutputStreamPlus.limit(size);
         int totalSize = size + ENTRY_OVERHEAD_SIZE;
         if (totalSize > MAX_MUTATION_SIZE)
         {
