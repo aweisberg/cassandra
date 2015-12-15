@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
 import org.apache.cassandra.io.util.Memory;
 import org.apache.cassandra.io.util.SafeMemoryWriter;
 
@@ -170,9 +171,12 @@ public class IndexSummaryBuilder implements AutoCloseable
         if (keysWritten == nextSamplePosition)
         {
             assert entries.length() <= Integer.MAX_VALUE;
+            int length = (int)entries.length();
             offsets.writeInt((int) entries.length());
             entries.write(decoratedKey.getKey());
             entries.writeLong(indexStart);
+            int endLength = (int)entries.length();
+            BufferedDataOutputStreamPlus.limit(endLength - length);
             setNextSamplePosition(keysWritten);
         }
         else if (dataEnd != 0 && keysWritten + 1 == nextSamplePosition)

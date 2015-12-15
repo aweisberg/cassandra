@@ -257,7 +257,7 @@ public class CommitLog implements CommitLogMBean
         assert mutation != null;
 
         int size = (int) Mutation.serializer.serializedSize(mutation, MessagingService.current_version);
-
+        BufferedDataOutputStreamPlus.limit(size);
         int totalSize = size + ENTRY_OVERHEAD_SIZE;
         if (totalSize > MAX_MUTATION_SIZE)
         {

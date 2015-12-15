@@ -25,6 +25,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.net.MessagingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A primitive pool of {@link HintsBuffer} buffers. Under normal conditions should only hold two buffers - the currently
@@ -32,6 +34,8 @@ import org.apache.cassandra.net.MessagingService;
  */
 final class HintsBufferPool
 {
+    private static final Logger logger = LoggerFactory.getLogger(HintsBufferPool.class);
+
     interface FlushCallback
     {
         void flush(HintsBuffer buffer, HintsBufferPool pool);
@@ -116,7 +120,9 @@ final class HintsBufferPool
         {
             try
             {
+                logger.info("hint backpressure started");
                 buffer = reserveBuffers.take();
+                logger.info("hint backpressure stopped");
             }
             catch (InterruptedException e)
             {

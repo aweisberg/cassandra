@@ -59,11 +59,11 @@ public class BigTableWriter extends SSTableWriter
     private DecoratedKey lastWrittenKey;
     private FileMark dataMark;
 
-    public BigTableWriter(Descriptor descriptor, 
-                          Long keyCount, 
-                          Long repairedAt, 
-                          CFMetaData metadata, 
-                          MetadataCollector metadataCollector, 
+    public BigTableWriter(Descriptor descriptor,
+                          Long keyCount,
+                          Long repairedAt,
+                          CFMetaData metadata,
+                          MetadataCollector metadataCollector,
                           SerializationHeader header,
                           Collection<SSTableFlushObserver> observers,
                           LifecycleTransaction txn)
@@ -156,6 +156,7 @@ public class BigTableWriter extends SSTableWriter
 
             long endPosition = dataFile.position();
             long rowSize = endPosition - startPosition;
+            BufferedDataOutputStreamPlus.limit((int)rowSize);
             maybeLogLargePartitionWarning(key, rowSize);
             metadataCollector.addPartitionSizeInBytes(rowSize);
             afterAppend(key, endPosition, entry);
@@ -417,6 +418,8 @@ public class BigTableWriter extends SSTableWriter
                 throw new FSWriteError(e, indexFile.getPath());
             }
             long indexEnd = indexFile.position();
+            BufferedDataOutputStreamPlus.limit((int)(indexEnd - indexStart));
+
 
             if (logger.isTraceEnabled())
                 logger.trace("wrote index entry: {} at {}", indexEntry, indexStart);

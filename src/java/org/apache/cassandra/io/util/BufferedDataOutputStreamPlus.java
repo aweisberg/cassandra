@@ -43,7 +43,14 @@ import org.apache.cassandra.utils.vint.VIntCoding;
 public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
 {
 
-    static final RateLimiter rl = RateLimiter.create(Long.getLong("cassandra.disk_limit_hack", 1024 * 1024 * 32));
+    public static final RateLimiter rl = RateLimiter.create(Long.getLong("cassandra.disk_limit_hack", 1024 * 1024 * 32));
+    public static void limit(int bytes)
+    {
+        if (bytes > 0)
+            rl.acquire(bytes);
+    }
+
+
     private static final int DEFAULT_BUFFER_SIZE = Integer.getInteger(Config.PROPERTY_PREFIX + "nio_data_output_stream_plus_buffer_size", 1024 * 32);
 
     protected ByteBuffer buffer;
@@ -321,8 +328,6 @@ public class BufferedDataOutputStreamPlus extends DataOutputStreamPlus
     protected void doFlush(int count) throws IOException
     {
         buffer.flip();
-        if (buffer.remaining() > 0)
-            rl.acquire(buffer.remaining());
         while (buffer.hasRemaining())
             channel.write(buffer);
 

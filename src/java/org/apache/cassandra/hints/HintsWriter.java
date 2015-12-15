@@ -29,6 +29,7 @@ import java.util.zip.CRC32;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.io.util.BufferedDataOutputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.utils.CLibrary;
@@ -212,6 +213,7 @@ final class HintsWriter implements AutoCloseable
                                   ? buffer
                                   : ByteBuffer.allocate(totalSize);
 
+            BufferedDataOutputStreamPlus.limit(totalSize);
             CRC32 crc = new CRC32();
             try (DataOutputBufferFixed out = new DataOutputBufferFixed(hintBuffer))
             {
