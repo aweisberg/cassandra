@@ -19,8 +19,11 @@ package org.apache.cassandra.hints;
 
 import java.util.Queue;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.net.MessagingService;
 
 /**
@@ -34,15 +37,16 @@ final class HintsBufferPool
         void flush(HintsBuffer buffer, HintsBufferPool pool);
     }
 
+    static final int MAX_ALLOCATED_BUFFERS = Integer.getInteger(Config.PROPERTY_PREFIX + "MAX_HINT_BUFFERS", 3);
     private volatile HintsBuffer currentBuffer;
-    private final Queue<HintsBuffer> reserveBuffers;
+    private final BlockingQueue<HintsBuffer> reserveBuffers;
     private final int bufferSize;
     private final FlushCallback flushCallback;
+    private int allocatedBuffers = 0;
 
     HintsBufferPool(int bufferSize, FlushCallback flushCallback)
     {
-        reserveBuffers = new ConcurrentLinkedQueue<>();
-
+        reserveBuffers = new LinkedBlockingQueue<>();
         this.bufferSize = bufferSize;
         this.flushCallback = flushCallback;
     }
@@ -98,6 +102,7 @@ final class HintsBufferPool
 
     private synchronized void initializeCurrentBuffer()
     {
+        allocatedBuffers++;
         if (currentBuffer == null)
             currentBuffer = createBuffer();
     }
@@ -108,6 +113,17 @@ final class HintsBufferPool
             return false;
 
         HintsBuffer buffer = reserveBuffers.poll();
+        if (buffer == null && allocatedBuffers >= MAX_ALLOCATED_BUFFERS)
+        {
+            try
+            {
+                buffer = reserveBuffers.take();
+            }
+            catch (InterruptedException e)
+            {
+                throw new RuntimeException(e);
+            }
+        }
         currentBuffer = buffer == null ? createBuffer() : buffer;
 
         return true;

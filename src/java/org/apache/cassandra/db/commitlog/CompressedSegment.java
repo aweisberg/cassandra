@@ -20,7 +20,10 @@ package org.apache.cassandra.db.commitlog;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Queue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSWriteError;
@@ -41,7 +44,8 @@ public class CompressedSegment extends CommitLogSegment
             return ByteBuffer.allocate(0);
         }
     };
-    static Queue<ByteBuffer> bufferPool = new ConcurrentLinkedQueue<>();
+    static final BlockingQueue<ByteBuffer> bufferPool = new LinkedBlockingQueue<>();
+    static int allocatedBuffers = 0;
 
     /**
      * Maximum number of buffers in the compression pool. The default value is 3, it should not be set lower than that
@@ -83,8 +87,24 @@ public class CompressedSegment extends CommitLogSegment
         ByteBuffer buf = bufferPool.poll();
         if (buf == null)
         {
-            // this.compressor is not yet set, so we must use the commitLog's one.
-            buf = commitLog.compressor.preferredBufferType().allocate(DatabaseDescriptor.getCommitLogSegmentSize());
+            if (allocatedBuffers >= MAX_BUFFERPOOL_SIZE)
+            {
+                try
+                {
+                    buf = bufferPool.take();
+                }
+                catch (InterruptedException e)
+                {
+                    throw new RuntimeException(e);
+                }
+            }
+            else
+            {
+                //This isn't racing with other threads, CLSM has a dedicated thread for making segments available
+                allocatedBuffers++;
+                // this.compressor is not yet set, so we must use the commitLog's one.
+                buf = commitLog.compressor.preferredBufferType().allocate(DatabaseDescriptor.getCommitLogSegmentSize());
+            }
         } else
             buf.clear();
         return buf;
