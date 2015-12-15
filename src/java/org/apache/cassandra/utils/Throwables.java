@@ -18,7 +18,14 @@
 */
 package org.apache.cassandra.utils;
 
-public class Throwables
+import java.util.Collection;
+import java.util.concurrent.Future;
+
+import com.google.common.base.Function;
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
+
+public final class Throwables
 {
 
     public static Throwable merge(Throwable existingFail, Throwable newFail)
@@ -49,5 +56,30 @@ public class Throwables
             }
         }
         return accumulate;
+    }
+
+    public static  <Y, T extends Future<Y>> Iterable<Y> completedFuturesUnchecked(Collection<T> c)
+    {
+        Iterable<T> filter = Iterables.filter(c, new Predicate<T>() {
+
+            @Override
+            public boolean apply(T input)
+            {
+                return input.isDone();
+            }});
+        return Iterables.transform(filter, new Function<T, Y>(){
+
+            @Override
+            public Y apply(T input)
+            {
+                try
+                {
+                    return input.get();
+                }
+                catch (Exception e)
+                {
+                    throw new RuntimeException(e);
+                }
+            }});
     }
 }

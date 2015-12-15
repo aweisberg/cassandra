@@ -19,8 +19,9 @@ package org.apache.cassandra.db.commitlog;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
 import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executor;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSWriteError;
@@ -28,6 +29,11 @@ import org.apache.cassandra.io.compress.BufferType;
 import org.apache.cassandra.io.compress.ICompressor;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.SyncUtil;
+
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.MoreExecutors;
+import com.google.common.util.concurrent.SettableFuture;
 
 /*
  * Compressed commit log segment. Provides an in-memory buffer for the mutation threads. On sync compresses the written
@@ -41,7 +47,11 @@ public class CompressedSegment extends CommitLogSegment
             return ByteBuffer.allocate(0);
         }
     };
-    static Queue<ByteBuffer> bufferPool = new ConcurrentLinkedQueue<>();
+
+    static final Object bufferPoolLock = new Object();
+    static final Queue<ByteBuffer> bufferPool = new ArrayDeque<>();
+    static final Queue<SettableFuture<ByteBuffer>> bufferPoolWaiters = new ArrayDeque<>();
+    static int allocatedBuffers = 0;
 
     /**
      * Maximum number of buffers in the compression pool. The default value is 3, it should not be set lower than that
@@ -58,9 +68,9 @@ public class CompressedSegment extends CommitLogSegment
     /**
      * Constructs a new segment file.
      */
-    CompressedSegment(CommitLog commitLog)
+    private CompressedSegment(CommitLog commitLog, ByteBuffer buffer)
     {
-        super(commitLog);
+        super(commitLog, buffer);
         this.compressor = commitLog.compressor;
         try
         {
@@ -78,16 +88,39 @@ public class CompressedSegment extends CommitLogSegment
         return compressor.preferredBufferType().allocate(size);
     }
 
-    ByteBuffer createBuffer(CommitLog commitLog)
+    @Override
+    ByteBuffer createBuffer(CommitLog cl)
     {
-        ByteBuffer buf = bufferPool.poll();
-        if (buf == null)
+        throw new UnsupportedOperationException();
+    }
+
+    /*
+     * Create a listenable future for the next available buffer
+     */
+    static ListenableFuture<ByteBuffer> createBufferListener(CommitLog commitLog)
+    {
+        synchronized (bufferPoolLock)
         {
-            // this.compressor is not yet set, so we must use the commitLog's one.
-            buf = commitLog.compressor.preferredBufferType().allocate(DatabaseDescriptor.getCommitLogSegmentSize());
-        } else
-            buf.clear();
-        return buf;
+            ByteBuffer buf = bufferPool.poll();
+            if (buf == null)
+            {
+                if (allocatedBuffers >= MAX_BUFFERPOOL_SIZE)
+                {
+                    //SettableFuture constructor is an instrumentation point for byteman in CLSMTest
+                    SettableFuture<ByteBuffer> waiter = SettableFuture.create();
+                    bufferPoolWaiters.offer(waiter);
+                    return waiter;
+                }
+                else
+                {
+                    allocatedBuffers++;
+                    // this.compressor is not yet set, so we must use the commitLog's one.
+                    buf = commitLog.compressor.preferredBufferType().allocate(DatabaseDescriptor.getCommitLogSegmentSize());
+                }
+            } else
+                buf.clear();
+            return Futures.immediateFuture(buf);
+        }
     }
 
     static long startMillis = System.currentTimeMillis();
@@ -138,10 +171,18 @@ public class CompressedSegment extends CommitLogSegment
     @Override
     protected void internalClose()
     {
-        if (bufferPool.size() < MAX_BUFFERPOOL_SIZE)
-            bufferPool.add(buffer);
-        else
-            FileUtils.clean(buffer);
+        synchronized (bufferPoolLock)
+        {
+            if (allocatedBuffers <= MAX_BUFFERPOOL_SIZE)
+            {
+                if (!bufferPoolWaiters.isEmpty())
+                    bufferPoolWaiters.poll().set(buffer);
+                else
+                    bufferPool.add(buffer);
+            }
+            else
+                throw new RuntimeException("Shouldn't allocate more than MAX_BUFFERPOOL_SIZE buffers");
+        }
 
         super.internalClose();
     }
@@ -149,11 +190,37 @@ public class CompressedSegment extends CommitLogSegment
     static void shutdown()
     {
         bufferPool.clear();
+        bufferPoolWaiters.clear();
+        allocatedBuffers = 0;
     }
 
     @Override
     public long onDiskSize()
     {
         return lastWrittenPos;
+    }
+
+    public static ListenableFuture<CommitLogSegment> create(final CommitLog cl, Executor executor)
+    {
+        final SettableFuture<CommitLogSegment> retval = SettableFuture.create();
+        final ListenableFuture<ByteBuffer> bufferFuture = createBufferListener(cl);
+        Runnable handler = new Runnable() {
+            @Override
+            public void run()
+            {
+                try
+                {
+                    retval.set(new CompressedSegment(cl, bufferFuture.get()));
+                }
+                catch (Exception e)
+                {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+        //Try and process the future in this thread immediately if possible so waiters can retrieve the value
+        //immediately from the future when it is first made visible.
+        bufferFuture.addListener(handler, bufferFuture.isDone() ? MoreExecutors.sameThreadExecutor() : executor);
+        return retval;
     }
 }
