@@ -23,6 +23,8 @@ import java.util.EnumSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.util.concurrent.RateLimiter;
+
 import org.apache.cassandra.db.filter.TombstoneOverwhelmingException;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.index.IndexNotAvailableException;
@@ -30,6 +32,7 @@ import org.apache.cassandra.index.IndexNotAvailableException;
 public class MessageDeliveryTask implements Runnable
 {
     private static final Logger logger = LoggerFactory.getLogger(MessageDeliveryTask.class);
+    static final RateLimiter rl = RateLimiter.create(Integer.getInteger("cassandra.mutation_limit_hack", Integer.MAX_VALUE));
 
     private final MessageIn message;
     private final int id;
@@ -39,6 +42,7 @@ public class MessageDeliveryTask implements Runnable
         assert message != null;
         this.message = message;
         this.id = id;
+        rl.acquire();
     }
 
     public void run()

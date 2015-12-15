@@ -31,12 +31,8 @@ import com.google.common.util.concurrent.RateLimiter;
 
 public class MutationVerbHandler implements IVerbHandler<Mutation>
 {
-
-    static final RateLimiter rl = RateLimiter.create(Integer.getInteger("cassandra.mutation_limit_hack", Integer.MAX_VALUE));
-
     public void doVerb(MessageIn<Mutation> message, int id)  throws IOException
     {
-        rl.acquire();
         // Check if there were any forwarding headers in this message
         byte[] from = message.parameters.get(Mutation.FORWARD_FROM);
         InetAddress replyTo;
