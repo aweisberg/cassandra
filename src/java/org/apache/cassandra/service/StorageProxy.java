@@ -107,6 +107,27 @@ public class StorageProxy implements StorageProxyMBean
 
     static
     {
+        new Thread() {
+            @Override
+            public void run()
+            {
+                long lastWritten = 0;
+                while (true)
+                {
+                    try
+                    {
+                        Thread.sleep(5000);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        logger.error("shit", e);
+                    }
+                    logger.info("Total hints at mutation " + (((totalHints.get() - lastWritten) / 5.0) / (1024.0 * 1024.0)));
+                    lastWritten = totalHints.get();
+                }
+            }
+        }.start();
+
         MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
         try
         {
@@ -1110,6 +1131,8 @@ public class StorageProxy implements StorageProxyMBean
         return new BatchlogEndpoints(chosenEndpoints);
     }
 
+    static AtomicLong totalHints = new AtomicLong();
+
     /**
      * Send the mutations to the right targets, write it locally if it corresponds or writes a hint when the node
      * is not available.
@@ -1198,6 +1221,7 @@ public class StorageProxy implements StorageProxyMBean
                 {
                     if (shouldHint(destination))
                     {
+                        totalHints.incrementAndGet();
                         if (endpointsToHint == null)
                             endpointsToHint = new ArrayList<>(Iterables.size(targets));
                         endpointsToHint.add(destination);
