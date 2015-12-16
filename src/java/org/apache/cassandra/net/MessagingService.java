@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -291,6 +292,8 @@ public final class MessagingService implements MessagingServiceMBean
         }
     }
 
+    static AtomicLong droppedMessages = new AtomicLong();
+
     /* Lookup table for registering message handlers based on the verb. */
     private final Map<Verb, IVerbHandler> verbHandlers;
 
@@ -348,6 +351,29 @@ public final class MessagingService implements MessagingServiceMBean
     private final BackpressureMonitor backpressureMonitor =
             new BackpressureMonitor(DatabaseDescriptor.getBackpressureOnBytes(), DatabaseDescriptor.getBackpressureOffBytes());
 
+    static
+    {
+        new Thread() {
+            @Override
+            public void run()
+            {
+                long lastWritten = 0;
+                while (true)
+                {
+                    try
+                    {
+                        Thread.sleep(5000);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        logger.error("shit", e);
+                    }
+                    logger.info("Total dropped messages " + (((droppedMessages.get() - lastWritten) / 5.0) / (1024.0 * 1024.0)));
+                    lastWritten = droppedMessages.get();
+                }
+            }
+        }.start();
+    }
     public void addMessageSink(IMessageSink sink)
     {
         messageSinks.add(sink);
@@ -428,6 +454,7 @@ public final class MessagingService implements MessagingServiceMBean
 
                 if (expiredCallbackInfo.shouldHint())
                 {
+                    droppedMessages.incrementAndGet();
                     Mutation mutation = ((WriteCallbackInfo) expiredCallbackInfo).mutation();
                     return StorageProxy.submitHint(mutation, expiredCallbackInfo.target, null);
                 }
