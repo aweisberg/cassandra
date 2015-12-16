@@ -42,6 +42,10 @@ final class HintsBufferPool
     }
 
     static final int MAX_ALLOCATED_BUFFERS = Integer.getInteger(Config.PROPERTY_PREFIX + "MAX_HINT_BUFFERS", 3);
+
+    static {
+        logger.info("MAX ALLOCATED HINT BUFFERS " + MAX_ALLOCATED_BUFFERS);
+    }
     private volatile HintsBuffer currentBuffer;
     private final BlockingQueue<HintsBuffer> reserveBuffers;
     private final int bufferSize;

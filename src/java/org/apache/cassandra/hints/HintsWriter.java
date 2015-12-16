@@ -35,6 +35,8 @@ import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.utils.CLibrary;
 import org.apache.cassandra.utils.SyncUtil;
 import org.apache.cassandra.utils.Throwables;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.cassandra.utils.FBUtilities.updateChecksum;
 import static org.apache.cassandra.utils.FBUtilities.updateChecksumInt;
@@ -42,8 +44,32 @@ import static org.apache.cassandra.utils.Throwables.perform;
 
 final class HintsWriter implements AutoCloseable
 {
+    private static final Logger logger = LoggerFactory.getLogger(HintsWriter.class);
     static final int PAGE_SIZE = 4096;
 
+    static long bytesWritten = 0;
+    static {
+        new Thread() {
+            @Override
+            public void run()
+            {
+                long lastWritten = 0;
+                while (true)
+                {
+                    try
+                    {
+                        Thread.sleep(5000);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        logger.error("shit", e);
+                    }
+                    logger.info("Hint bytes written/sec " + (((bytesWritten - lastWritten) / 5.0) / (1024.0 * 1024.0)));
+                    lastWritten = bytesWritten;
+                }
+            }
+        }.start();
+    }
     private final File directory;
     private final HintsDescriptor descriptor;
     private final File file;
@@ -247,6 +273,7 @@ final class HintsWriter implements AutoCloseable
         {
             buffer.flip();
 
+            bytesWritten += buffer.remaining();
             if (buffer.remaining() > 0)
             {
                 updateChecksum(globalCRC, buffer);
@@ -258,8 +285,8 @@ final class HintsWriter implements AutoCloseable
 
         private void maybeFsync()
         {
-            if (position() >= lastSyncPosition + DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024L)
-                fsync();
+//            if (position() >= lastSyncPosition + DatabaseDescriptor.getTrickleFsyncIntervalInKb() * 1024L)
+//                fsync();
         }
 
         private void maybeSkipCache()
