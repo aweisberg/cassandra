@@ -47,7 +47,7 @@ final class HintsWriter implements AutoCloseable
     private static final Logger logger = LoggerFactory.getLogger(HintsWriter.class);
     static final int PAGE_SIZE = 4096;
 
-    static long bytesWritten = 0;
+    static long staticBytesWritten = 0;
     static {
         new Thread() {
             @Override
@@ -64,8 +64,8 @@ final class HintsWriter implements AutoCloseable
                     {
                         logger.error("shit", e);
                     }
-                    logger.info("Hint bytes written/sec " + (((bytesWritten - lastWritten) / 5.0) / (1024.0 * 1024.0)));
-                    lastWritten = bytesWritten;
+                    logger.info("Hint bytes written/sec " + (((staticBytesWritten - lastWritten) / 5.0) / (1024.0 * 1024.0)));
+                    lastWritten = staticBytesWritten;
                 }
             }
         }.start();
@@ -214,6 +214,7 @@ final class HintsWriter implements AutoCloseable
             updateChecksum(globalCRC, buffer);
             updateChecksum(globalCRC, hint);
 
+            staticBytesWritten += buffer.remaining() + hint.remaining();
             channel.write(new ByteBuffer[] { buffer, hint });
             buffer.clear();
         }
@@ -273,7 +274,7 @@ final class HintsWriter implements AutoCloseable
         {
             buffer.flip();
 
-            bytesWritten += buffer.remaining();
+            staticBytesWritten += buffer.remaining();
             if (buffer.remaining() > 0)
             {
                 updateChecksum(globalCRC, buffer);
