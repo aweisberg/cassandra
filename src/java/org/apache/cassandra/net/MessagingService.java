@@ -368,7 +368,7 @@ public final class MessagingService implements MessagingServiceMBean
                     {
                         logger.error("shit", e);
                     }
-                    logger.info("Total dropped messages " + (((droppedMessages.get() - lastWritten) / 5.0) / (1024.0 * 1024.0)));
+                    logger.info("Total dropped messages " + (droppedMessages.get() - lastWritten));
                     lastWritten = droppedMessages.get();
                 }
             }
