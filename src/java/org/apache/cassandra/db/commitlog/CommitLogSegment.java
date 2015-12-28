@@ -29,8 +29,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
 
@@ -57,7 +59,7 @@ import static org.apache.cassandra.utils.FBUtilities.updateChecksumInt;
 /*
  * A single commit log file on disk. Manages creation of the file and writing mutations to disk,
  * as well as tracking the last mutation position of any "dirty" CFs covered by the segment file. Segment
- * files are initially allocated to a fixed size and can grow to accomidate a larger value if necessary.
+ * files are initially allocated to a fixed size and can grow to accommodate a larger value if necessary.
  */
 public abstract class CommitLogSegment
 {
@@ -117,9 +119,13 @@ public abstract class CommitLogSegment
     final CommitLog commitLog;
     public final CommitLogDescriptor descriptor;
 
-    static CommitLogSegment createSegment(CommitLog commitLog)
+    /*
+     * Create the next commit log segment. May take place asynchronously if no buffers are available
+     * to accumulate data when the compressed commit log is used.
+     */
+    static CompletableFuture<CommitLogSegment> createSegment(CommitLog commitLog, Executor e)
     {
-        return commitLog.compressor != null ? new CompressedSegment(commitLog) : new MemoryMappedSegment(commitLog);
+        return commitLog.compressor != null ? CompressedSegment.create(commitLog, e) : CompletableFuture.completedFuture(new MemoryMappedSegment(commitLog));
     }
 
     static long getNextId()
@@ -127,12 +133,17 @@ public abstract class CommitLogSegment
         return idBase + nextId.getAndIncrement();
     }
 
+    CommitLogSegment(CommitLog commitLog)
+    {
+        this(commitLog, null);
+    }
+
     /**
      * Constructs a new segment file.
      *
      * @param filePath  if not null, recycles the existing file by renaming it and truncating it to CommitLog.SEGMENT_SIZE.
      */
-    CommitLogSegment(CommitLog commitLog)
+    CommitLogSegment(CommitLog commitLog, ByteBuffer suppliedBuffer)
     {
         this.commitLog = commitLog;
         id = getNextId();
@@ -148,8 +159,8 @@ public abstract class CommitLogSegment
         {
             throw new FSWriteError(e, logFile);
         }
-        
-        buffer = createBuffer(commitLog);
+
+        buffer = suppliedBuffer != null ? suppliedBuffer : createBuffer(commitLog);
         // write the header
         CommitLogDescriptor.writeHeader(buffer, descriptor);
         endOfBuffer = buffer.capacity();
@@ -255,7 +266,7 @@ public abstract class CommitLogSegment
         // Note: Even if the very first allocation of this sync section failed, we still want to enter this
         // to ensure the segment is closed. As allocatePosition is set to 1 beyond the capacity of the buffer,
         // this will always be entered when a mutation allocation has been attempted after the marker allocation
-        // succeeded in the previous sync. 
+        // succeeded in the previous sync.
         assert buffer != null;  // Only close once.
 
         int startMarker = lastSyncedOffset;

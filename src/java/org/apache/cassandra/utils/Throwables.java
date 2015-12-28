@@ -21,7 +21,9 @@ package org.apache.cassandra.utils;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Iterator;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 import org.apache.cassandra.io.FSReadError;
@@ -166,5 +168,19 @@ public final class Throwables
             }
         }
         return accumulate;
+    }
+
+    public static  <Y, T extends Future<Y>> Stream<Y> completedFuturesUnchecked(Collection<T> c)
+    {
+        return c.stream().filter(f -> f.isDone()).map(f -> {
+            try
+            {
+                return f.get();
+            }
+            catch (Exception e)
+            {
+                throw new RuntimeException(e);
+            }
+       });
     }
 }

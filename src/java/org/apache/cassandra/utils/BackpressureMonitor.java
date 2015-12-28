@@ -26,6 +26,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
 /**
@@ -35,9 +36,12 @@ public class BackpressureMonitor
 {
     private static final Logger logger = LoggerFactory.getLogger(BackpressureMonitor.class);
 
-    private final AtomicLong weight = new AtomicLong();
+    @VisibleForTesting
+    final AtomicLong weight = new AtomicLong();
+    @VisibleForTesting
+    final List<BackpressureListener> listeners = new CopyOnWriteArrayList<>();
+
     private final ReentrantLock backpressureLock = new ReentrantLock(false);
-    private final List<BackpressureListener> listeners = new CopyOnWriteArrayList<>();
     private final long onWeight;
     private final long offWeight;
     private boolean onBackpressure = false;
@@ -45,6 +49,8 @@ public class BackpressureMonitor
 
     public BackpressureMonitor(long onWeight, long offWeight)
     {
+        Preconditions.checkArgument(onWeight > offWeight);
+        Preconditions.checkArgument(offWeight >= 0);
         this.onWeight = onWeight;
         this.offWeight = offWeight;
         new Thread()

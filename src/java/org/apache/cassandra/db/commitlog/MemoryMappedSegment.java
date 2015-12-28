@@ -51,6 +51,7 @@ public class MemoryMappedSegment extends CommitLogSegment
         buffer.putInt(firstSync + 4, 0);
     }
 
+    @Override
     ByteBuffer createBuffer(CommitLog commitLog)
     {
         try

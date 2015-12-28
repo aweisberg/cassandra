@@ -29,12 +29,15 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 
-import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +52,7 @@ import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.WaitQueue;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.WrappedRunnable;
+import org.apache.cassandra.utils.Throwables;
 
 import static org.apache.cassandra.db.commitlog.CommitLogSegment.Allocation;
 
@@ -64,9 +68,21 @@ public class CommitLogSegmentManager
      * Queue of work to be done by the manager thread, also used to wake the thread to perform segment allocation.
      */
     private final BlockingQueue<Runnable> segmentManagementTasks = new LinkedBlockingQueue<>();
+    //Need to process compleatable futures in the segment management thread to serialize  things like allocation
+    //of segment ids.
+    private final Executor segmentManagementExecutor = new Executor()
+    {
+        public void execute(Runnable command)
+        {
+            segmentManagementTasks.offer(command);
+        }
+    };
 
-    /** Segments that are ready to be used. Head of the queue is the one we allocate writes to */
-    private final ConcurrentLinkedQueue<CommitLogSegment> availableSegments = new ConcurrentLinkedQueue<>();
+    /**
+     *  Segments that have been preallocated by the CLSM, possibly not ready immediately if writing segments
+     *  is falling behind so it is provided as a Future.
+     **/
+    private final ConcurrentLinkedQueue<Future<CommitLogSegment>> pendingSegments = new ConcurrentLinkedQueue<>();
 
     /** Active segments, containing unflushed data */
     private final ConcurrentLinkedQueue<CommitLogSegment> activeSegments = new ConcurrentLinkedQueue<>();
@@ -74,7 +90,7 @@ public class CommitLogSegmentManager
     /** The segment we are currently allocating commit log records to */
     private volatile CommitLogSegment allocatingFrom = null;
 
-    private final WaitQueue hasAvailableSegments = new WaitQueue();
+    private final WaitQueue hasPendingSegments = new WaitQueue();
 
     /**
      * Tracks commitlog size, in multiples of the segment size.  We need to do this so we can "promise" size
@@ -114,12 +130,12 @@ public class CommitLogSegmentManager
                         if (task == null)
                         {
                             // if we have no more work to do, check if we should create a new segment
-                            if (availableSegments.isEmpty() && (activeSegments.isEmpty() || createReserveSegments))
+                            if (pendingSegments.isEmpty() && (activeSegments.isEmpty() || createReserveSegments))
                             {
                                 logger.trace("No segments in reserve; creating a fresh one");
                                 // TODO : some error handling in case we fail to create a new segment
-                                availableSegments.add(CommitLogSegment.createSegment(commitLog));
-                                hasAvailableSegments.signalAll();
+                                pendingSegments.add(CommitLogSegment.createSegment(commitLog, segmentManagementExecutor));
+                                hasPendingSegments.signalAll();
                             }
 
                             // flush old Cfs if we're full
@@ -211,16 +227,28 @@ public class CommitLogSegmentManager
     {
         while (true)
         {
-            CommitLogSegment next;
+            CommitLogSegment next = null;
             synchronized (this)
             {
                 // do this in a critical section so we can atomically remove from availableSegments and add to allocatingFrom/activeSegments
                 // see https://issues.apache.org/jira/browse/CASSANDRA-6557?focusedCommentId=13874432&page=com.atlassian.jira.plugin.system.issuetabpanels:comment-tabpanel#comment-13874432
                 if (allocatingFrom != old)
                     return;
-                next = availableSegments.poll();
-                if (next != null)
+
+                //There may not be available segments for the commit log yet, but it may have been requested making a
+                //Future for its construction available. This happens when no bufer is available to accept writes
+                //for the segment
+                Future<CommitLogSegment> nextFuture = pendingSegments.poll();
+                if (nextFuture != null)
                 {
+                    try
+                    {
+                        next = nextFuture.get();
+                    }
+                    catch (Exception e)
+                    {
+                        throw new RuntimeException(e);
+                    }
                     allocatingFrom = next;
                     activeSegments.add(next);
                 }
@@ -244,15 +272,16 @@ public class CommitLogSegmentManager
             }
 
             // no more segments, so register to receive a signal when not empty
-            WaitQueue.Signal signal = hasAvailableSegments.register(commitLog.metrics.waitingOnSegmentAllocation.time());
+            WaitQueue.Signal signal = hasPendingSegments.register(commitLog.metrics.waitingOnSegmentAllocation.time());
 
             // trigger the management thread; this must occur after registering
             // the signal to ensure we are woken by any new segment creation
             wakeManager();
 
+            Future<CommitLogSegment> peek = pendingSegments.peek();
             // check if the queue has already been added to before waiting on the signal, to catch modifications
             // that happened prior to registering the signal; *then* check to see if we've been beaten to making the change
-            if (!availableSegments.isEmpty() || allocatingFrom != old)
+            if ((peek != null && peek.isDone()) || allocatingFrom != old)
             {
                 signal.cancel();
                 // if we've been beaten, just stop immediately
@@ -411,10 +440,8 @@ public class CommitLogSegmentManager
      */
     public boolean manages(String name)
     {
-        for (CommitLogSegment segment : Iterables.concat(activeSegments, availableSegments))
-            if (segment.getName().equals(name))
-                return true;
-        return false;
+        Predicate<CommitLogSegment> p = segment -> segment.getName().equals(name);
+        return Stream.concat(activeSegments.stream(), Throwables.completedFuturesUnchecked(pendingSegments)).anyMatch(p);
     }
 
     /**
@@ -488,13 +515,10 @@ public class CommitLogSegmentManager
             throw new RuntimeException(e);
         }
 
-        for (CommitLogSegment segment : activeSegments)
-            closeAndDeleteSegmentUnsafe(segment, deleteSegments);
+        Consumer<CommitLogSegment> c = s -> closeAndDeleteSegmentUnsafe(s, deleteSegments);
+        Stream.concat(activeSegments.stream(), Throwables.completedFuturesUnchecked(pendingSegments)).forEach(c);
+        pendingSegments.clear();
         activeSegments.clear();
-
-        for (CommitLogSegment segment : availableSegments)
-            closeAndDeleteSegmentUnsafe(segment, deleteSegments);
-        availableSegments.clear();
 
         allocatingFrom = null;
 
@@ -544,11 +568,8 @@ public class CommitLogSegmentManager
     {
         managerThread.join();
 
-        for (CommitLogSegment segment : activeSegments)
-            segment.close();
-
-        for (CommitLogSegment segment : availableSegments)
-            segment.close();
+        Consumer<CommitLogSegment> c = segment -> segment.close();
+        Stream.concat(activeSegments.stream(), Throwables.completedFuturesUnchecked(pendingSegments)).forEach(c);
 
         CompressedSegment.shutdown();
     }
