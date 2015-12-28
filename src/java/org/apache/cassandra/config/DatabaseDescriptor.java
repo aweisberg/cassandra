@@ -190,15 +190,20 @@ public class DatabaseDescriptor
 
         if (conf.client_backpressure_on_bytes == 0)
             backpressureOnBytes = Long.MAX_VALUE;
-        else if (conf.client_backpressure_on_bytes == -1)
-            backpressureOnBytes = maxMemory / Long.getLong(Config.PROPERTY_PREFIX + "backpressure_default_divisor", 4);
-        else
+        else if (conf.client_backpressure_on_bytes == -1) {
+            //Smaller heaps tend to not have as much give. Not a big deal anyways because it can be set manually
+            //and the benefits of carving out more resources aren't great on nodes that aren't 10g-E and beefy
+            if (maxMemory > (1024 * 1024 * 1024 * 4))
+                backpressureOnBytes = maxMemory / Long.getLong(Config.PROPERTY_PREFIX + "backpressure_on_gt4g_default_divisor", 4);
+            else
+                backpressureOnBytes = maxMemory / Long.getLong(Config.PROPERTY_PREFIX + "backpressure_on_lt4g_default_divisor", 8);
+        } else
             backpressureOnBytes = conf.client_backpressure_on_bytes;
 
         if (conf.client_backpressure_off_bytes > 0)
             backpressureOffBytes = conf.client_backpressure_off_bytes;
         else
-            backpressureOffBytes = Math.max((long)(backpressureOnBytes * .8), backpressureOnBytes - (1024 * 1024 * 256));
+            backpressureOffBytes = Math.max((long)(backpressureOnBytes * .8), backpressureOnBytes - (Long.getLong(Config.PROPERTY_PREFIX + "backpressure_off_max_delta", 1024 * 1024 * 64)));
     }
 
     @VisibleForTesting
