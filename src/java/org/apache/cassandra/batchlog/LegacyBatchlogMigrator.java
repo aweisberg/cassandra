@@ -127,7 +127,8 @@ public final class LegacyBatchlogMigrator
     public static void syncWriteToBatchlog(WriteResponseHandler<?> handler, Batch batch, Collection<InetAddress> endpoints)
     throws WriteTimeoutException, WriteFailureException
     {
-        //TODO figure out what to put here
+        //More less not weighting the batchlog migration process, right now. Turning off client load
+        //is kind of orthogonal anyways
         try (WeightHolder wh = MessagingService.newWeightHolder(0))
         {
             for (InetAddress target : endpoints)
