@@ -68,7 +68,10 @@ public class JavaDriverClient
         this.authProvider = settings.mode.authProvider;
         this.encryptionOptions = encryptionOptions;
         if (settings.node.isWhiteList)
+        {
             whitelist = new WhiteListPolicy(new DCAwareRoundRobinPolicy(), settings.node.resolveAll(settings.port.nativePort));
+            System.out.println("Whitelist is " + whitelist);
+        }
         else
             whitelist = null;
         connectionsPerHost = settings.mode.connectionsPerHost == null ? 8 : settings.mode.connectionsPerHost;
