@@ -70,7 +70,9 @@ public class JavaDriverClient
         if (settings.node.isWhiteList)
         {
             whitelist = new WhiteListPolicy(new DCAwareRoundRobinPolicy(), settings.node.resolveAll(settings.port.nativePort));
-            System.out.println("Whitelist is " + whitelist);
+            System.out.println("Whitelist is " + settings.node.resolveAll(settings.port.nativePort));
+            System.out.println("Could be " + settings.node.resolveAllSpecified());
+            System.out.println("Or " + settings.node.resolveAllPermitted(settings));
         }
         else
             whitelist = null;
