@@ -78,7 +78,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         SILENT_SHUTDOWN_STATES.add(VersionedValue.STATUS_BOOTSTRAPPING);
     }
 
-    private ScheduledFuture<?> scheduledGossipTask;
+    private volatile ScheduledFuture<?> scheduledGossipTask;
     private static final ReentrantLock taskLock = new ReentrantLock();
     public final static int intervalInMillis = 1000;
     public final static int QUARANTINE_DELAY = StorageService.RING_DELAY * 2;
@@ -634,7 +634,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
     private boolean sendGossip(MessageOut<GossipDigestSyn> message, Set<InetAddress> epSet)
     {
         List<InetAddress> liveEndpoints = ImmutableList.copyOf(epSet);
-        
+
         int size = liveEndpoints.size();
         if (size < 1)
             return false;
@@ -1165,7 +1165,7 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
         for (Entry<ApplicationState, VersionedValue> remoteEntry : remoteStates)
             doOnChangeNotifications(addr, remoteEntry.getKey(), remoteEntry.getValue());
     }
-    
+
     // notify that a local application state is going to change (doesn't get triggered for remote changes)
     private void doBeforeChangeNotifications(InetAddress addr, EndpointState epState, ApplicationState apState, VersionedValue newValue)
     {
