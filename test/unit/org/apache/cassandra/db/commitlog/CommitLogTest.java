@@ -605,8 +605,16 @@ public class CommitLogTest
         DatabaseDescriptor.setCommitLogCompression(parameterizedClass);
         DatabaseDescriptor.setEncryptionContext(EncryptionContextGenerator.createDisabledContext());
         CommitLog commitLog = new CommitLog(logDirectory, CommitLogArchiver.disabled()).start();
-        replaySimple(commitLog);
-        replayWithDiscard(commitLog);
+        try
+        {
+            replaySimple(commitLog);
+            replayWithDiscard(commitLog);
+        }
+        finally
+        {
+            commitLog.resetUnsafe(true);
+            CommitLog.instance.resetUnsafe(true);
+        }
     }
 
     @Test
@@ -615,7 +623,6 @@ public class CommitLogTest
         DatabaseDescriptor.setCommitLogCompression(null);
         DatabaseDescriptor.setEncryptionContext(EncryptionContextGenerator.createContext(true));
         CommitLog commitLog = new CommitLog(logDirectory, CommitLogArchiver.disabled()).start();
-
         try
         {
             replaySimple(commitLog);
@@ -625,6 +632,8 @@ public class CommitLogTest
         {
             for (String file : commitLog.getActiveSegmentNames())
                 FileUtils.delete(new File(commitLog.location, file));
+            commitLog.resetUnsafe(true);
+            CommitLog.instance.resetUnsafe(true);
         }
     }
 
