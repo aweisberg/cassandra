@@ -24,10 +24,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Charsets;
-
 
 /**
  * The goods are here: www.ietf.org/rfc/rfc4122.txt.
@@ -55,7 +54,7 @@ public class UUIDGen
     // placement of this singleton is important.  It needs to be instantiated *AFTER* the other statics.
     private static final UUIDGen instance = new UUIDGen();
 
-    private long lastNanos;
+    private AtomicLong lastNanos = new AtomicLong();
 
     private UUIDGen()
     {
@@ -259,15 +258,31 @@ public class UUIDGen
 
     // needs to return two different values for the same when.
     // we can generate at most 10k UUIDs per ms.
-    private synchronized long createTimeSafe()
+    private long createTimeSafe()
     {
-        long nanosSince = (System.currentTimeMillis() - START_EPOCH) * 10000;
-        if (nanosSince > lastNanos)
-            lastNanos = nanosSince;
-        else
-            nanosSince = ++lastNanos;
-
-        return createTime(nanosSince);
+        long lastNanosNew;
+        while (true)
+        {
+            //Generate a candidate value for new lastNanos
+            lastNanosNew = (System.currentTimeMillis() - START_EPOCH) * 10000;
+            long lastNanosOriginal = lastNanos.get();
+            if (lastNanosNew > lastNanosOriginal)
+            {
+                //Slow path once per millisecond do a CAS
+                if (lastNanos.compareAndSet(lastNanosOriginal, lastNanosNew))
+                {
+                    break;
+                }
+            }
+            else
+            {
+                //Fast path do an atomic increment
+                //Or when falling behind this will move time forward past the clock if necessary
+                lastNanosNew = lastNanos.incrementAndGet();
+                break;
+            }
+        }
+        return createTime(lastNanosNew);
     }
 
     private long createTimeUnsafe(long when, int nanos)
