@@ -108,6 +108,8 @@ public class DatabaseDescriptor
     private static EncryptionContext encryptionContext;
     private static boolean hasLoggedConfig;
 
+    private static Float memtable_cleanup_threshold;
+
     public static void forceStaticInitialization() {}
     static
     {
@@ -658,15 +660,7 @@ public class DatabaseDescriptor
         if (conf.memtable_flush_writers < 1)
             throw new ConfigurationException("memtable_flush_writers must be at least 1, but was " + conf.memtable_flush_writers, false);
 
-        if (conf.memtable_cleanup_threshold == null)
-            conf.memtable_cleanup_threshold = (float) (1.0 / (1 + conf.memtable_flush_writers));
-
-        if (conf.memtable_cleanup_threshold < 0.01f)
-            throw new ConfigurationException("memtable_cleanup_threshold must be >= 0.01, but was " + conf.memtable_cleanup_threshold, false);
-        if (conf.memtable_cleanup_threshold > 0.99f)
-            throw new ConfigurationException("memtable_cleanup_threshold must be <= 0.99, but was " + conf.memtable_cleanup_threshold, false);
-        if (conf.memtable_cleanup_threshold < 0.1f)
-            logger.warn("memtable_cleanup_threshold is set very low [{}], which may cause performance degradation", conf.memtable_cleanup_threshold);
+        memtable_cleanup_threshold = (float) (1.0 / (1 + conf.memtable_flush_writers));
 
         if (conf.concurrent_compactors == null)
             conf.concurrent_compactors = Math.min(8, Math.max(2, Math.min(FBUtilities.getAvailableProcessors(), conf.data_file_directories.length)));
@@ -2061,17 +2055,17 @@ public class DatabaseDescriptor
         switch (conf.memtable_allocation_type)
         {
             case unslabbed_heap_buffers:
-                return new HeapPool(heapLimit, conf.memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
+                return new HeapPool(heapLimit, memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
             case heap_buffers:
-                return new SlabPool(heapLimit, 0, conf.memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
+                return new SlabPool(heapLimit, 0, memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
             case offheap_buffers:
                 if (!FileUtils.isCleanerAvailable())
                 {
                     throw new IllegalStateException("Could not free direct byte buffer: offheap_buffers is not a safe memtable_allocation_type without this ability, please adjust your config. This feature is only guaranteed to work on an Oracle JVM. Refusing to start.");
                 }
-                return new SlabPool(heapLimit, offHeapLimit, conf.memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
+                return new SlabPool(heapLimit, offHeapLimit, memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
             case offheap_objects:
-                return new NativePool(heapLimit, offHeapLimit, conf.memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
+                return new NativePool(heapLimit, offHeapLimit, memtable_cleanup_threshold, new ColumnFamilyStore.FlushLargestColumnFamily());
             default:
                 throw new AssertionError();
         }
