@@ -511,7 +511,7 @@ memtable_allocation_type: heap_buffers
 #
 # memtable_flush_writers defaults to two for a single data directory.
 # This means that two  memtables can be flushed concurrently to the single data directory.
-# If you have multiple data directories the default is one Memtable flushing at a time
+# If you have multiple data directories the default is one memtable flushing at a time
 # but the flush will use a thread per data directory so you will get two or more writers.
 #
 # Two is generally enough to flush on a fast disk [array] mounted as a single data directory.
