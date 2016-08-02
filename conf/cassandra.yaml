@@ -499,25 +499,28 @@ memtable_allocation_type: heap_buffers
 # as well as the total number of memtables that can be flushed concurrently.
 # These are generally a combination of compute and IO bound.
 #
-# Memtable flushing is more CPU efficient than Memtable ingest and a single thread
+# Memtable flushing is more CPU efficient than memtable ingest and a single thread
 # can keep up with the ingest rate of a whole server on a single fast disk
 # until it temporarily becomes IO bound under contention typically with compaction.
-# At that point you need multiple flush threads.
+# At that point you need multiple flush threads. At some point in the future
+# it may become CPU bound all the time.
 #
 # You can tell if flushing is falling behind using the MemtablePool.BlockedOnAllocation
 # metric which should be 0, but will be non-zero if threads are blocked waiting on flushing
 # to free memory.
 #
-# memtable_flush_writers defaults to two per data_file_directory.
+# memtable_flush_writers defaults to two for a single data directory.
+# This means that two  memtables can be flushed concurrently to the single data directory.
+# If you have multiple data directories the default is one Memtable flushing at a time
+# but the flush will use a thread per data directory so you will get two or more writers.
 #
-# Two is generally enough to flush on a fast disk array. Adding more
-# flush writers will change the default calculation for memtable_cleanup_threshold
-# and result in smaller more frequent flushes that introduce more compaction overhead.
-# The MCT needs to be set to cause flushing to use the extra threads so you can't
-# necessarily fix this by setting MCT to flush less frequently.
+# Two is generally enough to flush on a fast disk [array] mounted as a single data directory.
+# Adding more flush writers will result in smaller more frequent flushes that introduce more
+# compaction overhead.
 #
 # There is a direct tradeoff between number of memtables that can be flushed concurrently
-# and flush size and frequency.
+# and flush size and frequency. More is not better you just need enough flush writers
+# to never stall waiting for flushing to free memory.
 #
 #memtable_flush_writers: 2
 
