@@ -504,15 +504,31 @@ memtable_allocation_type: heap_buffers
 #
 # commitlog_total_space_in_mb: 8192
 
-# This sets the amount of memtable flush writer threads.  These will
-# be blocked by disk io, and each one will hold a memtable in memory
-# while blocked.
+# This sets the number of memtable flush writer threads per disk
+# as well as the total number of memtables that can be flushed concurrently.
+# These are generally a combination of compute and IO bound.
 #
-# memtable_flush_writers defaults to one per data_file_directory.
+# Memtable flushing is more CPU efficient than Memtable ingest and a single thread
+# can keep up with the ingest rate of a whole server on a single fast disk
+# until it temporarily becomes IO bound under contention typically with compaction.
+# At that point you need multiple flush threads.
 #
-# If your data directories are backed by SSD, you can increase this, but
-# avoid having memtable_flush_writers * data_file_directories > number of cores
-#memtable_flush_writers: 1
+# You can tell if flushing is falling behind using the MemtablePool.BlockedOnAllocation
+# metric which should be 0, but will be non-zero if threads are blocked waiting on flushing
+# to free memory.
+#
+# memtable_flush_writers defaults to two per data_file_directory.
+#
+# Two is generally enough to flush on a fast disk array. Adding more
+# flush writers will change the default calculation for memtable_cleanup_threshold
+# and result in smaller more frequent flushes that introduce more compaction overhead.
+# The MCT needs to be set to cause flushing to use the extra threads so you can't
+# necessarily fix this by setting MCT to flush less frequently.
+#
+# There is a direct tradeoff between number of memtables that can be flushed concurrently
+# and flush size and frequency.
+#
+#memtable_flush_writers: 2
 
 # Total space to use for change-data-capture logs on disk.
 #
