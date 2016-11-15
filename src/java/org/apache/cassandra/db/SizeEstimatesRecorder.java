@@ -60,7 +60,7 @@ public class SizeEstimatesRecorder extends MigrationListener implements Runnable
     public void run()
     {
         TokenMetadata metadata = StorageService.instance.getTokenMetadata().cloneOnlyTokenMap();
-        if (!metadata.isMember(FBUtilities.getBroadcastAddress()))
+        if (!metadata.isMember(FBUtilities.getBroadcastAddressAndPorts()))
         {
             logger.debug("Node is not part of the ring; not recording size estimates");
             return;

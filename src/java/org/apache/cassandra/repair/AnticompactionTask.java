@@ -18,7 +18,6 @@
 package org.apache.cassandra.repair;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.Collection;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -40,13 +39,14 @@ import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.gms.IEndpointStateChangeSubscriber;
 import org.apache.cassandra.gms.IFailureDetectionEventListener;
 import org.apache.cassandra.gms.VersionedValue;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.AnticompactionRequest;
 import org.apache.cassandra.utils.CassandraVersion;
 
-public class AnticompactionTask extends AbstractFuture<InetAddress> implements Runnable, IEndpointStateChangeSubscriber,
+public class AnticompactionTask extends AbstractFuture<InetAddressAndPorts> implements Runnable, IEndpointStateChangeSubscriber,
                                                                                IFailureDetectionEventListener
 {
     /*
@@ -57,11 +57,11 @@ public class AnticompactionTask extends AbstractFuture<InetAddress> implements R
     private static Logger logger = LoggerFactory.getLogger(AnticompactionTask.class);
 
     private final UUID parentSession;
-    private final InetAddress neighbor;
+    private final InetAddressAndPorts neighbor;
     private final Collection<Range<Token>> successfulRanges;
     private final AtomicBoolean isFinished = new AtomicBoolean(false);
 
-    public AnticompactionTask(UUID parentSession, InetAddress neighbor, Collection<Range<Token>> successfulRanges)
+    public AnticompactionTask(UUID parentSession, InetAddressAndPorts neighbor, Collection<Range<Token>> successfulRanges)
     {
         this.parentSession = parentSession;
         this.neighbor = neighbor;
@@ -101,7 +101,7 @@ public class AnticompactionTask extends AbstractFuture<InetAddress> implements R
         return false;
     }
 
-    private boolean maybeSetResult(InetAddress o)
+    private boolean maybeSetResult(InetAddressAndPorts o)
     {
         if (isFinished.compareAndSet(false, true))
         {
@@ -133,29 +133,29 @@ public class AnticompactionTask extends AbstractFuture<InetAddress> implements R
             return false;
         }
 
-        public void onFailure(InetAddress from, RequestFailureReason failureReason)
+        public void onFailure(InetAddressAndPorts from, RequestFailureReason failureReason)
         {
             maybeSetException(new RuntimeException("Anticompaction failed or timed out in " + from));
         }
     }
 
-    public void onJoin(InetAddress endpoint, EndpointState epState) {}
-    public void beforeChange(InetAddress endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
-    public void onChange(InetAddress endpoint, ApplicationState state, VersionedValue value) {}
-    public void onAlive(InetAddress endpoint, EndpointState state) {}
-    public void onDead(InetAddress endpoint, EndpointState state) {}
+    public void onJoin(InetAddressAndPorts endpoint, EndpointState epState) {}
+    public void beforeChange(InetAddressAndPorts endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
+    public void onChange(InetAddressAndPorts endpoint, ApplicationState state, VersionedValue value) {}
+    public void onAlive(InetAddressAndPorts endpoint, EndpointState state) {}
+    public void onDead(InetAddressAndPorts endpoint, EndpointState state) {}
 
-    public void onRemove(InetAddress endpoint)
+    public void onRemove(InetAddressAndPorts endpoint)
     {
         convict(endpoint, Double.MAX_VALUE);
     }
 
-    public void onRestart(InetAddress endpoint, EndpointState epState)
+    public void onRestart(InetAddressAndPorts endpoint, EndpointState epState)
     {
         convict(endpoint, Double.MAX_VALUE);
     }
 
-    public void convict(InetAddress endpoint, double phi)
+    public void convict(InetAddressAndPorts endpoint, double phi)
     {
         if (!neighbor.equals(endpoint))
             return;

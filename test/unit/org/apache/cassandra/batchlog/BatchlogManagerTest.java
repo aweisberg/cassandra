@@ -18,7 +18,6 @@
 package org.apache.cassandra.batchlog;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +47,7 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageService;
@@ -96,7 +96,7 @@ public class BatchlogManagerTest
     public void setUp() throws Exception
     {
         TokenMetadata metadata = StorageService.instance.getTokenMetadata();
-        InetAddress localhost = InetAddress.getByName("127.0.0.1");
+        InetAddressAndPorts localhost = InetAddressAndPorts.getByName("127.0.0.1");
         metadata.updateNormalToken(Util.token("A"), localhost);
         metadata.updateHostId(UUIDGen.getTimeUUID(), localhost);
         Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME).getColumnFamilyStore(SystemKeyspace.BATCHES).truncateBlocking();
@@ -346,7 +346,7 @@ public class BatchlogManagerTest
     @Test
     public void testReplayWithNoPeers() throws Exception
     {
-        StorageService.instance.getTokenMetadata().removeEndpoint(InetAddress.getByName("127.0.0.1"));
+        StorageService.instance.getTokenMetadata().removeEndpoint(InetAddressAndPorts.getByName("127.0.0.1"));
 
         long initialAllBatches = BatchlogManager.instance.countAllBatches();
         long initialReplayedBatches = BatchlogManager.instance.getTotalBatchesReplayed();

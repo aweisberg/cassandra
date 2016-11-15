@@ -20,7 +20,6 @@ package org.apache.cassandra.dht;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.HashSet;
@@ -48,6 +47,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.gms.IFailureDetectionEventListener;
 import org.apache.cassandra.gms.IFailureDetector;
 import org.apache.cassandra.locator.IEndpointSnitch;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.RackInferringSnitch;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
@@ -95,32 +95,32 @@ public class BootStrapperTest
 
         generateFakeEndpoints(numOldNodes);
         Token myToken = tmd.partitioner.getRandomToken();
-        InetAddress myEndpoint = InetAddress.getByName("127.0.0.1");
+        InetAddressAndPorts myEndpoint = InetAddressAndPorts.getByName("127.0.0.1");
 
         assertEquals(numOldNodes, tmd.sortedTokens().size());
         RangeStreamer s = new RangeStreamer(tmd, null, myEndpoint, "Bootstrap", true, DatabaseDescriptor.getEndpointSnitch(), new StreamStateStore(), false);
         IFailureDetector mockFailureDetector = new IFailureDetector()
         {
-            public boolean isAlive(InetAddress ep)
+            public boolean isAlive(InetAddressAndPorts ep)
             {
                 return true;
             }
 
-            public void interpret(InetAddress ep) { throw new UnsupportedOperationException(); }
-            public void report(InetAddress ep) { throw new UnsupportedOperationException(); }
+            public void interpret(InetAddressAndPorts ep) { throw new UnsupportedOperationException(); }
+            public void report(InetAddressAndPorts ep) { throw new UnsupportedOperationException(); }
             public void registerFailureDetectionEventListener(IFailureDetectionEventListener listener) { throw new UnsupportedOperationException(); }
             public void unregisterFailureDetectionEventListener(IFailureDetectionEventListener listener) { throw new UnsupportedOperationException(); }
-            public void remove(InetAddress ep) { throw new UnsupportedOperationException(); }
-            public void forceConviction(InetAddress ep) { throw new UnsupportedOperationException(); }
+            public void remove(InetAddressAndPorts ep) { throw new UnsupportedOperationException(); }
+            public void forceConviction(InetAddressAndPorts ep) { throw new UnsupportedOperationException(); }
         };
         s.addSourceFilter(new RangeStreamer.FailureDetectorSourceFilter(mockFailureDetector));
         s.addRanges(keyspaceName, Keyspace.open(keyspaceName).getReplicationStrategy().getPendingAddressRanges(tmd, myToken, myEndpoint));
 
-        Collection<Map.Entry<InetAddress, Collection<Range<Token>>>> toFetch = s.toFetch().get(keyspaceName);
+        Collection<Map.Entry<InetAddressAndPorts, Collection<Range<Token>>>> toFetch = s.toFetch().get(keyspaceName);
 
         // Check we get get RF new ranges in total
         Set<Range<Token>> ranges = new HashSet<>();
-        for (Map.Entry<InetAddress, Collection<Range<Token>>> e : toFetch)
+        for (Map.Entry<InetAddressAndPorts, Collection<Range<Token>>> e : toFetch)
             ranges.addAll(e.getValue());
 
         assertEquals(replicationFactor, ranges.size());
@@ -150,7 +150,7 @@ public class BootStrapperTest
         for (int i = 1; i <= numOldNodes; i++)
         {
             // leave .1 for myEndpoint
-            InetAddress addr = InetAddress.getByName("127." + dc + "." + rack + "." + (i + 1));
+            InetAddressAndPorts addr = InetAddressAndPorts.getByName("127." + dc + "." + rack + "." + (i + 1));
             List<Token> tokens = Lists.newArrayListWithCapacity(numVNodes);
             for (int j = 0; j < numVNodes; ++j)
                 tokens.add(p.getRandomToken());
@@ -166,7 +166,7 @@ public class BootStrapperTest
         String ks = "BootStrapperTestKeyspace3";
         TokenMetadata tm = new TokenMetadata();
         generateFakeEndpoints(tm, 10, vn);
-        InetAddress addr = FBUtilities.getBroadcastAddress();
+        InetAddressAndPorts addr = FBUtilities.getBroadcastAddressAndPorts();
         allocateTokensForNode(vn, ks, tm, addr);
     }
 
@@ -183,15 +183,15 @@ public class BootStrapperTest
             // Register peers with expected DC for NetworkTopologyStrategy.
             TokenMetadata metadata = StorageService.instance.getTokenMetadata();
             metadata.clearUnsafe();
-            metadata.updateHostId(UUID.randomUUID(), InetAddress.getByName("127.1.0.99"));
-            metadata.updateHostId(UUID.randomUUID(), InetAddress.getByName("127.15.0.99"));
+            metadata.updateHostId(UUID.randomUUID(), InetAddressAndPorts.getByName("127.1.0.99"));
+            metadata.updateHostId(UUID.randomUUID(), InetAddressAndPorts.getByName("127.15.0.99"));
 
             SchemaLoader.createKeyspace(ks, KeyspaceParams.nts(dc, replicas, "15", 15), SchemaLoader.standardCFMD(ks, "Standard1"));
             TokenMetadata tm = StorageService.instance.getTokenMetadata();
             tm.clearUnsafe();
             for (int i = 0; i < rackCount; ++i)
                 generateFakeEndpoints(tm, 10, vn, dc, Integer.toString(i));
-            InetAddress addr = InetAddress.getByName("127." + dc + ".0.99");
+            InetAddressAndPorts addr = InetAddressAndPorts.getByName("127." + dc + ".0.99");
             allocateTokensForNode(vn, ks, tm, addr);
             // Note: Not matching replication factor in second datacentre, but this should not affect us.
         } finally {
@@ -229,7 +229,7 @@ public class BootStrapperTest
         testAllocateTokensNetworkStrategy(1, 1);
     }
 
-    private void allocateTokensForNode(int vn, String ks, TokenMetadata tm, InetAddress addr)
+    private void allocateTokensForNode(int vn, String ks, TokenMetadata tm, InetAddressAndPorts addr)
     {
         SummaryStatistics os = TokenAllocation.replicatedOwnershipStats(tm.cloneOnlyTokenMap(), Keyspace.open(ks).getReplicationStrategy(), addr);
         Collection<Token> tokens = BootStrapper.allocateTokens(tm, addr, ks, vn, 0);
@@ -259,14 +259,14 @@ public class BootStrapperTest
         TokenMetadata tm = new TokenMetadata();
         generateFakeEndpoints(tm, 10, vn);
         
-        InetAddress dcaddr = FBUtilities.getBroadcastAddress();
+        InetAddressAndPorts dcaddr = FBUtilities.getBroadcastAddressAndPorts();
         SummaryStatistics os3 = TokenAllocation.replicatedOwnershipStats(tm, Keyspace.open(ks3).getReplicationStrategy(), dcaddr);
         SummaryStatistics os2 = TokenAllocation.replicatedOwnershipStats(tm, Keyspace.open(ks2).getReplicationStrategy(), dcaddr);
         String cks = ks3;
         String nks = ks2;
         for (int i=11; i<=20; ++i)
         {
-            allocateTokensForNode(vn, cks, tm, InetAddress.getByName("127.0.0." + (i + 1)));
+            allocateTokensForNode(vn, cks, tm, InetAddressAndPorts.getByName("127.0.0." + (i + 1)));
             String t = cks; cks = nks; nks = t;
         }
         

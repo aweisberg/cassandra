@@ -18,7 +18,6 @@
 package org.apache.cassandra.repair;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -34,6 +33,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.*;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MerkleTrees;
@@ -89,13 +89,13 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     public final boolean pullRepair;
     /** Range to repair */
     public final Collection<Range<Token>> ranges;
-    public final Set<InetAddress> endpoints;
+    public final Set<InetAddressAndPorts> endpoints;
     public final long repairedAt;
 
     private final AtomicBoolean isFailed = new AtomicBoolean(false);
 
     // Each validation task waits response from replica in validating ConcurrentMap (keyed by CF name and endpoint address)
-    private final ConcurrentMap<Pair<RepairJobDesc, InetAddress>, ValidationTask> validating = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Pair<RepairJobDesc, InetAddressAndPorts>, ValidationTask> validating = new ConcurrentHashMap<>();
     // Remote syncing jobs wait response in syncingTasks map
     private final ConcurrentMap<Pair<RepairJobDesc, NodePair>, RemoteSyncTask> syncingTasks = new ConcurrentHashMap<>();
 
@@ -122,7 +122,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
                          Collection<Range<Token>> ranges,
                          String keyspace,
                          RepairParallelism parallelismDegree,
-                         Set<InetAddress> endpoints,
+                         Set<InetAddressAndPorts> endpoints,
                          long repairedAt,
                          boolean pullRepair,
                          String... cfnames)
@@ -150,7 +150,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         return ranges;
     }
 
-    public void waitForValidation(Pair<RepairJobDesc, InetAddress> key, ValidationTask task)
+    public void waitForValidation(Pair<RepairJobDesc, InetAddressAndPorts> key, ValidationTask task)
     {
         validating.put(key, task);
     }
@@ -167,7 +167,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
      * @param endpoint endpoint that sent merkle tree
      * @param trees calculated merkle trees, or null if validation failed
      */
-    public void validationComplete(RepairJobDesc desc, InetAddress endpoint, MerkleTrees trees)
+    public void validationComplete(RepairJobDesc desc, InetAddressAndPorts endpoint, MerkleTrees trees)
     {
         ValidationTask task = validating.remove(Pair.create(desc, endpoint));
         if (task == null)
@@ -205,8 +205,8 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
     private String repairedNodes()
     {
         StringBuilder sb = new StringBuilder();
-        sb.append(FBUtilities.getBroadcastAddress());
-        for (InetAddress ep : endpoints)
+        sb.append(FBUtilities.getBroadcastAddressAndPorts());
+        for (InetAddressAndPorts ep : endpoints)
             sb.append(", ").append(ep);
         return sb.toString();
     }
@@ -239,7 +239,7 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         }
 
         // Checking all nodes are live
-        for (InetAddress endpoint : endpoints)
+        for (InetAddressAndPorts endpoint : endpoints)
         {
             if (!FailureDetector.instance.isAlive(endpoint))
             {
@@ -304,23 +304,23 @@ public class RepairSession extends AbstractFuture<RepairSessionResult> implement
         terminate();
     }
 
-    public void onJoin(InetAddress endpoint, EndpointState epState) {}
-    public void beforeChange(InetAddress endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
-    public void onChange(InetAddress endpoint, ApplicationState state, VersionedValue value) {}
-    public void onAlive(InetAddress endpoint, EndpointState state) {}
-    public void onDead(InetAddress endpoint, EndpointState state) {}
+    public void onJoin(InetAddressAndPorts endpoint, EndpointState epState) {}
+    public void beforeChange(InetAddressAndPorts endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
+    public void onChange(InetAddressAndPorts endpoint, ApplicationState state, VersionedValue value) {}
+    public void onAlive(InetAddressAndPorts endpoint, EndpointState state) {}
+    public void onDead(InetAddressAndPorts endpoint, EndpointState state) {}
 
-    public void onRemove(InetAddress endpoint)
+    public void onRemove(InetAddressAndPorts endpoint)
     {
         convict(endpoint, Double.MAX_VALUE);
     }
 
-    public void onRestart(InetAddress endpoint, EndpointState epState)
+    public void onRestart(InetAddressAndPorts endpoint, EndpointState epState)
     {
         convict(endpoint, Double.MAX_VALUE);
     }
 
-    public void convict(InetAddress endpoint, double phi)
+    public void convict(InetAddressAndPorts endpoint, double phi)
     {
         if (!endpoints.contains(endpoint))
             return;

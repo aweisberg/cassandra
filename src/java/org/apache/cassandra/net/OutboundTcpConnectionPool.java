@@ -18,7 +18,6 @@
 package org.apache.cassandra.net;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.channels.SocketChannel;
@@ -30,6 +29,7 @@ import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.locator.IEndpointSnitch;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.security.SSLFactory;
 import org.apache.cassandra.utils.FBUtilities;
@@ -40,20 +40,20 @@ public class OutboundTcpConnectionPool
             Long.getLong(Config.PROPERTY_PREFIX + "otcp_large_message_threshold", 1024 * 64);
 
     // pointer for the real Address.
-    private final InetAddress id;
+    private final InetAddressAndPorts id;
     private final CountDownLatch started;
     public final OutboundTcpConnection smallMessages;
     public final OutboundTcpConnection largeMessages;
     public final OutboundTcpConnection gossipMessages;
 
     // pointer to the reset Address.
-    private InetAddress resetEndpoint;
+    private InetAddressAndPorts resetEndpoint;
     private ConnectionMetrics metrics;
 
     // back-pressure state linked to this connection:
     private final BackPressureState backPressureState;
 
-    OutboundTcpConnectionPool(InetAddress remoteEp, BackPressureState backPressureState)
+    OutboundTcpConnectionPool(InetAddressAndPorts remoteEp, BackPressureState backPressureState)
     {
         id = remoteEp;
         resetEndpoint = SystemKeyspace.getPreferredIP(remoteEp);
@@ -104,7 +104,7 @@ public class OutboundTcpConnectionPool
      * Used by Ec2MultiRegionSnitch to force nodes in the same region to communicate over their private IPs.
      * @param remoteEP
      */
-    public void reset(InetAddress remoteEP)
+    public void reset(InetAddressAndPorts remoteEP)
     {
         SystemKeyspace.updatePreferredIP(id, remoteEP);
         resetEndpoint = remoteEP;
@@ -133,29 +133,29 @@ public class OutboundTcpConnectionPool
     }
 
     @SuppressWarnings("resource") // Closing the socket will close the underlying channel.
-    public static Socket newSocket(InetAddress endpoint) throws IOException
+    public static Socket newSocket(InetAddressAndPorts endpoint) throws IOException
     {
         // zero means 'bind on any available port.'
         if (isEncryptedChannel(endpoint))
         {
-            return SSLFactory.getSocket(DatabaseDescriptor.getServerEncryptionOptions(), endpoint, DatabaseDescriptor.getSSLStoragePort());
+            return SSLFactory.getSocket(DatabaseDescriptor.getServerEncryptionOptions(), endpoint.address, endpoint.sslport);
         }
         else
         {
             SocketChannel channel = SocketChannel.open();
-            channel.connect(new InetSocketAddress(endpoint, DatabaseDescriptor.getStoragePort()));
+            channel.connect(new InetSocketAddress(endpoint.address, endpoint.port));
             return channel.socket();
         }
     }
 
-    public InetAddress endPoint()
+    public InetAddressAndPorts endPoint()
     {
-        if (id.equals(FBUtilities.getBroadcastAddress()))
-            return FBUtilities.getLocalAddress();
+        if (id.equals(FBUtilities.getBroadcastAddressAndPorts()))
+            return FBUtilities.getLocalAddressAndPorts();
         return resetEndpoint;
     }
 
-    public static boolean isEncryptedChannel(InetAddress address)
+    public static boolean isEncryptedChannel(InetAddressAndPorts address)
     {
         IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
         switch (DatabaseDescriptor.getServerEncryptionOptions().internode_encryption)
@@ -165,13 +165,13 @@ public class OutboundTcpConnectionPool
             case all:
                 break;
             case dc:
-                if (snitch.getDatacenter(address).equals(snitch.getDatacenter(FBUtilities.getBroadcastAddress())))
+                if (snitch.getDatacenter(address).equals(snitch.getDatacenter(FBUtilities.getBroadcastAddressAndPorts())))
                     return false;
                 break;
             case rack:
                 // for rack then check if the DC's are the same.
-                if (snitch.getRack(address).equals(snitch.getRack(FBUtilities.getBroadcastAddress()))
-                        && snitch.getDatacenter(address).equals(snitch.getDatacenter(FBUtilities.getBroadcastAddress())))
+                if (snitch.getRack(address).equals(snitch.getRack(FBUtilities.getBroadcastAddressAndPorts()))
+                        && snitch.getDatacenter(address).equals(snitch.getDatacenter(FBUtilities.getBroadcastAddressAndPorts())))
                     return false;
                 break;
         }
@@ -206,7 +206,7 @@ public class OutboundTcpConnectionPool
             error = true;
         }
         if (error)
-            throw new IllegalStateException(String.format("Connections to %s are not started!", id.getHostAddress()));
+            throw new IllegalStateException(String.format("Connections to %s are not started!", id.toString()));
     }
 
     public void close()

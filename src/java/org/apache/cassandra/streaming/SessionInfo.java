@@ -18,7 +18,6 @@
 package org.apache.cassandra.streaming;
 
 import java.io.Serializable;
-import java.net.InetAddress;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,14 +26,16 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 
+import org.apache.cassandra.locator.InetAddressAndPorts;
+
 /**
  * Stream session info.
  */
 public final class SessionInfo implements Serializable
 {
-    public final InetAddress peer;
+    public final InetAddressAndPorts peer;
     public final int sessionIndex;
-    public final InetAddress connecting;
+    public final InetAddressAndPorts connecting;
     /** Immutable collection of receiving summaries */
     public final Collection<StreamSummary> receivingSummaries;
     /** Immutable collection of sending summaries*/
@@ -45,9 +46,9 @@ public final class SessionInfo implements Serializable
     private final Map<String, ProgressInfo> receivingFiles;
     private final Map<String, ProgressInfo> sendingFiles;
 
-    public SessionInfo(InetAddress peer,
+    public SessionInfo(InetAddressAndPorts peer,
                        int sessionIndex,
-                       InetAddress connecting,
+                       InetAddressAndPorts connecting,
                        Collection<StreamSummary> receivingSummaries,
                        Collection<StreamSummary> sendingSummaries,
                        StreamSession.State state)

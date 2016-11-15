@@ -18,13 +18,13 @@
 package org.apache.cassandra.repair;
 
 import java.io.IOException;
-import java.net.InetAddress;
 
 import com.google.common.base.Objects;
 
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 
 /**
@@ -36,10 +36,10 @@ public class NodePair
 {
     public static IVersionedSerializer<NodePair> serializer = new NodePairSerializer();
 
-    public final InetAddress endpoint1;
-    public final InetAddress endpoint2;
+    public final InetAddressAndPorts endpoint1;
+    public final InetAddressAndPorts endpoint2;
 
-    public NodePair(InetAddress endpoint1, InetAddress endpoint2)
+    public NodePair(InetAddressAndPorts endpoint1, InetAddressAndPorts endpoint2)
     {
         this.endpoint1 = endpoint1;
         this.endpoint2 = endpoint2;
@@ -65,20 +65,20 @@ public class NodePair
     {
         public void serialize(NodePair nodePair, DataOutputPlus out, int version) throws IOException
         {
-            CompactEndpointSerializationHelper.serialize(nodePair.endpoint1, out);
-            CompactEndpointSerializationHelper.serialize(nodePair.endpoint2, out);
+            CompactEndpointSerializationHelper.instance.serialize(nodePair.endpoint1, out, version);
+            CompactEndpointSerializationHelper.instance.serialize(nodePair.endpoint2, out, version);
         }
 
         public NodePair deserialize(DataInputPlus in, int version) throws IOException
         {
-            InetAddress ep1 = CompactEndpointSerializationHelper.deserialize(in);
-            InetAddress ep2 = CompactEndpointSerializationHelper.deserialize(in);
+            InetAddressAndPorts ep1 = CompactEndpointSerializationHelper.instance.deserialize(in, version);
+            InetAddressAndPorts ep2 = CompactEndpointSerializationHelper.instance.deserialize(in, version);
             return new NodePair(ep1, ep2);
         }
 
         public long serializedSize(NodePair nodePair, int version)
         {
-            return 2 * CompactEndpointSerializationHelper.serializedSize(nodePair.endpoint1);
+            return 2 * CompactEndpointSerializationHelper.instance.serializedSize(nodePair.endpoint1, version);
         }
     }
 }

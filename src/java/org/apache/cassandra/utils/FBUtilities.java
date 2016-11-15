@@ -59,6 +59,7 @@ import org.apache.cassandra.io.sstable.metadata.ValidationMetadata;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.AsyncOneResponse;
 
 import org.codehaus.jackson.JsonFactory;
@@ -78,7 +79,10 @@ public class FBUtilities
 
     private static volatile InetAddress localInetAddress;
     private static volatile InetAddress broadcastInetAddress;
-    private static volatile InetAddress broadcastRpcAddress;
+    private static volatile InetAddress broadcastNativeAddress;
+    private static volatile InetAddressAndPorts broadcastNativeAddressAndPorts;
+    private static volatile InetAddressAndPorts broadcastInetAddressAndPorts;
+    private static volatile InetAddressAndPorts localInetAddressAndPorts;
 
     public static int getAvailableProcessors()
     {
@@ -119,9 +123,9 @@ public class FBUtilities
     }
 
     /**
-     * Please use getBroadcastAddress instead. You need this only when you have to listen/connect.
+     * Please use getJustBroadcastAddress instead. You need this only when you have to listen/connect.
      */
-    public static InetAddress getLocalAddress()
+    public static InetAddress getJustLocalAddress()
     {
         if (localInetAddress == null)
             try
@@ -137,23 +141,49 @@ public class FBUtilities
         return localInetAddress;
     }
 
-    public static InetAddress getBroadcastAddress()
+    public static InetAddressAndPorts getLocalAddressAndPorts()
+    {
+        if (localInetAddressAndPorts == null)
+        {
+            localInetAddressAndPorts = InetAddressAndPorts.getByAddress(getJustLocalAddress());
+        }
+        return localInetAddressAndPorts;
+    }
+
+    public static InetAddress getJustBroadcastAddress()
     {
         if (broadcastInetAddress == null)
             broadcastInetAddress = DatabaseDescriptor.getBroadcastAddress() == null
-                                 ? getLocalAddress()
+                                 ? getJustLocalAddress()
                                  : DatabaseDescriptor.getBroadcastAddress();
         return broadcastInetAddress;
     }
 
-
-    public static InetAddress getBroadcastRpcAddress()
+    public static InetAddressAndPorts getBroadcastAddressAndPorts()
     {
-        if (broadcastRpcAddress == null)
-            broadcastRpcAddress = DatabaseDescriptor.getBroadcastRpcAddress() == null
+        if (broadcastInetAddressAndPorts == null)
+        {
+            broadcastInetAddressAndPorts = InetAddressAndPorts.getByAddress(getJustBroadcastAddress());
+        }
+        return broadcastInetAddressAndPorts;
+    }
+
+    public static InetAddress getJustBroadcastNativeAddress()
+    {
+        if (broadcastNativeAddress == null)
+            broadcastNativeAddress = DatabaseDescriptor.getBroadcastRpcAddress() == null
                                    ? DatabaseDescriptor.getRpcAddress()
                                    : DatabaseDescriptor.getBroadcastRpcAddress();
-        return broadcastRpcAddress;
+        return broadcastNativeAddress;
+    }
+
+    public static InetAddressAndPorts getBroadcastNativeAddressAndPorts()
+    {
+        if (broadcastNativeAddressAndPorts == null)
+            broadcastNativeAddressAndPorts = InetAddressAndPorts.getByAddressOverrideDefaults(getJustBroadcastNativeAddress(),
+                                                                                              DatabaseDescriptor.getNativeTransportPort(),
+                                                                                              DatabaseDescriptor.getNativeTransportPortSSL());
+        return broadcastNativeAddressAndPorts;
     }
 
     public static Collection<InetAddress> getAllLocalAddresses()
@@ -899,6 +929,9 @@ public class FBUtilities
     {
         localInetAddress = null;
         broadcastInetAddress = null;
-        broadcastRpcAddress = null;
+        broadcastInetAddressAndPorts = null;
+        broadcastNativeAddress = null;
+        broadcastNativeAddressAndPorts = null;
+
     }
 }

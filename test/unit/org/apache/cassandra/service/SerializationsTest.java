@@ -19,7 +19,6 @@
 package org.apache.cassandra.service;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.UUID;
@@ -38,6 +37,7 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.NodePair;
@@ -116,7 +116,7 @@ public class SerializationsTest extends AbstractSerializationsTester
 
         // empty validation
         mt.addMerkleTree((int) Math.pow(2, 15), FULL_RANGE);
-        Validator v0 = new Validator(DESC, FBUtilities.getBroadcastAddress(),  -1);
+        Validator v0 = new Validator(DESC, FBUtilities.getBroadcastAddressAndPorts(),  -1);
         ValidationComplete c0 = new ValidationComplete(DESC, mt);
 
         // validation with a tree
@@ -124,7 +124,7 @@ public class SerializationsTest extends AbstractSerializationsTester
         mt.addMerkleTree(Integer.MAX_VALUE, FULL_RANGE);
         for (int i = 0; i < 10; i++)
             mt.split(p.getRandomToken());
-        Validator v1 = new Validator(DESC, FBUtilities.getBroadcastAddress(), -1);
+        Validator v1 = new Validator(DESC, FBUtilities.getBroadcastAddressAndPorts(), -1);
         ValidationComplete c1 = new ValidationComplete(DESC, mt);
 
         // validation failed
@@ -173,9 +173,9 @@ public class SerializationsTest extends AbstractSerializationsTester
 
     private void testSyncRequestWrite() throws IOException
     {
-        InetAddress local = InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
-        InetAddress src = InetAddress.getByAddress(new byte[]{127, 0, 0, 2});
-        InetAddress dest = InetAddress.getByAddress(new byte[]{127, 0, 0, 3});
+        InetAddressAndPorts local = InetAddressAndPorts.getByAddress(new byte[]{ 127, 0, 0, 1});
+        InetAddressAndPorts src = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 2});
+        InetAddressAndPorts dest = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 3});
         SyncRequest message = new SyncRequest(DESC, local, src, dest, Collections.singleton(FULL_RANGE));
 
         testRepairMessageWrite("service.SyncRequest.bin", message);
@@ -187,9 +187,9 @@ public class SerializationsTest extends AbstractSerializationsTester
         if (EXECUTE_WRITES)
             testSyncRequestWrite();
 
-        InetAddress local = InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
-        InetAddress src = InetAddress.getByAddress(new byte[]{127, 0, 0, 2});
-        InetAddress dest = InetAddress.getByAddress(new byte[]{127, 0, 0, 3});
+        InetAddressAndPorts local = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 1});
+        InetAddressAndPorts src = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 2});
+        InetAddressAndPorts dest = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 3});
 
         try (DataInputStreamPlus in = getInput("service.SyncRequest.bin"))
         {
@@ -207,8 +207,8 @@ public class SerializationsTest extends AbstractSerializationsTester
 
     private void testSyncCompleteWrite() throws IOException
     {
-        InetAddress src = InetAddress.getByAddress(new byte[]{127, 0, 0, 2});
-        InetAddress dest = InetAddress.getByAddress(new byte[]{127, 0, 0, 3});
+        InetAddressAndPorts src = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 2});
+        InetAddressAndPorts dest = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 3});
         // sync success
         SyncComplete success = new SyncComplete(DESC, src, dest, true);
         // sync fail
@@ -223,8 +223,8 @@ public class SerializationsTest extends AbstractSerializationsTester
         if (EXECUTE_WRITES)
             testSyncCompleteWrite();
 
-        InetAddress src = InetAddress.getByAddress(new byte[]{127, 0, 0, 2});
-        InetAddress dest = InetAddress.getByAddress(new byte[]{127, 0, 0, 3});
+        InetAddressAndPorts src = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 2});
+        InetAddressAndPorts dest = InetAddressAndPorts.getByAddress(new byte[]{127, 0, 0, 3});
         NodePair nodes = new NodePair(src, dest);
 
         try (DataInputStreamPlus in = getInput("service.SyncComplete.bin"))

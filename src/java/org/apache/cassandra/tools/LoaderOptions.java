@@ -27,8 +27,12 @@ import java.net.*;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.google.common.base.Throwables;
+import com.google.common.net.HostAndPort;
+
 import org.apache.cassandra.config.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.tools.BulkLoader.CmdLineOptions;
 
 import com.datastax.driver.core.AuthProvider;
@@ -78,8 +82,9 @@ public class LoaderOptions
     public final EncryptionOptions.ClientEncryptionOptions clientEncOptions;
     public final int connectionsPerHost;
     public final EncryptionOptions.ServerEncryptionOptions serverEncOptions;
-    public final Set<InetAddress> hosts;
-    public final Set<InetAddress> ignores = new HashSet<>();
+    public final Set<InetSocketAddress> hosts;
+    //TODO this config is not propagated?
+    public final Set<InetAddressAndPorts> ignores = new HashSet<>();
 
     LoaderOptions(Builder builder)
     {
@@ -119,8 +124,10 @@ public class LoaderOptions
         EncryptionOptions.ClientEncryptionOptions clientEncOptions = new EncryptionOptions.ClientEncryptionOptions();
         int connectionsPerHost = 1;
         EncryptionOptions.ServerEncryptionOptions serverEncOptions = new EncryptionOptions.ServerEncryptionOptions();
-        Set<InetAddress> hosts = new HashSet<>();
-        Set<InetAddress> ignores = new HashSet<>();
+        Set<InetAddress> hostsArg = new HashSet<>();
+        Set<InetAddress> ignoresArg = new HashSet<>();
+        Set<InetSocketAddress> hosts = new HashSet<>();
+        Set<InetAddressAndPorts> ignores = new HashSet<>();
 
         Builder()
         {
@@ -130,6 +137,23 @@ public class LoaderOptions
         public LoaderOptions build()
         {
             constructAuthProvider();
+
+            try
+            {
+                for (InetAddress host : hostsArg)
+                {
+                    hosts.add(new InetSocketAddress(host, nativePort));
+                }
+                for (InetAddress host : ignoresArg)
+                {
+                    ignores.add(InetAddressAndPorts.getByNameOverrideDefaults(host.getHostAddress(), storagePort, sslStoragePort));
+                }
+            }
+            catch (UnknownHostException e)
+            {
+                Throwables.propagate(e);
+            }
+
             return new LoaderOptions(this);
         }
 
@@ -223,13 +247,26 @@ public class LoaderOptions
             return this;
         }
 
+        @Deprecated
         public Builder hosts(Set<InetAddress> hosts)
         {
-            this.hosts = hosts;
+            this.hostsArg.addAll(hosts);
+            return this;
+        }
+
+        public Builder hostsAndNativePort(Set<InetSocketAddress> hosts)
+        {
+            this.hosts.addAll(hosts);
             return this;
         }
 
         public Builder host(InetAddress host)
+        {
+            hostsArg.add(host);
+            return this;
+        }
+
+        public Builder hostAndNativePort(InetSocketAddress host)
         {
             hosts.add(host);
             return this;
@@ -237,11 +274,23 @@ public class LoaderOptions
 
         public Builder ignore(Set<InetAddress> ignores)
         {
-            this.ignores = ignores;
+            this.ignoresArg.addAll(ignores);
+            return this;
+        }
+
+        public Builder ignoresAndInternalPorts(Set<InetAddressAndPorts> ignores)
+        {
+            this.ignores.addAll(ignores);
             return this;
         }
 
         public Builder ignore(InetAddress ignore)
+        {
+            ignoresArg.add(ignore);
+            return this;
+        }
+
+        public Builder ignoreAndInternalPorts(InetAddressAndPorts ignore)
         {
             ignores.add(ignore);
             return this;
@@ -314,42 +363,6 @@ public class LoaderOptions
                     authProviderName = cmd.getOptionValue(AUTH_PROVIDER_OPTION);
                 }
 
-                if (cmd.hasOption(INITIAL_HOST_ADDRESS_OPTION))
-                {
-                    String[] nodes = cmd.getOptionValue(INITIAL_HOST_ADDRESS_OPTION).split(",");
-                    try
-                    {
-                        for (String node : nodes)
-                        {
-                            hosts.add(InetAddress.getByName(node.trim()));
-                        }
-                    } catch (UnknownHostException e)
-                    {
-                        errorMsg("Unknown host: " + e.getMessage(), options);
-                    }
-
-                } else
-                {
-                    System.err.println("Initial hosts must be specified (-d)");
-                    printUsage(options);
-                    System.exit(1);
-                }
-
-                if (cmd.hasOption(IGNORE_NODES_OPTION))
-                {
-                    String[] nodes = cmd.getOptionValue(IGNORE_NODES_OPTION).split(",");
-                    try
-                    {
-                        for (String node : nodes)
-                        {
-                            ignores.add(InetAddress.getByName(node.trim()));
-                        }
-                    } catch (UnknownHostException e)
-                    {
-                        errorMsg("Unknown host: " + e.getMessage(), options);
-                    }
-                }
-
                 if (cmd.hasOption(CONNECTIONS_PER_HOST))
                 {
                     connectionsPerHost = Integer.parseInt(cmd.getOptionValue(CONNECTIONS_PER_HOST));
@@ -375,8 +388,47 @@ public class LoaderOptions
                     config.stream_throughput_outbound_megabits_per_sec = 0;
                     config.inter_dc_stream_throughput_outbound_megabits_per_sec = 0;
                 }
+
                 storagePort = config.storage_port;
                 sslStoragePort = config.ssl_storage_port;
+
+                if (cmd.hasOption(INITIAL_HOST_ADDRESS_OPTION))
+                {
+                    String[] nodes = cmd.getOptionValue(INITIAL_HOST_ADDRESS_OPTION).split(",");
+                    try
+                    {
+                        for (String node : nodes)
+                        {
+                            HostAndPort hap = HostAndPort.fromString(node);
+                            hosts.add(new InetSocketAddress(InetAddress.getByName(hap.getHostText()), hap.getPortOrDefault(nativePort)));
+                        }
+                    } catch (UnknownHostException e)
+                    {
+                        errorMsg("Unknown host: " + e.getMessage(), options);
+                    }
+
+                } else
+                {
+                    System.err.println("Initial hosts must be specified (-d)");
+                    printUsage(options);
+                    System.exit(1);
+                }
+
+                if (cmd.hasOption(IGNORE_NODES_OPTION))
+                {
+                    String[] nodes = cmd.getOptionValue(IGNORE_NODES_OPTION).split(",");
+                    try
+                    {
+                        for (String node : nodes)
+                        {
+                            ignores.add(InetAddressAndPorts.getByNameOverrideDefaults(node.trim(), storagePort, sslStoragePort));
+                        }
+                    } catch (UnknownHostException e)
+                    {
+                        errorMsg("Unknown host: " + e.getMessage(), options);
+                    }
+                }
+
                 throttle = config.stream_throughput_outbound_megabits_per_sec;
                 clientEncOptions = config.client_encryption_options;
                 serverEncOptions = config.server_encryption_options;

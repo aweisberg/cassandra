@@ -23,7 +23,6 @@ package org.apache.cassandra.net;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
@@ -41,6 +40,7 @@ import org.apache.cassandra.db.monitoring.ApproximateTime;
 import org.apache.cassandra.io.util.DataInputPlus.DataInputStreamPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
 import org.apache.cassandra.io.util.WrappedDataOutputStreamPlus;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.caffinitas.ohc.histo.EstimatedHistogram;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -59,15 +59,15 @@ public class MessagingServiceTest
     {
         DatabaseDescriptor.daemonInitialization();
         DatabaseDescriptor.setBackPressureStrategy(new MockBackPressureStrategy(Collections.emptyMap()));
-        DatabaseDescriptor.setBroadcastAddress(InetAddress.getByName("127.0.0.1"));
+        DatabaseDescriptor.setBroadcastAddress(InetAddressAndPorts.getByName("127.0.0.1").address);
     }
 
     @Before
     public void before() throws UnknownHostException
     {
         MockBackPressureStrategy.applied = false;
-        messagingService.destroyConnectionPool(InetAddress.getByName("127.0.0.2"));
-        messagingService.destroyConnectionPool(InetAddress.getByName("127.0.0.3"));
+        messagingService.destroyConnectionPool(InetAddressAndPorts.getByName("127.0.0.2"));
+        messagingService.destroyConnectionPool(InetAddressAndPorts.getByName("127.0.0.3"));
     }
 
     @Test
@@ -162,44 +162,44 @@ public class MessagingServiceTest
     @Test
     public void testUpdatesBackPressureOnSendWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddress.getByName("127.0.0.2")).getBackPressureState();
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddressAndPorts.getByName("127.0.0.2")).getBackPressureState();
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         MessageOut<?> ignored = null;
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnSend(InetAddress.getByName("127.0.0.2"), noCallback, ignored);
+        messagingService.updateBackPressureOnSend(InetAddressAndPorts.getByName("127.0.0.2"), noCallback, ignored);
         assertFalse(backPressureState.onSend);
 
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.updateBackPressureOnSend(InetAddress.getByName("127.0.0.2"), bpCallback, ignored);
+        messagingService.updateBackPressureOnSend(InetAddressAndPorts.getByName("127.0.0.2"), bpCallback, ignored);
         assertFalse(backPressureState.onSend);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnSend(InetAddress.getByName("127.0.0.2"), bpCallback, ignored);
+        messagingService.updateBackPressureOnSend(InetAddressAndPorts.getByName("127.0.0.2"), bpCallback, ignored);
         assertTrue(backPressureState.onSend);
     }
 
     @Test
     public void testUpdatesBackPressureOnReceiveWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddress.getByName("127.0.0.2")).getBackPressureState();
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddressAndPorts.getByName("127.0.0.2")).getBackPressureState();
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         boolean timeout = false;
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddress.getByName("127.0.0.2"), noCallback, timeout);
+        messagingService.updateBackPressureOnReceive(InetAddressAndPorts.getByName("127.0.0.2"), noCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.updateBackPressureOnReceive(InetAddress.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(InetAddressAndPorts.getByName("127.0.0.2"), bpCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddress.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(InetAddressAndPorts.getByName("127.0.0.2"), bpCallback, timeout);
         assertTrue(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
     }
@@ -207,23 +207,23 @@ public class MessagingServiceTest
     @Test
     public void testUpdatesBackPressureOnTimeoutWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddress.getByName("127.0.0.2")).getBackPressureState();
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getConnectionPool(InetAddressAndPorts.getByName("127.0.0.2")).getBackPressureState();
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         boolean timeout = true;
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddress.getByName("127.0.0.2"), noCallback, timeout);
+        messagingService.updateBackPressureOnReceive(InetAddressAndPorts.getByName("127.0.0.2"), noCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.updateBackPressureOnReceive(InetAddress.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(InetAddressAndPorts.getByName("127.0.0.2"), bpCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddress.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(InetAddressAndPorts.getByName("127.0.0.2"), bpCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertTrue(backPressureState.onTimeout);
     }
@@ -232,11 +232,11 @@ public class MessagingServiceTest
     public void testAppliesBackPressureWhenEnabled() throws UnknownHostException
     {
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.applyBackPressure(Arrays.asList(InetAddress.getByName("127.0.0.2")), ONE_SECOND);
+        messagingService.applyBackPressure(Arrays.asList(InetAddressAndPorts.getByName("127.0.0.2")), ONE_SECOND);
         assertFalse(MockBackPressureStrategy.applied);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.applyBackPressure(Arrays.asList(InetAddress.getByName("127.0.0.2")), ONE_SECOND);
+        messagingService.applyBackPressure(Arrays.asList(InetAddressAndPorts.getByName("127.0.0.2")), ONE_SECOND);
         assertTrue(MockBackPressureStrategy.applied);
     }
 
@@ -244,7 +244,7 @@ public class MessagingServiceTest
     public void testDoesntApplyBackPressureToBroadcastAddress() throws UnknownHostException
     {
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.applyBackPressure(Arrays.asList(InetAddress.getByName("127.0.0.1")), ONE_SECOND);
+        messagingService.applyBackPressure(Arrays.asList(InetAddressAndPorts.getByName("127.0.0.1")), ONE_SECOND);
         assertFalse(MockBackPressureStrategy.applied);
     }
 
@@ -256,7 +256,7 @@ public class MessagingServiceTest
             out.writeInt((int) sentAt);
         }
         DataInputStreamPlus in = new DataInputStreamPlus(new ByteArrayInputStream(baos.toByteArray()));
-        MessageIn.readConstructionTime(InetAddress.getLocalHost(), in, nowTime);
+        MessageIn.readConstructionTime(InetAddressAndPorts.getLocalHost(), in, nowTime);
     }
 
     public static class MockBackPressureStrategy implements BackPressureStrategy<MockBackPressureStrategy.MockBackPressureState>
@@ -275,19 +275,19 @@ public class MessagingServiceTest
         }
 
         @Override
-        public MockBackPressureState newState(InetAddress host)
+        public MockBackPressureState newState(InetAddressAndPorts host)
         {
             return new MockBackPressureState(host);
         }
 
         public static class MockBackPressureState implements BackPressureState
         {
-            private final InetAddress host;
+            private final InetAddressAndPorts host;
             public volatile boolean onSend = false;
             public volatile boolean onReceive = false;
             public volatile boolean onTimeout = false;
 
-            private MockBackPressureState(InetAddress host)
+            private MockBackPressureState(InetAddressAndPorts host)
             {
                 this.host = host;
             }
@@ -317,7 +317,7 @@ public class MessagingServiceTest
             }
 
             @Override
-            public InetAddress getHost()
+            public InetAddressAndPorts getHost()
             {
                 return host;
             }

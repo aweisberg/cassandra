@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.db;
 
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,6 +43,7 @@ import org.apache.cassandra.dht.Bounds;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.dht.ByteOrderedPartitioner.BytesToken;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.metrics.ClearableHistogram;
 import org.apache.cassandra.schema.CachingParams;
@@ -301,8 +301,8 @@ public class RowCacheTest
         byte[] tk1, tk2;
         tk1 = "key1000".getBytes();
         tk2 = "key1050".getBytes();
-        tmd.updateNormalToken(new BytesToken(tk1), InetAddress.getByName("127.0.0.1"));
-        tmd.updateNormalToken(new BytesToken(tk2), InetAddress.getByName("127.0.0.2"));
+        tmd.updateNormalToken(new BytesToken(tk1), InetAddressAndPorts.getByName("127.0.0.1"));
+        tmd.updateNormalToken(new BytesToken(tk2), InetAddressAndPorts.getByName("127.0.0.2"));
         store.cleanupCache();
         assertEquals(50, CacheService.instance.rowCache.size());
         CacheService.instance.setRowCacheCapacityInMB(0);

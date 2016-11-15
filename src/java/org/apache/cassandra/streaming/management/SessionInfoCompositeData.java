@@ -27,6 +27,7 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.SessionInfo;
 import org.apache.cassandra.streaming.StreamSession;
@@ -36,7 +37,11 @@ public class SessionInfoCompositeData
 {
     private static final String[] ITEM_NAMES = new String[]{"planId",
                                                             "peer",
+                                                            "peer_port",
+                                                            "peer_sslport",
                                                             "connecting",
+                                                            "connecting_port",
+                                                            "connecting_sslport",
                                                             "receivingSummaries",
                                                             "sendingSummaries",
                                                             "state",
@@ -45,7 +50,11 @@ public class SessionInfoCompositeData
                                                             "sessionIndex"};
     private static final String[] ITEM_DESCS = new String[]{"Plan ID",
                                                             "Session peer",
+                                                            "Session peer storage port",
+                                                            "Session peer storage ssl port",
                                                             "Connecting address",
+                                                            "Connecting storage port",
+                                                            "Connecting storage ssl port",
                                                             "Summaries of receiving data",
                                                             "Summaries of sending data",
                                                             "Current session state",
@@ -61,7 +70,11 @@ public class SessionInfoCompositeData
         {
             ITEM_TYPES = new OpenType[]{SimpleType.STRING,
                                         SimpleType.STRING,
+                                        SimpleType.INTEGER,
+                                        SimpleType.INTEGER,
                                         SimpleType.STRING,
+                                        SimpleType.INTEGER,
+                                        SimpleType.INTEGER,
                                         ArrayType.getArrayType(StreamSummaryCompositeData.COMPOSITE_TYPE),
                                         ArrayType.getArrayType(StreamSummaryCompositeData.COMPOSITE_TYPE),
                                         SimpleType.STRING,
@@ -84,8 +97,12 @@ public class SessionInfoCompositeData
     {
         Map<String, Object> valueMap = new HashMap<>();
         valueMap.put(ITEM_NAMES[0], planId.toString());
-        valueMap.put(ITEM_NAMES[1], sessionInfo.peer.getHostAddress());
-        valueMap.put(ITEM_NAMES[2], sessionInfo.connecting.getHostAddress());
+        valueMap.put(ITEM_NAMES[1], sessionInfo.peer.address.getHostAddress());
+        valueMap.put(ITEM_NAMES[2], sessionInfo.peer.port);
+        valueMap.put(ITEM_NAMES[3], sessionInfo.peer.sslport);
+        valueMap.put(ITEM_NAMES[4], sessionInfo.connecting.address.getHostAddress());
+        valueMap.put(ITEM_NAMES[5], sessionInfo.connecting.port);
+        valueMap.put(ITEM_NAMES[6], sessionInfo.connecting.sslport);
         Function<StreamSummary, CompositeData> fromStreamSummary = new Function<StreamSummary, CompositeData>()
         {
             public CompositeData apply(StreamSummary input)
@@ -93,9 +110,9 @@ public class SessionInfoCompositeData
                 return StreamSummaryCompositeData.toCompositeData(input);
             }
         };
-        valueMap.put(ITEM_NAMES[3], toArrayOfCompositeData(sessionInfo.receivingSummaries, fromStreamSummary));
-        valueMap.put(ITEM_NAMES[4], toArrayOfCompositeData(sessionInfo.sendingSummaries, fromStreamSummary));
-        valueMap.put(ITEM_NAMES[5], sessionInfo.state.name());
+        valueMap.put(ITEM_NAMES[7], toArrayOfCompositeData(sessionInfo.receivingSummaries, fromStreamSummary));
+        valueMap.put(ITEM_NAMES[8], toArrayOfCompositeData(sessionInfo.sendingSummaries, fromStreamSummary));
+        valueMap.put(ITEM_NAMES[9], sessionInfo.state.name());
         Function<ProgressInfo, CompositeData> fromProgressInfo = new Function<ProgressInfo, CompositeData>()
         {
             public CompositeData apply(ProgressInfo input)
@@ -103,9 +120,9 @@ public class SessionInfoCompositeData
                 return ProgressInfoCompositeData.toCompositeData(planId, input);
             }
         };
-        valueMap.put(ITEM_NAMES[6], toArrayOfCompositeData(sessionInfo.getReceivingFiles(), fromProgressInfo));
-        valueMap.put(ITEM_NAMES[7], toArrayOfCompositeData(sessionInfo.getSendingFiles(), fromProgressInfo));
-        valueMap.put(ITEM_NAMES[8], sessionInfo.sessionIndex);
+        valueMap.put(ITEM_NAMES[10], toArrayOfCompositeData(sessionInfo.getReceivingFiles(), fromProgressInfo));
+        valueMap.put(ITEM_NAMES[11], toArrayOfCompositeData(sessionInfo.getSendingFiles(), fromProgressInfo));
+        valueMap.put(ITEM_NAMES[12], sessionInfo.sessionIndex);
         try
         {
             return new CompositeDataSupport(COMPOSITE_TYPE, valueMap);
@@ -121,11 +138,11 @@ public class SessionInfoCompositeData
         assert cd.getCompositeType().equals(COMPOSITE_TYPE);
 
         Object[] values = cd.getAll(ITEM_NAMES);
-        InetAddress peer, connecting;
+        InetAddressAndPorts peer, connecting;
         try
         {
-            peer = InetAddress.getByName((String) values[1]);
-            connecting = InetAddress.getByName((String) values[2]);
+            peer = InetAddressAndPorts.getByNameOverrideDefaults((String) values[1], (Integer)values[2], (Integer)values[3]);
+            connecting = InetAddressAndPorts.getByNameOverrideDefaults((String) values[4], (Integer)values[5], (Integer)values[6]);
         }
         catch (UnknownHostException e)
         {
@@ -139,11 +156,11 @@ public class SessionInfoCompositeData
             }
         };
         SessionInfo info = new SessionInfo(peer,
-                                           (int)values[8],
+                                           (int)values[12],
                                            connecting,
-                                           fromArrayOfCompositeData((CompositeData[]) values[3], toStreamSummary),
-                                           fromArrayOfCompositeData((CompositeData[]) values[4], toStreamSummary),
-                                           StreamSession.State.valueOf((String) values[5]));
+                                           fromArrayOfCompositeData((CompositeData[]) values[7], toStreamSummary),
+                                           fromArrayOfCompositeData((CompositeData[]) values[8], toStreamSummary),
+                                           StreamSession.State.valueOf((String) values[9]));
         Function<CompositeData, ProgressInfo> toProgressInfo = new Function<CompositeData, ProgressInfo>()
         {
             public ProgressInfo apply(CompositeData input)
@@ -151,11 +168,11 @@ public class SessionInfoCompositeData
                 return ProgressInfoCompositeData.fromCompositeData(input);
             }
         };
-        for (ProgressInfo progress : fromArrayOfCompositeData((CompositeData[]) values[6], toProgressInfo))
+        for (ProgressInfo progress : fromArrayOfCompositeData((CompositeData[]) values[10], toProgressInfo))
         {
             info.updateProgress(progress);
         }
-        for (ProgressInfo progress : fromArrayOfCompositeData((CompositeData[]) values[7], toProgressInfo))
+        for (ProgressInfo progress : fromArrayOfCompositeData((CompositeData[]) values[11], toProgressInfo))
         {
             info.updateProgress(progress);
         }

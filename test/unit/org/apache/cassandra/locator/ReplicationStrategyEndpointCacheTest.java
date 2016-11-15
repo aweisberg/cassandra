@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.locator;
 
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -56,14 +55,14 @@ public class ReplicationStrategyEndpointCacheTest
 
         strategy = getStrategyWithNewTokenMetadata(Keyspace.open(KEYSPACE).getReplicationStrategy(), tmd);
 
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(10)), InetAddress.getByName("127.0.0.1"));
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(20)), InetAddress.getByName("127.0.0.2"));
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(30)), InetAddress.getByName("127.0.0.3"));
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(40)), InetAddress.getByName("127.0.0.4"));
-        //tmd.updateNormalToken(new BigIntegerToken(String.valueOf(50)), InetAddress.getByName("127.0.0.5"));
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(60)), InetAddress.getByName("127.0.0.6"));
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(70)), InetAddress.getByName("127.0.0.7"));
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(80)), InetAddress.getByName("127.0.0.8"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(10)), InetAddressAndPorts.getByName("127.0.0.1"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(20)), InetAddressAndPorts.getByName("127.0.0.2"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(30)), InetAddressAndPorts.getByName("127.0.0.3"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(40)), InetAddressAndPorts.getByName("127.0.0.4"));
+        //tmd.updateNormalToken(new BigIntegerToken(String.valueOf(50)), InetAddressAndPorts.getByName("127.0.0.5", null, null));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(60)), InetAddressAndPorts.getByName("127.0.0.6"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(70)), InetAddressAndPorts.getByName("127.0.0.7"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(80)), InetAddressAndPorts.getByName("127.0.0.8"));
     }
 
     @Test
@@ -91,31 +90,31 @@ public class ReplicationStrategyEndpointCacheTest
     public void runCacheRespectsTokenChangesTest(Class stratClass, Map<String, String> configOptions) throws Exception
     {
         setup(stratClass, configOptions);
-        ArrayList<InetAddress> initial;
-        ArrayList<InetAddress> endpoints;
+        ArrayList<InetAddressAndPorts> initial;
+        ArrayList<InetAddressAndPorts> endpoints;
 
         endpoints = strategy.getNaturalEndpoints(searchToken);
         assert endpoints.size() == 5 : StringUtils.join(endpoints, ",");
 
         // test token addition, in DC2 before existing token
         initial = strategy.getNaturalEndpoints(searchToken);
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(35)), InetAddress.getByName("127.0.0.5"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(35)), InetAddressAndPorts.getByName("127.0.0.5"));
         endpoints = strategy.getNaturalEndpoints(searchToken);
         assert endpoints.size() == 5 : StringUtils.join(endpoints, ",");
         assert !endpoints.equals(initial);
 
         // test token removal, newly created token
         initial = strategy.getNaturalEndpoints(searchToken);
-        tmd.removeEndpoint(InetAddress.getByName("127.0.0.5"));
+        tmd.removeEndpoint(InetAddressAndPorts.getByName("127.0.0.5"));
         endpoints = strategy.getNaturalEndpoints(searchToken);
         assert endpoints.size() == 5 : StringUtils.join(endpoints, ",");
-        assert !endpoints.contains(InetAddress.getByName("127.0.0.5"));
+        assert !endpoints.contains(InetAddressAndPorts.getByName("127.0.0.5"));
         assert !endpoints.equals(initial);
 
         // test token change
         initial = strategy.getNaturalEndpoints(searchToken);
         //move .8 after search token but before other DC3
-        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(25)), InetAddress.getByName("127.0.0.8"));
+        tmd.updateNormalToken(new BigIntegerToken(String.valueOf(25)), InetAddressAndPorts.getByName("127.0.0.8"));
         endpoints = strategy.getNaturalEndpoints(searchToken);
         assert endpoints.size() == 5 : StringUtils.join(endpoints, ",");
         assert !endpoints.equals(initial);
@@ -130,7 +129,7 @@ public class ReplicationStrategyEndpointCacheTest
             super(keyspaceName, tokenMetadata, snitch, configOptions);
         }
 
-        public List<InetAddress> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
+        public List<InetAddressAndPorts> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
         {
             assert !called : "calculateNaturalEndpoints was already called, result should have been cached";
             called = true;
@@ -147,7 +146,7 @@ public class ReplicationStrategyEndpointCacheTest
             super(keyspaceName, tokenMetadata, snitch, configOptions);
         }
 
-        public List<InetAddress> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
+        public List<InetAddressAndPorts> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
         {
             assert !called : "calculateNaturalEndpoints was already called, result should have been cached";
             called = true;
@@ -164,7 +163,7 @@ public class ReplicationStrategyEndpointCacheTest
             super(keyspaceName, tokenMetadata, snitch, configOptions);
         }
 
-        public List<InetAddress> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
+        public List<InetAddressAndPorts> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
         {
             assert !called : "calculateNaturalEndpoints was already called, result should have been cached";
             called = true;

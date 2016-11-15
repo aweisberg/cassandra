@@ -18,12 +18,13 @@
 package org.apache.cassandra.transport;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.Iterator;
 import java.util.List;
 
 import com.google.common.base.Objects;
+
 import io.netty.buffer.ByteBuf;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 
 public abstract class Event
 {
@@ -79,19 +80,21 @@ public abstract class Event
         return CBUtil.sizeOfEnumValue(type) + eventSerializedSize(version);
     }
 
+    public abstract boolean equalsTolerateSecondPortMismatch(Event other);
+
     protected abstract void serializeEvent(ByteBuf dest, ProtocolVersion version);
     protected abstract int eventSerializedSize(ProtocolVersion version);
 
     public static abstract class NodeEvent extends Event
     {
-        public final InetSocketAddress node;
+        public final InetAddressAndPorts node;
 
         public InetAddress nodeAddress()
         {
-            return node.getAddress();
+            return node.address;
         }
 
-        private NodeEvent(Type type, InetSocketAddress node)
+        private NodeEvent(Type type, InetAddressAndPorts node)
         {
             super(type);
             this.node = node;
@@ -104,44 +107,44 @@ public abstract class Event
 
         public final Change change;
 
-        private TopologyChange(Change change, InetSocketAddress node)
+        private TopologyChange(Change change, InetAddressAndPorts node)
         {
             super(Type.TOPOLOGY_CHANGE, node);
             this.change = change;
         }
 
-        public static TopologyChange newNode(InetAddress host, int port)
+        public static TopologyChange newNode(InetAddressAndPorts host)
         {
-            return new TopologyChange(Change.NEW_NODE, new InetSocketAddress(host, port));
+            return new TopologyChange(Change.NEW_NODE, host);
         }
 
-        public static TopologyChange removedNode(InetAddress host, int port)
+        public static TopologyChange removedNode(InetAddressAndPorts host)
         {
-            return new TopologyChange(Change.REMOVED_NODE, new InetSocketAddress(host, port));
+            return new TopologyChange(Change.REMOVED_NODE, host);
         }
 
-        public static TopologyChange movedNode(InetAddress host, int port)
+        public static TopologyChange movedNode(InetAddressAndPorts host)
         {
-            return new TopologyChange(Change.MOVED_NODE, new InetSocketAddress(host, port));
+            return new TopologyChange(Change.MOVED_NODE, host);
         }
 
         // Assumes the type has already been deserialized
         private static TopologyChange deserializeEvent(ByteBuf cb, ProtocolVersion version)
         {
             Change change = CBUtil.readEnumValue(Change.class, cb);
-            InetSocketAddress node = CBUtil.readInet(cb);
+            InetAddressAndPorts node = CBUtil.readInetAddressAndPorts(cb, version);
             return new TopologyChange(change, node);
         }
 
         protected void serializeEvent(ByteBuf dest, ProtocolVersion version)
         {
             CBUtil.writeEnumValue(change, dest);
-            CBUtil.writeInet(node, dest);
+            CBUtil.writeInetAddressAndPorts(node, dest, version);
         }
 
         protected int eventSerializedSize(ProtocolVersion version)
         {
-            return CBUtil.sizeOfEnumValue(change) + CBUtil.sizeOfInet(node);
+            return CBUtil.sizeOfEnumValue(change) + CBUtil.sizeOfInetAddressAndPorts(node, version);
         }
 
         @Override
@@ -166,6 +169,18 @@ public abstract class Event
             return Objects.equal(change, tpc.change)
                 && Objects.equal(node, tpc.node);
         }
+
+        @Override
+        public boolean equalsTolerateSecondPortMismatch(Event other)
+        {
+            if (!(other instanceof TopologyChange))
+                return false;
+
+            TopologyChange tpc = (TopologyChange)other;
+            return Objects.equal(change, tpc.change)
+                   && Objects.equal(node.address, tpc.node.address)
+                   && Objects.equal(node.port, tpc.node.port);
+        }
     }
 
 
@@ -175,39 +190,39 @@ public abstract class Event
 
         public final Status status;
 
-        private StatusChange(Status status, InetSocketAddress node)
+        private StatusChange(Status status, InetAddressAndPorts node)
         {
             super(Type.STATUS_CHANGE, node);
             this.status = status;
         }
 
-        public static StatusChange nodeUp(InetAddress host, int port)
+        public static StatusChange nodeUp(InetAddressAndPorts host)
         {
-            return new StatusChange(Status.UP, new InetSocketAddress(host, port));
+            return new StatusChange(Status.UP, host);
         }
 
-        public static StatusChange nodeDown(InetAddress host, int port)
+        public static StatusChange nodeDown(InetAddressAndPorts host)
         {
-            return new StatusChange(Status.DOWN, new InetSocketAddress(host, port));
+            return new StatusChange(Status.DOWN, host);
         }
 
         // Assumes the type has already been deserialized
         private static StatusChange deserializeEvent(ByteBuf cb, ProtocolVersion version)
         {
             Status status = CBUtil.readEnumValue(Status.class, cb);
-            InetSocketAddress node = CBUtil.readInet(cb);
+            InetAddressAndPorts node = CBUtil.readInetAddressAndPorts(cb, version);
             return new StatusChange(status, node);
         }
 
         protected void serializeEvent(ByteBuf dest, ProtocolVersion version)
         {
             CBUtil.writeEnumValue(status, dest);
-            CBUtil.writeInet(node, dest);
+            CBUtil.writeInetAddressAndPorts(node, dest, version);
         }
 
         protected int eventSerializedSize(ProtocolVersion version)
         {
-            return CBUtil.sizeOfEnumValue(status) + CBUtil.sizeOfInet(node);
+            return CBUtil.sizeOfEnumValue(status) + CBUtil.sizeOfInetAddressAndPorts(node, version);
         }
 
         @Override
@@ -231,6 +246,18 @@ public abstract class Event
             StatusChange stc = (StatusChange)other;
             return Objects.equal(status, stc.status)
                 && Objects.equal(node, stc.node);
+        }
+
+        @Override
+        public boolean equalsTolerateSecondPortMismatch(Event other)
+        {
+            if (!(other instanceof StatusChange))
+                return false;
+
+            StatusChange stc = (StatusChange)other;
+            return Objects.equal(status, stc.status)
+                   && Objects.equal(node.address, stc.node.address)
+                   && Objects.equal(node.port, stc.node.port);
         }
     }
 
@@ -427,5 +454,12 @@ public abstract class Event
                 && Objects.equal(name, scc.name)
                 && Objects.equal(argTypes, scc.argTypes);
         }
+
+        @Override
+        public boolean equalsTolerateSecondPortMismatch(Event other)
+        {
+            return equals(other);
+        }
+
     }
 }

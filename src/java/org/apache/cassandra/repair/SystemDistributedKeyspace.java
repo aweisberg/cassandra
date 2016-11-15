@@ -47,6 +47,7 @@ import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
@@ -80,7 +81,11 @@ public final class SystemDistributedKeyspace
                      + "range_begin text,"
                      + "range_end text,"
                      + "coordinator inet,"
+                     + "coordinator_port int,"
+                     + "coordinator_sslport int,"
                      + "participants set<inet>,"
+                     + "participants_port map<inet,int>,"
+                     + "participants_sslport map<inet,int>,"
                      + "exception_message text,"
                      + "exception_stacktrace text,"
                      + "status text,"
@@ -178,17 +183,32 @@ public final class SystemDistributedKeyspace
         processSilent(fmtQuery);
     }
 
-    public static void startRepairs(UUID id, UUID parent_id, String keyspaceName, String[] cfnames, Collection<Range<Token>> ranges, Iterable<InetAddress> endpoints)
+    public static void startRepairs(UUID id, UUID parent_id, String keyspaceName, String[] cfnames, Collection<Range<Token>> ranges, Iterable<InetAddressAndPorts> endpoints)
     {
-        String coordinator = FBUtilities.getBroadcastAddress().getHostAddress();
-        Set<String> participants = Sets.newHashSet(coordinator);
+        InetAddressAndPorts coordinator = FBUtilities.getBroadcastAddressAndPorts();
+        Set<String> participants = Sets.newHashSet();
+        StringBuilder ports = new StringBuilder();
+        StringBuilder sslports = new StringBuilder();
 
-        for (InetAddress endpoint : endpoints)
-            participants.add(endpoint.getHostAddress());
+        boolean first = true;
+        for (InetAddressAndPorts endpoint : endpoints)
+        {
+            String hostAddress = endpoint.getHostAddress(false);
+            participants.add(hostAddress);
+            if (!first)
+            {
+                ports.append(", ");
+                sslports.append(", ");
+            }
+            first = false;
+
+            ports.append('\'').append(hostAddress).append("':").append(endpoint.port);
+            sslports.append('\'').append(hostAddress).append("':").append(endpoint.sslport);
+        }
 
         String query =
-                "INSERT INTO %s.%s (keyspace_name, columnfamily_name, id, parent_id, range_begin, range_end, coordinator, participants, status, started_at) " +
-                        "VALUES (   '%s',          '%s',              %s, %s,        '%s',        '%s',      '%s',        { '%s' },     '%s',   toTimestamp(now()))";
+                "INSERT INTO %s.%s (keyspace_name, columnfamily_name, id, parent_id, range_begin, range_end, coordinator, coordinator_port, coordinator_sslport, participants, participants_port, participants_sslport, status, started_at) " +
+                        "VALUES (   '%s',          '%s',              %s, %s,        '%s',        '%s',      '%s',        %d,               %d,                  { '%s' },     {%s},              {%s},                 '%s',   toTimestamp(now()))";
 
         for (String cfname : cfnames)
         {
@@ -201,8 +221,12 @@ public final class SystemDistributedKeyspace
                                               parent_id.toString(),
                                               range.left.toString(),
                                               range.right.toString(),
-                                              coordinator,
+                                              coordinator.getHostAddress(false),
+                                              coordinator.port,
+                                              coordinator.sslport,
                                               Joiner.on("', '").join(participants),
+                                              ports,
+                                              sslports,
                                               RepairState.STARTED.toString());
                 processSilent(fmtQry);
             }

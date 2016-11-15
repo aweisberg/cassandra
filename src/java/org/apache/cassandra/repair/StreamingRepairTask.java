@@ -17,12 +17,11 @@
  */
 package org.apache.cassandra.repair;
 
-import java.net.InetAddress;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.SyncComplete;
 import org.apache.cassandra.repair.messages.SyncRequest;
@@ -53,8 +52,8 @@ public class StreamingRepairTask implements Runnable, StreamEventHandler
 
     public void run()
     {
-        InetAddress dest = request.dst;
-        InetAddress preferred = SystemKeyspace.getPreferredIP(dest);
+        InetAddressAndPorts dest = request.dst;
+        InetAddressAndPorts preferred = SystemKeyspace.getPreferredIP(dest);
         logger.info("[streaming task #{}] Performing streaming repair of {} ranges with {}", desc.sessionId, request.ranges.size(), request.dst);
         boolean isIncremental = false;
         if (desc.parentSessionId != null)

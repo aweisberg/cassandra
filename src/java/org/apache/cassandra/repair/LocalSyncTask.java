@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.repair;
 
-import java.net.InetAddress;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -26,6 +25,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamEvent;
@@ -62,10 +62,10 @@ public class LocalSyncTask extends SyncTask implements StreamEventHandler
      */
     protected void startSync(List<Range<Token>> differences)
     {
-        InetAddress local = FBUtilities.getBroadcastAddress();
+        InetAddressAndPorts local = FBUtilities.getBroadcastAddressAndPorts();
         // We can take anyone of the node as source or destination, however if one is localhost, we put at source to avoid a forwarding
-        InetAddress dst = r2.endpoint.equals(local) ? r1.endpoint : r2.endpoint;
-        InetAddress preferred = SystemKeyspace.getPreferredIP(dst);
+        InetAddressAndPorts dst = r2.endpoint.equals(local) ? r1.endpoint : r2.endpoint;
+        InetAddressAndPorts preferred = SystemKeyspace.getPreferredIP(dst);
 
         String message = String.format("Performing streaming repair of %d ranges with %s", differences.size(), dst);
         logger.info("[repair #{}] {}", desc.sessionId, message);

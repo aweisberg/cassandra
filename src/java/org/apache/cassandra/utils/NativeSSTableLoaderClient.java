@@ -18,7 +18,10 @@
 package org.apache.cassandra.utils;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import com.datastax.driver.core.*;
 
@@ -32,6 +35,7 @@ import org.apache.cassandra.dht.*;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.dht.Token.TokenFactory;
 import org.apache.cassandra.io.sstable.SSTableLoader;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.schema.CQLTypeParser;
 import org.apache.cassandra.schema.SchemaKeyspace;
 import org.apache.cassandra.schema.Types;
@@ -39,18 +43,18 @@ import org.apache.cassandra.schema.Types;
 public class NativeSSTableLoaderClient extends SSTableLoader.Client
 {
     protected final Map<String, CFMetaData> tables;
-    private final Collection<InetAddress> hosts;
+    private final Collection<InetSocketAddress> hosts;
     private final int port;
     private final AuthProvider authProvider;
     private final SSLOptions sslOptions;
 
 
-    public NativeSSTableLoaderClient(Collection<InetAddress> hosts, int port, String username, String password, SSLOptions sslOptions)
+    public NativeSSTableLoaderClient(Collection<InetSocketAddress> hosts, int port, String username, String password, SSLOptions sslOptions)
     {
         this(hosts, port, new PlainTextAuthProvider(username, password), sslOptions);
     }
 
-    public NativeSSTableLoaderClient(Collection<InetAddress> hosts, int port, AuthProvider authProvider, SSLOptions sslOptions)
+    public NativeSSTableLoaderClient(Collection<InetSocketAddress> hosts, int port, AuthProvider authProvider, SSLOptions sslOptions)
     {
         super();
         this.tables = new HashMap<>();
@@ -62,7 +66,9 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
 
     public void init(String keyspace)
     {
-        Cluster.Builder builder = Cluster.builder().addContactPoints(hosts).withPort(port);
+        //TODO this is also completely broken until the client library is updated
+        Set<InetAddress> hostAddresses = hosts.stream().map(host -> host.getAddress()).collect(Collectors.toSet());
+        Cluster.Builder builder = Cluster.builder().addContactPoints(hostAddresses).withPort(port);
         if (sslOptions != null)
             builder.withSSL(sslOptions);
         if (authProvider != null)
@@ -84,7 +90,8 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
                 Range<Token> range = new Range<>(tokenFactory.fromString(tokenRange.getStart().getValue().toString()),
                                                  tokenFactory.fromString(tokenRange.getEnd().getValue().toString()));
                 for (Host endpoint : endpoints)
-                    addRangeForEndpoint(range, endpoint.getAddress());
+                    //TODO this is totally not cool! Need to get the ports with the updated client
+                    addRangeForEndpoint(range, InetAddressAndPorts.getByNameOverrideDefaults(endpoint.getAddress().getHostAddress(), 7000, 7001));
             }
 
             Types types = fetchTypes(keyspace, session);
@@ -92,6 +99,10 @@ public class NativeSSTableLoaderClient extends SSTableLoader.Client
             tables.putAll(fetchTables(keyspace, session, partitioner, types));
             // We only need the CFMetaData for the views, so we only load that.
             tables.putAll(fetchViews(keyspace, session, partitioner, types));
+        }
+        catch (UnknownHostException e)
+        {
+            throw new RuntimeException(e);
         }
     }
 

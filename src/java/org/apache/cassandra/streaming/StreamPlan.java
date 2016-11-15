@@ -22,6 +22,7 @@ import java.util.*;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.UUIDGen;
 
@@ -74,7 +75,7 @@ public class StreamPlan
      * @param ranges ranges to fetch
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddress from, InetAddress connecting, String keyspace, Collection<Range<Token>> ranges)
+    public StreamPlan requestRanges(InetAddressAndPorts from, InetAddressAndPorts connecting, String keyspace, Collection<Range<Token>> ranges)
     {
         return requestRanges(from, connecting, keyspace, ranges, EMPTY_COLUMN_FAMILIES);
     }
@@ -89,7 +90,7 @@ public class StreamPlan
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddress from, InetAddress connecting, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
+    public StreamPlan requestRanges(InetAddressAndPorts from, InetAddressAndPorts connecting, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
     {
         StreamSession session = coordinator.getOrCreateNextSession(from, connecting);
         session.addStreamRequest(keyspace, ranges, Arrays.asList(columnFamilies), repairedAt);
@@ -99,9 +100,9 @@ public class StreamPlan
     /**
      * Add transfer task to send data of specific {@code columnFamilies} under {@code keyspace} and {@code ranges}.
      *
-     * @see #transferRanges(java.net.InetAddress, java.net.InetAddress, String, java.util.Collection, String...)
+     * @see #transferRanges(org.apache.cassandra.locator.InetAddressAndPorts, org.apache.cassandra.locator.InetAddressAndPorts, String, java.util.Collection, String...)
      */
-    public StreamPlan transferRanges(InetAddress to, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
+    public StreamPlan transferRanges(InetAddressAndPorts to, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
     {
         return transferRanges(to, to, keyspace, ranges, columnFamilies);
     }
@@ -115,7 +116,7 @@ public class StreamPlan
      * @param ranges ranges to send
      * @return this object for chaining
      */
-    public StreamPlan transferRanges(InetAddress to, InetAddress connecting, String keyspace, Collection<Range<Token>> ranges)
+    public StreamPlan transferRanges(InetAddressAndPorts to, InetAddressAndPorts connecting, String keyspace, Collection<Range<Token>> ranges)
     {
         return transferRanges(to, connecting, keyspace, ranges, EMPTY_COLUMN_FAMILIES);
     }
@@ -130,7 +131,7 @@ public class StreamPlan
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan transferRanges(InetAddress to, InetAddress connecting, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
+    public StreamPlan transferRanges(InetAddressAndPorts to, InetAddressAndPorts connecting, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
     {
         StreamSession session = coordinator.getOrCreateNextSession(to, connecting);
         session.addTransferRanges(keyspace, ranges, Arrays.asList(columnFamilies), flushBeforeTransfer, repairedAt);
@@ -145,7 +146,7 @@ public class StreamPlan
      *                       this collection will be modified to remove those files that are successfully handed off
      * @return this object for chaining
      */
-    public StreamPlan transferFiles(InetAddress to, Collection<StreamSession.SSTableStreamingSections> sstableDetails)
+    public StreamPlan transferFiles(InetAddressAndPorts to, Collection<StreamSession.SSTableStreamingSections> sstableDetails)
     {
         coordinator.transferFiles(to, sstableDetails);
         return this;

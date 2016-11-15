@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.repair;
 
-import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -33,6 +32,7 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.FBUtilities;
@@ -62,8 +62,8 @@ public class LocalSyncTaskTest extends SchemaLoader
     @Test
     public void testNoDifference() throws Throwable
     {
-        final InetAddress ep1 = InetAddress.getByName("127.0.0.1");
-        final InetAddress ep2 = InetAddress.getByName("127.0.0.1");
+        final InetAddressAndPorts ep1 = InetAddressAndPorts.getByName("127.0.0.1");
+        final InetAddressAndPorts ep2 = InetAddressAndPorts.getByName("127.0.0.1");
 
         Range<Token> range = new Range<>(partirioner.getMinimumToken(), partirioner.getRandomToken());
         RepairJobDesc desc = new RepairJobDesc(UUID.randomUUID(), UUID.randomUUID(), KEYSPACE1, "Standard1", Arrays.asList(range));
@@ -90,7 +90,7 @@ public class LocalSyncTaskTest extends SchemaLoader
         Keyspace keyspace = Keyspace.open(KEYSPACE1);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore("Standard1");
 
-        ActiveRepairService.instance.registerParentRepairSession(parentRepairSession,  FBUtilities.getBroadcastAddress(), Arrays.asList(cfs), Arrays.asList(range), false, System.currentTimeMillis(), false);
+        ActiveRepairService.instance.registerParentRepairSession(parentRepairSession,  FBUtilities.getBroadcastAddressAndPorts(), Arrays.asList(cfs), Arrays.asList(range), false, System.currentTimeMillis(), false);
 
         RepairJobDesc desc = new RepairJobDesc(parentRepairSession, UUID.randomUUID(), KEYSPACE1, "Standard1", Arrays.asList(range));
 
@@ -109,8 +109,8 @@ public class LocalSyncTaskTest extends SchemaLoader
 
         // difference the trees
         // note: we reuse the same endpoint which is bogus in theory but fine here
-        TreeResponse r1 = new TreeResponse(InetAddress.getByName("127.0.0.1"), tree1);
-        TreeResponse r2 = new TreeResponse(InetAddress.getByName("127.0.0.2"), tree2);
+        TreeResponse r1 = new TreeResponse(InetAddressAndPorts.getByName("127.0.0.1"), tree1);
+        TreeResponse r2 = new TreeResponse(InetAddressAndPorts.getByName("127.0.0.2"), tree2);
         LocalSyncTask task = new LocalSyncTask(desc, r1, r2, ActiveRepairService.UNREPAIRED_SSTABLE, false);
         task.run();
 

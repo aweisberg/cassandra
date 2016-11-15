@@ -22,6 +22,8 @@ import java.util.concurrent.ConcurrentMap;
 
 
 import com.codahale.metrics.Counter;
+import org.apache.cassandra.locator.InetAddressAndPorts;
+
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 
 import static org.apache.cassandra.metrics.CassandraMetricsRegistry.Metrics;
@@ -33,7 +35,7 @@ public class StreamingMetrics
 {
     public static final String TYPE_NAME = "Streaming";
 
-    private static final ConcurrentMap<InetAddress, StreamingMetrics> instances = new NonBlockingHashMap<InetAddress, StreamingMetrics>();
+    private static final ConcurrentMap<InetAddressAndPorts, StreamingMetrics> instances = new NonBlockingHashMap<>();
 
     public static final Counter activeStreamsOutbound = Metrics.counter(DefaultNameFactory.createMetricName(TYPE_NAME, "ActiveOutboundStreams", null));
     public static final Counter totalIncomingBytes = Metrics.counter(DefaultNameFactory.createMetricName(TYPE_NAME, "TotalIncomingBytes", null));
@@ -41,7 +43,7 @@ public class StreamingMetrics
     public final Counter incomingBytes;
     public final Counter outgoingBytes;
 
-    public static StreamingMetrics get(InetAddress ip)
+    public static StreamingMetrics get(InetAddressAndPorts ip)
     {
        StreamingMetrics metrics = instances.get(ip);
        if (metrics == null)
@@ -52,9 +54,9 @@ public class StreamingMetrics
        return metrics;
     }
 
-    public StreamingMetrics(final InetAddress peer)
+    public StreamingMetrics(final InetAddressAndPorts peer)
     {
-        MetricNameFactory factory = new DefaultNameFactory("Streaming", peer.getHostAddress().replace(':', '.'));
+        MetricNameFactory factory = new DefaultNameFactory("Streaming", peer.toString().replace(':', '.'));
         incomingBytes = Metrics.counter(factory.createMetricName("IncomingBytes"));
         outgoingBytes= Metrics.counter(factory.createMetricName("OutgoingBytes"));
     }

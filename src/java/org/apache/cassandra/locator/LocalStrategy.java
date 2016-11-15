@@ -42,16 +42,16 @@ public class LocalStrategy extends AbstractReplicationStrategy
      * LocalStrategy may be used before tokens are set up.
      */
     @Override
-    public ArrayList<InetAddress> getNaturalEndpoints(RingPosition searchPosition)
+    public ArrayList<InetAddressAndPorts> getNaturalEndpoints(RingPosition searchPosition)
     {
-        ArrayList<InetAddress> l = new ArrayList<InetAddress>(1);
-        l.add(FBUtilities.getBroadcastAddress());
+        ArrayList<InetAddressAndPorts> l = new ArrayList<InetAddressAndPorts>(1);
+        l.add(FBUtilities.getBroadcastAddressAndPorts());
         return l;
     }
 
-    public List<InetAddress> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
+    public List<InetAddressAndPorts> calculateNaturalEndpoints(Token token, TokenMetadata metadata)
     {
-        return Collections.singletonList(FBUtilities.getBroadcastAddress());
+        return Collections.singletonList(FBUtilities.getBroadcastAddressAndPorts());
     }
 
     public int getReplicationFactor()

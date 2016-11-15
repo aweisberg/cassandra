@@ -20,6 +20,8 @@ package org.apache.cassandra.transport;
 import java.nio.ByteBuffer;
 import java.util.*;
 
+import com.google.common.net.HostAndPort;
+
 import io.netty.buffer.Unpooled;
 import io.netty.buffer.ByteBuf;
 
@@ -31,8 +33,8 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.serializers.CollectionSerializer;
-import org.apache.cassandra.service.pager.PagingState;
 import org.apache.cassandra.transport.Event.TopologyChange;
 import org.apache.cassandra.transport.Event.SchemaChange;
 import org.apache.cassandra.transport.Event.StatusChange;
@@ -43,12 +45,14 @@ import static org.junit.Assert.assertEquals;
 import static org.apache.cassandra.utils.ByteBufferUtil.bytes;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Serialization/deserialization tests for protocol objects and messages.
  */
 public class SerDeserTest
 {
+
     @BeforeClass
     public static void setupDD()
     {
@@ -114,12 +118,12 @@ public class SerDeserTest
     {
         List<Event> events = new ArrayList<>();
 
-        events.add(TopologyChange.newNode(FBUtilities.getBroadcastAddress(), 42));
-        events.add(TopologyChange.removedNode(FBUtilities.getBroadcastAddress(), 42));
-        events.add(TopologyChange.movedNode(FBUtilities.getBroadcastAddress(), 42));
+        events.add(TopologyChange.newNode(FBUtilities.getBroadcastAddressAndPorts()));
+        events.add(TopologyChange.removedNode(FBUtilities.getBroadcastAddressAndPorts()));
+        events.add(TopologyChange.movedNode(FBUtilities.getBroadcastAddressAndPorts()));
 
-        events.add(StatusChange.nodeUp(FBUtilities.getBroadcastAddress(), 42));
-        events.add(StatusChange.nodeDown(FBUtilities.getBroadcastAddress(), 42));
+        events.add(StatusChange.nodeUp(FBUtilities.getBroadcastAddressAndPorts()));
+        events.add(StatusChange.nodeDown(FBUtilities.getBroadcastAddressAndPorts()));
 
         events.add(new SchemaChange(SchemaChange.Change.CREATED, "ks"));
         events.add(new SchemaChange(SchemaChange.Change.UPDATED, "ks"));
@@ -153,7 +157,14 @@ public class SerDeserTest
         {
             ByteBuf buf = Unpooled.buffer(ev.serializedSize(version));
             ev.serialize(buf, version);
-            assertEquals(ev, Event.deserialize(buf, version));
+            if (!CBUtil.disableV5 & version.isGreaterOrEqualTo(ProtocolVersion.V5))
+            {
+                assertEquals(ev, Event.deserialize(buf, version));
+            }
+            else
+            {
+                assertTrue(ev.equalsTolerateSecondPortMismatch(Event.deserialize(buf, version)));
+            }
         }
     }
 

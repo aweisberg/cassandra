@@ -55,6 +55,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.locator.IEndpointSnitch;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.metrics.RestorableMeter;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.*;
@@ -90,17 +91,21 @@ public final class SystemKeyspace
     public static final String PAXOS = "paxos";
     public static final String BUILT_INDEXES = "IndexInfo";
     public static final String LOCAL = "local";
-    public static final String PEERS = "peers";
-    public static final String PEER_EVENTS = "peer_events";
+    public static final String PEERS_V2 = "peers_v2";
+    public static final String PEER_EVENTS_V2 = "peer_events_v2";
     public static final String RANGE_XFERS = "range_xfers";
     public static final String COMPACTION_HISTORY = "compaction_history";
     public static final String SSTABLE_ACTIVITY = "sstable_activity";
     public static final String SIZE_ESTIMATES = "size_estimates";
     public static final String AVAILABLE_RANGES = "available_ranges";
-    public static final String TRANSFERRED_RANGES = "transferred_ranges";
+    public static final String TRANSFERRED_RANGES_V2 = "transferred_ranges_v2";
     public static final String VIEWS_BUILDS_IN_PROGRESS = "views_builds_in_progress";
     public static final String BUILT_VIEWS = "built_views";
     public static final String PREPARED_STATEMENTS = "prepared_statements";
+
+    @Deprecated public static final String LEGACY_PEERS = "peers";
+    @Deprecated public static final String LEGACY_PEER_EVENTS = "peer_events";
+    @Deprecated public static final String LEGACY_TRANSFERRED_RANGES = "transferred_ranges";
 
     public static final CFMetaData Batches =
         compile(BATCHES,
@@ -146,45 +151,59 @@ public final class SystemKeyspace
                 + "key text,"
                 + "bootstrapped text,"
                 + "broadcast_address inet,"
+                + "broadcast_port int,"
+                + "broadcast_sslport int,"
                 + "cluster_name text,"
                 + "cql_version text,"
                 + "data_center text,"
                 + "gossip_generation int,"
                 + "host_id uuid,"
                 + "listen_address inet,"
+                + "listen_port int,"
+                + "listen_sslport int,"
                 + "native_protocol_version text,"
                 + "partitioner text,"
                 + "rack text,"
                 + "release_version text,"
                 + "rpc_address inet,"
+                + "rpc_port int,"
+                + "rpc_sslport int,"
                 + "schema_version uuid,"
                 + "tokens set<varchar>,"
                 + "truncated_at map<uuid, blob>,"
                 + "PRIMARY KEY ((key)))"
                 ).recordDeprecatedSystemColumn("thrift_version", UTF8Type.instance);
 
-    private static final CFMetaData Peers =
-        compile(PEERS,
+    private static final CFMetaData PeersV2 =
+        compile(PEERS_V2,
                 "information about known peers in the cluster",
                 "CREATE TABLE %s ("
                 + "peer inet,"
+                + "peer_port int,"
+                + "peer_sslport int,"
                 + "data_center text,"
                 + "host_id uuid,"
                 + "preferred_ip inet,"
+                + "preferred_port int,"
+                + "preferred_sslport int,"
                 + "rack text,"
                 + "release_version text,"
-                + "rpc_address inet,"
+                + "native_address inet,"
+                + "native_port int,"
+                + "native_sslport int,"
                 + "schema_version uuid,"
                 + "tokens set<varchar>,"
-                + "PRIMARY KEY ((peer)))");
+                + "PRIMARY KEY ((peer), peer_port, peer_sslport))");
 
-    private static final CFMetaData PeerEvents =
-        compile(PEER_EVENTS,
+    private static final CFMetaData PeerEventsV2 =
+        compile(PEER_EVENTS_V2,
                 "events related to peers",
                 "CREATE TABLE %s ("
                 + "peer inet,"
+                + "peer_port int,"
+                + "peer_sslport int,"
                 + "hints_dropped map<uuid, int>,"
-                + "PRIMARY KEY ((peer)))");
+                + "PRIMARY KEY ((peer), peer_port, peer_sslport))");
 
     private static final CFMetaData RangeXfers =
         compile(RANGE_XFERS,
@@ -240,15 +259,17 @@ public final class SystemKeyspace
                 + "ranges set<blob>,"
                 + "PRIMARY KEY ((keyspace_name)))");
 
-    private static final CFMetaData TransferredRanges =
-        compile(TRANSFERRED_RANGES,
+    private static final CFMetaData TransferredRangesV2 =
+        compile(TRANSFERRED_RANGES_V2,
                 "record of transferred ranges for streaming operation",
                 "CREATE TABLE %s ("
                 + "operation text,"
                 + "peer inet,"
+                + "peer_port int,"
+                + "peer_sslport int,"
                 + "keyspace_name text,"
                 + "ranges set<blob>,"
-                + "PRIMARY KEY ((operation, keyspace_name), peer))");
+                + "PRIMARY KEY ((operation, keyspace_name), peer, peer_port, peer_sslport))");
 
     private static final CFMetaData ViewsBuildsInProgress =
         compile(VIEWS_BUILDS_IN_PROGRESS,
@@ -278,6 +299,41 @@ public final class SystemKeyspace
                 + "query_string text,"
                 + "PRIMARY KEY ((prepared_id)))");
 
+    @Deprecated
+    private static final CFMetaData LegacyPeers =
+    compile(LEGACY_PEERS,
+            "information about known peers in the cluster",
+            "CREATE TABLE %s ("
+            + "peer inet,"
+            + "data_center text,"
+            + "host_id uuid,"
+            + "preferred_ip inet,"
+            + "rack text,"
+            + "release_version text,"
+            + "rpc_address inet,"
+            + "schema_version uuid,"
+            + "tokens set<varchar>,"
+            + "PRIMARY KEY ((peer)))");
+
+    @Deprecated
+    private static final CFMetaData LegacyPeerEvents =
+    compile(LEGACY_PEER_EVENTS,
+            "events related to peers",
+            "CREATE TABLE %s ("
+            + "peer inet,"
+            + "hints_dropped map<uuid, int>,"
+            + "PRIMARY KEY ((peer)))");
+
+    @Deprecated
+    private static final CFMetaData LegacyTransferredRanges =
+    compile(LEGACY_TRANSFERRED_RANGES,
+            "record of transferred ranges for streaming operation",
+            "CREATE TABLE %s ("
+            + "operation text,"
+            + "peer inet,"
+            + "keyspace_name text,"
+            + "ranges set<blob>,"
+            + "PRIMARY KEY ((operation, keyspace_name), peer))");
 
     private static CFMetaData compile(String name, String description, String schema)
     {
@@ -296,14 +352,17 @@ public final class SystemKeyspace
                          Batches,
                          Paxos,
                          Local,
-                         Peers,
-                         PeerEvents,
+                         PeersV2,
+                         LegacyPeers,
+                         PeerEventsV2,
+                         LegacyPeerEvents,
                          RangeXfers,
                          CompactionHistory,
                          SSTableActivity,
                          SizeEstimates,
                          AvailableRanges,
-                         TransferredRanges,
+                         TransferredRangesV2,
+                         LegacyTransferredRanges,
                          ViewsBuildsInProgress,
                          BuiltViews,
                          PreparedStatements);
@@ -348,9 +407,15 @@ public final class SystemKeyspace
                      "rack," +
                      "partitioner," +
                      "rpc_address," +
+                     "rpc_port," +
+                     "rpc_sslport," +
                      "broadcast_address," +
-                     "listen_address" +
-                     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     "broadcast_port," +
+                     "broadcast_sslport," +
+                     "listen_address," +
+                     "listen_port," +
+                     "listen_sslport" +
+                     ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
         executeOnceInternal(String.format(req, LOCAL),
                             LOCAL,
@@ -358,12 +423,18 @@ public final class SystemKeyspace
                             FBUtilities.getReleaseVersionString(),
                             QueryProcessor.CQL_VERSION.toString(),
                             String.valueOf(ProtocolVersion.CURRENT.asInt()),
-                            snitch.getDatacenter(FBUtilities.getBroadcastAddress()),
-                            snitch.getRack(FBUtilities.getBroadcastAddress()),
+                            snitch.getDatacenter(FBUtilities.getBroadcastAddressAndPorts()),
+                            snitch.getRack(FBUtilities.getBroadcastAddressAndPorts()),
                             DatabaseDescriptor.getPartitioner().getClass().getName(),
                             DatabaseDescriptor.getRpcAddress(),
-                            FBUtilities.getBroadcastAddress(),
-                            FBUtilities.getLocalAddress());
+                            DatabaseDescriptor.getNativeTransportPort(),
+                            DatabaseDescriptor.getNativeTransportPortSSL(),
+                            FBUtilities.getJustBroadcastAddress(),
+                            DatabaseDescriptor.getStoragePort(),
+                            DatabaseDescriptor.getSSLStoragePort(),
+                            FBUtilities.getJustLocalAddress(),
+                            DatabaseDescriptor.getStoragePort(),
+                            DatabaseDescriptor.getSSLStoragePort());
     }
 
     public static void updateCompactionHistory(String ksname,
@@ -573,39 +644,65 @@ public final class SystemKeyspace
     /**
      * Record tokens being used by another node
      */
-    public static synchronized void updateTokens(InetAddress ep, Collection<Token> tokens)
+    public static synchronized void updateTokens(InetAddressAndPorts ep, Collection<Token> tokens)
     {
-        if (ep.equals(FBUtilities.getBroadcastAddress()))
+        if (ep.equals(FBUtilities.getBroadcastAddressAndPorts()))
             return;
 
         String req = "INSERT INTO system.%s (peer, tokens) VALUES (?, ?)";
-        executeInternal(String.format(req, PEERS), ep, tokensAsSet(tokens));
+        executeInternal(String.format(req, LEGACY_PEERS), ep.address, tokensAsSet(tokens));
+        req = "INSERT INTO system.%s (peer, peer_port, peer_sslport, tokens) VALUES (?, ?, ?, ?)";
+        executeInternal(String.format(req, PEERS_V2), ep.address, ep.port, ep.sslport, tokensAsSet(tokens));
     }
 
-    public static synchronized void updatePreferredIP(InetAddress ep, InetAddress preferred_ip)
+    public static synchronized void updatePreferredIP(InetAddressAndPorts ep, InetAddressAndPorts preferred_ip)
     {
         if (getPreferredIP(ep) == preferred_ip)
             return;
 
         String req = "INSERT INTO system.%s (peer, preferred_ip) VALUES (?, ?)";
-        executeInternal(String.format(req, PEERS), ep, preferred_ip);
-        forceBlockingFlush(PEERS);
+        executeInternal(String.format(req, LEGACY_PEERS), ep.address, preferred_ip.address);
+        forceBlockingFlush(LEGACY_PEERS);
+        req = "INSERT INTO system.%s (peer, peer_port, peer_sslport, preferred_ip, preferred_port, preferred_sslport) VALUES (?, ?, ?, ?, ?, ?)";
+        executeInternal(String.format(req, PEERS_V2), ep.address, ep.port, ep.sslport, preferred_ip.address, preferred_ip.port, preferred_ip.sslport);
+        forceBlockingFlush(PEERS_V2);
     }
 
-    public static synchronized void updatePeerInfo(InetAddress ep, String columnName, Object value)
+    public static synchronized void updatePeerInfo(InetAddressAndPorts ep, String columnName, Object value)
     {
-        if (ep.equals(FBUtilities.getBroadcastAddress()))
+        if (ep.equals(FBUtilities.getBroadcastAddressAndPorts()))
             return;
 
         String req = "INSERT INTO system.%s (peer, %s) VALUES (?, ?)";
-        executeInternal(String.format(req, PEERS, columnName), ep, value);
+        executeInternal(String.format(req, LEGACY_PEERS, columnName), ep.address, value);
+        //This column doesn't match across the two tables
+        if (columnName.equals("rpc_address"))
+        {
+            columnName = "native_address";
+        }
+        req = "INSERT INTO system.%s (peer, peer_port, peer_sslport, %s) VALUES (?, ?, ?, ?)";
+        executeInternal(String.format(req, PEERS_V2, columnName), ep.address, ep.port, ep.sslport, value);
     }
 
-    public static synchronized void updateHintsDropped(InetAddress ep, UUID timePeriod, int value)
+    public static synchronized void updatePeerNativeAddress(InetAddressAndPorts ep, InetAddressAndPorts address)
+    {
+        if (ep.equals(FBUtilities.getBroadcastAddressAndPorts()))
+            return;
+
+        String req = "INSERT INTO system.%s (peer, rpc_address) VALUES (?, ?)";
+        executeInternal(String.format(req, LEGACY_PEERS), ep.address, address.address);
+        req = "INSERT INTO system.%s (peer, peer_port, peer_sslport, native_address, native_port, native_sslport) VALUES (?, ?, ?, ?, ?, ?)";
+        executeInternal(String.format(req, PEERS_V2), ep.address, ep.port, ep.sslport, address.address, address.port, address.sslport);
+    }
+
+
+    public static synchronized void updateHintsDropped(InetAddressAndPorts ep, UUID timePeriod, int value)
     {
         // with 30 day TTL
         String req = "UPDATE system.%s USING TTL 2592000 SET hints_dropped[ ? ] = ? WHERE peer = ?";
-        executeInternal(String.format(req, PEER_EVENTS), timePeriod, value, ep);
+        executeInternal(String.format(req, LEGACY_PEER_EVENTS), timePeriod, value, ep.address);
+        req = "UPDATE system.%s USING TTL 2592000 SET hints_dropped[ ? ] = ? WHERE peer = ? AND peer_port = ? AND peer_sslport = ?";
+        executeInternal(String.format(req, PEER_EVENTS_V2), timePeriod, value, ep.address, ep.port, ep.sslport);
     }
 
     public static synchronized void updateSchemaVersion(UUID version)
@@ -637,11 +734,14 @@ public final class SystemKeyspace
     /**
      * Remove stored tokens being used by another node
      */
-    public static synchronized void removeEndpoint(InetAddress ep)
+    public static synchronized void removeEndpoint(InetAddressAndPorts ep)
     {
         String req = "DELETE FROM system.%s WHERE peer = ?";
-        executeInternal(String.format(req, PEERS), ep);
-        forceBlockingFlush(PEERS);
+        executeInternal(String.format(req, LEGACY_PEERS), ep.address);
+        forceBlockingFlush(LEGACY_PEERS);
+        req = String.format("DELETE FROM system.%s WHERE peer = ? AND peer_port = ? AND peer_sslport = ?", PEERS_V2);
+        executeInternal(req, ep.address, ep.port, ep.sslport);
+        forceBlockingFlush(PEERS_V2);
     }
 
     /**
@@ -670,12 +770,15 @@ public final class SystemKeyspace
      * Return a map of stored tokens to IP addresses
      *
      */
-    public static SetMultimap<InetAddress, Token> loadTokens()
+    public static SetMultimap<InetAddressAndPorts, Token> loadTokens()
     {
-        SetMultimap<InetAddress, Token> tokenMap = HashMultimap.create();
-        for (UntypedResultSet.Row row : executeInternal("SELECT peer, tokens FROM system." + PEERS))
+        SetMultimap<InetAddressAndPorts, Token> tokenMap = HashMultimap.create();
+        for (UntypedResultSet.Row row : executeInternal("SELECT peer, peer_port, peer_sslport, tokens FROM system." + PEERS_V2))
         {
-            InetAddress peer = row.getInetAddress("peer");
+            InetAddress address = row.getInetAddress("peer");
+            Integer port = row.getInt("peer_port");
+            Integer sslport = row.getInt("peer_sslport");
+            InetAddressAndPorts peer = InetAddressAndPorts.getByAddressOverrideDefaults(address, port, sslport);
             if (row.has("tokens"))
                 tokenMap.putAll(peer, deserializeTokens(row.getSet("tokens", UTF8Type.instance)));
         }
@@ -687,12 +790,15 @@ public final class SystemKeyspace
      * Return a map of store host_ids to IP addresses
      *
      */
-    public static Map<InetAddress, UUID> loadHostIds()
+    public static Map<InetAddressAndPorts, UUID> loadHostIds()
     {
-        Map<InetAddress, UUID> hostIdMap = new HashMap<>();
-        for (UntypedResultSet.Row row : executeInternal("SELECT peer, host_id FROM system." + PEERS))
+        Map<InetAddressAndPorts, UUID> hostIdMap = new HashMap<>();
+        for (UntypedResultSet.Row row : executeInternal("SELECT peer, peer_port, peer_sslport, host_id FROM system." + PEERS_V2))
         {
-            InetAddress peer = row.getInetAddress("peer");
+            InetAddress address = row.getInetAddress("peer");
+            Integer port = row.getInt("peer_port");
+            Integer sslport = row.getInt("peer_sslport");
+            InetAddressAndPorts peer = InetAddressAndPorts.getByAddressOverrideDefaults(address, port, sslport);
             if (row.has("host_id"))
             {
                 hostIdMap.put(peer, row.getUUID("host_id"));
@@ -707,24 +813,30 @@ public final class SystemKeyspace
      * @param ep endpoint address to check
      * @return Preferred IP for given endpoint if present, otherwise returns given ep
      */
-    public static InetAddress getPreferredIP(InetAddress ep)
+    public static InetAddressAndPorts getPreferredIP(InetAddressAndPorts ep)
     {
-        String req = "SELECT preferred_ip FROM system.%s WHERE peer=?";
-        UntypedResultSet result = executeInternal(String.format(req, PEERS), ep);
+        String req = "SELECT preferred_ip, preferred_port, preferred_sslport FROM system.%s WHERE peer=? AND peer_port = ? AND peer_sslport = ?";
+        UntypedResultSet result = executeInternal(String.format(req, PEERS_V2), ep.address, ep.port, ep.sslport);
         if (!result.isEmpty() && result.one().has("preferred_ip"))
-            return result.one().getInetAddress("preferred_ip");
+        {
+            UntypedResultSet.Row row = result.one();
+            return InetAddressAndPorts.getByAddressOverrideDefaults(row.getInetAddress("preferred_ip"), row.getInt("preferred_port"), row.getInt("preferred_sslport"));
+        }
         return ep;
     }
 
     /**
      * Return a map of IP addresses containing a map of dc and rack info
      */
-    public static Map<InetAddress, Map<String,String>> loadDcRackInfo()
+    public static Map<InetAddressAndPorts, Map<String,String>> loadDcRackInfo()
     {
-        Map<InetAddress, Map<String, String>> result = new HashMap<>();
-        for (UntypedResultSet.Row row : executeInternal("SELECT peer, data_center, rack from system." + PEERS))
+        Map<InetAddressAndPorts, Map<String, String>> result = new HashMap<>();
+        for (UntypedResultSet.Row row : executeInternal("SELECT peer, peer_port, peer_sslport, data_center, rack from system." + PEERS_V2))
         {
-            InetAddress peer = row.getInetAddress("peer");
+            InetAddress address = row.getInetAddress("peer");
+            Integer port = row.getInt("peer_port");
+            Integer sslport = row.getInt("peer_sslport");
+            InetAddressAndPorts peer = InetAddressAndPorts.getByAddressOverrideDefaults(address, port, sslport);
             if (row.has("data_center") && row.has("rack"))
             {
                 Map<String, String> dcRack = new HashMap<>();
@@ -743,16 +855,16 @@ public final class SystemKeyspace
      * @param ep endpoint address to check
      * @return Release version or null if version is unknown.
      */
-    public static CassandraVersion getReleaseVersion(InetAddress ep)
+    public static CassandraVersion getReleaseVersion(InetAddressAndPorts ep)
     {
         try
         {
-            if (FBUtilities.getBroadcastAddress().equals(ep))
+            if (FBUtilities.getBroadcastAddressAndPorts().equals(ep))
             {
                 return new CassandraVersion(FBUtilities.getReleaseVersionString());
             }
-            String req = "SELECT release_version FROM system.%s WHERE peer=?";
-            UntypedResultSet result = executeInternal(String.format(req, PEERS), ep);
+            String req = "SELECT release_version FROM system.%s WHERE peer=? AND peer_port=? AND peer_sslport=?";
+            UntypedResultSet result = executeInternal(String.format(req, PEERS_V2), ep.address, ep.port, ep.sslport);
             if (result != null && result.one().has("release_version"))
             {
                 return new CassandraVersion(result.one().getString("release_version"));
@@ -1164,7 +1276,7 @@ public final class SystemKeyspace
     }
 
     public static synchronized void updateTransferredRanges(String description,
-                                                         InetAddress peer,
+                                                         InetAddressAndPorts peer,
                                                          String keyspace,
                                                          Collection<Range<Token>> streamedRanges)
     {
@@ -1174,17 +1286,22 @@ public final class SystemKeyspace
         {
             rangesToUpdate.add(rangeToBytes(range));
         }
-        executeInternal(String.format(cql, TRANSFERRED_RANGES), rangesToUpdate, description, peer, keyspace);
+        executeInternal(String.format(cql, LEGACY_TRANSFERRED_RANGES), rangesToUpdate, description, peer.address, keyspace);
+        cql = "UPDATE system.%s SET ranges = ranges + ? WHERE operation = ? AND peer = ? AND peer_port = ? AND peer_sslport = ? AND keyspace_name = ?";
+        executeInternal(String.format(cql, TRANSFERRED_RANGES_V2), rangesToUpdate, description, peer.address, peer.port, peer.sslport, keyspace);
     }
 
-    public static synchronized Map<InetAddress, Set<Range<Token>>> getTransferredRanges(String description, String keyspace, IPartitioner partitioner)
+    public static synchronized Map<InetAddressAndPorts, Set<Range<Token>>> getTransferredRanges(String description, String keyspace, IPartitioner partitioner)
     {
-        Map<InetAddress, Set<Range<Token>>> result = new HashMap<>();
+        Map<InetAddressAndPorts, Set<Range<Token>>> result = new HashMap<>();
         String query = "SELECT * FROM system.%s WHERE operation = ? AND keyspace_name = ?";
-        UntypedResultSet rs = executeInternal(String.format(query, TRANSFERRED_RANGES), description, keyspace);
+        UntypedResultSet rs = executeInternal(String.format(query, TRANSFERRED_RANGES_V2), description, keyspace);
         for (UntypedResultSet.Row row : rs)
         {
-            InetAddress peer = row.getInetAddress("peer");
+            InetAddress peerAddress = row.getInetAddress("peer");
+            int port = row.getInt("peer_port");
+            int sslport = row.getInt("peer_sslport");
+            InetAddressAndPorts peer = InetAddressAndPorts.getByAddressOverrideDefaults(peerAddress, port, sslport);
             Set<ByteBuffer> rawRanges = row.getSet("ranges", BytesType.instance);
             Set<Range<Token>> ranges = Sets.newHashSetWithExpectedSize(rawRanges.size());
             for (ByteBuffer rawRange : rawRanges)

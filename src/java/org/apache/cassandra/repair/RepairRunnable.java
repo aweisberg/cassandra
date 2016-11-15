@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.repair;
 
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -44,6 +43,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.QueryState;
@@ -161,8 +161,8 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             traceState = null;
         }
 
-        final Set<InetAddress> allNeighbors = new HashSet<>();
-        List<Pair<Set<InetAddress>, ? extends Collection<Range<Token>>>> commonRanges = new ArrayList<>();
+        final Set<InetAddressAndPorts> allNeighbors = new HashSet<>();
+        List<Pair<Set<InetAddressAndPorts>, ? extends Collection<Range<Token>>>> commonRanges = new ArrayList<>();
 
         //pre-calculate output of getLocalRanges and pass it to getNeighbors to increase performance and prevent
         //calculation multiple times
@@ -172,9 +172,9 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         {
             for (Range<Token> range : options.getRanges())
             {
-                Set<InetAddress> neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
-                                                                              options.getDataCenters(),
-                                                                              options.getHosts());
+                Set<InetAddressAndPorts> neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
+                                                                                      options.getDataCenters(),
+                                                                                      options.getHosts());
 
                 addRangeToNeighbors(commonRanges, range, neighbors);
                 allNeighbors.addAll(neighbors);
@@ -212,7 +212,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         long repairedAt;
         try
         {
-            ActiveRepairService.instance.prepareForRepair(parentSession, FBUtilities.getBroadcastAddress(), allNeighbors, options, columnFamilyStores);
+            ActiveRepairService.instance.prepareForRepair(parentSession, FBUtilities.getBroadcastAddressAndPorts(), allNeighbors, options, columnFamilyStores);
             repairedAt = ActiveRepairService.instance.getParentRepairSession(parentSession).getRepairedAt();
             progress.incrementAndGet();
         }
@@ -232,7 +232,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                                                                                          "internal"));
 
         List<ListenableFuture<RepairSessionResult>> futures = new ArrayList<>(options.getRanges().size());
-        for (Pair<Set<InetAddress>, ? extends Collection<Range<Token>>> p : commonRanges)
+        for (Pair<Set<InetAddressAndPorts>, ? extends Collection<Range<Token>>> p : commonRanges)
         {
             final RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSession,
                                                               p.right,
@@ -358,11 +358,11 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         });
     }
 
-    private void addRangeToNeighbors(List<Pair<Set<InetAddress>, ? extends Collection<Range<Token>>>> neighborRangeList, Range<Token> range, Set<InetAddress> neighbors)
+    private void addRangeToNeighbors(List<Pair<Set<InetAddressAndPorts>, ? extends Collection<Range<Token>>>> neighborRangeList, Range<Token> range, Set<InetAddressAndPorts> neighbors)
     {
         for (int i = 0; i < neighborRangeList.size(); i++)
         {
-            Pair<Set<InetAddress>, ? extends Collection<Range<Token>>> p = neighborRangeList.get(i);
+            Pair<Set<InetAddressAndPorts>, ? extends Collection<Range<Token>>> p = neighborRangeList.get(i);
 
             if (p.left.containsAll(neighbors))
             {
@@ -393,7 +393,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                 SelectStatement statement = (SelectStatement) QueryProcessor.parseStatement(query).prepare().statement;
 
                 ByteBuffer sessionIdBytes = ByteBufferUtil.bytes(sessionId);
-                InetAddress source = FBUtilities.getBroadcastAddress();
+                InetAddressAndPorts source = FBUtilities.getBroadcastAddressAndPorts();
 
                 HashSet<UUID>[] seen = new HashSet[] { new HashSet<>(), new HashSet<>() };
                 int si = 0;

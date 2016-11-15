@@ -31,6 +31,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.utils.progress.ProgressEvent;
 import org.apache.cassandra.utils.progress.ProgressListener;
 
@@ -194,7 +195,7 @@ public final class TracingTest
             return super.newSession(sessionId, traceType, customPayload);
         }
 
-        protected TraceState newTraceState(InetAddress ia, UUID uuid, Tracing.TraceType tt)
+        protected TraceState newTraceState(InetAddressAndPorts ia, UUID uuid, Tracing.TraceType tt)
         {
             return new TraceState(ia, uuid, tt)
             {

@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.io.FSWriteError;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.SyncUtil;
 
@@ -77,14 +78,14 @@ final class HintsStore
         return new HintsStore(hostId, hintsDirectory, writerParams, descriptors);
     }
 
-    InetAddress address()
+    InetAddressAndPorts address()
     {
         return StorageService.instance.getEndpointForHostId(hostId);
     }
 
     boolean isLive()
     {
-        InetAddress address = address();
+        InetAddressAndPorts address = address();
         return address != null && FailureDetector.instance.isAlive(address);
     }
 

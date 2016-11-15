@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.repair;
 
-import java.net.InetAddress;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +34,7 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.ValidationComplete;
 import org.apache.cassandra.tracing.Tracing;
@@ -56,7 +56,7 @@ public class Validator implements Runnable
     private static final Logger logger = LoggerFactory.getLogger(Validator.class);
 
     public final RepairJobDesc desc;
-    public final InetAddress initiator;
+    public final InetAddressAndPorts initiator;
     public final int gcBefore;
     private final boolean evenTreeDistribution;
 
@@ -70,12 +70,12 @@ public class Validator implements Runnable
     // last key seen
     private DecoratedKey lastKey;
 
-    public Validator(RepairJobDesc desc, InetAddress initiator, int gcBefore)
+    public Validator(RepairJobDesc desc, InetAddressAndPorts initiator, int gcBefore)
     {
         this(desc, initiator, gcBefore, false);
     }
 
-    public Validator(RepairJobDesc desc, InetAddress initiator, int gcBefore, boolean evenTreeDistribution)
+    public Validator(RepairJobDesc desc, InetAddressAndPorts initiator, int gcBefore, boolean evenTreeDistribution)
     {
         this.desc = desc;
         this.initiator = initiator;
@@ -276,7 +276,7 @@ public class Validator implements Runnable
     public void run()
     {
         // respond to the request that triggered this validation
-        if (!initiator.equals(FBUtilities.getBroadcastAddress()))
+        if (!initiator.equals(FBUtilities.getBroadcastAddressAndPorts()))
         {
             logger.info("[repair #{}] Sending completed merkle tree to {} for {}.{}", desc.sessionId, initiator, desc.keyspace, desc.columnFamily);
             Tracing.traceRepair("Sending completed merkle tree to {} for {}.{}", initiator, desc.keyspace, desc.columnFamily);

@@ -21,6 +21,7 @@ import java.net.InetAddress;
 import java.util.Collection;
 
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
@@ -30,8 +31,8 @@ import org.apache.cassandra.db.WriteType;
  */
 public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
 {
-    public DatacenterWriteResponseHandler(Collection<InetAddress> naturalEndpoints,
-                                          Collection<InetAddress> pendingEndpoints,
+    public DatacenterWriteResponseHandler(Collection<InetAddressAndPorts> naturalEndpoints,
+                                          Collection<InetAddressAndPorts> pendingEndpoints,
                                           ConsistencyLevel consistencyLevel,
                                           Keyspace keyspace,
                                           Runnable callback,
@@ -58,7 +59,7 @@ public class DatacenterWriteResponseHandler<T> extends WriteResponseHandler<T>
     }
 
     @Override
-    protected boolean waitingFor(InetAddress from)
+    protected boolean waitingFor(InetAddressAndPorts from)
     {
         return consistencyLevel.isLocal(from);
     }

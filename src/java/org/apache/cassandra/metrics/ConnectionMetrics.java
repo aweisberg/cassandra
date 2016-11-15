@@ -25,6 +25,7 @@ import com.codahale.metrics.Meter;
 import static org.apache.cassandra.metrics.CassandraMetricsRegistry.Metrics;
 
 
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.OutboundTcpConnectionPool;
 
 /**
@@ -68,10 +69,10 @@ public class ConnectionMetrics
      * @param ip IP address to use for metrics label
      * @param connectionPool Connection pool
      */
-    public ConnectionMetrics(InetAddress ip, final OutboundTcpConnectionPool connectionPool)
+    public ConnectionMetrics(InetAddressAndPorts ip, final OutboundTcpConnectionPool connectionPool)
     {
         // ipv6 addresses will contain colons, which are invalid in a JMX ObjectName
-        address = ip.getHostAddress().replace(':', '.');
+        address = ip.toString().replace(':', '.');
 
         factory = new DefaultNameFactory("Connection", address);
 

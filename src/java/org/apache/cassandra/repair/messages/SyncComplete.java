@@ -18,12 +18,12 @@
 package org.apache.cassandra.repair.messages;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.Objects;
 
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.repair.NodePair;
 import org.apache.cassandra.repair.RepairJobDesc;
 
@@ -47,7 +47,7 @@ public class SyncComplete extends RepairMessage
         this.success = success;
     }
 
-    public SyncComplete(RepairJobDesc desc, InetAddress endpoint1, InetAddress endpoint2, boolean success)
+    public SyncComplete(RepairJobDesc desc, InetAddressAndPorts endpoint1, InetAddressAndPorts endpoint2, boolean success)
     {
         super(Type.SYNC_COMPLETE, desc);
         this.nodes = new NodePair(endpoint1, endpoint2);

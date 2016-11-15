@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.RepairException;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.SyncRequest;
 import org.apache.cassandra.tracing.Tracing;
@@ -48,7 +49,7 @@ public class RemoteSyncTask extends SyncTask
 
     protected void startSync(List<Range<Token>> differences)
     {
-        InetAddress local = FBUtilities.getBroadcastAddress();
+        InetAddressAndPorts local = FBUtilities.getBroadcastAddressAndPorts();
         SyncRequest request = new SyncRequest(desc, local, r1.endpoint, r2.endpoint, differences);
         String message = String.format("Forwarding streaming repair of %d ranges to %s (to be streamed with %s)", request.ranges.size(), request.src, request.dst);
         logger.info("[repair #{}] {}", desc.sessionId, message);

@@ -90,7 +90,7 @@ public final class TraceKeyspace
         builder.row()
                .ttl(ttl)
                .add("client", client)
-               .add("coordinator", FBUtilities.getBroadcastAddress())
+               .add("coordinator", FBUtilities.getJustBroadcastAddress())
                .add("request", request)
                .add("started_at", new Date(startedAt))
                .add("command", command)
@@ -115,7 +115,7 @@ public final class TraceKeyspace
                                               .ttl(ttl);
 
         rowBuilder.add("activity", message)
-                  .add("source", FBUtilities.getBroadcastAddress())
+                  .add("source", FBUtilities.getJustBroadcastAddress())
                   .add("thread", threadName);
 
         if (elapsed >= 0)

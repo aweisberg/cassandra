@@ -28,6 +28,7 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.UUIDSerializer;
@@ -40,7 +41,7 @@ public class StreamInitMessage
 {
     public static IVersionedSerializer<StreamInitMessage> serializer = new StreamInitMessageSerializer();
 
-    public final InetAddress from;
+    public final InetAddressAndPorts from;
     public final int sessionIndex;
     public final UUID planId;
     public final String description;
@@ -50,7 +51,7 @@ public class StreamInitMessage
     public final boolean keepSSTableLevel;
     public final boolean isIncremental;
 
-    public StreamInitMessage(InetAddress from, int sessionIndex, UUID planId, String description, boolean isForOutgoing, boolean keepSSTableLevel, boolean isIncremental)
+    public StreamInitMessage(InetAddressAndPorts from, int sessionIndex, UUID planId, String description, boolean isForOutgoing, boolean keepSSTableLevel, boolean isIncremental)
     {
         this.from = from;
         this.sessionIndex = sessionIndex;
@@ -107,7 +108,7 @@ public class StreamInitMessage
     {
         public void serialize(StreamInitMessage message, DataOutputPlus out, int version) throws IOException
         {
-            CompactEndpointSerializationHelper.serialize(message.from, out);
+            CompactEndpointSerializationHelper.instance.serialize(message.from, out, MessagingService.VERSION_40);
             out.writeInt(message.sessionIndex);
             UUIDSerializer.serializer.serialize(message.planId, out, MessagingService.current_version);
             out.writeUTF(message.description);
@@ -118,7 +119,7 @@ public class StreamInitMessage
 
         public StreamInitMessage deserialize(DataInputPlus in, int version) throws IOException
         {
-            InetAddress from = CompactEndpointSerializationHelper.deserialize(in);
+            InetAddressAndPorts from = CompactEndpointSerializationHelper.instance.deserialize(in, MessagingService.VERSION_40);
             int sessionIndex = in.readInt();
             UUID planId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             String description = in.readUTF();
@@ -130,7 +131,7 @@ public class StreamInitMessage
 
         public long serializedSize(StreamInitMessage message, int version)
         {
-            long size = CompactEndpointSerializationHelper.serializedSize(message.from);
+            long size = CompactEndpointSerializationHelper.instance.serializedSize(message.from, MessagingService.VERSION_40);
             size += TypeSizes.sizeof(message.sessionIndex);
             size += UUIDSerializer.serializer.serializedSize(message.planId, MessagingService.current_version);
             size += TypeSizes.sizeof(message.description);

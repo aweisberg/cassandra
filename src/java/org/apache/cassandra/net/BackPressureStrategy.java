@@ -17,9 +17,10 @@
  */
 package org.apache.cassandra.net;
 
-import java.net.InetAddress;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+
+import org.apache.cassandra.locator.InetAddressAndPorts;
 
 /**
  * Back-pressure algorithm interface.
@@ -38,5 +39,5 @@ public interface BackPressureStrategy<S extends BackPressureState>
     /**
      * Creates a new {@link BackPressureState} initialized as needed by the specific implementation.
      */
-    S newState(InetAddress host);
+    S newState(InetAddressAndPorts host);
 }

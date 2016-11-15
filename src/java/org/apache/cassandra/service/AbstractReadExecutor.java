@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.service;
 
-import java.net.InetAddress;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +37,7 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -59,11 +59,11 @@ public abstract class AbstractReadExecutor
     private static final Logger logger = LoggerFactory.getLogger(AbstractReadExecutor.class);
 
     protected final ReadCommand command;
-    protected final List<InetAddress> targetReplicas;
+    protected final List<InetAddressAndPorts> targetReplicas;
     protected final ReadCallback handler;
     protected final TraceState traceState;
 
-    AbstractReadExecutor(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistencyLevel, List<InetAddress> targetReplicas, long queryStartNanoTime)
+    AbstractReadExecutor(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistencyLevel, List<InetAddressAndPorts> targetReplicas, long queryStartNanoTime)
     {
         this.command = command;
         this.targetReplicas = targetReplicas;
@@ -75,27 +75,27 @@ public abstract class AbstractReadExecutor
         // TODO: we need this when talking with pre-3.0 nodes. So if we preserve the digest format moving forward, we can get rid of this once
         // we stop being compatible with pre-3.0 nodes.
         int digestVersion = MessagingService.current_version;
-        for (InetAddress replica : targetReplicas)
+        for (InetAddressAndPorts replica : targetReplicas)
             digestVersion = Math.min(digestVersion, MessagingService.instance().getVersion(replica));
         command.setDigestVersion(digestVersion);
     }
 
-    protected void makeDataRequests(Iterable<InetAddress> endpoints)
+    protected void makeDataRequests(Iterable<InetAddressAndPorts> endpoints)
     {
         makeRequests(command, endpoints);
 
     }
 
-    protected void makeDigestRequests(Iterable<InetAddress> endpoints)
+    protected void makeDigestRequests(Iterable<InetAddressAndPorts> endpoints)
     {
         makeRequests(command.copy().setIsDigestQuery(true), endpoints);
     }
 
-    private void makeRequests(ReadCommand readCommand, Iterable<InetAddress> endpoints)
+    private void makeRequests(ReadCommand readCommand, Iterable<InetAddressAndPorts> endpoints)
     {
         boolean hasLocalEndpoint = false;
 
-        for (InetAddress endpoint : endpoints)
+        for (InetAddressAndPorts endpoint : endpoints)
         {
             if (StorageProxy.canDoLocalRequest(endpoint))
             {
@@ -129,7 +129,7 @@ public abstract class AbstractReadExecutor
      *
      * @return target replicas + the extra replica, *IF* we speculated.
      */
-    public abstract Collection<InetAddress> getContactedReplicas();
+    public abstract Collection<InetAddressAndPorts> getContactedReplicas();
 
     /**
      * send the initial set of requests
@@ -151,12 +151,12 @@ public abstract class AbstractReadExecutor
     public static AbstractReadExecutor getReadExecutor(SinglePartitionReadCommand command, ConsistencyLevel consistencyLevel, long queryStartNanoTime) throws UnavailableException
     {
         Keyspace keyspace = Keyspace.open(command.metadata().ksName);
-        List<InetAddress> allReplicas = StorageProxy.getLiveSortedEndpoints(keyspace, command.partitionKey());
+        List<InetAddressAndPorts> allReplicas = StorageProxy.getLiveSortedEndpoints(keyspace, command.partitionKey());
         // 11980: Excluding EACH_QUORUM reads from potential RR, so that we do not miscount DC responses
         ReadRepairDecision repairDecision = consistencyLevel == ConsistencyLevel.EACH_QUORUM
                                             ? ReadRepairDecision.NONE
                                             : command.metadata().newReadRepairDecision();
-        List<InetAddress> targetReplicas = consistencyLevel.filterForQuery(keyspace, allReplicas, repairDecision);
+        List<InetAddressAndPorts> targetReplicas = consistencyLevel.filterForQuery(keyspace, allReplicas, repairDecision);
 
         // Throw UAE early if we don't have enough replicas.
         consistencyLevel.assureSufficientLiveNodes(keyspace, targetReplicas);
@@ -186,12 +186,12 @@ public abstract class AbstractReadExecutor
         }
 
         // RRD.NONE or RRD.DC_LOCAL w/ multiple DCs.
-        InetAddress extraReplica = allReplicas.get(targetReplicas.size());
+        InetAddressAndPorts extraReplica = allReplicas.get(targetReplicas.size());
         // With repair decision DC_LOCAL all replicas/target replicas may be in different order, so
         // we might have to find a replacement that's not already in targetReplicas.
         if (repairDecision == ReadRepairDecision.DC_LOCAL && targetReplicas.contains(extraReplica))
         {
-            for (InetAddress address : allReplicas)
+            for (InetAddressAndPorts address : allReplicas)
             {
                 if (!targetReplicas.contains(address))
                 {
@@ -210,7 +210,7 @@ public abstract class AbstractReadExecutor
 
     public static class NeverSpeculatingReadExecutor extends AbstractReadExecutor
     {
-        public NeverSpeculatingReadExecutor(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistencyLevel, List<InetAddress> targetReplicas, long queryStartNanoTime)
+        public NeverSpeculatingReadExecutor(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistencyLevel, List<InetAddressAndPorts> targetReplicas, long queryStartNanoTime)
         {
             super(keyspace, command, consistencyLevel, targetReplicas, queryStartNanoTime);
         }
@@ -227,7 +227,7 @@ public abstract class AbstractReadExecutor
             // no-op
         }
 
-        public Collection<InetAddress> getContactedReplicas()
+        public Collection<InetAddressAndPorts> getContactedReplicas()
         {
             return targetReplicas;
         }
@@ -242,7 +242,7 @@ public abstract class AbstractReadExecutor
                                        ColumnFamilyStore cfs,
                                        ReadCommand command,
                                        ConsistencyLevel consistencyLevel,
-                                       List<InetAddress> targetReplicas,
+                                       List<InetAddressAndPorts> targetReplicas,
                                        long queryStartNanoTime)
         {
             super(keyspace, command, consistencyLevel, targetReplicas, queryStartNanoTime);
@@ -253,7 +253,7 @@ public abstract class AbstractReadExecutor
         {
             // if CL + RR result in covering all replicas, getReadExecutor forces AlwaysSpeculating.  So we know
             // that the last replica in our list is "extra."
-            List<InetAddress> initialReplicas = targetReplicas.subList(0, targetReplicas.size() - 1);
+            List<InetAddressAndPorts> initialReplicas = targetReplicas.subList(0, targetReplicas.size() - 1);
 
             if (handler.blockfor < initialReplicas.size())
             {
@@ -287,7 +287,7 @@ public abstract class AbstractReadExecutor
                 if (handler.resolver.isDataPresent())
                     retryCommand = command.copy().setIsDigestQuery(true);
 
-                InetAddress extraReplica = Iterables.getLast(targetReplicas);
+                InetAddressAndPorts extraReplica = Iterables.getLast(targetReplicas);
                 if (traceState != null)
                     traceState.trace("speculating read retry on {}", extraReplica);
                 logger.trace("speculating read retry on {}", extraReplica);
@@ -298,7 +298,7 @@ public abstract class AbstractReadExecutor
             }
         }
 
-        public Collection<InetAddress> getContactedReplicas()
+        public Collection<InetAddressAndPorts> getContactedReplicas()
         {
             return speculated
                  ? targetReplicas
@@ -314,7 +314,7 @@ public abstract class AbstractReadExecutor
                                              ColumnFamilyStore cfs,
                                              ReadCommand command,
                                              ConsistencyLevel consistencyLevel,
-                                             List<InetAddress> targetReplicas,
+                                             List<InetAddressAndPorts> targetReplicas,
                                              long queryStartNanoTime)
         {
             super(keyspace, command, consistencyLevel, targetReplicas, queryStartNanoTime);
@@ -326,7 +326,7 @@ public abstract class AbstractReadExecutor
             // no-op
         }
 
-        public Collection<InetAddress> getContactedReplicas()
+        public Collection<InetAddressAndPorts> getContactedReplicas()
         {
             return targetReplicas;
         }

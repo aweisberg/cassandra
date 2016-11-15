@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.repair;
 
-import java.net.InetAddress;
 import java.util.*;
 
 import com.google.common.base.Predicate;
@@ -29,11 +28,14 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.dht.Bounds;
+import org.apache.cassandra.io.DummyByteVersionedSerializer;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
+import org.apache.cassandra.net.ParameterType;
 import org.apache.cassandra.repair.messages.*;
 import org.apache.cassandra.service.ActiveRepairService;
 
@@ -172,11 +174,11 @@ public class RepairMessageVerbHandler implements IVerbHandler<RepairMessage>
         }
     }
 
-    private void logErrorAndSendFailureResponse(String errorMessage, InetAddress to, int id)
+    private void logErrorAndSendFailureResponse(String errorMessage, InetAddressAndPorts to, int id)
     {
         logger.error(errorMessage);
         MessageOut reply = new MessageOut(MessagingService.Verb.INTERNAL_RESPONSE)
-                               .withParameter(MessagingService.FAILURE_RESPONSE_PARAM, MessagingService.ONE_BYTE);
+                               .withParameter(ParameterType.FAILURE_RESPONSE, MessagingService.ONE_BYTE);
         MessagingService.instance().sendReply(reply, id, to);
     }
 }

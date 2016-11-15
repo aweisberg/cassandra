@@ -21,15 +21,16 @@ import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 
+import com.google.common.net.HostAndPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.CFMetaData;
-import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Murmur3Partitioner;
@@ -39,6 +40,7 @@ import org.apache.cassandra.hadoop.HadoopCompat;
 import org.apache.cassandra.io.sstable.CQLSSTableWriter;
 import org.apache.cassandra.io.sstable.SSTableLoader;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.streaming.StreamState;
 import org.apache.cassandra.utils.NativeSSTableLoaderClient;
 import org.apache.cassandra.utils.OutputHandler;
@@ -79,7 +81,7 @@ public class CqlBulkRecordWriter extends RecordWriter<Object, List<ByteBuffer>>
     protected SSTableLoader loader;
     protected Progressable progress;
     protected TaskAttemptContext context;
-    protected final Set<InetAddress> ignores = new HashSet<>();
+    protected final Set<InetAddressAndPorts> ignores = new HashSet<>();
 
     private String keyspace;
     private String table;
@@ -138,7 +140,7 @@ public class CqlBulkRecordWriter extends RecordWriter<Object, List<ByteBuffer>>
         try
         {
             for (String hostToIgnore : CqlBulkOutputFormat.getIgnoreHosts(conf))
-                ignores.add(InetAddress.getByName(hostToIgnore));
+                ignores.add(InetAddressAndPorts.getByName(hostToIgnore));
         }
         catch (UnknownHostException e)
         {
@@ -289,15 +291,16 @@ public class CqlBulkRecordWriter extends RecordWriter<Object, List<ByteBuffer>>
                   CqlConfigHelper.getSSLOptions(conf).orNull());
         }
 
-        private static Collection<InetAddress> resolveHostAddresses(Configuration conf)
+        private static Collection<InetSocketAddress> resolveHostAddresses(Configuration conf)
         {
-            Set<InetAddress> addresses = new HashSet<>();
-
+            Set<InetSocketAddress> addresses = new HashSet<>();
+            int port = CqlConfigHelper.getOutputNativePort(conf);
             for (String host : ConfigHelper.getOutputInitialAddress(conf).split(","))
             {
                 try
                 {
-                    addresses.add(InetAddress.getByName(host));
+                    HostAndPort hap = HostAndPort.fromString(host);
+                    addresses.add(new InetSocketAddress(InetAddress.getByName(hap.getHostText()), hap.getPortOrDefault(port)));
                 }
                 catch (UnknownHostException e)
                 {

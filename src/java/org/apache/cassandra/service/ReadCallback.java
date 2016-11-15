@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.service;
 
-import java.net.InetAddress;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -38,10 +37,10 @@ import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.UnavailableException;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
-import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.tracing.TraceState;
@@ -57,7 +56,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     private final SimpleCondition condition = new SimpleCondition();
     private final long queryStartNanoTime;
     final int blockfor;
-    final List<InetAddress> endpoints;
+    final List<InetAddressAndPorts> endpoints;
     private final ReadCommand command;
     private final ConsistencyLevel consistencyLevel;
     private static final AtomicIntegerFieldUpdater<ReadCallback> recievedUpdater
@@ -66,14 +65,14 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     private static final AtomicIntegerFieldUpdater<ReadCallback> failuresUpdater
             = AtomicIntegerFieldUpdater.newUpdater(ReadCallback.class, "failures");
     private volatile int failures = 0;
-    private final Map<InetAddress, RequestFailureReason> failureReasonByEndpoint;
+    private final Map<InetAddressAndPorts, RequestFailureReason> failureReasonByEndpoint;
 
     private final Keyspace keyspace; // TODO push this into ConsistencyLevel?
 
     /**
      * Constructor when response count has to be calculated and blocked for.
      */
-    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, List<InetAddress> filteredEndpoints, long queryStartNanoTime)
+    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, ReadCommand command, List<InetAddressAndPorts> filteredEndpoints, long queryStartNanoTime)
     {
         this(resolver,
              consistencyLevel,
@@ -84,7 +83,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
              queryStartNanoTime);
     }
 
-    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, List<InetAddress> endpoints, long queryStartNanoTime)
+    public ReadCallback(ResponseResolver resolver, ConsistencyLevel consistencyLevel, int blockfor, ReadCommand command, Keyspace keyspace, List<InetAddressAndPorts> endpoints, long queryStartNanoTime)
     {
         this.command = command;
         this.keyspace = keyspace;
@@ -177,7 +176,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     /**
      * @return true if the message counts towards the blockfor threshold
      */
-    private boolean waitingFor(InetAddress from)
+    private boolean waitingFor(InetAddressAndPorts from)
     {
         return consistencyLevel.isDatacenterLocal()
              ? DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(from))
@@ -194,9 +193,9 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
     public void response(ReadResponse result)
     {
-        MessageIn<ReadResponse> message = MessageIn.create(FBUtilities.getBroadcastAddress(),
+        MessageIn<ReadResponse> message = MessageIn.create(FBUtilities.getBroadcastAddressAndPorts(),
                                                            result,
-                                                           Collections.<String, byte[]>emptyMap(),
+                                                           Collections.emptyMap(),
                                                            MessagingService.Verb.INTERNAL_RESPONSE,
                                                            MessagingService.current_version);
         response(message);
@@ -246,14 +245,14 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
                 final DataResolver repairResolver = new DataResolver(keyspace, command, consistencyLevel, endpoints.size(), queryStartNanoTime);
                 AsyncRepairCallback repairHandler = new AsyncRepairCallback(repairResolver, endpoints.size());
 
-                for (InetAddress endpoint : endpoints)
+                for (InetAddressAndPorts endpoint : endpoints)
                     MessagingService.instance().sendRR(command.createMessage(), endpoint, repairHandler);
             }
         }
     }
 
     @Override
-    public void onFailure(InetAddress from, RequestFailureReason failureReason)
+    public void onFailure(InetAddressAndPorts from, RequestFailureReason failureReason)
     {
         int n = waitingFor(from)
               ? failuresUpdater.incrementAndGet(this)

@@ -43,6 +43,9 @@ import io.netty.util.concurrent.FastThreadLocal;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.TypeSizes;
+import org.apache.cassandra.locator.InetAddressAndPorts;
+import org.apache.cassandra.net.CompactEndpointSerializationHelper;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDGen;
@@ -565,4 +568,91 @@ public abstract class CBUtil
         return bytes;
     }
 
+    public static boolean disableV5 = true;
+
+    public static void writeInetAddressAndPorts(InetAddressAndPorts node, ByteBuf dest, ProtocolVersion version)
+    {
+        if (!disableV5 & version.isGreaterOrEqualTo(ProtocolVersion.V5))
+        {
+            byte[] buf = node.address.getAddress();
+            dest.writeByte(buf.length + 2 + 2);
+            dest.writeBytes(buf);
+            dest.writeShort(node.port);
+            dest.writeShort(node.sslport);
+        }
+        else
+        {
+            writeInet(new InetSocketAddress(node.address, node.port), dest);
+        }
+    }
+
+    public static int sizeOfInetAddressAndPorts(InetAddressAndPorts node, ProtocolVersion version)
+    {
+        if (!disableV5 & version.isGreaterOrEqualTo(ProtocolVersion.V5))
+        {
+            return (int) CompactEndpointSerializationHelper.instance.serializedSize(node,
+                                                                                    MessagingService.current_version);
+        }
+        else
+        {
+            return sizeOfInet(new InetSocketAddress(node.address, node.port));
+        }
+    }
+
+    public static InetAddressAndPorts readInetAddressAndPorts(ByteBuf cb, ProtocolVersion version)
+    {
+        if (!disableV5 & version.isGreaterOrEqualTo(ProtocolVersion.V5))
+        {
+            int size = cb.readByte() & 0xFF;
+            byte[] bytes = null;
+            try
+            {
+                switch (size)
+                {
+                    //The original pre-4.0 serialiation of just an address
+                    case 4:
+                    case 16:
+                    {
+                        bytes = new byte[size];
+                        cb.readBytes(bytes);
+                        return InetAddressAndPorts.getByAddress(bytes);
+                    }
+                    //Address and two ports
+                    case 8:
+                    case 20:
+                    {
+                        bytes = new byte[size - 4];
+                        cb.readBytes(bytes);
+
+                        int port = cb.readShort() & 0xFFFF;
+                        int sslport = cb.readShort() & 0xFFFF;
+                        return InetAddressAndPorts.getByAddressOverrideDefaults(InetAddress.getByAddress(bytes), port, sslport);
+                    }
+                    //Plan for a future where only one port is necessary
+                    case 6:
+                    case 18:
+                    {
+                        bytes = new byte[size - 2];
+                        cb.readBytes(bytes);
+
+                        int port = cb.readShort() & 0xFFFF;
+                        return InetAddressAndPorts.getByAddressOverrideDefaults(InetAddress.getByAddress(bytes), port, port);
+                    }
+                    default:
+                        throw new AssertionError("Unexpected size " + size);
+                }
+            }
+            catch (UnknownHostException e)
+            {
+                throw new ProtocolException(String.format("Invalid IP address (%d.%d.%d.%d) while deserializing inet address", bytes[0], bytes[1], bytes[2], bytes[3]));
+            }
+
+        }
+        else
+        {
+            InetSocketAddress node = CBUtil.readInet(cb);
+            //Really can't do anything useful about the second port
+            return InetAddressAndPorts.getByAddressOverrideDefaults(node.getAddress(), node.getPort(), node.getPort());
+        }
+    }
 }

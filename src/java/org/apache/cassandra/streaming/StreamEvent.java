@@ -27,6 +27,7 @@ import com.google.common.collect.ImmutableSet;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 
 public abstract class StreamEvent
 {
@@ -48,7 +49,7 @@ public abstract class StreamEvent
 
     public static class SessionCompleteEvent extends StreamEvent
     {
-        public final InetAddress peer;
+        public final InetAddressAndPorts peer;
         public final boolean success;
         public final int sessionIndex;
         public final Set<StreamRequest> requests;

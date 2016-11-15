@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import org.junit.Test;
 
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class SessionInfoTest
@@ -36,7 +37,7 @@ public class SessionInfoTest
     public void testTotals()
     {
         UUID cfId = UUID.randomUUID();
-        InetAddress local = FBUtilities.getLocalAddress();
+        InetAddressAndPorts local = FBUtilities.getLocalAddressAndPorts();
 
         Collection<StreamSummary> summaries = new ArrayList<>();
         for (int i = 0; i < 10; i++)

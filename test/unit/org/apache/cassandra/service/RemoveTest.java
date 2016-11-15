@@ -20,7 +20,6 @@
 package org.apache.cassandra.service;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -41,6 +40,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.gms.ApplicationState;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.VersionedValue.VersionedValueFactory;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -62,9 +62,9 @@ public class RemoveTest
     static IPartitioner oldPartitioner;
     ArrayList<Token> endpointTokens = new ArrayList<Token>();
     ArrayList<Token> keyTokens = new ArrayList<Token>();
-    List<InetAddress> hosts = new ArrayList<InetAddress>();
+    List<InetAddressAndPorts> hosts = new ArrayList<>();
     List<UUID> hostIds = new ArrayList<UUID>();
-    InetAddress removalhost;
+    InetAddressAndPorts removalhost;
     UUID removalId;
 
     @BeforeClass
@@ -124,7 +124,7 @@ public class RemoveTest
         VersionedValueFactory valueFactory = new VersionedValueFactory(DatabaseDescriptor.getPartitioner());
         Collection<Token> tokens = Collections.singleton(DatabaseDescriptor.getPartitioner().getRandomToken());
 
-        InetAddress joininghost = hosts.get(4);
+        InetAddressAndPorts joininghost = hosts.get(4);
         UUID joiningId = hostIds.get(4);
 
         hosts.remove(joininghost);
@@ -163,10 +163,10 @@ public class RemoveTest
         assertTrue(tmd.isLeaving(removalhost));
         assertEquals(1, tmd.getSizeOfLeavingEndpoints());
 
-        for (InetAddress host : hosts)
+        for (InetAddressAndPorts host : hosts)
         {
-            MessageOut msg = new MessageOut(host, MessagingService.Verb.REPLICATION_FINISHED, null, null, Collections.<String, byte[]>emptyMap());
-            MessagingService.instance().sendRR(msg, FBUtilities.getBroadcastAddress());
+            MessageOut msg = new MessageOut(host, MessagingService.Verb.REPLICATION_FINISHED, null, null, Collections.<Object>emptyList());
+            MessagingService.instance().sendRR(msg, FBUtilities.getBroadcastAddressAndPorts());
         }
 
         remover.join();

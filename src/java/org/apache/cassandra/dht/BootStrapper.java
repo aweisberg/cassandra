@@ -38,6 +38,7 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.*;
@@ -51,12 +52,12 @@ public class BootStrapper extends ProgressEventNotifierSupport
     private static final Logger logger = LoggerFactory.getLogger(BootStrapper.class);
 
     /* endpoint that needs to be bootstrapped */
-    protected final InetAddress address;
+    protected final InetAddressAndPorts address;
     /* token of the node being bootstrapped. */
     protected final Collection<Token> tokens;
     protected final TokenMetadata tokenMetadata;
 
-    public BootStrapper(InetAddress address, Collection<Token> tokens, TokenMetadata tmd)
+    public BootStrapper(InetAddressAndPorts address, Collection<Token> tokens, TokenMetadata tmd)
     {
         assert address != null;
         assert tokens != null && !tokens.isEmpty();
@@ -158,7 +159,7 @@ public class BootStrapper extends ProgressEventNotifierSupport
      * otherwise, if allocationKeyspace is specified use the token allocation algorithm to generate suitable tokens
      * else choose num_tokens tokens at random
      */
-    public static Collection<Token> getBootstrapTokens(final TokenMetadata metadata, InetAddress address, int schemaWaitDelay) throws ConfigurationException
+    public static Collection<Token> getBootstrapTokens(final TokenMetadata metadata, InetAddressAndPorts address, int schemaWaitDelay) throws ConfigurationException
     {
         String allocationKeyspace = DatabaseDescriptor.getAllocateTokensForKeyspace();
         Collection<String> initialTokens = DatabaseDescriptor.getInitialTokens();
@@ -198,13 +199,13 @@ public class BootStrapper extends ProgressEventNotifierSupport
     }
 
     static Collection<Token> allocateTokens(final TokenMetadata metadata,
-                                            InetAddress address,
+                                            InetAddressAndPorts address,
                                             String allocationKeyspace,
                                             int numTokens,
                                             int schemaWaitDelay)
     {
         StorageService.instance.waitForSchema(schemaWaitDelay);
-        if (!FBUtilities.getBroadcastAddress().equals(InetAddress.getLoopbackAddress()))
+        if (!FBUtilities.getBroadcastAddressAndPorts().equals(InetAddressAndPorts.getLoopbackAddress()))
             Gossiper.waitToSettle();
 
         Keyspace ks = Keyspace.open(allocationKeyspace);

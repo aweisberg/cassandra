@@ -22,6 +22,7 @@ import java.net.InetAddress;
 import com.google.common.util.concurrent.AbstractFuture;
 
 import org.apache.cassandra.exceptions.RepairException;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.messages.ValidationRequest;
 import org.apache.cassandra.utils.MerkleTrees;
@@ -33,10 +34,10 @@ import org.apache.cassandra.utils.MerkleTrees;
 public class ValidationTask extends AbstractFuture<TreeResponse> implements Runnable
 {
     private final RepairJobDesc desc;
-    private final InetAddress endpoint;
+    private final InetAddressAndPorts endpoint;
     private final int gcBefore;
 
-    public ValidationTask(RepairJobDesc desc, InetAddress endpoint, int gcBefore)
+    public ValidationTask(RepairJobDesc desc, InetAddressAndPorts endpoint, int gcBefore)
     {
         this.desc = desc;
         this.endpoint = endpoint;

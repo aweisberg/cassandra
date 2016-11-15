@@ -18,7 +18,6 @@
 package org.apache.cassandra.hints;
 
 import java.io.File;
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -28,6 +27,7 @@ import java.util.function.Function;
 import com.google.common.util.concurrent.RateLimiter;
 
 import org.apache.cassandra.exceptions.RequestFailureReason;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.metrics.HintsServiceMetrics;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
@@ -46,13 +46,13 @@ final class HintsDispatcher implements AutoCloseable
 
     private final HintsReader reader;
     private final UUID hostId;
-    private final InetAddress address;
+    private final InetAddressAndPorts address;
     private final int messagingVersion;
     private final BooleanSupplier abortRequested;
 
     private InputPosition currentPagePosition;
 
-    private HintsDispatcher(HintsReader reader, UUID hostId, InetAddress address, int messagingVersion, BooleanSupplier abortRequested)
+    private HintsDispatcher(HintsReader reader, UUID hostId, InetAddressAndPorts address, int messagingVersion, BooleanSupplier abortRequested)
     {
         currentPagePosition = null;
 
@@ -63,7 +63,7 @@ final class HintsDispatcher implements AutoCloseable
         this.abortRequested = abortRequested;
     }
 
-    static HintsDispatcher create(File file, RateLimiter rateLimiter, InetAddress address, UUID hostId, BooleanSupplier abortRequested)
+    static HintsDispatcher create(File file, RateLimiter rateLimiter, InetAddressAndPorts address, UUID hostId, BooleanSupplier abortRequested)
     {
         int messagingVersion = MessagingService.instance().getVersion(address);
         return new HintsDispatcher(HintsReader.open(file, rateLimiter), hostId, address, messagingVersion, abortRequested);
@@ -216,7 +216,7 @@ final class HintsDispatcher implements AutoCloseable
             return timedOut ? Outcome.TIMEOUT : outcome;
         }
 
-        public void onFailure(InetAddress from, RequestFailureReason failureReason)
+        public void onFailure(InetAddressAndPorts from, RequestFailureReason failureReason)
         {
             outcome = Outcome.FAILURE;
             condition.signalAll();

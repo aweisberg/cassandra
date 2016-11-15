@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,6 +33,7 @@ import org.apache.cassandra.config.ReadRepairDecision;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.transport.ProtocolException;
 
@@ -145,21 +145,21 @@ public enum ConsistencyLevel
         return isDCLocal;
     }
 
-    public boolean isLocal(InetAddress endpoint)
+    public boolean isLocal(InetAddressAndPorts endpoint)
     {
         return DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(endpoint));
     }
 
-    public int countLocalEndpoints(Iterable<InetAddress> liveEndpoints)
+    public int countLocalEndpoints(Iterable<InetAddressAndPorts> liveEndpoints)
     {
         int count = 0;
-        for (InetAddress endpoint : liveEndpoints)
+        for (InetAddressAndPorts endpoint : liveEndpoints)
             if (isLocal(endpoint))
                 count++;
         return count;
     }
 
-    private Map<String, Integer> countPerDCEndpoints(Keyspace keyspace, Iterable<InetAddress> liveEndpoints)
+    private Map<String, Integer> countPerDCEndpoints(Keyspace keyspace, Iterable<InetAddressAndPorts> liveEndpoints)
     {
         NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
 
@@ -167,7 +167,7 @@ public enum ConsistencyLevel
         for (String dc: strategy.getDatacenters())
             dcEndpoints.put(dc, 0);
 
-        for (InetAddress endpoint : liveEndpoints)
+        for (InetAddressAndPorts endpoint : liveEndpoints)
         {
             String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(endpoint);
             dcEndpoints.put(dc, dcEndpoints.get(dc) + 1);
@@ -175,12 +175,12 @@ public enum ConsistencyLevel
         return dcEndpoints;
     }
 
-    public List<InetAddress> filterForQuery(Keyspace keyspace, List<InetAddress> liveEndpoints)
+    public List<InetAddressAndPorts> filterForQuery(Keyspace keyspace, List<InetAddressAndPorts> liveEndpoints)
     {
         return filterForQuery(keyspace, liveEndpoints, ReadRepairDecision.NONE);
     }
 
-    public List<InetAddress> filterForQuery(Keyspace keyspace, List<InetAddress> liveEndpoints, ReadRepairDecision readRepair)
+    public List<InetAddressAndPorts> filterForQuery(Keyspace keyspace, List<InetAddressAndPorts> liveEndpoints, ReadRepairDecision readRepair)
     {
         /*
          * If we are doing an each quorum query, we have to make sure that the endpoints we select
@@ -206,9 +206,9 @@ public enum ConsistencyLevel
             case GLOBAL:
                 return liveEndpoints;
             case DC_LOCAL:
-                List<InetAddress> local = new ArrayList<InetAddress>();
-                List<InetAddress> other = new ArrayList<InetAddress>();
-                for (InetAddress add : liveEndpoints)
+                List<InetAddressAndPorts> local = new ArrayList<>();
+                List<InetAddressAndPorts> other = new ArrayList<>();
+                for (InetAddressAndPorts add : liveEndpoints)
                 {
                     if (isLocal(add))
                         local.add(add);
@@ -225,7 +225,7 @@ public enum ConsistencyLevel
         }
     }
 
-    private List<InetAddress> filterForEachQuorum(Keyspace keyspace, List<InetAddress> liveEndpoints, ReadRepairDecision readRepair)
+    private List<InetAddressAndPorts> filterForEachQuorum(Keyspace keyspace, List<InetAddressAndPorts> liveEndpoints, ReadRepairDecision readRepair)
     {
         NetworkTopologyStrategy strategy = (NetworkTopologyStrategy) keyspace.getReplicationStrategy();
 
@@ -233,20 +233,20 @@ public enum ConsistencyLevel
         if (readRepair == ReadRepairDecision.GLOBAL)
             return liveEndpoints;
 
-        Map<String, List<InetAddress>> dcsEndpoints = new HashMap<>();
+        Map<String, List<InetAddressAndPorts>> dcsEndpoints = new HashMap<>();
         for (String dc: strategy.getDatacenters())
             dcsEndpoints.put(dc, new ArrayList<>());
 
-        for (InetAddress add : liveEndpoints)
+        for (InetAddressAndPorts add : liveEndpoints)
         {
             String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(add);
             dcsEndpoints.get(dc).add(add);
         }
 
-        List<InetAddress> waitSet = new ArrayList<>();
-        for (Map.Entry<String, List<InetAddress>> dcEndpoints : dcsEndpoints.entrySet())
+        List<InetAddressAndPorts> waitSet = new ArrayList<>();
+        for (Map.Entry<String, List<InetAddressAndPorts>> dcEndpoints : dcsEndpoints.entrySet())
         {
-            List<InetAddress> dcEndpoint = dcEndpoints.getValue();
+            List<InetAddressAndPorts> dcEndpoint = dcEndpoints.getValue();
             if (readRepair == ReadRepairDecision.DC_LOCAL && dcEndpoints.getKey().equals(DatabaseDescriptor.getLocalDataCenter()))
                 waitSet.addAll(dcEndpoint);
             else
@@ -256,7 +256,7 @@ public enum ConsistencyLevel
         return waitSet;
     }
 
-    public boolean isSufficientLiveNodes(Keyspace keyspace, Iterable<InetAddress> liveEndpoints)
+    public boolean isSufficientLiveNodes(Keyspace keyspace, Iterable<InetAddressAndPorts> liveEndpoints)
     {
         switch (this)
         {
@@ -283,7 +283,7 @@ public enum ConsistencyLevel
         }
     }
 
-    public void assureSufficientLiveNodes(Keyspace keyspace, Iterable<InetAddress> liveEndpoints) throws UnavailableException
+    public void assureSufficientLiveNodes(Keyspace keyspace, Iterable<InetAddressAndPorts> liveEndpoints) throws UnavailableException
     {
         int blockFor = blockFor(keyspace);
         switch (this)
@@ -302,7 +302,7 @@ public enum ConsistencyLevel
                     if (logger.isTraceEnabled())
                     {
                         StringBuilder builder = new StringBuilder("Local replicas [");
-                        for (InetAddress endpoint : liveEndpoints)
+                        for (InetAddressAndPorts endpoint : liveEndpoints)
                         {
                             if (isLocal(endpoint))
                                 builder.append(endpoint).append(",");

@@ -19,7 +19,6 @@
 package org.apache.cassandra.repair.messages;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +40,7 @@ import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.repair.NodePair;
 import org.apache.cassandra.repair.RepairJobDesc;
@@ -140,9 +140,9 @@ public class RepairMessageSerializationsTest
     @Test
     public void syncRequestMessage() throws IOException
     {
-        InetAddress initiator = InetAddress.getByName("127.0.0.1");
-        InetAddress src = InetAddress.getByName("127.0.0.2");
-        InetAddress dst = InetAddress.getByName("127.0.0.3");
+        InetAddressAndPorts initiator = InetAddressAndPorts.getByName("127.0.0.1");
+        InetAddressAndPorts src = InetAddressAndPorts.getByName("127.0.0.2");
+        InetAddressAndPorts dst = InetAddressAndPorts.getByName("127.0.0.3");
 
         SyncRequest msg = new SyncRequest(buildRepairJobDesc(), initiator, src, dst, buildTokenRanges());
         serializeRoundTrip(msg, SyncRequest.serializer);
@@ -151,8 +151,8 @@ public class RepairMessageSerializationsTest
     @Test
     public void syncCompleteMessage() throws IOException
     {
-        InetAddress src = InetAddress.getByName("127.0.0.2");
-        InetAddress dst = InetAddress.getByName("127.0.0.3");
+        InetAddressAndPorts src = InetAddressAndPorts.getByName("127.0.0.2");
+        InetAddressAndPorts dst = InetAddressAndPorts.getByName("127.0.0.3");
         SyncComplete msg = new SyncComplete(buildRepairJobDesc(), new NodePair(src, dst), true);
         serializeRoundTrip(msg, SyncComplete.serializer);
     }

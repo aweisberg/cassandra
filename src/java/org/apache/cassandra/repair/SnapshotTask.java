@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import com.google.common.util.concurrent.AbstractFuture;
 
 import org.apache.cassandra.exceptions.RequestFailureReason;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
@@ -32,12 +33,12 @@ import org.apache.cassandra.repair.messages.SnapshotMessage;
 /**
  * SnapshotTask is a task that sends snapshot request.
  */
-public class SnapshotTask extends AbstractFuture<InetAddress> implements RunnableFuture<InetAddress>
+public class SnapshotTask extends AbstractFuture<InetAddressAndPorts> implements RunnableFuture<InetAddressAndPorts>
 {
     private final RepairJobDesc desc;
-    private final InetAddress endpoint;
+    private final InetAddressAndPorts endpoint;
 
-    public SnapshotTask(RepairJobDesc desc, InetAddress endpoint)
+    public SnapshotTask(RepairJobDesc desc, InetAddressAndPorts endpoint)
     {
         this.desc = desc;
         this.endpoint = endpoint;
@@ -74,7 +75,7 @@ public class SnapshotTask extends AbstractFuture<InetAddress> implements Runnabl
 
         public boolean isLatencyForSnitch() { return false; }
 
-        public void onFailure(InetAddress from, RequestFailureReason failureReason)
+        public void onFailure(InetAddressAndPorts from, RequestFailureReason failureReason)
         {
             //listener.failedSnapshot();
             task.setException(new RuntimeException("Could not create snapshot at " + from));

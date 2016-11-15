@@ -58,6 +58,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.AbstractEndpointSnitch;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.serializers.TypeSerializer;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
@@ -131,9 +132,9 @@ public abstract class CQLTester
         // Register an EndpointSnitch which returns fixed values for test.
         DatabaseDescriptor.setEndpointSnitch(new AbstractEndpointSnitch()
         {
-            @Override public String getRack(InetAddress endpoint) { return RACK1; }
-            @Override public String getDatacenter(InetAddress endpoint) { return DATA_CENTER; }
-            @Override public int compareEndpoints(InetAddress target, InetAddress a1, InetAddress a2) { return 0; }
+            @Override public String getRack(InetAddressAndPorts endpoint) { return RACK1; }
+            @Override public String getDatacenter(InetAddressAndPorts endpoint) { return DATA_CENTER; }
+            @Override public int compareEndpoints(InetAddressAndPorts target, InetAddressAndPorts a1, InetAddressAndPorts a2) { return 0; }
         });
 
         try

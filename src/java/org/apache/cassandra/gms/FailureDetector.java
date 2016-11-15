@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.FSWriteError;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -76,7 +77,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     // change.
     private final double PHI_FACTOR = 1.0 / Math.log(10.0); // 0.434...
 
-    private final ConcurrentHashMap<InetAddress, ArrivalWindow> arrivalSamples = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<InetAddressAndPorts, ArrivalWindow> arrivalSamples = new ConcurrentHashMap<>();
     private final List<IFailureDetectionEventListener> fdEvntListeners = new CopyOnWriteArrayList<>();
 
     public FailureDetector()
@@ -109,10 +110,20 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
 
     public String getAllEndpointStates()
     {
+        return getAllEndpointStates(false);
+    }
+
+    public String getAllEndpointStatesWithPorts()
+    {
+        return getAllEndpointStates(true);
+    }
+
+    public String getAllEndpointStates(boolean withPorts)
+    {
         StringBuilder sb = new StringBuilder();
-        for (Map.Entry<InetAddress, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
+        for (Map.Entry<InetAddressAndPorts, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
         {
-            sb.append(entry.getKey()).append("\n");
+            sb.append(entry.getKey().toString(withPorts)).append("\n");
             appendEndpointState(sb, entry.getValue());
         }
         return sb.toString();
@@ -120,13 +131,23 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
 
     public Map<String, String> getSimpleStates()
     {
+        return getSimpleStates(false);
+    }
+
+    public Map<String, String> getSimpleStatesWithPorts()
+    {
+        return getSimpleStates(true);
+    }
+
+    private Map<String, String> getSimpleStates(boolean withPorts)
+    {
         Map<String, String> nodesStatus = new HashMap<String, String>(Gossiper.instance.endpointStateMap.size());
-        for (Map.Entry<InetAddress, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
+        for (Map.Entry<InetAddressAndPorts, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
         {
             if (entry.getValue().isAlive())
-                nodesStatus.put(entry.getKey().toString(), "UP");
+                nodesStatus.put(entry.getKey().toString(withPorts), "UP");
             else
-                nodesStatus.put(entry.getKey().toString(), "DOWN");
+                nodesStatus.put(entry.getKey().toString(withPorts), "DOWN");
         }
         return nodesStatus;
     }
@@ -134,7 +155,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     public int getDownEndpointCount()
     {
         int count = 0;
-        for (Map.Entry<InetAddress, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
+        for (Map.Entry<InetAddressAndPorts, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
         {
             if (!entry.getValue().isAlive())
                 count++;
@@ -145,7 +166,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     public int getUpEndpointCount()
     {
         int count = 0;
-        for (Map.Entry<InetAddress, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
+        for (Map.Entry<InetAddressAndPorts, EndpointState> entry : Gossiper.instance.endpointStateMap.entrySet())
         {
             if (entry.getValue().isAlive())
                 count++;
@@ -156,13 +177,24 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     @Override
     public TabularData getPhiValues() throws OpenDataException
     {
+        return getPhiValues(false);
+    }
+
+    @Override
+    public TabularData getPhiValuesWithPorts() throws OpenDataException
+    {
+        return getPhiValues(true);
+    }
+
+    private TabularData getPhiValues(boolean withPorts) throws OpenDataException
+    {
         final CompositeType ct = new CompositeType("Node", "Node",
                 new String[]{"Endpoint", "PHI"},
                 new String[]{"IP of the endpoint", "PHI value"},
                 new OpenType[]{SimpleType.STRING, SimpleType.DOUBLE});
         final TabularDataSupport results = new TabularDataSupport(new TabularType("PhiList", "PhiList", ct, new String[]{"Endpoint"}));
 
-        for (final Map.Entry<InetAddress, ArrivalWindow> entry : arrivalSamples.entrySet())
+        for (final Map.Entry<InetAddressAndPorts, ArrivalWindow> entry : arrivalSamples.entrySet())
         {
             final ArrivalWindow window = entry.getValue();
             if (window.mean() > 0)
@@ -173,7 +205,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
                     // returned values are scaled by PHI_FACTOR so that the are on the same scale as PhiConvictThreshold
                     final CompositeData data = new CompositeDataSupport(ct,
                             new String[]{"Endpoint", "PHI"},
-                            new Object[]{entry.getKey().toString(), phi * PHI_FACTOR});
+                            new Object[]{entry.getKey().toString(withPorts), phi * PHI_FACTOR});
                     results.put(data);
                 }
             }
@@ -184,7 +216,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     public String getEndpointState(String address) throws UnknownHostException
     {
         StringBuilder sb = new StringBuilder();
-        EndpointState endpointState = Gossiper.instance.getEndpointStateForEndpoint(InetAddress.getByName(address));
+        EndpointState endpointState = Gossiper.instance.getEndpointStateForEndpoint(InetAddressAndPorts.getByName(address));
         appendEndpointState(sb, endpointState);
         return sb.toString();
     }
@@ -237,9 +269,9 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
         return DatabaseDescriptor.getPhiConvictThreshold();
     }
 
-    public boolean isAlive(InetAddress ep)
+    public boolean isAlive(InetAddressAndPorts ep)
     {
-        if (ep.equals(FBUtilities.getBroadcastAddress()))
+        if (ep.equals(FBUtilities.getBroadcastAddressAndPorts()))
             return true;
 
         EndpointState epState = Gossiper.instance.getEndpointStateForEndpoint(ep);
@@ -251,7 +283,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
         return epState != null && epState.isAlive();
     }
 
-    public void report(InetAddress ep)
+    public void report(InetAddressAndPorts ep)
     {
         long now = Clock.instance.nanoTime();
         ArrivalWindow heartbeatWindow = arrivalSamples.get(ep);
@@ -273,7 +305,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
             logger.trace("Average for {} is {}", ep, heartbeatWindow.mean());
     }
 
-    public void interpret(InetAddress ep)
+    public void interpret(InetAddressAndPorts ep)
     {
         ArrivalWindow hbWnd = arrivalSamples.get(ep);
         if (hbWnd == null)
@@ -318,7 +350,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
         }
     }
 
-    public void forceConviction(InetAddress ep)
+    public void forceConviction(InetAddressAndPorts ep)
     {
         logger.debug("Forcing conviction of {}", ep);
         for (IFailureDetectionEventListener listener : fdEvntListeners)
@@ -327,7 +359,7 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
         }
     }
 
-    public void remove(InetAddress ep)
+    public void remove(InetAddressAndPorts ep)
     {
         arrivalSamples.remove(ep);
     }
@@ -345,10 +377,10 @@ public class FailureDetector implements IFailureDetector, FailureDetectorMBean
     public String toString()
     {
         StringBuilder sb = new StringBuilder();
-        Set<InetAddress> eps = arrivalSamples.keySet();
+        Set<InetAddressAndPorts> eps = arrivalSamples.keySet();
 
         sb.append("-----------------------------------------------------------------------");
-        for (InetAddress ep : eps)
+        for (InetAddressAndPorts ep : eps)
         {
             ArrivalWindow hWnd = arrivalSamples.get(ep);
             sb.append(ep).append(" : ");
@@ -441,7 +473,7 @@ class ArrivalWindow
         }
     }
 
-    synchronized void add(long value, InetAddress ep)
+    synchronized void add(long value, InetAddressAndPorts ep)
     {
         assert tLast >= 0;
         if (tLast > 0L)

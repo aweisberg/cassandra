@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.util.concurrent.RateLimiter;
 
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.utils.SlidingTimeRate;
 import org.apache.cassandra.utils.TimeSource;
 import org.apache.cassandra.utils.concurrent.IntervalLock;
@@ -47,12 +48,12 @@ import org.apache.cassandra.utils.concurrent.IntervalLock;
  */
 class RateBasedBackPressureState extends IntervalLock implements BackPressureState
 {
-    private final InetAddress host;
+    private final InetAddressAndPorts host;
     final SlidingTimeRate incomingRate;
     final SlidingTimeRate outgoingRate;
     final RateLimiter rateLimiter;
 
-    RateBasedBackPressureState(InetAddress host, TimeSource timeSource, long windowSize)
+    RateBasedBackPressureState(InetAddressAndPorts host, TimeSource timeSource, long windowSize)
     {
         super(timeSource);
         this.host = host;
@@ -100,7 +101,7 @@ class RateBasedBackPressureState extends IntervalLock implements BackPressureSta
     }
 
     @Override
-    public InetAddress getHost()
+    public InetAddressAndPorts getHost()
     {
         return host;
     }

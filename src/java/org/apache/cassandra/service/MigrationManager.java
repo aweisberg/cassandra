@@ -18,7 +18,6 @@
 package org.apache.cassandra.service;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.*;
 import java.lang.management.ManagementFactory;
@@ -43,6 +42,7 @@ import org.apache.cassandra.gms.*;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceMetadata;
@@ -76,11 +76,11 @@ public class MigrationManager
         listeners.remove(listener);
     }
 
-    public static void scheduleSchemaPull(InetAddress endpoint, EndpointState state)
+    public static void scheduleSchemaPull(InetAddressAndPorts endpoint, EndpointState state)
     {
         VersionedValue value = state.getApplicationState(ApplicationState.SCHEMA);
 
-        if (!endpoint.equals(FBUtilities.getBroadcastAddress()) && value != null)
+        if (!endpoint.equals(FBUtilities.getBroadcastAddressAndPorts()) && value != null)
             maybeScheduleSchemaPull(UUID.fromString(value.value), endpoint);
     }
 
@@ -88,7 +88,7 @@ public class MigrationManager
      * If versions differ this node sends request with local migration list to the endpoint
      * and expecting to receive a list of migrations to apply locally.
      */
-    private static void maybeScheduleSchemaPull(final UUID theirVersion, final InetAddress endpoint)
+    private static void maybeScheduleSchemaPull(final UUID theirVersion, final InetAddressAndPorts endpoint)
     {
         if ((Schema.instance.getVersion() != null && Schema.instance.getVersion().equals(theirVersion)) || !shouldPullSchemaFrom(endpoint))
         {
@@ -129,7 +129,7 @@ public class MigrationManager
         }
     }
 
-    private static Future<?> submitMigrationTask(InetAddress endpoint)
+    private static Future<?> submitMigrationTask(InetAddressAndPorts endpoint)
     {
         /*
          * Do not de-ref the future because that causes distributed deadlock (CASSANDRA-3832) because we are
@@ -138,7 +138,7 @@ public class MigrationManager
         return StageManager.getStage(Stage.MIGRATION).submit(new MigrationTask(endpoint));
     }
 
-    public static boolean shouldPullSchemaFrom(InetAddress endpoint)
+    public static boolean shouldPullSchemaFrom(InetAddressAndPorts endpoint)
     {
         /*
          * Don't request schema from nodes with a differnt or unknonw major version (may have incompatible schema)
@@ -517,7 +517,7 @@ public class MigrationManager
             FBUtilities.waitOnFuture(announce(mutations));
     }
 
-    private static void pushSchemaMutation(InetAddress endpoint, Collection<Mutation> schema)
+    private static void pushSchemaMutation(InetAddressAndPorts endpoint, Collection<Mutation> schema)
     {
         MessageOut<Collection<Mutation>> msg = new MessageOut<>(MessagingService.Verb.DEFINITIONS_UPDATE,
                                                                 schema,
@@ -536,10 +536,10 @@ public class MigrationManager
             }
         });
 
-        for (InetAddress endpoint : Gossiper.instance.getLiveMembers())
+        for (InetAddressAndPorts endpoint : Gossiper.instance.getLiveMembers())
         {
             // only push schema to nodes with known and equal versions
-            if (!endpoint.equals(FBUtilities.getBroadcastAddress()) &&
+            if (!endpoint.equals(FBUtilities.getBroadcastAddressAndPorts()) &&
                     MessagingService.instance().knowsVersion(endpoint) &&
                     MessagingService.instance().getRawVersion(endpoint) == MessagingService.current_version)
                 pushSchemaMutation(endpoint, schema);
@@ -576,11 +576,11 @@ public class MigrationManager
 
         Schema.instance.clear();
 
-        Set<InetAddress> liveEndpoints = Gossiper.instance.getLiveMembers();
-        liveEndpoints.remove(FBUtilities.getBroadcastAddress());
+        Set<InetAddressAndPorts> liveEndpoints = Gossiper.instance.getLiveMembers();
+        liveEndpoints.remove(FBUtilities.getBroadcastAddressAndPorts());
 
         // force migration if there are nodes around
-        for (InetAddress node : liveEndpoints)
+        for (InetAddressAndPorts node : liveEndpoints)
         {
             if (shouldPullSchemaFrom(node))
             {

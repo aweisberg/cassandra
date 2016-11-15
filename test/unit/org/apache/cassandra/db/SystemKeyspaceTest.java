@@ -19,7 +19,6 @@ package org.apache.cassandra.db;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -36,6 +35,7 @@ import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.dht.ByteOrderedPartitioner.BytesToken;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.CassandraVersion;
@@ -58,7 +58,7 @@ public class SystemKeyspaceTest
     public void testLocalTokens()
     {
         // Remove all existing tokens
-        Collection<Token> current = SystemKeyspace.loadTokens().asMap().get(FBUtilities.getLocalAddress());
+        Collection<Token> current = SystemKeyspace.loadTokens().asMap().get(FBUtilities.getLocalAddressAndPorts());
         if (current != null && !current.isEmpty())
             SystemKeyspace.updateTokens(current);
 
@@ -79,7 +79,7 @@ public class SystemKeyspaceTest
     public void testNonLocalToken() throws UnknownHostException
     {
         BytesToken token = new BytesToken(ByteBufferUtil.bytes("token3"));
-        InetAddress address = InetAddress.getByName("127.0.0.2");
+        InetAddressAndPorts address = InetAddressAndPorts.getByName("127.0.0.2");
         SystemKeyspace.updateTokens(address, Collections.<Token>singletonList(token));
         assert SystemKeyspace.loadTokens().get(address).contains(token);
         SystemKeyspace.removeEndpoint(address);

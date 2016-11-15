@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
@@ -94,7 +95,7 @@ public final class HintVerbHandler implements IVerbHandler<HintMessage>
         }
     }
 
-    private static void reply(int id, InetAddress to)
+    private static void reply(int id, InetAddressAndPorts to)
     {
         MessagingService.instance().sendReply(HintResponse.message, id, to);
     }

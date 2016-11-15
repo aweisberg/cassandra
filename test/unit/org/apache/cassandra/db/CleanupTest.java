@@ -19,7 +19,6 @@
 package org.apache.cassandra.db;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.AbstractMap;
@@ -44,6 +43,7 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.StorageService;
@@ -134,8 +134,8 @@ public class CleanupTest
         byte[] tk1 = new byte[1], tk2 = new byte[1];
         tk1[0] = 2;
         tk2[0] = 1;
-        tmd.updateNormalToken(new BytesToken(tk1), InetAddress.getByName("127.0.0.1"));
-        tmd.updateNormalToken(new BytesToken(tk2), InetAddress.getByName("127.0.0.2"));
+        tmd.updateNormalToken(new BytesToken(tk1), InetAddressAndPorts.getByName("127.0.0.1"));
+        tmd.updateNormalToken(new BytesToken(tk2), InetAddressAndPorts.getByName("127.0.0.2"));
 
         CompactionManager.instance.performCleanup(cfs, 2);
 
@@ -166,8 +166,8 @@ public class CleanupTest
         byte[] tk1 = new byte[1], tk2 = new byte[1];
         tk1[0] = 2;
         tk2[0] = 1;
-        tmd.updateNormalToken(new BytesToken(tk1), InetAddress.getByName("127.0.0.1"));
-        tmd.updateNormalToken(new BytesToken(tk2), InetAddress.getByName("127.0.0.2"));
+        tmd.updateNormalToken(new BytesToken(tk1), InetAddressAndPorts.getByName("127.0.0.1"));
+        tmd.updateNormalToken(new BytesToken(tk2), InetAddressAndPorts.getByName("127.0.0.2"));
         CompactionManager.instance.performCleanup(cfs, 2);
 
         assertEquals(0, Util.getAll(Util.cmd(cfs).build()).size());
@@ -190,8 +190,8 @@ public class CleanupTest
         byte[] tk1 = new byte[1], tk2 = new byte[1];
         tk1[0] = 2;
         tk2[0] = 1;
-        tmd.updateNormalToken(new BytesToken(tk1), InetAddress.getByName("127.0.0.1"));
-        tmd.updateNormalToken(new BytesToken(tk2), InetAddress.getByName("127.0.0.2"));
+        tmd.updateNormalToken(new BytesToken(tk1), InetAddressAndPorts.getByName("127.0.0.1"));
+        tmd.updateNormalToken(new BytesToken(tk2), InetAddressAndPorts.getByName("127.0.0.2"));
 
         for(SSTableReader r: cfs.getLiveSSTables())
             CompactionManager.instance.forceUserDefinedCleanup(r.getFilename());

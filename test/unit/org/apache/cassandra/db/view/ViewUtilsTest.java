@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.db.view;
 
-import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +32,7 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.OrderPreservingPartitioner.StringToken;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.IEndpointSnitch;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.NetworkTopologyStrategy;
 import org.apache.cassandra.locator.PropertyFileSnitch;
 import org.apache.cassandra.locator.TokenMetadata;
@@ -59,12 +59,12 @@ public class ViewUtilsTest
         metadata.clearUnsafe();
 
         // DC1
-        metadata.updateNormalToken(new StringToken("A"), InetAddress.getByName("127.0.0.1"));
-        metadata.updateNormalToken(new StringToken("C"), InetAddress.getByName("127.0.0.2"));
+        metadata.updateNormalToken(new StringToken("A"), InetAddressAndPorts.getByName("127.0.0.1"));
+        metadata.updateNormalToken(new StringToken("C"), InetAddressAndPorts.getByName("127.0.0.2"));
 
         // DC2
-        metadata.updateNormalToken(new StringToken("B"), InetAddress.getByName("127.0.0.4"));
-        metadata.updateNormalToken(new StringToken("D"), InetAddress.getByName("127.0.0.5"));
+        metadata.updateNormalToken(new StringToken("B"), InetAddressAndPorts.getByName("127.0.0.4"));
+        metadata.updateNormalToken(new StringToken("D"), InetAddressAndPorts.getByName("127.0.0.5"));
 
         Map<String, String> replicationMap = new HashMap<>();
         replicationMap.put(ReplicationParams.CLASS, NetworkTopologyStrategy.class.getName());
@@ -76,12 +76,12 @@ public class ViewUtilsTest
         KeyspaceMetadata meta = KeyspaceMetadata.create("Keyspace1", KeyspaceParams.create(false, replicationMap));
         Schema.instance.setKeyspaceMetadata(meta);
 
-        Optional<InetAddress> naturalEndpoint = ViewUtils.getViewNaturalEndpoint("Keyspace1",
+        Optional<InetAddressAndPorts> naturalEndpoint = ViewUtils.getViewNaturalEndpoint("Keyspace1",
                                                                        new StringToken("CA"),
                                                                        new StringToken("BB"));
 
         Assert.assertTrue(naturalEndpoint.isPresent());
-        Assert.assertEquals(InetAddress.getByName("127.0.0.2"), naturalEndpoint.get());
+        Assert.assertEquals(InetAddressAndPorts.getByName("127.0.0.2"), naturalEndpoint.get());
     }
 
 
@@ -92,12 +92,12 @@ public class ViewUtilsTest
         metadata.clearUnsafe();
 
         // DC1
-        metadata.updateNormalToken(new StringToken("A"), InetAddress.getByName("127.0.0.1"));
-        metadata.updateNormalToken(new StringToken("C"), InetAddress.getByName("127.0.0.2"));
+        metadata.updateNormalToken(new StringToken("A"), InetAddressAndPorts.getByName("127.0.0.1"));
+        metadata.updateNormalToken(new StringToken("C"), InetAddressAndPorts.getByName("127.0.0.2"));
 
         // DC2
-        metadata.updateNormalToken(new StringToken("B"), InetAddress.getByName("127.0.0.4"));
-        metadata.updateNormalToken(new StringToken("D"), InetAddress.getByName("127.0.0.5"));
+        metadata.updateNormalToken(new StringToken("B"), InetAddressAndPorts.getByName("127.0.0.4"));
+        metadata.updateNormalToken(new StringToken("D"), InetAddressAndPorts.getByName("127.0.0.5"));
 
         Map<String, String> replicationMap = new HashMap<>();
         replicationMap.put(ReplicationParams.CLASS, NetworkTopologyStrategy.class.getName());
@@ -109,12 +109,12 @@ public class ViewUtilsTest
         KeyspaceMetadata meta = KeyspaceMetadata.create("Keyspace1", KeyspaceParams.create(false, replicationMap));
         Schema.instance.setKeyspaceMetadata(meta);
 
-        Optional<InetAddress> naturalEndpoint = ViewUtils.getViewNaturalEndpoint("Keyspace1",
+        Optional<InetAddressAndPorts> naturalEndpoint = ViewUtils.getViewNaturalEndpoint("Keyspace1",
                                                                        new StringToken("CA"),
                                                                        new StringToken("BB"));
 
         Assert.assertTrue(naturalEndpoint.isPresent());
-        Assert.assertEquals(InetAddress.getByName("127.0.0.1"), naturalEndpoint.get());
+        Assert.assertEquals(InetAddressAndPorts.getByName("127.0.0.1"), naturalEndpoint.get());
     }
 
     @Test
@@ -124,12 +124,12 @@ public class ViewUtilsTest
         metadata.clearUnsafe();
 
         // DC1
-        metadata.updateNormalToken(new StringToken("A"), InetAddress.getByName("127.0.0.1"));
-        metadata.updateNormalToken(new StringToken("C"), InetAddress.getByName("127.0.0.2"));
+        metadata.updateNormalToken(new StringToken("A"), InetAddressAndPorts.getByName("127.0.0.1"));
+        metadata.updateNormalToken(new StringToken("C"), InetAddressAndPorts.getByName("127.0.0.2"));
 
         // DC2
-        metadata.updateNormalToken(new StringToken("B"), InetAddress.getByName("127.0.0.4"));
-        metadata.updateNormalToken(new StringToken("D"), InetAddress.getByName("127.0.0.5"));
+        metadata.updateNormalToken(new StringToken("B"), InetAddressAndPorts.getByName("127.0.0.4"));
+        metadata.updateNormalToken(new StringToken("D"), InetAddressAndPorts.getByName("127.0.0.5"));
 
         Map<String, String> replicationMap = new HashMap<>();
         replicationMap.put(ReplicationParams.CLASS, NetworkTopologyStrategy.class.getName());
@@ -141,9 +141,9 @@ public class ViewUtilsTest
         KeyspaceMetadata meta = KeyspaceMetadata.create("Keyspace1", KeyspaceParams.create(false, replicationMap));
         Schema.instance.setKeyspaceMetadata(meta);
 
-        Optional<InetAddress> naturalEndpoint = ViewUtils.getViewNaturalEndpoint("Keyspace1",
-                                                                       new StringToken("AB"),
-                                                                       new StringToken("BB"));
+        Optional<InetAddressAndPorts> naturalEndpoint = ViewUtils.getViewNaturalEndpoint("Keyspace1",
+                                                                                         new StringToken("AB"),
+                                                                                         new StringToken("BB"));
 
         Assert.assertFalse(naturalEndpoint.isPresent());
     }

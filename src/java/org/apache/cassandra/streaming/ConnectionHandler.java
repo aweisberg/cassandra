@@ -192,7 +192,7 @@ public class ConnectionHandler
         private void sendInitMessage() throws IOException
         {
             StreamInitMessage message = new StreamInitMessage(
-                    FBUtilities.getBroadcastAddress(),
+                    FBUtilities.getBroadcastAddressAndPorts(),
                     session.sessionIndex(),
                     session.planId(),
                     session.description(),

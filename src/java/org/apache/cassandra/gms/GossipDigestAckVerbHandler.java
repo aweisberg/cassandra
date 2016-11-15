@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.gms;
 
-import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +24,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
@@ -36,7 +36,7 @@ public class GossipDigestAckVerbHandler implements IVerbHandler<GossipDigestAck>
 
     public void doVerb(MessageIn<GossipDigestAck> message, int id)
     {
-        InetAddress from = message.from;
+        InetAddressAndPorts from = message.from;
         if (logger.isTraceEnabled())
             logger.trace("Received a GossipDigestAckMessage from {}", from);
         if (!Gossiper.instance.isEnabled() && !Gossiper.instance.isInShadowRound())
@@ -48,7 +48,7 @@ public class GossipDigestAckVerbHandler implements IVerbHandler<GossipDigestAck>
 
         GossipDigestAck gDigestAckMessage = message.payload;
         List<GossipDigest> gDigestList = gDigestAckMessage.getGossipDigestList();
-        Map<InetAddress, EndpointState> epStateMap = gDigestAckMessage.getEndpointStateMap();
+        Map<InetAddressAndPorts, EndpointState> epStateMap = gDigestAckMessage.getEndpointStateMap();
         logger.trace("Received ack with {} digests and {} states", gDigestList.size(), epStateMap.size());
 
         if (epStateMap.size() > 0)
@@ -68,10 +68,10 @@ public class GossipDigestAckVerbHandler implements IVerbHandler<GossipDigestAck>
         }
 
         /* Get the state required to send to this gossipee - construct GossipDigestAck2Message */
-        Map<InetAddress, EndpointState> deltaEpStateMap = new HashMap<InetAddress, EndpointState>();
+        Map<InetAddressAndPorts, EndpointState> deltaEpStateMap = new HashMap<InetAddressAndPorts, EndpointState>();
         for (GossipDigest gDigest : gDigestList)
         {
-            InetAddress addr = gDigest.getEndpoint();
+            InetAddressAndPorts addr = gDigest.getEndpoint();
             EndpointState localEpStatePtr = Gossiper.instance.getStateForVersionBiggerThan(addr, gDigest.getMaxVersion());
             if (localEpStatePtr != null)
                 deltaEpStateMap.put(addr, localEpStatePtr);

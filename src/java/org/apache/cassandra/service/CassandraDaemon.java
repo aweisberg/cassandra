@@ -60,6 +60,7 @@ import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.io.FSError;
 import org.apache.cassandra.io.sstable.CorruptSSTableException;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.metrics.CassandraMetricsRegistry;
 import org.apache.cassandra.metrics.DefaultNameFactory;
 import org.apache.cassandra.metrics.StorageMetrics;
@@ -231,6 +232,8 @@ public class CassandraDaemon
             }
         });
 
+        LegacySystemKeyspaceMigrator.migrate();
+
         // Populate token metadata before flushing, for token-aware sstable partitioning (#6696)
         StorageService.instance.populateTokenMetadata();
 
@@ -380,7 +383,7 @@ public class CassandraDaemon
 
         ScheduledExecutors.optionalTasks.schedule(viewRebuild, StorageService.RING_DELAY, TimeUnit.MILLISECONDS);
 
-        if (!FBUtilities.getBroadcastAddress().equals(InetAddress.getLoopbackAddress()))
+        if (!FBUtilities.getBroadcastAddressAndPorts().equals(InetAddressAndPorts.getLoopbackAddress()))
             Gossiper.waitToSettle();
 
         // schedule periodic background compaction task submission. this is simply a backstop against compactions stalling
@@ -432,7 +435,7 @@ public class CassandraDaemon
     	{
 	        try
 	        {
-	            logger.info("Hostname: {}", InetAddress.getLocalHost().getHostName());
+	            logger.info("Hostname: {}", InetAddress.getLocalHost().getHostName() + ":" + DatabaseDescriptor.getStoragePort() + ":" + DatabaseDescriptor.getSSLStoragePort());
 	        }
 	        catch (UnknownHostException e1)
 	        {

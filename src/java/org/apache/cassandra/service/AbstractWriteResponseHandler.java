@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.service;
 
-import java.net.InetAddress;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +33,7 @@ import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.exceptions.*;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.IAsyncCallbackWithFailure;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
@@ -44,15 +44,15 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
 
     private final SimpleCondition condition = new SimpleCondition();
     protected final Keyspace keyspace;
-    protected final Collection<InetAddress> naturalEndpoints;
+    protected final Collection<InetAddressAndPorts> naturalEndpoints;
     public final ConsistencyLevel consistencyLevel;
     protected final Runnable callback;
-    protected final Collection<InetAddress> pendingEndpoints;
+    protected final Collection<InetAddressAndPorts> pendingEndpoints;
     protected final WriteType writeType;
     private static final AtomicIntegerFieldUpdater<AbstractWriteResponseHandler> failuresUpdater
         = AtomicIntegerFieldUpdater.newUpdater(AbstractWriteResponseHandler.class, "failures");
     private volatile int failures = 0;
-    private final Map<InetAddress, RequestFailureReason> failureReasonByEndpoint;
+    private final Map<InetAddressAndPorts, RequestFailureReason> failureReasonByEndpoint;
     private final long queryStartNanoTime;
     private volatile boolean supportsBackPressure = true;
 
@@ -61,8 +61,8 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
      * @param queryStartNanoTime
      */
     protected AbstractWriteResponseHandler(Keyspace keyspace,
-                                           Collection<InetAddress> naturalEndpoints,
-                                           Collection<InetAddress> pendingEndpoints,
+                                           Collection<InetAddressAndPorts> naturalEndpoints,
+                                           Collection<InetAddressAndPorts> pendingEndpoints,
                                            ConsistencyLevel consistencyLevel,
                                            Runnable callback,
                                            WriteType writeType,
@@ -139,7 +139,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     /**
      * @return true if the message counts towards the totalBlockFor() threshold
      */
-    protected boolean waitingFor(InetAddress from)
+    protected boolean waitingFor(InetAddressAndPorts from)
     {
         return true;
     }
@@ -165,7 +165,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     }
 
     @Override
-    public void onFailure(InetAddress from, RequestFailureReason failureReason)
+    public void onFailure(InetAddressAndPorts from, RequestFailureReason failureReason)
     {
         logger.trace("Got failure from {}", from);
 

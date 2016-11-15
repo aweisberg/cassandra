@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.dht;
 
-import java.net.InetAddress;
 import java.util.*;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -36,6 +35,7 @@ import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.IFailureDetector;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
 import org.apache.cassandra.locator.IEndpointSnitch;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.StreamPlan;
@@ -54,10 +54,10 @@ public class RangeStreamer
     /* current token ring */
     private final TokenMetadata metadata;
     /* address of this node */
-    private final InetAddress address;
+    private final InetAddressAndPorts address;
     /* streaming description */
     private final String description;
-    private final Multimap<String, Map.Entry<InetAddress, Collection<Range<Token>>>> toFetch = HashMultimap.create();
+    private final Multimap<String, Map.Entry<InetAddressAndPorts, Collection<Range<Token>>>> toFetch = HashMultimap.create();
     private final Set<ISourceFilter> sourceFilters = new HashSet<>();
     private final StreamPlan streamPlan;
     private final boolean useStrictConsistency;
@@ -69,7 +69,7 @@ public class RangeStreamer
      */
     public static interface ISourceFilter
     {
-        public boolean shouldInclude(InetAddress endpoint);
+        public boolean shouldInclude(InetAddressAndPorts endpoint);
     }
 
     /**
@@ -85,7 +85,7 @@ public class RangeStreamer
             this.fd = fd;
         }
 
-        public boolean shouldInclude(InetAddress endpoint)
+        public boolean shouldInclude(InetAddressAndPorts endpoint)
         {
             return fd.isAlive(endpoint);
         }
@@ -105,7 +105,7 @@ public class RangeStreamer
             this.snitch = snitch;
         }
 
-        public boolean shouldInclude(InetAddress endpoint)
+        public boolean shouldInclude(InetAddressAndPorts endpoint)
         {
             return snitch.getDatacenter(endpoint).equals(sourceDc);
         }
@@ -116,9 +116,9 @@ public class RangeStreamer
      */
     public static class ExcludeLocalNodeFilter implements ISourceFilter
     {
-        public boolean shouldInclude(InetAddress endpoint)
+        public boolean shouldInclude(InetAddressAndPorts endpoint)
         {
-            return !FBUtilities.getBroadcastAddress().equals(endpoint);
+            return !FBUtilities.getBroadcastAddressAndPorts().equals(endpoint);
         }
     }
 
@@ -127,14 +127,14 @@ public class RangeStreamer
      */
     public static class WhitelistedSourcesFilter implements ISourceFilter
     {
-        private final Set<InetAddress> whitelistedSources;
+        private final Set<InetAddressAndPorts> whitelistedSources;
 
-        public WhitelistedSourcesFilter(Set<InetAddress> whitelistedSources)
+        public WhitelistedSourcesFilter(Set<InetAddressAndPorts> whitelistedSources)
         {
             this.whitelistedSources = whitelistedSources;
         }
 
-        public boolean shouldInclude(InetAddress endpoint)
+        public boolean shouldInclude(InetAddressAndPorts endpoint)
         {
             return whitelistedSources.contains(endpoint);
         }
@@ -142,7 +142,7 @@ public class RangeStreamer
 
     public RangeStreamer(TokenMetadata metadata,
                          Collection<Token> tokens,
-                         InetAddress address,
+                         InetAddressAndPorts address,
                          String description,
                          boolean useStrictConsistency,
                          IEndpointSnitch snitch,
@@ -173,16 +173,16 @@ public class RangeStreamer
      */
     public void addRanges(String keyspaceName, Collection<Range<Token>> ranges)
     {
-        Multimap<Range<Token>, InetAddress> rangesForKeyspace = useStrictSourcesForRanges(keyspaceName)
+        Multimap<Range<Token>, InetAddressAndPorts> rangesForKeyspace = useStrictSourcesForRanges(keyspaceName)
                 ? getAllRangesWithStrictSourcesFor(keyspaceName, ranges) : getAllRangesWithSourcesFor(keyspaceName, ranges);
 
         if (logger.isTraceEnabled())
         {
-            for (Map.Entry<Range<Token>, InetAddress> entry : rangesForKeyspace.entries())
+            for (Map.Entry<Range<Token>, InetAddressAndPorts> entry : rangesForKeyspace.entries())
                 logger.trace("{}: range {} exists on {}", description, entry.getKey(), entry.getValue());
         }
 
-        for (Map.Entry<InetAddress, Collection<Range<Token>>> entry : getRangeFetchMap(rangesForKeyspace, sourceFilters, keyspaceName, useStrictConsistency).asMap().entrySet())
+        for (Map.Entry<InetAddressAndPorts, Collection<Range<Token>>> entry : getRangeFetchMap(rangesForKeyspace, sourceFilters, keyspaceName, useStrictConsistency).asMap().entrySet())
         {
             if (logger.isTraceEnabled())
             {
@@ -211,19 +211,19 @@ public class RangeStreamer
      *
      * @throws java.lang.IllegalStateException when there is no source to get data streamed
      */
-    private Multimap<Range<Token>, InetAddress> getAllRangesWithSourcesFor(String keyspaceName, Collection<Range<Token>> desiredRanges)
+    private Multimap<Range<Token>, InetAddressAndPorts> getAllRangesWithSourcesFor(String keyspaceName, Collection<Range<Token>> desiredRanges)
     {
         AbstractReplicationStrategy strat = Keyspace.open(keyspaceName).getReplicationStrategy();
-        Multimap<Range<Token>, InetAddress> rangeAddresses = strat.getRangeAddresses(metadata.cloneOnlyTokenMap());
+        Multimap<Range<Token>, InetAddressAndPorts> rangeAddresses = strat.getRangeAddresses(metadata.cloneOnlyTokenMap());
 
-        Multimap<Range<Token>, InetAddress> rangeSources = ArrayListMultimap.create();
+        Multimap<Range<Token>, InetAddressAndPorts> rangeSources = ArrayListMultimap.create();
         for (Range<Token> desiredRange : desiredRanges)
         {
             for (Range<Token> range : rangeAddresses.keySet())
             {
                 if (range.contains(desiredRange))
                 {
-                    List<InetAddress> preferred = snitch.getSortedListByProximity(address, rangeAddresses.get(range));
+                    List<InetAddressAndPorts> preferred = snitch.getSortedListByProximity(address, rangeAddresses.get(range));
                     rangeSources.putAll(desiredRange, preferred);
                     break;
                 }
@@ -243,30 +243,30 @@ public class RangeStreamer
      *
      * @throws java.lang.IllegalStateException when there is no source to get data streamed, or more than 1 source found.
      */
-    private Multimap<Range<Token>, InetAddress> getAllRangesWithStrictSourcesFor(String keyspace, Collection<Range<Token>> desiredRanges)
+    private Multimap<Range<Token>, InetAddressAndPorts> getAllRangesWithStrictSourcesFor(String keyspace, Collection<Range<Token>> desiredRanges)
     {
         assert tokens != null;
         AbstractReplicationStrategy strat = Keyspace.open(keyspace).getReplicationStrategy();
 
         // Active ranges
         TokenMetadata metadataClone = metadata.cloneOnlyTokenMap();
-        Multimap<Range<Token>, InetAddress> addressRanges = strat.getRangeAddresses(metadataClone);
+        Multimap<Range<Token>, InetAddressAndPorts> addressRanges = strat.getRangeAddresses(metadataClone);
 
         // Pending ranges
         metadataClone.updateNormalTokens(tokens, address);
-        Multimap<Range<Token>, InetAddress> pendingRangeAddresses = strat.getRangeAddresses(metadataClone);
+        Multimap<Range<Token>, InetAddressAndPorts> pendingRangeAddresses = strat.getRangeAddresses(metadataClone);
 
         // Collects the source that will have its range moved to the new node
-        Multimap<Range<Token>, InetAddress> rangeSources = ArrayListMultimap.create();
+        Multimap<Range<Token>, InetAddressAndPorts> rangeSources = ArrayListMultimap.create();
 
         for (Range<Token> desiredRange : desiredRanges)
         {
-            for (Map.Entry<Range<Token>, Collection<InetAddress>> preEntry : addressRanges.asMap().entrySet())
+            for (Map.Entry<Range<Token>, Collection<InetAddressAndPorts>> preEntry : addressRanges.asMap().entrySet())
             {
                 if (preEntry.getKey().contains(desiredRange))
                 {
-                    Set<InetAddress> oldEndpoints = Sets.newHashSet(preEntry.getValue());
-                    Set<InetAddress> newEndpoints = Sets.newHashSet(pendingRangeAddresses.get(desiredRange));
+                    Set<InetAddressAndPorts> oldEndpoints = Sets.newHashSet(preEntry.getValue());
+                    Set<InetAddressAndPorts> newEndpoints = Sets.newHashSet(pendingRangeAddresses.get(desiredRange));
 
                     // Due to CASSANDRA-5953 we can have a higher RF then we have endpoints.
                     // So we need to be careful to only be strict when endpoints == RF
@@ -281,14 +281,14 @@ public class RangeStreamer
             }
 
             // Validate
-            Collection<InetAddress> addressList = rangeSources.get(desiredRange);
+            Collection<InetAddressAndPorts> addressList = rangeSources.get(desiredRange);
             if (addressList == null || addressList.isEmpty())
                 throw new IllegalStateException("No sources found for " + desiredRange);
 
             if (addressList.size() > 1)
                 throw new IllegalStateException("Multiple endpoints found for " + desiredRange);
 
-            InetAddress sourceIp = addressList.iterator().next();
+            InetAddressAndPorts sourceIp = addressList.iterator().next();
             EndpointState sourceState = Gossiper.instance.getEndpointStateForEndpoint(sourceIp);
             if (Gossiper.instance.isEnabled() && (sourceState == null || !sourceState.isAlive()))
                 throw new RuntimeException("A node required to move the data consistently is down (" + sourceIp + "). " +
@@ -305,17 +305,17 @@ public class RangeStreamer
      * @param keyspace keyspace name
      * @return Map of source endpoint to collection of ranges
      */
-    private static Multimap<InetAddress, Range<Token>> getRangeFetchMap(Multimap<Range<Token>, InetAddress> rangesWithSources,
+    private static Multimap<InetAddressAndPorts, Range<Token>> getRangeFetchMap(Multimap<Range<Token>, InetAddressAndPorts> rangesWithSources,
                                                                         Collection<ISourceFilter> sourceFilters, String keyspace,
                                                                         boolean useStrictConsistency)
     {
-        Multimap<InetAddress, Range<Token>> rangeFetchMapMap = HashMultimap.create();
+        Multimap<InetAddressAndPorts, Range<Token>> rangeFetchMapMap = HashMultimap.create();
         for (Range<Token> range : rangesWithSources.keySet())
         {
             boolean foundSource = false;
 
             outer:
-            for (InetAddress address : rangesWithSources.get(range))
+            for (InetAddressAndPorts address : rangesWithSources.get(range))
             {
                 for (ISourceFilter filter : sourceFilters)
                 {
@@ -323,7 +323,7 @@ public class RangeStreamer
                         continue outer;
                 }
 
-                if (address.equals(FBUtilities.getBroadcastAddress()))
+                if (address.equals(FBUtilities.getBroadcastAddressAndPorts()))
                 {
                     // If localhost is a source, we have found one, but we don't add it to the map to avoid streaming locally
                     foundSource = true;
@@ -355,7 +355,7 @@ public class RangeStreamer
         return rangeFetchMapMap;
     }
 
-    public static Multimap<InetAddress, Range<Token>> getWorkMap(Multimap<Range<Token>, InetAddress> rangesWithSourceTarget, String keyspace,
+    public static Multimap<InetAddressAndPorts, Range<Token>> getWorkMap(Multimap<Range<Token>, InetAddressAndPorts> rangesWithSourceTarget, String keyspace,
                                                                  IFailureDetector fd, boolean useStrictConsistency)
     {
         return getRangeFetchMap(rangesWithSourceTarget, Collections.<ISourceFilter>singleton(new FailureDetectorSourceFilter(fd)), keyspace, useStrictConsistency);
@@ -363,18 +363,18 @@ public class RangeStreamer
 
     // For testing purposes
     @VisibleForTesting
-    Multimap<String, Map.Entry<InetAddress, Collection<Range<Token>>>> toFetch()
+    Multimap<String, Map.Entry<InetAddressAndPorts, Collection<Range<Token>>>> toFetch()
     {
         return toFetch;
     }
 
     public StreamResultFuture fetchAsync()
     {
-        for (Map.Entry<String, Map.Entry<InetAddress, Collection<Range<Token>>>> entry : toFetch.entries())
+        for (Map.Entry<String, Map.Entry<InetAddressAndPorts, Collection<Range<Token>>>> entry : toFetch.entries())
         {
             String keyspace = entry.getKey();
-            InetAddress source = entry.getValue().getKey();
-            InetAddress preferred = SystemKeyspace.getPreferredIP(source);
+            InetAddressAndPorts source = entry.getValue().getKey();
+            InetAddressAndPorts preferred = SystemKeyspace.getPreferredIP(source);
             Collection<Range<Token>> ranges = entry.getValue().getValue();
 
             // filter out already streamed ranges

@@ -17,13 +17,13 @@
  */
 package org.apache.cassandra.dht;
 
-import java.net.InetAddress;
 import java.util.Collections;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.streaming.DefaultConnectionFactory;
 import org.apache.cassandra.streaming.StreamEvent;
 import org.apache.cassandra.streaming.StreamSession;
@@ -49,7 +49,7 @@ public class StreamStateStoreTest
         Token.TokenFactory factory = p.getTokenFactory();
         Range<Token> range = new Range<>(factory.fromString("0"), factory.fromString("100"));
 
-        InetAddress local = FBUtilities.getBroadcastAddress();
+        InetAddressAndPorts local = FBUtilities.getBroadcastAddressAndPorts();
         StreamSession session = new StreamSession(local, local, new DefaultConnectionFactory(), 0, true, false);
         session.addStreamRequest("keyspace1", Collections.singleton(range), Collections.singleton("cf"), 0);
 

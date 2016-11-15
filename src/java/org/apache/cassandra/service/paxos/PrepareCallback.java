@@ -21,7 +21,6 @@ package org.apache.cassandra.service.paxos;
  */
 
 
-import java.net.InetAddress;
 import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,6 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.utils.UUIDGen;
 
@@ -47,7 +47,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
     public Commit mostRecentInProgressCommit;
     public Commit mostRecentInProgressCommitWithUpdate;
 
-    private final Map<InetAddress, Commit> commitsByReplica = new ConcurrentHashMap<InetAddress, Commit>();
+    private final Map<InetAddressAndPorts, Commit> commitsByReplica = new ConcurrentHashMap<>();
 
     public PrepareCallback(DecoratedKey key, CFMetaData metadata, int targets, ConsistencyLevel consistency, long queryStartNanoTime)
     {
@@ -89,7 +89,7 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         latch.countDown();
     }
 
-    public Iterable<InetAddress> replicasMissingMostRecentCommit(CFMetaData metadata, int nowInSec)
+    public Iterable<InetAddressAndPorts> replicasMissingMostRecentCommit(CFMetaData metadata, int nowInSec)
     {
         // In general, we need every replicas that have answered to the prepare (a quorum) to agree on the MRC (see
         // coment in StorageProxy.beginAndRepairPaxos(), but basically we need to make sure at least a quorum of nodes
@@ -104,9 +104,9 @@ public class PrepareCallback extends AbstractPaxosCallback<PrepareResponse>
         if (UUIDGen.unixTimestampInSec(mostRecentCommit.ballot) + paxosTtlSec < nowInSec)
             return Collections.emptySet();
 
-        return Iterables.filter(commitsByReplica.keySet(), new Predicate<InetAddress>()
+        return Iterables.filter(commitsByReplica.keySet(), new Predicate<InetAddressAndPorts>()
         {
-            public boolean apply(InetAddress inetAddress)
+            public boolean apply(InetAddressAndPorts inetAddress)
             {
                 return (!commitsByReplica.get(inetAddress).ballot.equals(mostRecentCommit.ballot));
             }

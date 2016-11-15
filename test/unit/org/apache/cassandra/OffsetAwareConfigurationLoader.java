@@ -20,8 +20,11 @@ package org.apache.cassandra;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.YamlConfigurationLoader;
 import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 
 import java.io.File;
+import java.net.Inet6Address;
+import java.net.UnknownHostException;
 
 
 public class OffsetAwareConfigurationLoader extends YamlConfigurationLoader
@@ -51,6 +54,39 @@ public class OffsetAwareConfigurationLoader extends YamlConfigurationLoader
 
         config.native_transport_port += offset;
         config.storage_port += offset;
+        config.ssl_storage_port += offset;
+
+        //Rewrite the seed ports string
+        String[] hosts = config.seed_provider.parameters.get("seeds").split(",", -1);
+        StringBuilder sb = new StringBuilder();
+        boolean firstHost = true;
+        for (String host : hosts)
+        {
+            try
+            {
+                InetAddressAndPorts address = InetAddressAndPorts.getByName(host.trim());
+                if (address.address instanceof Inet6Address)
+                {
+                     sb.append('[').append(address.address.getHostAddress()).append(']');
+                }
+                else
+                {
+                    sb.append(address.address.getHostAddress());
+                }
+                sb.append(':').append(address.port + offset).append(':').append(address.sslport + offset);
+                if (firstHost)
+                {
+                    firstHost = false;
+                    continue;
+                }
+                sb.append(", ");
+            }
+            catch (UnknownHostException e)
+            {
+                throw new ConfigurationException("Error in OffsetAwareConfigurationLoader reworking seed list", e);
+            }
+        }
+        config.seed_provider.parameters.put("seeds", sb.toString());
 
         config.commitlog_directory += sep + offset;
         config.saved_caches_directory += sep + offset;

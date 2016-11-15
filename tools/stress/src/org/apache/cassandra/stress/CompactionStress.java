@@ -44,6 +44,7 @@ import org.apache.cassandra.io.sstable.Component;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.locator.InetAddressAndPorts;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.stress.generate.PartitionGenerator;
@@ -181,7 +182,7 @@ public abstract class CompactionStress implements Runnable
         tokenMetadata.clearUnsafe();
         for (int i = 1; i <= numTokens; i++)
         {
-            InetAddress addr = FBUtilities.getBroadcastAddress();
+            InetAddressAndPorts addr = FBUtilities.getBroadcastAddressAndPorts();
             List<Token> tokens = Lists.newArrayListWithCapacity(numTokens);
             for (int j = 0; j < numTokens; ++j)
                 tokens.add(p.getRandomToken(random));

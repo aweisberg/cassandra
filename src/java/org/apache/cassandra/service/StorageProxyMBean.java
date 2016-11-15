@@ -60,7 +60,8 @@ public interface StorageProxyMBean
     public long getReadRepairRepairedBackground();
 
     /** Returns each live node's schema version */
-    public Map<String, List<String>> getSchemaVersions();
+    @Deprecated public Map<String, List<String>> getSchemaVersions();
+    public Map<String, List<String>> getSchemaVersionsWithPorts();
 
     public int getNumberOfTables();
 }

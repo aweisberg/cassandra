@@ -19,7 +19,6 @@
 package org.apache.cassandra.locator;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.util.*;
 
 import org.junit.BeforeClass;
@@ -41,7 +40,7 @@ public class DynamicEndpointSnitchTest
         DatabaseDescriptor.daemonInitialization();
     }
 
-    private static void setScores(DynamicEndpointSnitch dsnitch,  int rounds, List<InetAddress> hosts, Integer... scores) throws InterruptedException
+    private static void setScores(DynamicEndpointSnitch dsnitch,  int rounds, List<InetAddressAndPorts> hosts, Integer... scores) throws InterruptedException
     {
         for (int round = 0; round < rounds; round++)
         {
@@ -58,16 +57,16 @@ public class DynamicEndpointSnitchTest
         StorageService.instance.unsafeInitialize();
         SimpleSnitch ss = new SimpleSnitch();
         DynamicEndpointSnitch dsnitch = new DynamicEndpointSnitch(ss, String.valueOf(ss.hashCode()));
-        InetAddress self = FBUtilities.getBroadcastAddress();
-        InetAddress host1 = InetAddress.getByName("127.0.0.2");
-        InetAddress host2 = InetAddress.getByName("127.0.0.3");
-        InetAddress host3 = InetAddress.getByName("127.0.0.4");
-        InetAddress host4 = InetAddress.getByName("127.0.0.5");
-        List<InetAddress> hosts = Arrays.asList(host1, host2, host3);
+        InetAddressAndPorts self = FBUtilities.getBroadcastAddressAndPorts();
+        InetAddressAndPorts host1 = InetAddressAndPorts.getByName("127.0.0.2");
+        InetAddressAndPorts host2 = InetAddressAndPorts.getByName("127.0.0.3");
+        InetAddressAndPorts host3 = InetAddressAndPorts.getByName("127.0.0.4");
+        InetAddressAndPorts host4 = InetAddressAndPorts.getByName("127.0.0.5");
+        List<InetAddressAndPorts> hosts = Arrays.asList(host1, host2, host3);
 
         // first, make all hosts equal
         setScores(dsnitch, 1, hosts, 10, 10, 10);
-        List<InetAddress> order = Arrays.asList(host1, host2, host3);
+        List<InetAddressAndPorts> order = Arrays.asList(host1, host2, host3);
         assertEquals(order, dsnitch.getSortedListByProximity(self, Arrays.asList(host1, host2, host3)));
 
         // make host1 a little worse
