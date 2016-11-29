@@ -1194,3 +1194,28 @@ back_pressure_strategy:
         - high_ratio: 0.90
           factor: 5
           flow: FAST
+
+# Strategy to use for coalescing messages in OutboundTcpConnection.
+# Can be fixed, movingaverage, timehorizon, disabled. Setting is case and leading/trailing
+# whitespace insensitive. You can also specify a subclass of CoalescingStrategies.CoalescingStrategy by name.
+# otc_coalescing_strategy = "TIMEHORIZON"
+
+# How many microseconds to wait for coalescing. For fixed strategy this is the amount of time after the first
+# messgae is received before it will be sent with any accompanying messages. For moving average this is the
+# maximum amount of time that will be waited as well as the interval at which messages must arrive on average
+# for coalescing to be enabled.
+#
+# This setting is for intra-DC coalescing, but is also the default for inter-DC coalescing if
+# otc_coalescing_window_inter_dc_us is not specified or does not contain a matching value or a 'DEFAULT' value.
+# If this value is set to 0 it will disable intra-DC message coalescing, but not inter-DC coalescing which
+# can still be specified via otc_coalescing_window_inter_dc_us.
+# otc_coalescing_window_us = 200
+
+# Map from DC name to the coalescing window for connections to that DC in microseconds.
+# There is a special key called 'DEFAULT' which can be used to specify the coalescing window
+# for all DCs that aren't found in the map.
+#
+# All keys are case and whitespace sensitive including DC names and the special key named 'DEFAULT'
+# Specifying a window of 0 will disable coalescing for the specified DC.
+# otc_coalescing_window_inter_dc_us:
+#    'DEFAULT': 400

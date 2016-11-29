@@ -82,10 +82,16 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     private static final String BUFFER_SIZE_PROPERTY = PREFIX + "otc_buffer_size";
     private static final int BUFFER_SIZE = Integer.getInteger(BUFFER_SIZE_PROPERTY, 1024 * 64);
 
-    private static CoalescingStrategy newCoalescingStrategy(String displayName)
+    private static CoalescingStrategy newCoalescingStrategy(String displayName, String dc)
     {
-        return CoalescingStrategies.newCoalescingStrategy(DatabaseDescriptor.getOtcCoalescingStrategy(),
-                                                          DatabaseDescriptor.getOtcCoalescingWindow(),
+        int coalescingWindow = DatabaseDescriptor.getOtcCoalescingWindow(dc);
+        String strategy = coalescingWindow == 0 ? "DISABLED" : DatabaseDescriptor.getOtcCoalescingStrategy();
+        logger.debug("Construcing coalescing strategy " + strategy + " for " + displayName + " window " + coalescingWindow + "us");
+        //Allowing the window being 0 to be synonymous with DISABLED makes it possible to disable coalescing
+        //intra-DC, but still have coalescing inter-DC. It's also possible to disable coalescing
+        //for specific remote DCs.
+        return CoalescingStrategies.newCoalescingStrategy(strategy,
+                                                          coalescingWindow,
                                                           logger,
                                                           displayName);
     }
@@ -104,10 +110,10 @@ public class OutboundTcpConnection extends FastThreadLocalThread
             break;
             default:
                 //Check that it can be loaded
-                newCoalescingStrategy("dummy");
+                newCoalescingStrategy("dummy", null);
         }
 
-        int coalescingWindow = DatabaseDescriptor.getOtcCoalescingWindow();
+        int coalescingWindow = DatabaseDescriptor.getOtcCoalescingWindow(null);
         if (coalescingWindow != Config.otc_coalescing_window_us_default)
             logger.info("OutboundTcpConnection coalescing window set to {}μs", coalescingWindow);
 
@@ -141,7 +147,8 @@ public class OutboundTcpConnection extends FastThreadLocalThread
     {
         super("MessagingService-Outgoing-" + pool.endPoint() + "-" + name);
         this.poolReference = pool;
-        cs = newCoalescingStrategy(pool.endPoint().getHostAddress());
+        cs = newCoalescingStrategy(pool.endPoint().getHostAddress(),
+                                   isLocalDC(pool.endPoint()) ? null : DatabaseDescriptor.getEndpointSnitch().getDatacenter(pool.endPoint()));
 
         // We want to use the most precise version we know because while there is version detection on connect(),
         // the target version might be accessed by the pool (in getConnection()) before we actually connect (as we

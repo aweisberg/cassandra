@@ -308,6 +308,15 @@ public class Config
     public static final int otc_coalescing_window_us_default = 200;
     public int otc_coalescing_window_us = otc_coalescing_window_us_default;
 
+    /*
+     * Map from DC name to the coalescing window for connections to that DC in microseconds.
+     * There is a special key called "DEFAULT" which can be used to specify the coalescing window
+     * for all DCs that aren't found in the map.
+     *
+     * All keys are case and whitespace sensitive including DC names and the special key named "DEFAULT"
+     */
+    public Map<String, Integer> otc_coalescing_window_inter_dc_us;
+
     public int windows_timer_interval = 0;
 
     /**

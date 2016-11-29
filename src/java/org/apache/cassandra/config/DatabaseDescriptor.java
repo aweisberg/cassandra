@@ -2251,9 +2251,44 @@ public class DatabaseDescriptor
         return conf.otc_coalescing_strategy;
     }
 
-    public static int getOtcCoalescingWindow()
+    public static Integer getOtcCoalescingWindow(String dc)
     {
-        return conf.otc_coalescing_window_us;
+        //If it's the local DC
+        if (dc == null)
+        {
+            logger.debug("Local DC, using intra-DC coalescing window of " + conf.otc_coalescing_window_us + "us");
+            return conf.otc_coalescing_window_us;
+        }
+
+        //No values for inter dc are provided return intra-dc value
+        if (conf.otc_coalescing_window_inter_dc_us == null)
+        {
+            logger.debug("No inter-DC coalescing windows specified. Using intra-DC window of " + conf.otc_coalescing_window_us + "us");
+            return conf.otc_coalescing_window_us;
+        }
+
+        //See if there is a value for the DC
+        Integer coalescingWindow = conf.otc_coalescing_window_inter_dc_us.get(dc);
+        if (coalescingWindow == null)
+        {
+            //See if a default inter-dc value was provided
+            coalescingWindow = conf.otc_coalescing_window_inter_dc_us.get("DEFAULT");
+            if (coalescingWindow == null)
+            {
+                //Couldn't find a match, return the intra-dc value
+                coalescingWindow = conf.otc_coalescing_window_us;
+                logger.debug("Unable to find a matching DC for " + dc + " using intra-DC coalescing window of " + coalescingWindow + "us");
+            }
+            else
+            {
+                logger.debug("Using default inter-DC coalescing window of " + coalescingWindow + "us for DC " + dc);
+            }
+        }
+        else
+        {
+            logger.debug("Using specified inter-DC coalescing window of " + coalescingWindow + "us for DC " + dc);
+        }
+        return coalescingWindow;
     }
 
     public static int getWindowsTimerInterval()
