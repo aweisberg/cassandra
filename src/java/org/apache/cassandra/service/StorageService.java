@@ -2569,7 +2569,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         logger.info("Removing tokens {} for {}", tokens, endpoint);
 
         UUID hostId = tokenMetadata.getHostId(endpoint);
-        if (hostId != null)
+        if (hostId != null && tokenMetadata.isMember(endpoint))
             HintsService.instance.excise(hostId);
 
         removeEndpoint(endpoint);

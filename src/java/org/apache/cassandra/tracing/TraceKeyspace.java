@@ -49,6 +49,8 @@ public final class TraceKeyspace
                 + "command text,"
                 + "client inet,"
                 + "coordinator inet,"
+                + "coordinator_port int,"
+                + "coordinator_sslport int,"
                 + "duration int,"
                 + "parameters map<text, text>,"
                 + "request text,"
@@ -63,6 +65,8 @@ public final class TraceKeyspace
                 + "event_id timeuuid,"
                 + "activity text,"
                 + "source inet,"
+                + "source_port int,"
+                + "source_sslport int,"
                 + "source_elapsed int,"
                 + "thread text,"
                 + "PRIMARY KEY ((session_id), event_id))");
@@ -90,7 +94,9 @@ public final class TraceKeyspace
         builder.row()
                .ttl(ttl)
                .add("client", client)
-               .add("coordinator", FBUtilities.getJustBroadcastAddress())
+               .add("coordinator", FBUtilities.getBroadcastAddressAndPorts().address)
+               .add("coordinator_port", FBUtilities.getBroadcastAddressAndPorts().port)
+               .add("coordinator_sslport", FBUtilities.getBroadcastAddressAndPorts().sslport)
                .add("request", request)
                .add("started_at", new Date(startedAt))
                .add("command", command)
@@ -115,7 +121,9 @@ public final class TraceKeyspace
                                               .ttl(ttl);
 
         rowBuilder.add("activity", message)
-                  .add("source", FBUtilities.getJustBroadcastAddress())
+                  .add("source", FBUtilities.getBroadcastAddressAndPorts().address)
+                  .add("source_port", FBUtilities.getBroadcastAddressAndPorts().port)
+                  .add("source_sslport", FBUtilities.getBroadcastAddressAndPorts().sslport)
                   .add("thread", threadName);
 
         if (elapsed >= 0)
