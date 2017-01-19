@@ -609,14 +609,6 @@ public abstract class CBUtil
             {
                 switch (size)
                 {
-                    //The original pre-4.0 serialiation of just an address
-                    case 4:
-                    case 16:
-                    {
-                        bytes = new byte[size];
-                        cb.readBytes(bytes);
-                        return InetAddressAndPorts.getByAddress(bytes);
-                    }
                     //Address and two ports
                     case 8:
                     case 20:

@@ -84,8 +84,7 @@ public final class SystemDistributedKeyspace
                      + "coordinator_port int,"
                      + "coordinator_sslport int,"
                      + "participants set<inet>,"
-                     + "participants_port map<inet,int>,"
-                     + "participants_sslport map<inet,int>,"
+                     + "participants_v2 set<text>,"
                      + "exception_message text,"
                      + "exception_stacktrace text,"
                      + "status text,"
@@ -187,28 +186,17 @@ public final class SystemDistributedKeyspace
     {
         InetAddressAndPorts coordinator = FBUtilities.getBroadcastAddressAndPorts();
         Set<String> participants = Sets.newHashSet();
-        StringBuilder ports = new StringBuilder();
-        StringBuilder sslports = new StringBuilder();
+        Set<String> participants_v2 = Sets.newHashSet();
 
-        boolean first = true;
         for (InetAddressAndPorts endpoint : endpoints)
         {
-            String hostAddress = endpoint.getHostAddress(false);
-            participants.add(hostAddress);
-            if (!first)
-            {
-                ports.append(", ");
-                sslports.append(", ");
-            }
-            first = false;
-
-            ports.append('\'').append(hostAddress).append("':").append(endpoint.port);
-            sslports.append('\'').append(hostAddress).append("':").append(endpoint.sslport);
+            participants.add(endpoint.getHostAddress(false));
+            participants_v2.add(endpoint.toString());
         }
 
         String query =
-                "INSERT INTO %s.%s (keyspace_name, columnfamily_name, id, parent_id, range_begin, range_end, coordinator, coordinator_port, coordinator_sslport, participants, participants_port, participants_sslport, status, started_at) " +
-                        "VALUES (   '%s',          '%s',              %s, %s,        '%s',        '%s',      '%s',        %d,               %d,                  { '%s' },     {%s},              {%s},                 '%s',   toTimestamp(now()))";
+                "INSERT INTO %s.%s (keyspace_name, columnfamily_name, id, parent_id, range_begin, range_end, coordinator, coordinator_port, coordinator_sslport, participants, participants_v2, status, started_at) " +
+                        "VALUES (   '%s',          '%s',              %s, %s,        '%s',        '%s',      '%s',        %d,               %d,                  { '%s' },     { '%s' },             '%s',   toTimestamp(now()))";
 
         for (String cfname : cfnames)
         {
@@ -225,8 +213,7 @@ public final class SystemDistributedKeyspace
                                               coordinator.port,
                                               coordinator.sslport,
                                               Joiner.on("', '").join(participants),
-                                              ports,
-                                              sslports,
+                                              Joiner.on("', '").join(participants_v2),
                                               RepairState.STARTED.toString());
                 processSilent(fmtQry);
             }
