@@ -115,6 +115,8 @@
  * Restore resumable hints delivery (CASSANDRA-11960)
  * Properly report LWT contention (CASSANDRA-12626)
 Merged from 3.0:
+3.0.11
+ * Fix NPE in StorageService.excise() (CASSANDRA-13163)
  * Better error when modifying function permissions without explicit keyspace (CASSANDRA-12925)
  * Indexer is not correctly invoked when building indexes over sstables (CASSANDRA-13075)
  * Read repair is not blocking repair to finish in foreground repair (CASSANDRA-13115)
