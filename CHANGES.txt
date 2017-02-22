@@ -1,4 +1,5 @@
 4.0
+ * Fix "multiple versions of ant detected..." when running ant test (CASSANDRA-13232)
  * Adds the ability to use uncompressed chunks in compressed files (CASSANDRA-10520)
  * Don't flush sstables when streaming for incremental repair (CASSANDRA-13226)
  * Remove unused method (CASSANDRA-13227)
