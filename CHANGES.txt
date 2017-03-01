@@ -1,4 +1,5 @@
 3.11.0
+ * Expire OutboundTcpConnection messages by a single Thread (CASSANDRA-13265)
  * Use write lock not read lock for removing sstables from compaction strategies. (CASSANDRA-13422)
  * Use corePoolSize equal to maxPoolSize in JMXEnabledThreadPoolExecutors (CASSANDRA-13329)
  * Avoid rebuilding SASI indexes containing no values (CASSANDRA-12962)
@@ -958,6 +959,7 @@ Merged from 2.1:
 
 
 3.0
+ * Expire OutboundTcpConnection messages by a single Thread (CASSANDRA-13265)
  * Fix AssertionError while flushing memtable due to materialized views
    incorrectly inserting empty rows (CASSANDRA-10614)
  * Store UDA initcond as CQL literal in the schema table, instead of a blob (CASSANDRA-10650)
