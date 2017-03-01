@@ -33,6 +33,7 @@ Merged from 2.1:
  * Fix ParseError unhashable type list in cqlsh copy from (CASSANDRA-13364)
 
 3.0.12
+ * Expire OutboundTcpConnection messages by a single Thread (CASSANDRA-13265)
  * Prevent data loss on upgrade 2.1 - 3.0 by adding component separator to LogRecord absolute path (CASSANDRA-13294)
  * Improve testing on macOS by eliminating sigar logging (CASSANDRA-13233)
  * Cqlsh copy-from should error out when csv contains invalid data for collections (CASSANDRA-13071)
