@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
+import javax.xml.crypto.Data;
 
 import com.google.common.base.Predicate;
 import com.google.common.cache.CacheLoader;
@@ -561,9 +562,16 @@ public class StorageProxy implements StorageProxyMBean
                     MessagingService.instance().sendOneWay(message, destination);
                 }
             }
-            else if (shouldHint)
+            else
             {
-                submitHint(proposal.makeMutation(), destination, null);
+                if (responseHandler != null)
+                {
+                    responseHandler.expired();
+                }
+                if (shouldHint)
+                {
+                    submitHint(proposal.makeMutation(), destination, null);
+                }
             }
         }
 
@@ -1257,6 +1265,8 @@ public class StorageProxy implements StorageProxyMBean
             }
             else
             {
+                //Immediately mark the response as expired since the request will not be sent
+                responseHandler.expired();
                 if (shouldHint(destination))
                 {
                     if (endpointsToHint == null)
@@ -2773,5 +2783,17 @@ public class StorageProxy implements StorageProxyMBean
     public int getNumberOfTables()
     {
         return Schema.instance.getNumberOfTables();
+    }
+
+    public String getIdealConsistencyLevel()
+    {
+        return DatabaseDescriptor.getIdealConsistencyLevel().toString();
+    }
+
+    public String setIdealConsistencyLevel(String cl)
+    {
+        ConsistencyLevel original = DatabaseDescriptor.getIdealConsistencyLevel();
+        DatabaseDescriptor.setIdealConsistencyLevel(ConsistencyLevel.valueOf(cl.trim().toUpperCase()));
+        return original.toString();
     }
 }
