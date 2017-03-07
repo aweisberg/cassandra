@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
-import javax.xml.crypto.Data;
 
 import com.google.common.base.Predicate;
 import com.google.common.cache.CacheLoader;

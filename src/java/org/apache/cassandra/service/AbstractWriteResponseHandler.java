@@ -275,6 +275,9 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
             if (!condition.isSignaled())
             {
                 keyspace.metric.writeFailedIdealCL.mark();
+            }
+            else
+            {
                 keyspace.metric.idealCLWriteLatency.addNano(System.nanoTime() - queryStartNanoTime);
             }
         }
