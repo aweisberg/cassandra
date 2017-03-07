@@ -94,6 +94,8 @@ public class KeyspaceMetrics
     public final LatencyMetrics casCommit;
     /** Writes failed ideal consistency **/
     public final Meter writeFailedIdealCL;
+    /** Ideal CL write latency metrics */
+    public final LatencyMetrics idealCLWriteLatency;
 
     public final MetricNameFactory factory;
     private Keyspace keyspace;
@@ -240,6 +242,7 @@ public class KeyspaceMetrics
         casPropose = new LatencyMetrics(factory, "CasPropose");
         casCommit = new LatencyMetrics(factory, "CasCommit");
         writeFailedIdealCL = Metrics.meter(factory.createMetricName("WriteFailedIdealCL"));
+        idealCLWriteLatency = new LatencyMetrics(factory, "IdealCLWrite");
     }
 
     /**
@@ -255,6 +258,7 @@ public class KeyspaceMetrics
         readLatency.release();
         writeLatency.release();
         rangeLatency.release();
+        idealCLWriteLatency.release();
     }
 
     /**
