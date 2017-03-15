@@ -371,10 +371,18 @@ public class StorageProxy implements StorageProxyMBean
         // Note that we fake an impossible number of required nodes in the unavailable exception
         // to nail home the point that it's an impossible operation no matter how many nodes are live.
         if (pendingEndpoints.size() > 1)
-            throw new UnavailableException(String.format("Cannot perform LWT operation as there is more than one (%d) pending range movement", pendingEndpoints.size()),
-                                           consistencyForPaxos,
-                                           participants + 1,
-                                           liveEndpoints.size());
+        {
+            //Host replacements shouldn't count as a pending range movement since it's not a movement.
+            int replacements = 0;
+            for (InetAddress endpoint : pendingEndpoints)
+                if (StorageService.instance.getTokenMetadata().getReplacingNode(endpoint).isPresent())
+                    replacements++;
+            if (pendingEndpoints.size() - replacements > 1)
+                throw new UnavailableException(String.format("Cannot perform LWT operation as there is more than one (%d) pending range movement", pendingEndpoints.size()),
+                                               consistencyForPaxos,
+                                               participants + 1,
+                                               liveEndpoints.size());
+        }
 
         return Pair.create(liveEndpoints, requiredParticipants);
     }
