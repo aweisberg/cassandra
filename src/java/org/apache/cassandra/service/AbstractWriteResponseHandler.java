@@ -44,7 +44,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     protected static final Logger logger = LoggerFactory.getLogger(AbstractWriteResponseHandler.class);
 
     //Count down until all responses and expirations have occured before deciding whether the ideal CL was reached.
-    private final AtomicInteger responsesAndExpirations;
+    private AtomicInteger responsesAndExpirations;
     private final SimpleCondition condition = new SimpleCondition();
     protected final Keyspace keyspace;
     protected final Collection<InetAddress> naturalEndpoints;
@@ -87,7 +87,6 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
         this.writeType = writeType;
         this.failureReasonByEndpoint = new ConcurrentHashMap<>();
         this.queryStartNanoTime = queryStartNanoTime;
-        responsesAndExpirations = new AtomicInteger(naturalEndpoints.size() + pendingEndpoints.size());
     }
 
     public void get() throws WriteTimeoutException, WriteFailureException
@@ -137,6 +136,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     public void setIdealCLResponseHandler(AbstractWriteResponseHandler handler)
     {
         this.idealCLDelegate = handler;
+        idealCLDelegate.responsesAndExpirations = new AtomicInteger(naturalEndpoints.size() + pendingEndpoints.size());
     }
 
     /**
