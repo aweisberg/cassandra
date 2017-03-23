@@ -45,6 +45,8 @@
  * Add histogram for delay to deliver hints (CASSANDRA-13234)
 
 
+3.11.1
+ * Default logging we ship will incorrectly print "?:?" for "%F:%L" pattern (CASSANDRA-13317)
 3.11.0
  * Possible AssertionError in UnfilteredRowIteratorWithLowerBound (CASSANDRA-13366)
  * Support unaligned memory access for AArch64 (CASSANDRA-13326)
