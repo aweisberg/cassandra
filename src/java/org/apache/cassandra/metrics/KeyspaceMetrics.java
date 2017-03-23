@@ -97,6 +97,10 @@ public class KeyspaceMetrics
     public final Counter writeFailedIdealCL;
     /** Ideal CL write latency metrics */
     public final LatencyMetrics idealCLWriteLatency;
+    /** Speculative retries **/
+    public final Counter speculativeRetries;
+    /** Successful speculative retries **/
+    public final Counter failedSpeculativeRetries;
 
     public final MetricNameFactory factory;
     private Keyspace keyspace;
@@ -244,6 +248,21 @@ public class KeyspaceMetrics
         casCommit = new LatencyMetrics(factory, "CasCommit");
         writeFailedIdealCL = Metrics.counter(factory.createMetricName("WriteFailedIdealCL"));
         idealCLWriteLatency = new LatencyMetrics(factory, "IdealCLWrite");
+
+        speculativeRetries = createKeyspaceCounter("SpeculativeRetries", new MetricValue()
+        {
+            public Long getValue(TableMetrics metric)
+            {
+                return metric.speculativeRetries.getCount();
+            }
+        });
+        failedSpeculativeRetries = createKeyspaceCounter("FailedSpeculativeRetries", new MetricValue()
+        {
+            public Long getValue(TableMetrics metric)
+            {
+                return metric.failedSpeculativeRetries.getCount();
+            }
+        });
     }
 
     /**
@@ -287,6 +306,30 @@ public class KeyspaceMetrics
         return Metrics.register(factory.createMetricName(name), new Gauge<Long>()
         {
             public Long getValue()
+            {
+                long sum = 0;
+                for (ColumnFamilyStore cf : keyspace.getColumnFamilyStores())
+                {
+                    sum += extractor.getValue(cf.metric);
+                }
+                return sum;
+            }
+        });
+    }
+
+    /**
+     * Creates a counter that will sum the current value of a metric for all column families in this keyspace
+     * @param name
+     * @param extractor
+     * @return Counter that computes sum of MetricValue.getValue()
+     */
+    private Counter createKeyspaceCounter(String name, final MetricValue extractor)
+    {
+        allMetrics.add(name);
+        return Metrics.register(factory.createMetricName(name), new Counter()
+        {
+            @Override
+            public long getCount()
             {
                 long sum = 0;
                 for (ColumnFamilyStore cf : keyspace.getColumnFamilyStores())

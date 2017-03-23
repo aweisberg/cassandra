@@ -253,7 +253,6 @@ public abstract class AbstractReadExecutor
     private static class SpeculatingReadExecutor extends AbstractReadExecutor
     {
         private final ColumnFamilyStore cfs;
-        private volatile boolean speculated = false;
 
         public SpeculatingReadExecutor(Keyspace keyspace,
                                        ColumnFamilyStore cfs,
@@ -299,6 +298,9 @@ public abstract class AbstractReadExecutor
 
             if (!handler.await(cfs.sampleLatencyNanos, TimeUnit.NANOSECONDS))
             {
+                //Handle speculation stats first in case the callback fires immediately
+                handler.setSpeculated();
+                cfs.metric.speculativeRetries.inc();
                 // Could be waiting on the data, or on enough digests.
                 ReadCommand retryCommand = command;
                 if (handler.resolver.isDataPresent())
@@ -309,15 +311,12 @@ public abstract class AbstractReadExecutor
                     traceState.trace("speculating read retry on {}", extraReplica);
                 logger.trace("speculating read retry on {}", extraReplica);
                 MessagingService.instance().sendRRWithFailure(retryCommand.createMessage(), extraReplica, handler);
-                speculated = true;
-
-                cfs.metric.speculativeRetries.inc();
             }
         }
 
         public Collection<InetAddress> getContactedReplicas()
         {
-            return speculated
+            return handler.speculated()
                  ? targetReplicas
                  : targetReplicas.subList(0, targetReplicas.size() - 1);
         }
@@ -351,10 +350,12 @@ public abstract class AbstractReadExecutor
         @Override
         public void executeAsync()
         {
+            //Handle speculation stats first in case the callback fires immediately
+            handler.setSpeculated();
+            cfs.metric.speculativeRetries.inc();
             makeDataRequests(targetReplicas.subList(0, targetReplicas.size() > 1 ? 2 : 1));
             if (targetReplicas.size() > 2)
                 makeDigestRequests(targetReplicas.subList(2, targetReplicas.size()));
-            cfs.metric.speculativeRetries.inc();
         }
     }
 }
