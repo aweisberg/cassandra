@@ -53,7 +53,7 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
     protected static final Logger logger = LoggerFactory.getLogger( ReadCallback.class );
 
     public final ResponseResolver resolver;
-    private final SimpleCondition condition = new SimpleCondition();
+    final SimpleCondition condition = new SimpleCondition();
     private final long queryStartNanoTime;
     final int blockfor;
     final List<InetAddress> endpoints;
@@ -66,8 +66,6 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
             = AtomicIntegerFieldUpdater.newUpdater(ReadCallback.class, "failures");
     private volatile int failures = 0;
     private final Map<InetAddress, RequestFailureReason> failureReasonByEndpoint;
-    //Track whether this read ended up issuing a speculative retry
-    private volatile boolean speculated;
 
     private final Keyspace keyspace; // TODO push this into ConsistencyLevel?
 
@@ -131,14 +129,6 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
         {
             String gotData = received > 0 ? (resolver.isDataPresent() ? " (including data)" : " (only digests)") : "";
             logger.debug("{}; received {} of {} responses{}", new Object[]{ (failed ? "Failed" : "Timed out"), received, blockfor, gotData });
-        }
-
-        if (speculated() & !failed)
-        {
-            //If this is the first time signaling and it was a speculative read increment the failed
-            //speculation counter on timeout. Don't increment on read failure since that is a different
-            //kind of failure
-            keyspace.getColumnFamilyStore(command.metadata().id).metric.failedSpeculativeRetries.inc();
         }
 
         // Same as for writes, see AbstractWriteResponseHandler
@@ -272,15 +262,5 @@ public class ReadCallback implements IAsyncCallbackWithFailure<ReadResponse>
 
         if (blockfor + n > endpoints.size())
             condition.signalAll();
-    }
-
-    public void setSpeculated()
-    {
-        speculated = true;
-    }
-
-    public boolean speculated()
-    {
-        return speculated;
     }
 }

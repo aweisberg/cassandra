@@ -99,8 +99,10 @@ public class KeyspaceMetrics
     public final LatencyMetrics idealCLWriteLatency;
     /** Speculative retries **/
     public final Counter speculativeRetries;
-    /** Successful speculative retries **/
-    public final Counter failedSpeculativeRetries;
+    /** Speculative retry occured but still timed out **/
+    public final Counter speculativeFailedRetries;
+    /** Needed to speculate, but didn't have enough replicas **/
+    public final Counter speculativeInsufficientReplicas;
 
     public final MetricNameFactory factory;
     private Keyspace keyspace;
@@ -256,11 +258,18 @@ public class KeyspaceMetrics
                 return metric.speculativeRetries.getCount();
             }
         });
-        failedSpeculativeRetries = createKeyspaceCounter("FailedSpeculativeRetries", new MetricValue()
+        speculativeFailedRetries = createKeyspaceCounter("SpeculativeFailedRetries", new MetricValue()
         {
             public Long getValue(TableMetrics metric)
             {
-                return metric.failedSpeculativeRetries.getCount();
+                return metric.speculativeFailedRetries.getCount();
+            }
+        });
+        speculativeInsufficientReplicas = createKeyspaceCounter("SpeculativeInsufficientReplicas", new MetricValue()
+        {
+            public Long getValue(TableMetrics metric)
+            {
+                return metric.speculativeInsufficientReplicas.getCount();
             }
         });
     }
