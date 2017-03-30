@@ -19,6 +19,7 @@ package org.apache.cassandra.metrics;
 
 import java.util.Set;
 
+import com.codahale.metrics.Counter;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Histogram;
 import com.codahale.metrics.Meter;
@@ -93,7 +94,7 @@ public class KeyspaceMetrics
     /** CAS Commit metrics */
     public final LatencyMetrics casCommit;
     /** Writes failed ideal consistency **/
-    public final Meter writeFailedIdealCL;
+    public final Counter writeFailedIdealCL;
     /** Ideal CL write latency metrics */
     public final LatencyMetrics idealCLWriteLatency;
 
@@ -241,7 +242,7 @@ public class KeyspaceMetrics
         casPrepare = new LatencyMetrics(factory, "CasPrepare");
         casPropose = new LatencyMetrics(factory, "CasPropose");
         casCommit = new LatencyMetrics(factory, "CasCommit");
-        writeFailedIdealCL = Metrics.meter(factory.createMetricName("WriteFailedIdealCL"));
+        writeFailedIdealCL = Metrics.counter(factory.createMetricName("WriteFailedIdealCL"));
         idealCLWriteLatency = new LatencyMetrics(factory, "IdealCLWrite");
     }
 

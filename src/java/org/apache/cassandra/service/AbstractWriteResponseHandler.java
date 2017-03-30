@@ -62,8 +62,8 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
     /**
       * Delegate to another WriteReponseHandler or possibly this one to track if the ideal consistency level was reached.
       * Will be set to null if ideal CL was not configured
-      * Will be set to an AWSRH delegate if ideal CL was configured
-      * Will be same as "this" if this AWRSH is the ideal consistency level
+      * Will be set to an AWRH delegate if ideal CL was configured
+      * Will be same as "this" if this AWRH is the ideal consistency level
       */
     private AbstractWriteResponseHandler idealCLDelegate;
 
@@ -274,7 +274,7 @@ public abstract class AbstractWriteResponseHandler<T> implements IAsyncCallbackW
             //The condition being signaled is a valid proxy for the CL being achieved
             if (!condition.isSignaled())
             {
-                keyspace.metric.writeFailedIdealCL.mark();
+                keyspace.metric.writeFailedIdealCL.inc();
             }
             else
             {
