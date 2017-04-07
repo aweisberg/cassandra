@@ -50,4 +50,4 @@ jobs:
             cat /tmp/java_tests.txt
             echo `cat /tmp/java_tests.txt | sed -i ':a;N;$!ba;s/\n/\t/g'` > /tmp/java_tests_final.txt
             echo ***final java tests***
-            cat java_tests_final.txt
+            cat /tmp/java_tests_final.txt
