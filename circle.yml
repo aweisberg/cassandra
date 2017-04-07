@@ -34,6 +34,5 @@ jobs:
       - run:
           name: Unit Tests
           command: |
-            echo $HOME
-#            `circleci tests glob "$HOME/cassandra/tests/unit/**" | circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
-#            cat /temp/tests.txt
+            echo `circleci tests glob "$HOME/cassandra/tests/unit/**" | circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
+            cat /temp/tests.txt
