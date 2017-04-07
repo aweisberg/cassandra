@@ -44,7 +44,7 @@ jobs:
             cat /tmp/python_tests.txt
             echo `cat /tmp/python_tests.txt | sed -e ':a;N;$!ba;s/\n/\t/g'` > /tmp/python_tests_final.txt
             echo ***final python tests***
-            cat /tmp/python_tests_final
+            cat /tmp/python_tests_final.txt
             echo "***java tests***"
             echo `cat /tmp/processed_tests.txt | grep "\.java$"` > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
