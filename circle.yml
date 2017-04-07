@@ -37,7 +37,7 @@ jobs:
           command: |
             echo `circleci tests glob "$HOME/cassandra/test/unit/**" "$HOME/cassandra-dtest/**/*.py" | grep -v upgrade_tests |  circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
             cat /tmp/tests.txt
-            echo `cat /tmp/tests.txt | xargs grep "*\.py"` > /tmp/python_tests.txt
+            echo `cat /tmp/tests.txt | grep "*\.py"` > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
-            echo `cat /tmp/tests.txt | xargs grep -v "*\.java"` > /tmp/java_tests.txt
+            echo `cat /tmp/tests.txt | grep -v "*\.java"` > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
