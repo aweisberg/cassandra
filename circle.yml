@@ -9,24 +9,24 @@ jobs:
     steps:
       - checkout
       - run:
-         name: Install Dependencies
-         command: |
-          npm install -g junit-merge
-          sudo pip install virtualenv
-          sudo ifconfig -a
-          sudo ifconfig lo:1 127.0.0.2 up
-          sudo ifconfig lo:2 127.0.0.3 up
-          sudo ifconfig lo:3 127.0.0.4 up
-          sudo ifconfig lo:4 127.0.0.5 up
-          sudo ifconfig lo:4 127.0.0.6 up
-          sudo ifconfig lo:4 127.0.0.7 up
-          sudo ifconfig lo:4 127.0.0.8 up
-          sudo ifconfig lo:4 127.0.0.9 up
-          git clone https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
-          virtualenv --python=python2 --no-site-packages venv
-          source venv/bin/activate
-          pip install -r ~/cassandra-dtest/requirements.txt
-          pip freeze
+          name: Install Dependencies
+          command: |
+            npm install -g junit-merge
+            sudo pip install virtualenv
+            sudo ifconfig -a
+            sudo ifconfig lo:1 127.0.0.2 up
+            sudo ifconfig lo:2 127.0.0.3 up
+            sudo ifconfig lo:3 127.0.0.4 up
+            sudo ifconfig lo:4 127.0.0.5 up
+            sudo ifconfig lo:4 127.0.0.6 up
+            sudo ifconfig lo:4 127.0.0.7 up
+            sudo ifconfig lo:4 127.0.0.8 up
+            sudo ifconfig lo:4 127.0.0.9 up
+            git clone https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
+            virtualenv --python=python2 --no-site-packages venv
+            source venv/bin/activate
+            pip install -r ~/cassandra-dtest/requirements.txt
+            pip freeze
       - run:
         name: Build Cassandra
         command: cd ~/cassandra && ant build
