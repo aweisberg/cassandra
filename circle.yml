@@ -44,6 +44,8 @@ jobs:
             echo "***python tests***"
             cat /tmp/processed_tests.txt | grep "\.py$" > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
+            echo "***final python tests***"
+            cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
             echo "***java tests***"
             cat /tmp/processed_tests.txt | grep "\.java$" > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
@@ -68,11 +70,10 @@ jobs:
             export CASS_DRIVER_NO_CYTHON=true
             export CCM_MAX_HEAP_SIZE="512M"
             export NUM_TOKENS="32"
-            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" | tee -a /tmp/dtest/stdout.txt
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt
       - run:
           name: Collect and merge test results
           command: |
-            echo $CIRCLE_TEST_REPORTS
             mkdir -p /tmp/results/junit
             junit-merge ~/cassandra-dtest/nosetests.xml
             cp  merged-test-results.xml /tmp/results/junit
