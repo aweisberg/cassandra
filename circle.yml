@@ -36,9 +36,11 @@ jobs:
           name: Unit Tests
           command: |
             echo `circleci tests glob "$HOME/cassandra/test/unit/**" "$HOME/cassandra-dtest/**/*.py" | grep -v upgrade_tests |  circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
+            echo "***processed tests***"
+            cat /tmp/tests.txt | sed -e 's/\s\+/\n/g'
             echo "***python tests***"
-            echo `cat /tmp/tests.txt | grep "*\.py"` > /tmp/python_tests.txt
+            echo `cat /tmp/tests.txt | sed -e 's/\s\+/\n/g' | grep "*\.py"` > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
             echo "***java tests***"
-            echo `cat /tmp/tests.txt | grep "*\.java"` > /tmp/java_tests.txt
+            echo `cat /tmp/tests.txt | sed -e 's/\s\+/\n/g' | grep "*\.java"` > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
