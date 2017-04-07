@@ -1,8 +1,8 @@
 version: 2
 jobs:
   build:
-    working_directory: ~/cassandra
-    parallelism: 4
+    working_directory: ~/
+    parallelism: 8
     machine:
       java:
         version: 'oraclejdk8'
@@ -58,6 +58,7 @@ jobs:
       - run:
           name: Run dtests
           command: |
+            source venv/bin/activate
             cd ~/cassandra-dtest
             mkdir -p /tmp/dtest
             export CASSANDRA_DIR=$HOME/cassandra
