@@ -27,8 +27,10 @@ jobs:
             git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra 
             virtualenv --python=python2 --no-site-packages venv
             source venv/bin/activate
-#            pip install -r ~/cassandra-dtest/requirements.txt
-#            pip freeze
+            export CASS_DRIVER_NO_EXTENSIONS=true
+            export CASS_DRIVER_NO_CYTHON=true
+            pip install -r ~/cassandra-dtest/requirements.txt
+            pip freeze
       - run:
           name: Build Cassandra
           command: cd ~/cassandra && ant build build-test
@@ -42,32 +44,46 @@ jobs:
             echo "***python tests***"
             cat /tmp/processed_tests.txt | grep "\.py$" > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
-            cat /tmp/python_tests.txt | sed -e ':a;N;$!ba;s/\n/\t/g' > /tmp/python_tests_final.txt
-            echo ***final python tests***
-            cat /tmp/python_tests_final.txt
             echo "***java tests***"
             cat /tmp/processed_tests.txt | grep "\.java$" > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
             cat /tmp/java_tests.txt | cut -c 36-1000000 | grep "Test\.java$" > /tmp/java_tests_final.txt
             echo "***final java tests***"
             cat /tmp/java_tests_final.txt
+#      - run:
+#          name: Run unit tests
+#          command: |
+#            cd ~/cassandra 
+#            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
       - run:
-          name: Run unit tests
+          name: Run dtests
           command: |
-            cd ~/cassandra 
-            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
+            cd ~/cassandra-dtest
+            mkdir -p /tmp/dtest
+            export CASSANDRA_DIR=$HOME/cassandra
+            export PYTHONIOENCODING="utf-8"
+            export PYTHONUNBUFFERED=true
+            export CASS_DRIVER_NO_EXTENSIONS=true
+            export CASS_DRIVER_NO_CYTHON=true
+            export CCM_MAX_HEAP_SIZE="512M"
+            export NUM_TOKENS="32"
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" | tee -a /tmp/dtest/stdout.txt
       - run:
           name: Collect and merge test results
           command: |
             echo $CIRCLE_TEST_REPORTS
             mkdir -p /tmp/results/junit
-            junit-merge ~/cassandra/build/test/output/*.xml
+            junit-merge ~/cassandra-dtest/nosetests.xml
+#            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
             cp  merged-test-results.xml /tmp/results/junit
       - store_test_results:
           path: /tmp/results
+#      - store_artifacts:
+#          path: ~/cassandra/build/test/output
+#          destination: junitxml
+#      - store_artifacts:
+#          path: ~/cassandra/build/test/logs
+#          destination: logs
       - store_artifacts:
-          path: ~/cassandra/build/test/output
-          destination: junitxml
-      - store_artifacts:
-          path: ~/cassandra/build/test/logs
-          destination: logs
+          path: /tmp/dtest
+          destination: dtest
