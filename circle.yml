@@ -2,7 +2,7 @@ version: 2
 jobs:
   build:
     working_directory: ~/
-    parallelism: 8
+    parallelism: 4
     machine:
       java:
         version: 'oraclejdk8'
