@@ -9,8 +9,8 @@ jobs:
     steps:
       - checkout
       - run:
-        name: Install Dependencies
-        command: |
+         name: Install Dependencies
+         command: |
           npm install -g junit-merge
           sudo pip install virtualenv
           sudo ifconfig -a
