@@ -59,11 +59,12 @@ jobs:
       - run:
           name: Collect and merge test results
           command: |
-            mkdir -p $CIRCLE_TEST_REPORTS/junit/
+            echo $CIRCLE_TEST_REPORTS
+            mkdir -p /tmp/results/junit
             junit-merge ~/cassandra/build/test/output/*.xml
-            cp -r merged-test-results.xml $CIRCLE_TEST_REPORTS/junit
+            cp  merged-test-results.xml /tmp/results/junit
       - store_test_results:
-          path: $CIRCLE_TEST_REPORTS
+          path: /tmp/results
       - store_artifacts:
           path: ~/cassandra/build/test/output
           destination: junitxml
