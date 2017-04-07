@@ -28,11 +28,11 @@ jobs:
             pip install -r ~/cassandra-dtest/requirements.txt
             pip freeze
       - run:
-        name: Build Cassandra
-        command: cd ~/cassandra && ant build
+          name: Build Cassandra
+          command: cd ~/cassandra && ant build
       - run:
-        name: Unit Tests
-        command: |
-          circleci tests glob "$HOME/cassandra/tests/unit/**" | circleci tests split --split-by=timings --timings-type=filename > /tmp/tests.txt
-          cat /temp/tests.txt
+          name: Unit Tests
+          command: |
+            circleci tests glob "$HOME/cassandra/tests/unit/**" | circleci tests split --split-by=timings --timings-type=filename > /tmp/tests.txt
+            cat /temp/tests.txt
         
