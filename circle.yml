@@ -27,10 +27,10 @@ jobs:
           source venv/bin/activate
           pip install -r ~/cassandra-dtest/requirements.txt
           pip freeze
-      -run:
+      - run:
         name: Build Cassandra
         command: cd ~/cassandra && ant build
-      -run:
+      - run:
         name: Unit Tests
         command: |
           circleci tests glob "$HOME/cassandra/tests/unit/**" | circleci tests split --split-by=timings --timings-type=filename > /tmp/tests.txt
