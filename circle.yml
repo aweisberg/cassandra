@@ -48,7 +48,7 @@ jobs:
             echo "***java tests***"
             cat /tmp/processed_tests.txt | grep "\.java$" > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
-            cat /tmp/java_tests.txt | sed -e ':a;N;$!ba;s/\n/\t/g' | grep -ov "/home/circleci/cassandra/test/unit/" > /tmp/java_tests_final.txt
+            cat /tmp/java_tests.txt | sed -e ':a;N;$!ba;s/\n/\t/g' | cut -c 36-1000000 > /tmp/java_tests_final.txt
             echo ***final java tests***
             cat /tmp/java_tests_final.txt
 #      - run:
