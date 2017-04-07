@@ -56,5 +56,17 @@ jobs:
           command: |
             cd ~/cassandra 
             ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
+      - run:
+          name: Collect and merge test results
+          command: |
+            mkdir -p $CIRCLE_TEST_REPORTS/junit/
+            junit-merge ~/cassandra/build/test/output/*.xml
+            cp -r merged-test-results.xml $CIRCLE_TEST_REPORTS/junit
       - store_test_results:
+          path: $CIRCLE_TEST_REPORTS
+      - store_artifacts:
           path: ~/cassandra/build/test/output
+          destination: junitxml
+      - store_artifacts:
+          path: ~/cassandra/build/test/logs
+          destination: logs
