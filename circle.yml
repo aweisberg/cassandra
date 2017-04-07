@@ -90,6 +90,6 @@ jobs:
       - store_artifacts:
           path: /tmp/dtest
           destination: dtest
-      - store_artfiacts:
+      - store_artifacts:
           path: ~/cassandra-dtest/logs
           destination: dtest_logs
