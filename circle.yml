@@ -29,9 +29,9 @@ jobs:
             source venv/bin/activate
 #            pip install -r ~/cassandra-dtest/requirements.txt
 #            pip freeze
-      - run:
-          name: Build Cassandra
-          command: cd ~/cassandra && ant build
+#      - run:
+#          name: Build Cassandra
+#          command: cd ~/cassandra && ant build
       - run:
           name: Unit Tests
           command: |
