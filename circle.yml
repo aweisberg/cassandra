@@ -7,7 +7,6 @@ jobs:
       java:
         version: 'oraclejdk8'
     steps:
-      - checkout
       - run:
           name: Install Dependencies
           command: |
@@ -22,7 +21,8 @@ jobs:
             sudo ifconfig lo:4 127.0.0.7 up
             sudo ifconfig lo:4 127.0.0.8 up
             sudo ifconfig lo:4 127.0.0.9 up
-            git clone https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
+            git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
+            git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH $CIRCLE_REPOSITORY_URL ~/cassandra 
             virtualenv --python=python2 --no-site-packages venv
             source venv/bin/activate
             pip install -r ~/cassandra-dtest/requirements.txt
