@@ -2,7 +2,6 @@ version: 2
 jobs:
   build:
     working_directory: ~/cassandra
-    parallelism: 1
     machine:
       java:
         version: 'oraclejdk8'
