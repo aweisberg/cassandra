@@ -21,7 +21,9 @@ jobs:
             sudo ifconfig lo:4 127.0.0.7 up
             sudo ifconfig lo:4 127.0.0.8 up
             sudo ifconfig lo:4 127.0.0.9 up
+            echo git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
             git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
+            echo git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH $CIRCLE_REPOSITORY_URL ~/cassandra
             git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH $CIRCLE_REPOSITORY_URL ~/cassandra 
             virtualenv --python=python2 --no-site-packages venv
             source venv/bin/activate
@@ -33,6 +35,7 @@ jobs:
       - run:
           name: Unit Tests
           command: |
+            echo $HOME
             `circleci tests glob "$HOME/cassandra/tests/unit/**" | circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
             cat /temp/tests.txt
         
