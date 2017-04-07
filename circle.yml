@@ -51,8 +51,8 @@ jobs:
             echo "***final java tests***"
             cat /tmp/java_tests_final.txt
 #      - run:
-#          name: Run unit tests
-#          command: |
+#         name: Run unit tests
+#         command: |
 #            cd ~/cassandra 
 #            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
       - run:
@@ -74,8 +74,8 @@ jobs:
             echo $CIRCLE_TEST_REPORTS
             mkdir -p /tmp/results/junit
             junit-merge ~/cassandra-dtest/nosetests.xml
-#            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
             cp  merged-test-results.xml /tmp/results/junit
+#            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
       - store_test_results:
           path: /tmp/results
 #      - store_artifacts:
