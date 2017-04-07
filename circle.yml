@@ -29,9 +29,9 @@ jobs:
             source venv/bin/activate
 #            pip install -r ~/cassandra-dtest/requirements.txt
 #            pip freeze
-#      - run:
-#          name: Build Cassandra
-#          command: cd ~/cassandra && ant build
+      - run:
+          name: Build Cassandra
+          command: cd ~/cassandra && ant build
       - run:
           name: Determine tests to run
           command: |
@@ -51,8 +51,10 @@ jobs:
             cat /tmp/java_tests.txt | sed -e ':a;N;$!ba;s/\n/\t/g' | cut -c 36-1000000 | grep "Test\.java$" > /tmp/java_tests_final.txt
             echo ***final java tests***
             cat /tmp/java_tests_final.txt
-#      - run:
-#          name: Run unit tests
-#          command: |
-#            cd ~/cassandra 
-#            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
+      - run:
+          name: Run unit tests
+          command: |
+            cd ~/cassandra 
+            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
+      - store_test_results:
+          path: ~/cassandra/build/test/output
