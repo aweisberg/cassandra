@@ -26,8 +26,8 @@ jobs:
             git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra 
             virtualenv --python=python2 --no-site-packages venv
             source venv/bin/activate
-            pip install -r ~/cassandra-dtest/requirements.txt
-            pip freeze
+#            pip install -r ~/cassandra-dtest/requirements.txt
+#            pip freeze
       - run:
           name: Build Cassandra
           command: cd ~/cassandra && ant build
