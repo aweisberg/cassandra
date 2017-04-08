@@ -47,6 +47,7 @@ jobs:
             cat /tmp/python_tests.txt
             echo "***final python tests***"
             cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
+            cat /tmp/python_tests_final.txt
             echo "***java tests***"
             cat /tmp/processed_tests.txt | grep "\.java$" > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
