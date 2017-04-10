@@ -59,27 +59,28 @@ jobs:
          command: |
             cd ~/cassandra 
             ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
-      - run:
-          name: Run dtests
-          no_output_timeout: 2h
-          command: |
-            source venv/bin/activate
-            cd ~/cassandra-dtest
-            mkdir -p /tmp/dtest
-            export CASSANDRA_DIR=$HOME/cassandra
-            export PYTHONIOENCODING="utf-8"
-            export PYTHONUNBUFFERED=true
-            export CASS_DRIVER_NO_EXTENSIONS=true
-            export CASS_DRIVER_NO_CYTHON=true
-            export CCM_MAX_HEAP_SIZE="512M"
-            export NUM_TOKENS="32"
-            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt
+#      - run:
+#          name: Run dtests
+#          no_output_timeout: 2h
+#          command: |
+#            source venv/bin/activate
+#            cd ~/cassandra-dtest
+#            mkdir -p /tmp/dtest
+#            export CASSANDRA_DIR=$HOME/cassandra
+#            export PYTHONIOENCODING="utf-8"
+#            export PYTHONUNBUFFERED=true
+#            export CASS_DRIVER_NO_EXTENSIONS=true
+#            export CASS_DRIVER_NO_CYTHON=true
+#            export CCM_MAX_HEAP_SIZE="512M"
+#            export NUM_TOKENS="32"
+#            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt
       - run:
           name: Collect and merge test results
           command: |
             mkdir -p /tmp/results/junit
-            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
+            junit-merge ~/cassandra/build/test/output/*.xml
             cp  merged-test-results.xml /tmp/results/junit
+#            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
       - store_test_results:
           path: /tmp/results
       - store_artifacts:
@@ -88,9 +89,9 @@ jobs:
       - store_artifacts:
           path: ~/cassandra/build/test/logs
           destination: logs
-      - store_artifacts:
-          path: /tmp/dtest
-          destination: dtest
-      - store_artifacts:
-          path: ~/cassandra-dtest/logs
-          destination: dtest_logs
+#      - store_artifacts:
+#          path: /tmp/dtest
+#          destination: dtest
+#      - store_artifacts:
+#          path: ~/cassandra-dtest/logs
+#          destination: dtest_logs
