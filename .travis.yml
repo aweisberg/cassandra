@@ -7,4 +7,3 @@ addons:
     packages:
       - oracle-java8-installer
       - ant-optional
-      - ant-junit
