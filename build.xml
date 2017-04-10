@@ -1059,7 +1059,8 @@
      includeantruntime="true"
      source="${source.version}"
      target="${target.version}"
-     encoding="utf-8">
+     encoding="utf-8"
+     verbose="true">
      <classpath>
         <path refid="cassandra.classpath"/>
      </classpath>
