@@ -1,7 +1,6 @@
+dist: trusty
+sudo: required
 language: java
-before_install:
-  - echo $(ant -version)
-  - echo $(uname -a)
 jdk:
   - oraclejdk8
 sudo: false
