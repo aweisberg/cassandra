@@ -58,7 +58,7 @@ jobs:
          name: Run unit tests
          command: |
             cd ~/cassandra 
-            true || ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt
+            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt || true
 #      - run:
 #          name: Run dtests
 #          no_output_timeout: 2h
