@@ -56,18 +56,18 @@ jobs:
             echo "***processed tests***"
             cat /tmp/tests.txt | sed -e 's/\s\+/\n/g' > /tmp/processed_tests.txt
             cat /tmp/processed_tests.txt
-#            echo "***python tests***"
-#            cat /tmp/processed_tests.txt | grep "\.py$" > /tmp/python_tests.txt
-#            cat /tmp/python_tests.txt
-#            echo "***final python tests***"
-#            cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
-#            cat /tmp/python_tests_final.txt
             echo "***java tests***"
             cat /tmp/processed_tests.txt | grep "\.java$" > /tmp/java_tests.txt
             cat /tmp/java_tests.txt
             cat /tmp/java_tests.txt | cut -c 36-1000000 | grep "Test\.java$" > /tmp/java_tests_final.txt
             echo "***final java tests***"
             cat /tmp/java_tests_final.txt
+#            echo "***python tests***"
+#            cat /tmp/processed_tests.txt | grep "\.py$" > /tmp/python_tests.txt
+#            cat /tmp/python_tests.txt
+#            echo "***final python tests***"
+#            cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
+#            cat /tmp/python_tests_final.txt
       - run:
          name: Run unit tests
          command: |
