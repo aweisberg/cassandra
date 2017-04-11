@@ -73,6 +73,7 @@ jobs:
          command: |
             cd ~/cassandra 
             ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt || true
+         no_output_timeout: 2h
 #      - run:
 #          name: Run dtests
 #          no_output_timeout: 2h
