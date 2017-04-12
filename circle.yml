@@ -33,8 +33,8 @@ jobs:
           name: Stupid sleep
           command: |
             for x in $(seq 1 110); do
-                echo 1
-                sleep    60s
+                echo $x 
+                sleep 60s
             done
       - run:
           name: Build Cassandra
