@@ -42,6 +42,7 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
 import static java.util.Arrays.*;
+import static org.junit.Assert.fail;
 
 public class CellTest
 {
