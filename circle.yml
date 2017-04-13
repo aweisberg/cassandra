@@ -1,8 +1,9 @@
 version: 2
 jobs:
   build:
+    resource_class: Xlarge
     working_directory: ~/
-    parallelism: 4
+    parallelism: 16
     machine:
       java:
         version: 'oraclejdk8'
@@ -30,20 +31,6 @@ jobs:
             pip install -r ~/cassandra-dtest/requirements.txt
             pip freeze
       - run:
-          name: Stupid sleep
-          command: |
-            for x in $(seq 1 160); do
-                echo $x 
-                sleep 60s
-            done
-      - run:
-          name: Stupid sleep 2
-          command: |
-            for x in $(seq 1 160); do
-                echo $x
-                sleep 60s
-            done
-      - run:
           name: Build Cassandra
           command: |
             cd ~/cassandra
@@ -66,7 +53,7 @@ jobs:
           no_output_timeout: 2h
           command: |
             #"$HOME/cassandra-dtest/**/*.py"
-            echo `circleci tests glob "$HOME/cassandra/test/unit/**" | grep -v upgrade_tests | grep -v "cassandra-thrift" | grep -v "thrift_bindings" | grep -v "tools" | grep -v "dtest.py" | grep -v "$HOME/cassandra-dtest/bin" | grep -v "plugins" | circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
+            echo `circleci tests glob "$HOME/cassandra/test/unit/**" "$HOME/cassandra-dtest/**/*.py" | grep -v upgrade_tests | grep -v "cassandra-thrift" | grep -v "thrift_bindings" | grep -v "tools" | grep -v "dtest.py" | grep -v "$HOME/cassandra-dtest/bin" | grep -v "plugins" | circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
             echo "***processed tests***"
             cat /tmp/tests.txt | sed -e 's/\s\+/\n/g' > /tmp/processed_tests.txt
             cat /tmp/processed_tests.txt
@@ -76,38 +63,38 @@ jobs:
             cat /tmp/java_tests.txt | cut -c 36-1000000 | grep "Test\.java$" > /tmp/java_tests_final.txt
             echo "***final java tests***"
             cat /tmp/java_tests_final.txt
-#            echo "***python tests***"
-#            cat /tmp/processed_tests.txt | grep "\.py$" > /tmp/python_tests.txt
-#            cat /tmp/python_tests.txt
-#            echo "***final python tests***"
-#            cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
-#            cat /tmp/python_tests_final.txt
+            echo "***python tests***"
+            cat /tmp/processed_tests.txt | grep "\.py$" > /tmp/python_tests.txt
+            cat /tmp/python_tests.txt
+            echo "***final python tests***"
+            cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
+            cat /tmp/python_tests_final.txt
       - run:
          name: Run unit tests
          command: |
             cd ~/cassandra 
             ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt || true
          no_output_timeout: 2h
-#      - run:
-#          name: Run dtests
-#          no_output_timeout: 2h
-#          command: |
-#            source venv/bin/activate
-#            cd ~/cassandra-dtest
-#            mkdir -p /tmp/dtest
-#            export CASSANDRA_DIR=$HOME/cassandra
-#            export PYTHONIOENCODING="utf-8"
-#            export PYTHONUNBUFFERED=true
-#            export CASS_DRIVER_NO_EXTENSIONS=true
-#            export CASS_DRIVER_NO_CYTHON=true
-#            export CCM_MAX_HEAP_SIZE="512M"
-#            export NUM_TOKENS="32"
-#            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt
+      - run:
+          name: Run dtests
+          no_output_timeout: 2h
+          command: |
+            source venv/bin/activate
+            cd ~/cassandra-dtest
+            mkdir -p /tmp/dtest
+            export CASSANDRA_DIR=$HOME/cassandra
+            export PYTHONIOENCODING="utf-8"
+            export PYTHONUNBUFFERED=true
+            export CASS_DRIVER_NO_EXTENSIONS=true
+            export CASS_DRIVER_NO_CYTHON=true
+            export CCM_MAX_HEAP_SIZE="512M"
+            export NUM_TOKENS="32"
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt
       - run:
           name: Collect and merge test results
           command: |
             mkdir -p /tmp/results/junit
-            junit-merge ~/cassandra/build/test/output/*.xml
+            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
             cp  merged-test-results.xml /tmp/results/junit
 #            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
       - store_test_results:
@@ -118,9 +105,9 @@ jobs:
       - store_artifacts:
           path: ~/cassandra/build/test/logs
           destination: logs
-#      - store_artifacts:
-#          path: /tmp/dtest
-#          destination: dtest
-#      - store_artifacts:
-#          path: ~/cassandra-dtest/logs
-#          destination: dtest_logs
+      - store_artifacts:
+          path: /tmp/dtest
+          destination: dtest
+      - store_artifacts:
+          path: ~/cassandra-dtest/logs
+          destination: dtest_logs
