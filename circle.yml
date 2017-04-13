@@ -88,7 +88,7 @@ jobs:
          no_output_timeout: 15m
       - run:
           name: Run dtests
-          no_output_timeout:70m
+          no_output_timeout: 70m
           command: |
             source venv/bin/activate
             cd ~/cassandra-dtest
