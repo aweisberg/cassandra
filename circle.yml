@@ -11,19 +11,19 @@ jobs:
       - run:
           name: Log environment information
           command: |
-              echo *** cat /proc/cpuinfo ***
+              echo '*** cat /proc/cpuinfo ***'
               cat /proc/cpuinfo
-              echo *** free -m ***
+              echo '*** free -m ***'
               free -m
-              echo *** df -m ***
+              echo '*** df -m ***'
               df -m
-              echo *** sudo ifconfig -a ***
+              echo '*** sudo ifconfig -a ***'
               sudo ifconfig -a
-              echo *** uname -a ***
+              echo '*** uname -a ***'
               uname -a
-              echo *** mount ***
+              echo '*** mount ***'
               mount
-              echo *** env ***
+              echo '*** env ***'
               env
       - run:
           name: Clone git repos
