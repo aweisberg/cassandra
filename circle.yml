@@ -3,7 +3,7 @@ jobs:
   build:
     resource_class: Xlarge
     working_directory: ~/
-    parallelism: 16
+    parallelism: 4
     machine:
       java:
         version: 'oraclejdk8'
