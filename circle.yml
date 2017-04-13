@@ -32,14 +32,14 @@ jobs:
       - run:
           name: Stupid sleep
           command: |
-            for x in $(seq 1 110); do
+            for x in $(seq 1 160); do
                 echo $x 
                 sleep 60s
             done
       - run:
           name: Stupid sleep 2
           command: |
-            for x in $(seq 1 110); do
+            for x in $(seq 1 160); do
                 echo $x
                 sleep 60s
             done
