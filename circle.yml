@@ -37,6 +37,13 @@ jobs:
                 sleep 60s
             done
       - run:
+          name: Stupid sleep 2
+          command: |
+            for x in $(seq 1 110); do
+                echo $x
+                sleep 60s
+            done
+      - run:
           name: Build Cassandra
           command: |
             cd ~/cassandra
