@@ -9,10 +9,13 @@ jobs:
         version: 'oraclejdk8'
     steps:
       - run:
-          name: Install Dependencies
+          name: Clone git repos
           command: |
-            npm install -g junit-merge
-            sudo pip install virtualenv
+            git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
+            git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra
+      - run:
+          name: Configure NIC aliases
+          command: |
             sudo ifconfig -a
             sudo ifconfig lo:1 127.0.0.2 up
             sudo ifconfig lo:2 127.0.0.3 up
@@ -22,8 +25,15 @@ jobs:
             sudo ifconfig lo:4 127.0.0.7 up
             sudo ifconfig lo:4 127.0.0.8 up
             sudo ifconfig lo:4 127.0.0.9 up
-            git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
-            git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra 
+      - run:
+          name: Install junit-merge
+          command: npm install -g junit-merge
+      - run:
+          name: Install virtualenv
+          command: sudo pip install virtualenv 
+      - run:
+          name: Configure virtualenv and python dependencies
+          command: |
             virtualenv --python=python2 --no-site-packages venv
             source venv/bin/activate
             export CASS_DRIVER_NO_EXTENSIONS=true
