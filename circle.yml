@@ -16,6 +16,8 @@ jobs:
               df -m
               sudo ifconfig -a
               uname -a
+              mount
+              env
       - run:
           name: Clone git repos
           command: |
