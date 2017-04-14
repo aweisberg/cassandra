@@ -124,13 +124,14 @@ jobs:
             export CCM_MAX_HEAP_SIZE="2048M"
             export CCM_HEAP_NEWSIZE="200M"
             export NUM_TOKENS="32"
-            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt || true
       - run:
           name: Collect and merge test results
           command: |
-            mkdir -p /tmp/results/junit
-            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
-            cp  merged-test-results.xml /tmp/results/junit
+            rm -f $HOME/cassandra-dtest/logs/last || true
+            mkdir -p /tmp/results/junit || true
+            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml || true
+            cp  merged-test-results.xml /tmp/results/junit || true
 #            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
       - store_test_results:
           path: /tmp/results
