@@ -3,7 +3,7 @@ jobs:
   build:
     resource_class: xlarge
     working_directory: ~/
-    parallelism: 4
+    parallelism: 16
     docker:
       - image: ubuntu:trusty-20170330
     steps:
