@@ -25,10 +25,13 @@ jobs:
               echo '*** env ***'
               env
       - run:
-          name: Clone git repos
+          name: apt-get install packages
           command: |
             sudo apt-get update
-            sudo apt-get install -y git-core
+            sudo apt-get install -y git-core npm
+      - run:
+          name: Clone git repos
+          command: |
             git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
             git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra
 #      - run:
