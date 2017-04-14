@@ -4,7 +4,8 @@ jobs:
     resource_class: xlarge
     working_directory: ~/
     parallelism: 4
-    machine:
+    docker:
+      - image: ubuntu:trusty-20170330
       java:
         version: 'oraclejdk8'
     steps:
