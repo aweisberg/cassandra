@@ -40,17 +40,17 @@ jobs:
           command: |
             git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
             git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra
-      - run:
-          name: Configure NIC aliases
-          command: |
-           ifconfig lo:1 127.0.0.2 up
-           ifconfig lo:2 127.0.0.3 up
-           ifconfig lo:3 127.0.0.4 up
-           ifconfig lo:4 127.0.0.5 up
-           ifconfig lo:5 127.0.0.6 up
-           ifconfig lo:6 127.0.0.7 up
-           ifconfig lo:7 127.0.0.8 up
-           ifconfig lo:8 127.0.0.9 up
+#      - run:
+#          name: Configure NIC aliases
+#          command: |
+#           ifconfig lo:1 127.0.0.2 up
+#           ifconfig lo:2 127.0.0.3 up
+#           ifconfig lo:3 127.0.0.4 up
+#           ifconfig lo:4 127.0.0.5 up
+#           ifconfig lo:5 127.0.0.6 up
+#           ifconfig lo:6 127.0.0.7 up
+#           ifconfig lo:7 127.0.0.8 up
+#           ifconfig lo:8 127.0.0.9 up
       - run:
           name: Install junit-merge
           command: npm install -g junit-merge
