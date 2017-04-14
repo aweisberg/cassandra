@@ -16,6 +16,7 @@ jobs:
             echo oracle-java8-installer shared/accepted-oracle-license-v1-1 select true | /usr/bin/debconf-set-selections
             apt-get update
             apt-get install -y git-core npm python python-pip python-dev ant ant-optional oracle-java8-installer net-tools
+            ln -s /usr/bin/nodejs /usr/bin/node || true
       - run:
           name: Log environment information
           command: |
@@ -124,7 +125,6 @@ jobs:
             mkdir -p /tmp/results/junit || true
             junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml || true
             cp  merged-test-results.xml /tmp/results/junit || true
-            exit
 #            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
       - store_test_results:
           path: /tmp/results
