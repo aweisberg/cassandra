@@ -10,6 +10,8 @@ jobs:
       - run:
           name: Log environment information
           command: |
+              echo '*** id ***'
+              id
               echo '*** cat /proc/cpuinfo ***'
               cat /proc/cpuinfo
               echo '*** free -m ***'
@@ -17,7 +19,7 @@ jobs:
               echo '*** df -m ***'
               df -m
               echo '*** sudo ifconfig -a ***'
-              sudo ifconfig -a
+              ifconfig -a
               echo '*** uname -a ***'
               uname -a
               echo '*** mount ***'
