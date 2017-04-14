@@ -8,10 +8,6 @@ jobs:
       - image: ubuntu:xenial-20170410
     steps:
       - run:
-          #dtests fail to start C* when run as root
-          name: Make the stupid fucking user
-          command: useradd -m fml
-      - run:
           name: apt-get install packages
           command: |
             echo "deb http://ppa.launchpad.net/webupd8team/java/ubuntu xenial main" | tee /etc/apt/sources.list.d/webupd8team-java.list
@@ -42,10 +38,8 @@ jobs:
       - run:
           name: Clone git repos
           command: |
-            su -p fml
             git clone --single-branch --depth 1 https://github.com/riptano/cassandra-dtest ~/cassandra-dtest
             git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra
-            exit
 #      - run:
 #          name: Configure NIC aliases
 #          command: |
@@ -66,20 +60,15 @@ jobs:
       - run:
           name: Configure virtualenv and python dependencies
           command: |
-            su -p fml 
-            cd
             virtualenv --python=python2 --no-site-packages venv
             source venv/bin/activate
             export CASS_DRIVER_NO_EXTENSIONS=true
             export CASS_DRIVER_NO_CYTHON=true
             pip install -r ~/cassandra-dtest/requirements.txt
             pip freeze
-            exit
       - run:
           name: Build Cassandra
           command: |
-            su -p fml
-            cd ~/cassandra
             # Loop to prevent failure due to maven-ant-tasks not downloading a jar..
             for x in $(seq 1 3); do
                 ant build build-test
@@ -93,15 +82,12 @@ jobs:
                 echo "Build failed with exit code: ${RETURN}"
                 exit ${RETURN}
             fi
-            exit
           no_output_timeout: 20m
       - run:
           name: Determine tests to run
           no_output_timeout: 10m
           command: |
             #"$HOME/cassandra-dtest/**/*.py"
-            su -p fml
-            cd
             echo `circleci tests glob "$HOME/cassandra/test/unit/**" "$HOME/cassandra-dtest/**/*.py" | grep -v upgrade_tests | grep -v "cassandra-thrift" | grep -v "thrift_bindings" | grep -v "tools" | grep -v "dtest.py" | grep -v "$HOME/cassandra-dtest/bin" | grep -v "plugins" | circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
             echo "***processed tests***"
             cat /tmp/tests.txt | sed -e 's/\s\+/\n/g' > /tmp/processed_tests.txt
@@ -118,11 +104,9 @@ jobs:
             echo "***final python tests***"
             cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
             cat /tmp/python_tests_final.txt
-            exit
 #      - run:
 #         name: Run unit tests
 #         command: |
-#            su -p fml
 #            cd ~/cassandra 
 #            ant testclasslist -Dtest.classlistfile=/tmp/java_tests_final.txt || true
 #         no_output_timeout: 15m
@@ -130,10 +114,10 @@ jobs:
           name: Run dtests
           no_output_timeout: 70m
           command: |
-            su -p fml
             source ~/venv/bin/activate
             cd ~/cassandra-dtest
             mkdir -p /tmp/dtest
+            export allow_root="yes"
             export CASSANDRA_DIR=$HOME/cassandra
             export PYTHONIOENCODING="utf-8"
             export PYTHONUNBUFFERED=true
@@ -143,7 +127,6 @@ jobs:
             export CCM_HEAP_NEWSIZE="200M"
             export NUM_TOKENS="32"
             ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`| tee -a /tmp/dtest/stdout.txt || true
-            exit
       - run:
           name: Collect and merge test results
           command: |
