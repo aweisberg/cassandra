@@ -35,6 +35,7 @@ jobs:
               mount
               echo '*** env ***'
               env
+              ls /var/run
       - run:
           name: Clone git repos
           command: |
