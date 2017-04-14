@@ -5,7 +5,7 @@ jobs:
     working_directory: ~/
     parallelism: 16
     docker:
-      - image: ubuntu:trusty-20170330
+      - image: ubuntu:xenial-20170410
     steps:
       - run:
           name: Log environment information
