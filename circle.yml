@@ -15,7 +15,8 @@ jobs:
             apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys EEA14886
             echo oracle-java8-installer shared/accepted-oracle-license-v1-1 select true | /usr/bin/debconf-set-selections
             apt-get update
-            apt-get install -y git-core npm python python-pip python-dev ant ant-optional oracle-java8-installer net-tools
+            apt-get install -y git-core npm python python-pip python-dev ant ant-optional oracle-java8-installer net-tools docker.io
+            docker ps
       - run:
           name: Log environment information
           command: |
@@ -35,7 +36,6 @@ jobs:
               mount
               echo '*** env ***'
               env
-              ls /var/run
       - run:
           name: Clone git repos
           command: |
