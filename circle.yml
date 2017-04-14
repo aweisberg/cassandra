@@ -6,6 +6,7 @@ jobs:
     parallelism: 4
     docker:
       - image: ubuntu:trusty-20170330
+      - image: airdock/oracle-jdk:jdk-8u112
     steps:
       - run:
           name: Log environment information
