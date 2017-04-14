@@ -69,6 +69,7 @@ jobs:
       - run:
           name: Build Cassandra
           command: |
+            cd ~/cassandra
             # Loop to prevent failure due to maven-ant-tasks not downloading a jar..
             for x in $(seq 1 3); do
                 ant build build-test
