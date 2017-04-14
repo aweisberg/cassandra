@@ -28,7 +28,7 @@ jobs:
           name: apt-get install packages
           command: |
             sudo apt-get update
-            sudo apt-get install -y git-core npm python python-pip python-dev
+            sudo apt-get install -y git-core npm python python-pip python-dev ant ant-optional openjdk-8-jdk-headless
       - run:
           name: Clone git repos
           command: |
