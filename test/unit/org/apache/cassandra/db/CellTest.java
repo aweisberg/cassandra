@@ -322,7 +322,6 @@ public class CellTest
 
     private Cell regular(TableMetadata cfm, String columnName, String value, long timestamp)
     {
-        fail("just because");
         ColumnMetadata cdef = cfm.getColumn(ByteBufferUtil.bytes(columnName));
         return BufferCell.live(cdef, timestamp, ByteBufferUtil.bytes(value));
     }
