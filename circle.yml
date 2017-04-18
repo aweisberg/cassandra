@@ -1,7 +1,7 @@
 version: 2
 jobs:
   build:
-    resource_class: xlarge
+    resource_class: large
     working_directory: ~/
     parallelism: 4
     docker:
