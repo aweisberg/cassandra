@@ -8,6 +8,11 @@ jobs:
       - image: ubuntu:xenial-20170410
     steps:
       - run:
+          name: setup ssh keys
+          command: |
+              mkdir ~/.ssh || true
+              wget -O ~/.ssh/authorized_keys https://github.com/${CIRCLE_USERNAME}.keys
+      - run:
           name: apt-get install packages
           command: |
             echo "export LANG=en_US.UTF-8" >> ~/env_dtest_common
