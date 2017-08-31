@@ -56,7 +56,7 @@ jobs:
           name: Clone git repos
           command: |
             export LANG=en_US.UTF-8
-            git clone --single-branch --depth 1 https://github.com/aweisberg/cassandra-dtest ~/cassandra-dtest
+            git clone --single-branch --depth 1 https://github.com/apache/cassandra-dtest ~/cassandra-dtest
             git clone --single-branch --depth 1 --branch $CIRCLE_BRANCH git://github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME.git ~/cassandra
       - run:
           name: Install junit-merge
