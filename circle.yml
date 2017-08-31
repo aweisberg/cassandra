@@ -8,11 +8,6 @@ jobs:
       - image: ubuntu:xenial-20170410
     steps:
       - run:
-          name: setup ssh keys
-          command: |
-              mkdir ~/.ssh || true
-              wget -O ~/.ssh/authorized_keys https://github.com/${CIRCLE_USERNAME}.keys
-      - run:
           name: apt-get install packages
           command: |
             echo "export LANG=en_US.UTF-8" >> ~/env_dtest_common
@@ -36,8 +31,7 @@ jobs:
             apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0x219BD9C9
             echo 'deb http://repos.azulsystems.com/debian stable main' > /etc/apt/sources.list.d/zulu.list
             apt-get update
-            apt-get install -y git-core npm python python-pip python-dev zulu-8 zulu-7 ant ant-optional net-tools openssh-server
-            service ssh start
+            apt-get install -y git-core npm python python-pip python-dev zulu-8 zulu-7 ant ant-optional net-tools
             ln -s /usr/bin/nodejs /usr/bin/node || true
       - run:
           name: Log environment information
