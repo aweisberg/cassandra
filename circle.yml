@@ -31,7 +31,8 @@ jobs:
             apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0x219BD9C9
             echo 'deb http://repos.azulsystems.com/debian stable main' > /etc/apt/sources.list.d/zulu.list
             apt-get update
-            apt-get install -y git-core npm python python-pip python-dev zulu-8 zulu-7 ant ant-optional net-tools
+            apt-get install -y git-core npm python python-pip python-dev zulu-8 zulu-7 ant ant-optional net-tools openssh-server
+            service ssh status
             ln -s /usr/bin/nodejs /usr/bin/node || true
       - run:
           name: Log environment information
