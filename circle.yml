@@ -3,7 +3,7 @@ jobs:
   build:
     resource_class: xlarge
     working_directory: ~/
-    parallelism: 22
+    parallelism: 38
     docker:
       - image: ubuntu:xenial-20170410
     steps:
@@ -134,17 +134,49 @@ jobs:
             mkdir -p /tmp/dtest
             export NUM_TOKENS="32"
             ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout.txt || true
+            cp nosetests.xml nosetests-regular.xml
+      - run:
+          name: Run dtests no vnode
+          no_output_timeout: 70m
+          command: |
+            source ~/venv/bin/activate
+            source ~/env_dtest_common
+            cd ~/cassandra-dtest
+            export DISABLE_VNODES="true"
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-novnodes.txt || true
+            cp nosetests.xml nosetests-novnode.xml
+      - run:
+          name: Run dtests offheap
+          no_output_timeout: 70m
+          command: |
+            source ~/venv/bin/activate
+            source ~/env_dtest_common
+            cd ~/cassandra-dtest
+            export OFFHEAP_MEMTABLES="true"
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-offheap.txt || true
+            cp nosetests.xml nosetests-offheap.xml
+      - run:
+          name: Run dtests large
+          no_output_timeout: 70m
+          command: |
+            source ~/venv/bin/activate
+            source ~/env_dtest_common
+            cd ~/cassandra-dtest
+            mkdir -p /tmp/dtest
+            export NUM_TOKENS="32"
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout.txt || true
+            cp nosetests.xml nosetests-large.xml
       - run:
           name: Collect and merge test results
           command: |
             rm -f $HOME/cassandra-dtest/logs/last || true
             mkdir -p /tmp/results/junit || true
-            junit-merge ~/cassandra-dtest/nosetests.xml || true
+            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests-*.xml
             cp  merged-test-results.xml /tmp/results/junit || true
             mkdir /tmp/dtest_dirs
             tar cfz /tmp/dtest_dirs/dirs.tgz /tmp/dtest-*
             cp -r /tmp/dtest-* /tmp/dtest_dirs
-#            junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests.xml
+#            junit-merge ~/cassandra-dtest/nosetests.xml || true
       - store_test_results:
           path: /tmp/results
       - store_artifacts:
