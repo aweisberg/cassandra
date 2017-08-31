@@ -173,9 +173,9 @@ jobs:
             mkdir -p /tmp/results/junit || true
             junit-merge ~/cassandra/build/test/output/*.xml ~/cassandra-dtest/nosetests-*.xml
             cp  merged-test-results.xml /tmp/results/junit || true
-            mkdir /tmp/dtest_dirs
-            tar cfz /tmp/dtest_dirs/dirs.tgz /tmp/dtest-*
-            cp -r /tmp/dtest-* /tmp/dtest_dirs
+#            mkdir /tmp/dtest_dirs
+#            tar cfz /tmp/dtest_dirs/dirs.tgz /tmp/dtest-*
+#            cp -r /tmp/dtest-* /tmp/dtest_dirs
 #            junit-merge ~/cassandra-dtest/nosetests.xml || true
       - store_test_results:
           path: /tmp/results
@@ -191,6 +191,6 @@ jobs:
       - store_artifacts:
           path: ~/cassandra-dtest/logs
           destination: dtest_logs
-      - store_artifacts:
-          path: /tmp/dtest_dirs
-          destination: dtest_dirs
+#      - store_artifacts:
+#          path: /tmp/dtest_dirs
+#          destination: dtest_dirs
