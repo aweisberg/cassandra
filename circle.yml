@@ -99,22 +99,35 @@ jobs:
           command: |
             #"$HOME/cassandra-dtest/**/*.py"
             export LANG=en_US.UTF-8
-            echo `circleci tests glob "$HOME/cassandra/test/unit/**" "$HOME/cassandra-dtest/**/*.py" | grep -v upgrade_tests | grep -v "cassandra-thrift" | grep -v "thrift_bindings" | grep -v "tools" | grep -v "dtest.py" | grep -v "$HOME/cassandra-dtest/bin" | grep -v "plugins" | circleci tests split --split-by=timings --timings-type=filename` > /tmp/tests.txt
-            echo "***processed tests***"
-            cat /tmp/tests.txt | sed -e 's/\s\+/\n/g' > /tmp/processed_tests.txt
-            cat /tmp/processed_tests.txt
+            rm -fr ~/cassandra-dtest/upgrade_tests
             echo "***java tests***"
-            cat /tmp/processed_tests.txt | grep "\.java$" > /tmp/java_tests.txt
-            cat /tmp/java_tests.txt
+            circleci tests glob "$HOME/cassandra/test/unit/**" | circleci tests split --split-by=timings --timings-type=filename > /tmp/java_tests.txt
             cat /tmp/java_tests.txt | cut -c 27-1000000 | grep "Test\.java$" > /tmp/java_tests_final.txt
             echo "***final java tests***"
             cat /tmp/java_tests_final.txt
             echo "***python tests***"
-            cat /tmp/processed_tests.txt | grep "\.py$" > /tmp/python_tests.txt
+            cd cassandra-dtest
+            export CASSANDRA_DIR=../cassandra
+            source ~/venv/bin/activate
+            ./run_dtests.py --vnodes true --nose-options='--verbosity=3 --dtest-collect-only' 2>&1 | tee /tmp/pythontestlist
+            TEST_TAG=novnode ./run_dtests.py --vnodes false --nose-options='--verbosity=3 --dtest-collect-only --attr=!resource-intensive' 2>&1 | tee -a /tmp/pythontestlist
+            TEST_TAG=offheap ./run_dtests.py --vnodes true --nose-options='--verbosity=3 --dtest-collect-only --attr=!resource-intensive' 2>&1 | tee -a /tmp/pythontestlist
+            cat /tmp/pythontestlist | grep "... ok" | rev | cut -c 9- | rev > /tmp/testlist_trimmed
+            awk -F' \(' '{ print $2 "." $1}' /tmp/testlist_trimmed > /tmp/testlist_final
+            cat /tmp/testlist_final | circleci tests split --split-by=timings --timings-type=classname > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
-            echo "***final python tests***"
-            cat /tmp/python_tests.txt | tr '\n' ' ' > /tmp/python_tests_final.txt
-            cat /tmp/python_tests_final.txt
+            echo "***regular python tests***"
+            cat /tmp/python_tests.txt | grep -v "\-novnode" | grep -v "\-offheap" > /tmp/regular_python_tests.txt
+            cat /tmp/regular_python_tests.txt | tr '\n' ' ' > /tmp/regular_python_tests_final.txt
+            cat /tmp/regular_python_tests_final.txt
+            echo "***novnode python tests***"
+            cat /tmp/python_tests.txt | grep "\-novnode" | rev | cut -c 9- | rev > /tmp/novnode_python_tests.txt
+            cat /tmp/novnode_python_tests.txt | tr '\n' ' ' > /tmp/novnode_python_tests_final.txt
+            cat /tmp/novnode_python_tests_final.txt
+            echo "***offheap python tests***"
+            cat /tmp/python_tests.txt | grep "\-offheap" | rev | cut -c 9- | rev > /tmp/offheap_python_tests.txt
+            cat /tmp/offheap_python_tests.txt | tr '\n' ' ' > /tmp/offheap_python_tests_final.txt
+            cat /tmp/offheap_python_tests_final.txt
       - run:
          name: Run unit tests
          command: |
@@ -132,7 +145,7 @@ jobs:
             cd ~/cassandra-dtest
             mkdir -p /tmp/dtest
             export NUM_TOKENS="32"
-            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout.txt || true
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-xunit --nocapture" `cat /tmp/regular_python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout.txt || true
             cp nosetests.xml nosetests-regular.xml
       - run:
           name: Run dtests no vnode
@@ -143,7 +156,7 @@ jobs:
             cd ~/cassandra-dtest
             export DISABLE_VNODES="true"
             export TEST_TAG="novnodes"
-            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-dtestxunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-novnodes.txt || true
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-dtestxunit --nocapture --attr=!resource-intensive" `cat /tmp/novnode_python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-novnodes.txt || true
             cp nosetests.xml nosetests-novnode.xml
 #      - run:
 #          name: Run dtests offheap
@@ -155,17 +168,6 @@ jobs:
 #            export OFFHEAP_MEMTABLES="true"
 #            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-dtestxunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-offheap.txt || true
 #            cp nosetests.xml nosetests-offheap.xml
-#      - run:
-#          name: Run dtests large
-#          no_output_timeout: 70m
-#          command: |
-#            source ~/venv/bin/activate
-#            source ~/env_dtest_common
-#            cd ~/cassandra-dtest
-#            mkdir -p /tmp/dtest
-#            export NUM_TOKENS="32"
-#            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-dtestxunit --nocapture --attr=resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout.txt || true
-#            cp nosetests.xml nosetests-large.xml
       - run:
           name: Collect and merge test results
           command: |
