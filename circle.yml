@@ -113,8 +113,7 @@ jobs:
             TEST_TAG=novnode ./run_dtests.py --vnodes false --nose-options='--verbosity=3 --dtest-collect-only --attr=!resource-intensive' 2>&1 | tee -a /tmp/pythontestlist
             TEST_TAG=offheap ./run_dtests.py --vnodes true --nose-options='--verbosity=3 --dtest-collect-only --attr=!resource-intensive' 2>&1 | tee -a /tmp/pythontestlist
             cat /tmp/pythontestlist | grep "... ok" | rev | cut -c 9- | rev > /tmp/testlist_trimmed
-            awk -F' \(' '{ print $2 "." $1}' /tmp/testlist_trimmed > /tmp/testlist_final
-            cat /tmp/testlist_final | circleci tests split --split-by=timings --timings-type=classname > /tmp/python_tests.txt
+            cat /tmp/testlist_trimmed | circleci tests split --split-by=timings --timings-type=classname > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
             echo "***regular python tests***"
             cat /tmp/python_tests.txt | grep -v "\-novnode" | grep -v "\-offheap" > /tmp/regular_python_tests.txt
