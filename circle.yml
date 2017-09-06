@@ -120,11 +120,11 @@ jobs:
             cat /tmp/regular_python_tests.txt | tr '\n' ' ' > /tmp/regular_python_tests_final.txt
             cat /tmp/regular_python_tests_final.txt
             echo "***novnode python tests***"
-            cat /tmp/python_tests.txt | grep "\-novnode" | rev | cut -c 8- | rev > /tmp/novnode_python_tests.txt
+            cat /tmp/python_tests.txt | grep "\-novnode" | rev | cut -c 9- | rev > /tmp/novnode_python_tests.txt
             cat /tmp/novnode_python_tests.txt | tr '\n' ' ' > /tmp/novnode_python_tests_final.txt
             cat /tmp/novnode_python_tests_final.txt
             echo "***offheap python tests***"
-            cat /tmp/python_tests.txt | grep "\-offheap" | rev | cut -c 8- | rev > /tmp/offheap_python_tests.txt
+            cat /tmp/python_tests.txt | grep "\-offheap" | rev | cut -c 9- | rev > /tmp/offheap_python_tests.txt
             cat /tmp/offheap_python_tests.txt | tr '\n' ' ' > /tmp/offheap_python_tests_final.txt
             cat /tmp/offheap_python_tests_final.txt
       - run:
