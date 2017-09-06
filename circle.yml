@@ -30,7 +30,7 @@ jobs:
             apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 0x219BD9C9
             echo 'deb http://repos.azulsystems.com/debian stable main' > /etc/apt/sources.list.d/zulu.list
             apt-get update
-            apt-get install -y git-core npm python python-pip python-dev zulu-8 zulu-7 ant ant-optional net-tools vim
+            apt-get install -y git-core npm python python-pip python-dev zulu-8 zulu-7 ant ant-optional net-tools vim man
             ln -s /usr/bin/nodejs /usr/bin/node || true
             mkdir ~/.ssh || true
             echo $'Host *\n UserKnownHostsFile /dev/null\n StrictHostKeyChecking no' > ~/.ssh/config
@@ -160,16 +160,16 @@ jobs:
             export TEST_TAG="novnodes"
             ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-dtestxunit --nocapture --attr=!resource-intensive" `cat /tmp/novnode_python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-novnodes.txt || true
             cp nosetests.xml nosetests-novnode.xml
-#      - run:
-#          name: Run dtests offheap
-#          no_output_timeout: 70m
-#          command: |
-#            source ~/venv/bin/activate
-#            source ~/env_dtest_common
-#            cd ~/cassandra-dtest
-#            export OFFHEAP_MEMTABLES="true"
-#            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-dtestxunit --nocapture --attr=!resource-intensive" `cat /tmp/python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-offheap.txt || true
-#            cp nosetests.xml nosetests-offheap.xml
+      - run:
+          name: Run dtests offheap
+          no_output_timeout: 70m
+          command: |
+            source ~/venv/bin/activate
+            source ~/env_dtest_common
+            cd ~/cassandra-dtest
+            export OFFHEAP_MEMTABLES="true"
+            ./run_dtests.py --vnodes true --nose-options="--verbosity=3 --with-dtestxunit --nocapture --attr=!resource-intensive" `cat /tmp/offheap_python_tests_final.txt`  2>&1 | tee /tmp/dtest/stdout-offheap.txt || true
+            cp nosetests.xml nosetests-offheap.xml
       - run:
           name: Collect and merge test results
           command: |
