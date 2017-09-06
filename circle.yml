@@ -3,7 +3,7 @@ jobs:
   build:
     resource_class: xlarge
     working_directory: ~/
-    parallelism: 60
+    parallelism: 40
     docker:
       - image: ubuntu:xenial-20170410
     steps:
@@ -101,7 +101,6 @@ jobs:
           command: |
             #"$HOME/cassandra-dtest/**/*.py"
             export LANG=en_US.UTF-8
-            rm -fr ~/cassandra-dtest/upgrade_tests
             echo "***java tests***"
             circleci tests glob "$HOME/cassandra/test/unit/**" | circleci tests split --split-by=timings --timings-type=filename > /tmp/java_tests.txt
             cat /tmp/java_tests.txt | cut -c 27-1000000 | grep "Test\.java$" > /tmp/java_tests_final.txt
@@ -113,8 +112,10 @@ jobs:
             export CASSANDRA_DIR=../cassandra
             source ~/venv/bin/activate
             ./run_dtests.py --vnodes true --nose-options='--verbosity=3 --dtest-collect-only' 2>&1 | tee /tmp/pythontestlist
+            mv upgrade_tests /tmp
             TEST_TAG=novnode ./run_dtests.py --vnodes false --nose-options='--verbosity=3 --dtest-collect-only --attr=!resource-intensive' 2>&1 | tee -a /tmp/pythontestlist
             TEST_TAG=offheap ./run_dtests.py --vnodes true --nose-options='--verbosity=3 --dtest-collect-only --attr=!resource-intensive' 2>&1 | tee -a /tmp/pythontestlist
+            mv /tmp/upgrade_tests .
             cat /tmp/pythontestlist | grep "... ok" | rev | cut -c 8- | rev > /tmp/testlist_trimmed
             cat /tmp/testlist_trimmed | circleci tests split --split-by=timings --timings-type=classname > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
