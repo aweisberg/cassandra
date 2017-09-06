@@ -32,6 +32,8 @@ jobs:
             apt-get update
             apt-get install -y git-core npm python python-pip python-dev zulu-8 zulu-7 ant ant-optional net-tools vim
             ln -s /usr/bin/nodejs /usr/bin/node || true
+            mkdir ~/.ssh || true
+            echo $'Host *\n UserKnownHostsFile /dev/null\n StrictHostKeyChecking no' > ~/.ssh/config
       - run:
           name: Log environment information
           command: |
