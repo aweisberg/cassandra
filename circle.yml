@@ -15,8 +15,6 @@ jobs:
             echo 'export JAVA_HOME=$JDK_HOME/jre' >> ~/env_dtest_common
             echo 'export JAVA8_HOME=$JDK_HOME' >> ~/env_dtest_common
             echo "export JAVA7_HOME=/usr/lib/jvm/zulu-7-amd64" >> ~/env_dtest_common
-            echo "export DEBUG=true" >> ~/env_dtest_common
-            echo "export PRINT_DEBUG=true" >> ~/env_dtest_common
             echo "export LOCAL_GIT_REPO=$HOME/cassandra" >> ~/env_dtest_common
             echo 'export allow_root="yes"' >> ~/env_dtest_common
             echo "export KEEP_TEST_DIR=true" >> ~/env_dtest_common
