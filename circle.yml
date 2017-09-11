@@ -184,6 +184,9 @@ jobs:
       - store_test_results:
           path: /tmp/results
       - store_artifacts:
+          path: /tmp/results/junit
+          destination: mergedjunitxml
+      - store_artifacts:
           path: ~/cassandra/build/test/output
           destination: junitxml
       - store_artifacts:
