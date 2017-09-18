@@ -3,7 +3,7 @@ jobs:
   build:
     resource_class: xlarge
     working_directory: ~/
-    parallelism: 20
+    parallelism: 75
     docker:
       - image: ubuntu:xenial-20170410
     steps:
@@ -116,7 +116,7 @@ jobs:
             TEST_TAG=offheap ./run_dtests.py --vnodes true --nose-options='--verbosity=3 --dtest-collect-only --attr=!resource-intensive' 2>&1 | tee -a /tmp/pythontestlist
             mv /tmp/upgrade_tests .
             cat /tmp/pythontestlist | grep "... ok" | rev | cut -c 8- | rev > /tmp/testlist_trimmed
-            cat /tmp/testlist_trimmed | grep -v "test_low_cardinality_indexes" | grep -v "ThriftHSHATest" | grep -v "TestAvailability" | circleci tests split --split-by=timings --timings-type=classname > /tmp/python_tests.txt
+            cat /tmp/testlist_trimmed | grep -v "cqlsh_tests.cqlsh_copy_tests.CqlshCopyTest" | grep -v "test_low_cardinality_indexes" | grep -v "ThriftHSHATest" | grep -v "TestAvailability" | circleci tests split --split-by=timings --timings-type=classname > /tmp/python_tests.txt
             cat /tmp/python_tests.txt
             echo "***regular python tests***"
             cat /tmp/python_tests.txt | grep -v "\-novnode" | grep -v "\-offheap" > /tmp/regular_python_tests.txt
