@@ -3,7 +3,7 @@ jobs:
   build:
     resource_class: xlarge
     working_directory: ~/
-    parallelism: 50
+    parallelism: 20
     docker:
       - image: ubuntu:xenial-20170410
     steps:
