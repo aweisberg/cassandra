@@ -31,10 +31,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.concurrent.DebuggableScheduledThreadPoolExecutor;
 import sun.nio.ch.DirectBuffer;
 
 import org.apache.cassandra.concurrent.ScheduledExecutors;
@@ -557,8 +561,18 @@ public final class FileUtils
         write(file, Arrays.asList(lines), StandardOpenOption.TRUNCATE_EXISTING);
     }
 
+    public static final DebuggableScheduledThreadPoolExecutor ioTimer = new DebuggableScheduledThreadPoolExecutor("IO Timer");
+
     public static void write(File file, List<String> lines, StandardOpenOption ... options)
     {
+        long start = System.nanoTime();
+        Thread thread = Thread.currentThread();
+        ScheduledFuture<?> watchdog = ioTimer.scheduleAtFixedRate(() -> {
+            logger.info("IO write took {} milliseconds so far", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+            Throwable t = new Throwable();
+            t.setStackTrace(thread.getStackTrace());
+            logger.info("IO stack for thread: \"" + thread.getName() + "\"", t);
+        }, 100, 100, TimeUnit.MILLISECONDS);
         try
         {
             Files.write(file.toPath(),
@@ -569,6 +583,10 @@ public final class FileUtils
         catch (IOException ex)
         {
             throw new RuntimeException(ex);
+        }
+        finally
+        {
+            watchdog.cancel(false);
         }
     }
 
