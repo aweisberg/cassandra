@@ -120,7 +120,7 @@ public class CassandraDaemon
                 {
                     try
                     {
-                        Thread.sleep(5 * 1000);
+                        Thread.sleep(999999 * 1000);
                     }
                     catch (InterruptedException e)
                     {
