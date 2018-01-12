@@ -565,6 +565,7 @@ public final class FileUtils
 
     public static void write(File file, List<String> lines, StandardOpenOption ... options)
     {
+        logger.info("Beginning write to file");
         long start = System.nanoTime();
         Thread thread = Thread.currentThread();
         ScheduledFuture<?> watchdog = ioTimer.scheduleAtFixedRate(() -> {
@@ -588,6 +589,7 @@ public final class FileUtils
         {
             watchdog.cancel(false);
         }
+        logger.info("Ending write to file took " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
     }
 
     public static List<String> readLines(File file)
