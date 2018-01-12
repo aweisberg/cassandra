@@ -619,10 +619,12 @@ public class CassandraDaemon
      */
     public void activate()
     {
+        Thread.currentThread().setName("GOOBER");
         // Do not put any references to DatabaseDescriptor above the forceStaticInitialization call.
         try
         {
             applyConfig();
+            logger.info("ariel Applied config");
 
             try
             {
@@ -643,6 +645,7 @@ public class CassandraDaemon
             }
 
             setup();
+            logger.info("ariel Did setup");
 
             String pidFile = System.getProperty("cassandra-pidfile");
 
@@ -658,9 +661,12 @@ public class CassandraDaemon
             }
 
             start();
+            logger.info("ariel started");
+
         }
         catch (Throwable e)
         {
+            logger.error("ariel sad error", e);
             boolean logStackTrace =
                     e instanceof ConfigurationException ? ((ConfigurationException)e).logStackTrace : true;
 
