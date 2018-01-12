@@ -565,7 +565,7 @@ public final class FileUtils
 
     public static void write(File file, List<String> lines, StandardOpenOption ... options)
     {
-        logger.info("Beginning write to file");
+//        logger.info("Beginning write to file");
         long start = System.nanoTime();
         Thread thread = Thread.currentThread();
         ScheduledFuture<?> watchdog = ioTimer.scheduleAtFixedRate(() -> {
@@ -573,7 +573,7 @@ public final class FileUtils
             Throwable t = new Throwable();
             t.setStackTrace(thread.getStackTrace());
             logger.info("IO stack for thread: \"" + thread.getName() + "\"", t);
-        }, 100, 100, TimeUnit.MILLISECONDS);
+        }, 1000, 1000, TimeUnit.MILLISECONDS);
         try
         {
             Files.write(file.toPath(),
@@ -589,7 +589,7 @@ public final class FileUtils
         {
             watchdog.cancel(false);
         }
-        logger.info("Ending write to file took " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+//        logger.info("Ending write to file took " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
     }
 
     public static List<String> readLines(File file)
