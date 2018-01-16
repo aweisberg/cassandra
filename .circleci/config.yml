@@ -248,8 +248,9 @@ jobs:
             echo "** done env"
             mkdir -p /tmp/results/dtests
             # we need the "set -o pipefail" here so that the exit code that circleci will actually use is from pytest and not the exit code from tee
-            export SPLIT_TESTS=`echo global_row_key_cache_test.py`
+            #export SPLIT_TESTS=`echo global_row_key_cache_test.py`
             #export SPLIT_TESTS=`echo secondary_indexes_test.py`
+            export SPLIT_TESTS=`echo bootstrap_test.py`
             sudo apt-get update
             sudo apt-get install -y sysstat
             iostat -m 1 2>&1  > /tmp/iostat &
@@ -331,8 +332,9 @@ jobs:
 
                 mkdir -p /tmp/results/dtests
                 # we need the "set -o pipefail" here so that the exit code that circleci will actually use is from pytest and not the exit code from tee
-                export SPLIT_TESTS=`echo global_row_key_cache_test.py`
+                #export SPLIT_TESTS=`echo global_row_key_cache_test.py`
                 #export SPLIT_TESTS=`echo secondary_indexes_test.py`
+                export SPLIT_TESTS=`echo bootstrap_test.py`
                 sudo apt-get update
                 sudo apt-get install -y sysstat
                 iostat -m 1 2>&1  > /tmp/iostat &

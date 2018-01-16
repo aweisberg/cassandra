@@ -566,14 +566,14 @@ public final class FileUtils
     public static void write(File file, List<String> lines, StandardOpenOption ... options)
     {
 //        logger.info("Beginning write to file");
-        long start = System.nanoTime();
-        Thread thread = Thread.currentThread();
-        ScheduledFuture<?> watchdog = ioTimer.scheduleAtFixedRate(() -> {
-            logger.info("IO write took {} milliseconds so far", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
-            Throwable t = new Throwable();
-            t.setStackTrace(thread.getStackTrace());
-            logger.info("IO stack for thread: \"" + thread.getName() + "\"", t);
-        }, 1000, 1000, TimeUnit.MILLISECONDS);
+//        long start = System.nanoTime();
+//        Thread thread = Thread.currentThread();
+//        ScheduledFuture<?> watchdog = ioTimer.scheduleAtFixedRate(() -> {
+//            logger.info("IO write took {} milliseconds so far", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+//            Throwable t = new Throwable();
+//            t.setStackTrace(thread.getStackTrace());
+//            logger.info("IO stack for thread: \"" + thread.getName() + "\"", t);
+//        }, 1000, 1000, TimeUnit.MILLISECONDS);
         try
         {
             Files.write(file.toPath(),
@@ -585,10 +585,10 @@ public final class FileUtils
         {
             throw new RuntimeException(ex);
         }
-        finally
-        {
-            watchdog.cancel(false);
-        }
+//        finally
+//        {
+//            watchdog.cancel(false);
+//        }
 //        logger.info("Ending write to file took " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
     }
 
