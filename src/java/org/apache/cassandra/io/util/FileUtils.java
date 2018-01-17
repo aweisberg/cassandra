@@ -40,6 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.DebuggableScheduledThreadPoolExecutor;
+import org.apache.cassandra.utils.SyncUtil;
 import sun.nio.ch.DirectBuffer;
 
 import org.apache.cassandra.concurrent.ScheduledExecutors;
@@ -598,11 +599,11 @@ public final class FileUtils
 
             if (sync)
             {
-                fc.force(true);
+                SyncUtil.force(fc, true);
             }
             else if (dsync)
             {
-                fc.force(false);
+                SyncUtil.force(fc, false);
             }
         }
         catch (IOException ex)
