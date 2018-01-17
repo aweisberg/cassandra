@@ -19,12 +19,8 @@ package org.apache.cassandra.service;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryPoolMXBean;
-import java.lang.management.ThreadInfo;
-import java.lang.management.ThreadMXBean;
 import java.net.InetAddress;
 import java.net.URL;
 import java.net.UnknownHostException;
@@ -81,8 +77,6 @@ public class CassandraDaemon
 {
     public static final String MBEAN_NAME = "org.apache.cassandra.db:type=NativeAccess";
 
-    static private ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
-
     private static final Logger logger;
     static
     {
@@ -102,73 +96,6 @@ public class CassandraDaemon
             }
         });
         logger = LoggerFactory.getLogger(CassandraDaemon.class);
-
-        Thread sillyLogger = new Thread()
-        {
-            String getTaskName(long id, String name){
-                if (name == null)
-                {
-                    return Long.toString(id);
-                }
-                return id + " (" + name + ")";
-            }
-
-            @Override
-            public void run()
-            {
-                while (true)
-                {
-                    try
-                    {
-                        Thread.sleep(60 * 1000);
-                    }
-                    catch (InterruptedException e)
-                    {
-                        e.printStackTrace();
-                    }
-                    final int STACK_DEPTH = 20;
-                    StringWriter sw = new StringWriter();
-                    PrintWriter stream = new PrintWriter(sw, true);
-                    boolean contention = threadBean.isThreadContentionMonitoringEnabled();
-                    long[] threadIds = threadBean.getAllThreadIds();
-                    stream.println(threadIds.length + " active threads");
-                    for (long tid : threadIds) {
-                        ThreadInfo info = threadBean.getThreadInfo(tid, STACK_DEPTH);
-                        if (info == null) {
-                            stream.println("  Inactive");
-                            continue;
-                        }
-                        stream.println("Thread " + getTaskName(info.getThreadId(), info.getThreadName()) + ":");
-                        Thread.State state = info.getThreadState();
-                        stream.println("  State: " + state);
-                        stream.println("  Blocked count: " + info.getBlockedCount());
-                        stream.println("  Waited count: " + info.getWaitedCount());
-                        if (contention) {
-                            stream.println("  Blocked time: " + info.getBlockedTime());
-                            stream.println("  Waited time: " + info.getWaitedTime());
-                        }
-                        if (state == Thread.State.WAITING) {
-                            stream.println("  Waiting on " + info.getLockName());
-                        } else if (state == Thread.State.BLOCKED) {
-                            stream.println("  Blocked on " + info.getLockName());
-                            stream.println("  Blocked by "
-                                           + getTaskName(info.getLockOwnerId(), info.getLockOwnerName()));
-                        }
-                        stream.println("  Stack:");
-                        for (StackTraceElement frame : info.getStackTrace()) {
-                            stream.println("    " + frame.toString());
-                        }
-                    }
-                    stream.flush();
-                    logger.info(sw.toString());
-                }
-            }
-
-        };
-        sillyLogger.setName("Silly Logger");
-        sillyLogger.setDaemon(true);
-        sillyLogger.start();
-
     }
 
     private void maybeInitJmx()
@@ -619,12 +546,10 @@ public class CassandraDaemon
      */
     public void activate()
     {
-        Thread.currentThread().setName("GOOBER");
         // Do not put any references to DatabaseDescriptor above the forceStaticInitialization call.
         try
         {
             applyConfig();
-            logger.info("ariel Applied config");
 
             try
             {
@@ -645,7 +570,6 @@ public class CassandraDaemon
             }
 
             setup();
-            logger.info("ariel Did setup");
 
             String pidFile = System.getProperty("cassandra-pidfile");
 
@@ -661,12 +585,10 @@ public class CassandraDaemon
             }
 
             start();
-            logger.info("ariel started");
 
         }
         catch (Throwable e)
         {
-            logger.error("ariel sad error", e);
             boolean logStackTrace =
                     e instanceof ConfigurationException ? ((ConfigurationException)e).logStackTrace : true;
 
