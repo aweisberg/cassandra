@@ -19,6 +19,7 @@ package org.apache.cassandra.io.util;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -29,10 +30,10 @@ import java.nio.file.attribute.FileStoreAttributeView;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.slf4j.Logger;
@@ -563,33 +564,51 @@ public final class FileUtils
 
     public static final DebuggableScheduledThreadPoolExecutor ioTimer = new DebuggableScheduledThreadPoolExecutor("IO Timer");
 
+    /**
+     * Write lines to a file adding a newline to the end of each supplied line using the provided open options.
+     *
+     * If open option sync or dsync is provided this will not open the file with sync or dsync since it might end up syncing
+     * many times for a lot of lines. Instead it will write all the lines and sync once at the end. Since the file is
+     * never returned there is not much difference from the perspective of the caller.
+     * @param file
+     * @param lines
+     * @param options
+     */
     public static void write(File file, List<String> lines, StandardOpenOption ... options)
     {
-//        logger.info("Beginning write to file");
-//        long start = System.nanoTime();
-//        Thread thread = Thread.currentThread();
-//        ScheduledFuture<?> watchdog = ioTimer.scheduleAtFixedRate(() -> {
-//            logger.info("IO write took {} milliseconds so far", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
-//            Throwable t = new Throwable();
-//            t.setStackTrace(thread.getStackTrace());
-//            logger.info("IO stack for thread: \"" + thread.getName() + "\"", t);
-//        }, 1000, 1000, TimeUnit.MILLISECONDS);
-        try
+        Set<StandardOpenOption> optionsSet = new HashSet<>(Arrays.asList(options));
+        //Emulate the old FileSystemProvider.newOutputStream behavior for open options.
+        if (optionsSet.isEmpty())
         {
-            Files.write(file.toPath(),
-                        lines,
-                        CHARSET,
-                        options);
+            optionsSet.add(StandardOpenOption.CREATE);
+            optionsSet.add(StandardOpenOption.TRUNCATE_EXISTING);
+        }
+        boolean sync = optionsSet.remove(StandardOpenOption.SYNC);
+        boolean dsync = optionsSet.remove(StandardOpenOption.DSYNC);
+        optionsSet.add(StandardOpenOption.WRITE);
+
+        Path filePath = file.toPath();
+        try (FileChannel fc = filePath.getFileSystem().provider().newFileChannel(filePath, optionsSet);
+             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(Channels.newOutputStream(fc), CHARSET.newEncoder())))
+        {
+            for (CharSequence line: lines) {
+                writer.append(line);
+                writer.newLine();
+            }
+
+            if (sync)
+            {
+                fc.force(true);
+            }
+            else if (dsync)
+            {
+                fc.force(false);
+            }
         }
         catch (IOException ex)
         {
             throw new RuntimeException(ex);
         }
-//        finally
-//        {
-//            watchdog.cancel(false);
-//        }
-//        logger.info("Ending write to file took " + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
     }
 
     public static List<String> readLines(File file)
