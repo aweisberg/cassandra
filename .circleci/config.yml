@@ -251,6 +251,7 @@ jobs:
             #export SPLIT_TESTS=`echo global_row_key_cache_test.py`
             export SPLIT_TESTS=`echo secondary_indexes_test.py`
             #export SPLIT_TESTS=`echo bootstrap_test.py`
+            export CASSANDRA_SKIP_SYNC=true
             sudo apt-get update
             sudo apt-get install -y sysstat
             iostat -m 1 2>&1  > /tmp/iostat &
@@ -335,6 +336,7 @@ jobs:
                 #export SPLIT_TESTS=`echo global_row_key_cache_test.py`
                 export SPLIT_TESTS=`echo secondary_indexes_test.py`
                 #export SPLIT_TESTS=`echo bootstrap_test.py`
+                export CASSANDRA_SKIP_SYNC=true
                 sudo apt-get update
                 sudo apt-get install -y sysstat
                 iostat -m 1 2>&1  > /tmp/iostat &
