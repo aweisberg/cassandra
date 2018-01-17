@@ -249,18 +249,13 @@ jobs:
             mkdir -p /tmp/results/dtests
             # we need the "set -o pipefail" here so that the exit code that circleci will actually use is from pytest and not the exit code from tee
             #export SPLIT_TESTS=`echo global_row_key_cache_test.py`
-            export SPLIT_TESTS=`echo secondary_indexes_test.py`
+            #export SPLIT_TESTS=`echo secondary_indexes_test.py`
             #export SPLIT_TESTS=`echo bootstrap_test.py`
+            export SPLIT_TESTS=`echo topology_test.py`
             export CASSANDRA_SKIP_SYNC=true
-            sudo apt-get update
-            sudo apt-get install -y sysstat
-            iostat -m 1 2>&1  > /tmp/iostat &
             set -o pipefail && cd ~/cassandra-dtest && pytest --log-level="INFO" --use-vnodes --num-tokens=32 --junit-xml=/tmp/results/dtests/pytest_result_with_vnodes.xml -s --cassandra-dir=/home/cassandra/cassandra --skip-resource-intensive-tests --keep-test-dir $SPLIT_TESTS 2>&1 | tee /tmp/dtest/stdout.txt
       - store_test_results:
           path: /tmp/results
-      - store_artifacts:
-          path: /tmp/iostat
-          destination: iostat
       - store_artifacts:
           path: /tmp/dtest
           destination: dtest_with_vnodes
@@ -334,19 +329,14 @@ jobs:
                 mkdir -p /tmp/results/dtests
                 # we need the "set -o pipefail" here so that the exit code that circleci will actually use is from pytest and not the exit code from tee
                 #export SPLIT_TESTS=`echo global_row_key_cache_test.py`
-                export SPLIT_TESTS=`echo secondary_indexes_test.py`
+                #export SPLIT_TESTS=`echo secondary_indexes_test.py`
                 #export SPLIT_TESTS=`echo bootstrap_test.py`
+                export SPLIT_TESTS=`echo topology_test.py`
                 export CASSANDRA_SKIP_SYNC=true
-                sudo apt-get update
-                sudo apt-get install -y sysstat
-                iostat -m 1 2>&1  > /tmp/iostat &
             	set -o pipefail && cd ~/cassandra-dtest && pytest --log-level="INFO" --junit-xml=/tmp/results/dtests/pytest_result_novnodes.xml -s --cassandra-dir=/home/cassandra/cassandra --skip-resource-intensive-tests --keep-test-dir $SPLIT_TESTS 2>&1 | tee /tmp/dtest/stdout-novnodes.txt
             fi
       - store_test_results:
           path: /tmp/results
-      - store_artifacts:
-          path: /tmp/iostat
-          destination: iostat
       - store_artifacts:
           path: /tmp/dtest
           destination: dtest_no_vnodes
