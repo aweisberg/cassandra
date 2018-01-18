@@ -39,7 +39,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.concurrent.DebuggableScheduledThreadPoolExecutor;
 import org.apache.cassandra.utils.SyncUtil;
 import sun.nio.ch.DirectBuffer;
 
@@ -562,8 +561,6 @@ public final class FileUtils
     {
         write(file, Arrays.asList(lines), StandardOpenOption.TRUNCATE_EXISTING);
     }
-
-    public static final DebuggableScheduledThreadPoolExecutor ioTimer = new DebuggableScheduledThreadPoolExecutor("IO Timer");
 
     /**
      * Write lines to a file adding a newline to the end of each supplied line using the provided open options.

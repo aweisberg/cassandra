@@ -811,7 +811,7 @@ cas_contention_timeout_in_ms: 1000
 truncate_request_timeout_in_ms: 60000
 # The default timeout for other, miscellaneous operations.
 # Lowest acceptable value is 10 ms.
-request_timeout_in_ms: 90000
+request_timeout_in_ms: 10000
 
 # How long before a node logs slow queries. Select queries that take longer than
 # this timeout to execute, will generate an aggregated log message, so that slow queries
