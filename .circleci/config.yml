@@ -323,7 +323,7 @@ jobs:
 
                 mkdir -p /tmp/results/dtests
                 # we need the "set -o pipefail" here so that the exit code that circleci will actually use is from pytest and not the exit code from tee
-                export SPLIT_TESTS=`cat /tmp/split_dtest_tests_with_vnodes_final.txt`
+                export SPLIT_TESTS=`cat /tmp/split_dtest_tests_without_vnodes_final.txt`
                 #Skip all syncing to disk to avoid performance issues in flakey CI environments
                 export CASSANDRA_SKIP_SYNC=true
             	set -o pipefail && cd ~/cassandra-dtest && pytest --log-level="INFO" --junit-xml=/tmp/results/dtests/pytest_result_novnodes.xml -s --cassandra-dir=/home/cassandra/cassandra --skip-resource-intensive-tests --keep-test-dir $SPLIT_TESTS 2>&1 | tee /tmp/dtest/stdout-novnodes.txt
