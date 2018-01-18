@@ -15,7 +15,7 @@ default_env_vars: &default_env_vars
 high_capacity_env_vars: &high_capacity_env_vars
     <<: *default_env_vars
     CCM_MAX_HEAP_SIZE: 2048M
-    CCM_HEAP_NEWSIZE: 512M 
+    CCM_HEAP_NEWSIZE: 512M
 # For enviornments with limited memory (e.g the free OSS CircleCI Tier)
 resource_constrained_env_vars: &resource_constrained_env_vars
     <<: *default_env_vars
@@ -35,7 +35,7 @@ default_jobs: &default_jobs
             - unit_tests:
                   requires:
                       - build
-with_dtests_jobs: &with_dtest_jobs 
+with_dtests_jobs: &with_dtest_jobs
         jobs:
             - build
             - unit_tests:
@@ -65,8 +65,9 @@ env_vars: &env_vars
     <<: *high_capacity_env_vars
 workflows:
     version: 2
-    build_and_run_tests: *default_jobs
+    #build_and_run_tests: *default_jobs
     #build_and_run_tests: *with_dtest_jobs_only
+    build_and_run_tests: *with_dtest_jobs
 docker_image: &docker_image kjellman/cassandra-test:0.4.3
 version: 2
 jobs:
@@ -148,7 +149,7 @@ jobs:
             # reminder: this code (along with all the steps) is independently executed on every circle container
             # so the goal here is to get the circleci script to return the tests *this* container will run
             # which we do via the `circleci` cli tool.
- 
+
             export LANG=en_US.UTF-8
             rm -fr ~/cassandra-dtest/upgrade_tests
             echo "***java tests***"
@@ -221,7 +222,7 @@ jobs:
             # reminder: this code (along with all the steps) is independently executed on every circle container
             # so the goal here is to get the circleci script to return the tests *this* container will run
             # which we do via the `circleci` cli tool.
- 
+
             export LANG=en_US.UTF-8
             cd cassandra-dtest
             source ~/env/bin/activate
@@ -302,7 +303,7 @@ jobs:
             # reminder: this code (along with all the steps) is independently executed on every circle container
             # so the goal here is to get the circleci script to return the tests *this* container will run
             # which we do via the `circleci` cli tool.
- 
+
             export LANG=en_US.UTF-8
             cd cassandra-dtest
             source ~/env/bin/activate
@@ -318,7 +319,7 @@ jobs:
           name: Run dtests (without vnodes)
           no_output_timeout: 15m
           command: |
-            # for now require at least 50 circleci containers to run the dtests (with less resources the tests won't produce reliable results or will fail to complete) 
+            # for now require at least 50 circleci containers to run the dtests (with less resources the tests won't produce reliable results or will fail to complete)
             if [ $CIRCLE_NODE_TOTAL -gt 0 ]; then
                 source ~/env/bin/activate
                 export PATH=$PATH:$ANT_HOME/bin:$JAVA_HOME/bin
