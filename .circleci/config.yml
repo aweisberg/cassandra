@@ -212,9 +212,6 @@ jobs:
             export CASS_DRIVER_NO_CYTHON=true
             pip3 install -r ~/cassandra-dtest/requirements.txt
             pip3 freeze
-
-            # patch ccm with python 3 compat fixes not yet upstream
-            (cd / && patch -p0) < /opt/ccm_node.py.py3.diff
       - run:
           name: Determine Tests to Run
           no_output_timeout: 5m
@@ -293,9 +290,6 @@ jobs:
             export CASS_DRIVER_NO_CYTHON=true
             pip3 install -r ~/cassandra-dtest/requirements.txt
             pip3 freeze
-
-            # patch ccm with python 3 compat fixes not yet upstream
-            (cd / && patch -p0) < /opt/ccm_node.py.py3.diff
       - run:
           name: Determine Tests to Run
           no_output_timeout: 5m
