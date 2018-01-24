@@ -66,8 +66,8 @@ env_vars: &env_vars
 workflows:
     version: 2
     #build_and_run_tests: *default_jobs
-    #build_and_run_tests: *with_dtest_jobs_only
-    build_and_run_tests: *with_dtest_jobs
+    build_and_run_tests: *with_dtest_jobs_only
+    #build_and_run_tests: *with_dtest_jobs
 docker_image: &docker_image kjellman/cassandra-test:0.4.3
 version: 2
 jobs:
@@ -248,10 +248,11 @@ jobs:
             echo "** done env"
             mkdir -p /tmp/results/dtests
             # we need the "set -o pipefail" here so that the exit code that circleci will actually use is from pytest and not the exit code from tee
-            export SPLIT_TESTS=`cat /tmp/split_dtest_tests_with_vnodes_final.txt`
+            #export SPLIT_TESTS=`cat /tmp/split_dtest_tests_with_vnodes_final.txt`
+            export SPLIT_TESTS=`echo "./repair_tests/repair_test.py"`
             #Skip all syncing to disk to avoid performance issues in flakey CI environments
             export CASSANDRA_SKIP_SYNC=true
-            set -o pipefail && cd ~/cassandra-dtest && pytest --log-level="INFO" --use-vnodes --num-tokens=32 --junit-xml=/tmp/results/dtests/pytest_result_with_vnodes.xml -s --cassandra-dir=/home/cassandra/cassandra --skip-resource-intensive-tests --keep-test-dir $SPLIT_TESTS 2>&1 | tee /tmp/dtest/stdout.txt
+            set -o pipefail && cd ~/cassandra-dtest && pytest --log-level="INFO" --use-vnodes --num-tokens=32 --junit-xml=/tmp/results/dtests/pytest_result_with_vnodes.xml -s --cassandra-dir=/home/cassandra/cassandra --skip-resource-intensive-tests --keep-test-dir -k 'test_empty_vs_gcable_sequential_repair' $SPLIT_TESTS 2>&1 | tee /tmp/dtest/stdout.txt
       - store_test_results:
           path: /tmp/results
       - store_artifacts:
@@ -323,10 +324,11 @@ jobs:
 
                 mkdir -p /tmp/results/dtests
                 # we need the "set -o pipefail" here so that the exit code that circleci will actually use is from pytest and not the exit code from tee
-                export SPLIT_TESTS=`cat /tmp/split_dtest_tests_without_vnodes_final.txt`
+                #export SPLIT_TESTS=`cat /tmp/split_dtest_tests_without_vnodes_final.txt`
+                export SPLIT_TESTS=`echo "./repair_tests/repair_test.py"`
                 #Skip all syncing to disk to avoid performance issues in flakey CI environments
                 export CASSANDRA_SKIP_SYNC=true
-            	set -o pipefail && cd ~/cassandra-dtest && pytest --log-level="INFO" --junit-xml=/tmp/results/dtests/pytest_result_novnodes.xml -s --cassandra-dir=/home/cassandra/cassandra --skip-resource-intensive-tests --keep-test-dir $SPLIT_TESTS 2>&1 | tee /tmp/dtest/stdout-novnodes.txt
+            	set -o pipefail && cd ~/cassandra-dtest && pytest --log-level="INFO" --junit-xml=/tmp/results/dtests/pytest_result_novnodes.xml -s --cassandra-dir=/home/cassandra/cassandra --skip-resource-intensive-tests --keep-test-dir -k 'test_empty_vs_gcable_sequential_repair' $SPLIT_TESTS 2>&1 | tee /tmp/dtest/stdout-novnodes.txt
             fi
       - store_test_results:
           path: /tmp/results

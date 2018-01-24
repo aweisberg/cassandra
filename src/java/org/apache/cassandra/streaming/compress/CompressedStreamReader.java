@@ -84,10 +84,12 @@ public class CompressedStreamReader extends StreamReader
             writer = createWriter(cfs, totalSize, repairedAt, pendingRepair, format);
             String filename = writer.getFilename();
             int sectionIdx = 0;
+            logger.info("ariel sections {}", sections);
             for (Pair<Long, Long> section : sections)
             {
                 assert cis.getTotalCompressedBytesRead() <= totalSize;
                 long sectionLength = section.right - section.left;
+                cis.maxCurrent = section.right;
 
                 logger.trace("[Stream #{}] Reading section {} with length {} from stream.", session.planId(), sectionIdx++, sectionLength);
                 // skip to beginning of section inside chunk

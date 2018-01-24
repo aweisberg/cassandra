@@ -323,7 +323,9 @@ public class StreamSession implements IEndpointStateChangeSubscriber
             flushSSTables(stores);
 
         List<Range<Token>> normalizedRanges = Range.normalize(ranges);
+        logger.info("ariel adding transfer ranges from {} to {}", ranges, normalizedRanges);
         List<SSTableStreamingSections> sections = getSSTableSectionsForRanges(normalizedRanges, stores, pendingRepair, previewKind);
+        logger.info("ariel resulting sstable sections {}", sections);
         try
         {
             addTransferFiles(sections);
@@ -467,6 +469,11 @@ public class StreamSession implements IEndpointStateChangeSubscriber
             this.ref = ref;
             this.sections = sections;
             this.estimatedKeys = estimatedKeys;
+        }
+
+        public String toString()
+        {
+            return ref.get().getFilename() + ":" + sections.toString();
         }
     }
 

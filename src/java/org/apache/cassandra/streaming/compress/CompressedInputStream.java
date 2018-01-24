@@ -66,6 +66,8 @@ public class CompressedInputStream extends RebufferingInputStream implements Aut
 
     private final ChecksumType checksumType;
 
+    public Long maxCurrent = null;
+
     private static final int CHECKSUM_LENGTH = 4;
 
     /**
@@ -105,8 +107,12 @@ public class CompressedInputStream extends RebufferingInputStream implements Aut
         if (readException != null)
             throw readException;
 
-        assert position >= current : "stream can only read forward.";
+        assert position >= current : String.format("stream can only read forward. Current position %d, new position %d", current, position);
         current = position;
+        if (maxCurrent != null)
+        {
+            assert current <= maxCurrent : String.format("Current position %d, max current %d", current, maxCurrent);
+        }
 
         if (current > bufferOffset + buffer.limit())
             reBuffer(false);
@@ -130,7 +136,13 @@ public class CompressedInputStream extends RebufferingInputStream implements Aut
 
         // increment the offset into the stream based on the current buffer's read count
         if (updateCurrent)
+        {
             current += buffer.position();
+            if (maxCurrent != null)
+            {
+                assert current <= maxCurrent : String.format("Current position %d, max current %d", current, maxCurrent);
+            }
+        }
 
         try
         {
