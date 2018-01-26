@@ -171,16 +171,17 @@ jobs:
             #Skip all syncing to disk to avoid performance issues in flaky CI environments
             export CASSANDRA_SKIP_SYNC=true
 
-            cd ~/cassandra
+            time mv ~/cassandra /tmp
+            cd /tmp/cassandra
             ant testclasslist -Dtest.classlistfile=/tmp/java_tests_${CIRCLE_NODE_INDEX}_final.txt
          no_output_timeout: 15m
       - store_test_results:
-            path: ~/cassandra/build/test/output/
+            path: /tmp/cassandra/build/test/output/
       - store_artifacts:
-          path: ~/cassandra/build/test/output
+          path: /tmp/cassandra/build/test/output
           destination: junitxml
       - store_artifacts:
-          path: ~/cassandra/build/test/logs
+          path: /tmp/cassandra/build/test/logs
           destination: logs
   dtests-with-vnodes:
     <<: *env_settings
