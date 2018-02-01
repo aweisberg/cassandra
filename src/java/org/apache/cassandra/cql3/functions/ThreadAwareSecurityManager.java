@@ -259,6 +259,7 @@ public final class ThreadAwareSecurityManager extends SecurityManager
         if (!isSecuredThread())
             return;
 
+        ThreadGroup tg = Thread.currentThread().getThreadGroup();
         if (!((SecurityThreadGroup) Thread.currentThread().getThreadGroup()).isPackageAllowed(pkg))
         {
             RuntimePermission perm = new RuntimePermission("accessClassInPackage." + pkg);
