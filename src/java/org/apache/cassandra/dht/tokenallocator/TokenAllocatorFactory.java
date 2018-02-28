@@ -20,19 +20,20 @@ package org.apache.cassandra.dht.tokenallocator;
 
 import java.util.NavigableMap;
 
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.InetAddressAndPort;
 
 public class TokenAllocatorFactory
 {
     private static final Logger logger = LoggerFactory.getLogger(TokenAllocatorFactory.class);
-    public static TokenAllocator<InetAddressAndPort> createTokenAllocator(NavigableMap<Token, InetAddressAndPort> sortedTokens,
-                                                                          ReplicationStrategy<InetAddressAndPort> strategy,
-                                                                          IPartitioner partitioner)
+    public static TokenAllocator<Endpoint> createTokenAllocator(NavigableMap<Token, Endpoint> sortedTokens,
+                                                                ReplicationStrategy<Endpoint> strategy,
+                                                                IPartitioner partitioner)
     {
         if(strategy.replicas() == 1)
         {

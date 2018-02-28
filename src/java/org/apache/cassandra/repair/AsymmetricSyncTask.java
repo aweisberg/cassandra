@@ -23,13 +23,14 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.util.concurrent.AbstractFuture;
 
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.tracing.Tracing;
 
@@ -37,15 +38,15 @@ public abstract class AsymmetricSyncTask extends AbstractFuture<SyncStat> implem
 {
     private static Logger logger = LoggerFactory.getLogger(AsymmetricSyncTask.class);
     protected final RepairJobDesc desc;
-    protected final InetAddressAndPort fetchFrom;
+    protected final Endpoint fetchFrom;
     protected final List<Range<Token>> rangesToFetch;
-    protected final InetAddressAndPort fetchingNode;
+    protected final Endpoint fetchingNode;
     protected final PreviewKind previewKind;
     private long startTime = Long.MIN_VALUE;
     protected volatile SyncStat stat;
 
 
-    public AsymmetricSyncTask(RepairJobDesc desc, InetAddressAndPort fetchingNode, InetAddressAndPort fetchFrom, List<Range<Token>> rangesToFetch, PreviewKind previewKind)
+    public AsymmetricSyncTask(RepairJobDesc desc, Endpoint fetchingNode, Endpoint fetchFrom, List<Range<Token>> rangesToFetch, PreviewKind previewKind)
     {
         this.desc = desc;
         this.fetchFrom = fetchFrom;

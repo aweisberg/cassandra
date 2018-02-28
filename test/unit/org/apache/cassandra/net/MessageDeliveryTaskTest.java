@@ -28,7 +28,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 
 public class MessageDeliveryTaskTest
 {
@@ -56,7 +56,7 @@ public class MessageDeliveryTaskTest
     @Test
     public void process_HappyPath() throws UnknownHostException
     {
-        InetAddressAndPort addr = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint addr = Endpoint.getByName("127.0.0.1");
         MessageIn msg = MessageIn.create(addr, null, Collections.emptyMap(), MessagingService.Verb.UNUSED_2, 1);
         MessageDeliveryTask task = new MessageDeliveryTask(msg, 42);
         Assert.assertTrue(task.process());
@@ -66,7 +66,7 @@ public class MessageDeliveryTaskTest
     @Test
     public void process_NullVerb() throws UnknownHostException
     {
-        InetAddressAndPort addr = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint addr = Endpoint.getByName("127.0.0.1");
         MessageIn msg = MessageIn.create(addr, null, Collections.emptyMap(), null, 1);
         MessageDeliveryTask task = new MessageDeliveryTask(msg, 42);
         Assert.assertFalse(task.process());
@@ -75,7 +75,7 @@ public class MessageDeliveryTaskTest
     @Test
     public void process_NoHandler() throws UnknownHostException
     {
-        InetAddressAndPort addr = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint addr = Endpoint.getByName("127.0.0.1");
         MessageIn msg = MessageIn.create(addr, null, Collections.emptyMap(), MessagingService.Verb.UNUSED_5, 1);
         MessageDeliveryTask task = new MessageDeliveryTask(msg, 42);
         Assert.assertFalse(task.process());
@@ -84,7 +84,7 @@ public class MessageDeliveryTaskTest
     @Test
     public void process_ExpiredDroppableMessage() throws UnknownHostException
     {
-        InetAddressAndPort addr = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint addr = Endpoint.getByName("127.0.0.1");
 
         // we need any droppable verb, so just grab it from the enum itself rather than hard code a value
         MessageIn msg = MessageIn.create(addr, null, Collections.emptyMap(), MessagingService.DROPPABLE_VERBS.iterator().next(), 1, 0);
@@ -96,7 +96,7 @@ public class MessageDeliveryTaskTest
     @Test
     public void process_ExpiredMessage() throws UnknownHostException
     {
-        InetAddressAndPort addr = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint addr = Endpoint.getByName("127.0.0.1");
         MessageIn msg = MessageIn.create(addr, null, Collections.emptyMap(), MessagingService.Verb.UNUSED_2, 1, 0);
         MessageDeliveryTask task = new MessageDeliveryTask(msg, 42);
         Assert.assertTrue(task.process());

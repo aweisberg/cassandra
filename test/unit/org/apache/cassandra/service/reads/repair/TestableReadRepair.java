@@ -28,12 +28,12 @@ import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.service.reads.DigestResolver;
 
 public class TestableReadRepair implements ReadRepair, RepairListener
 {
-    public final Map<InetAddressAndPort, Mutation> sent = new HashMap<>();
+    public final Map<Endpoint, Mutation> sent = new HashMap<>();
 
     private final ReadCommand command;
 
@@ -45,7 +45,7 @@ public class TestableReadRepair implements ReadRepair, RepairListener
     private class TestablePartitionRepair implements RepairListener.PartitionRepair
     {
         @Override
-        public void reportMutation(InetAddressAndPort endpoint, Mutation mutation)
+        public void reportMutation(Endpoint endpoint, Mutation mutation)
         {
             sent.put(endpoint, mutation);
         }
@@ -58,13 +58,13 @@ public class TestableReadRepair implements ReadRepair, RepairListener
     }
 
     @Override
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(InetAddressAndPort[] endpoints)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoint[] endpoints)
     {
         return new PartitionIteratorMergeListener(endpoints, command, this);
     }
 
     @Override
-    public void startRepair(DigestResolver digestResolver, List<InetAddressAndPort> allEndpoints, List<InetAddressAndPort> contactedEndpoints, Consumer<PartitionIterator> resultConsumer)
+    public void startRepair(DigestResolver digestResolver, List<Endpoint> allEndpoints, List<Endpoint> contactedEndpoints, Consumer<PartitionIterator> resultConsumer)
     {
 
     }
@@ -87,7 +87,7 @@ public class TestableReadRepair implements ReadRepair, RepairListener
 
     }
 
-    public Mutation getForEndpoint(InetAddressAndPort endpoint)
+    public Mutation getForEndpoint(Endpoint endpoint)
     {
         return sent.get(endpoint);
     }

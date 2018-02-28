@@ -34,7 +34,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.RequestFailureReason;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -79,7 +79,7 @@ public class MessageOutBench
     public void setup()
     {
         DatabaseDescriptor.daemonInitialization();
-        InetAddressAndPort addr = InetAddressAndPort.getByAddress(InetAddresses.forString("127.0.73.101"));
+        Endpoint addr = Endpoint.getByAddress(InetAddresses.forString("127.0.73.101"));
 
         UUID uuid = UUIDGen.getTimeUUID();
         Map<ParameterType, Object> parameters = new EnumMap<>(ParameterType.class);

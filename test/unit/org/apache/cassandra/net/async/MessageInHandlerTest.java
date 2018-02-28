@@ -45,7 +45,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.RequestFailureReason;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
@@ -58,9 +58,10 @@ import static org.apache.cassandra.net.async.OutboundConnectionIdentifier.Connec
 @RunWith(Parameterized.class)
 public class MessageInHandlerTest
 {
-    private static final int MSG_ID = 42;
-    private static InetAddressAndPort addr;
 
+    private static final int MSG_ID = 42;
+
+    private static Endpoint addr = Endpoint.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.1"), 0);
     private final int messagingVersion;
 
     private ByteBuf buf;
@@ -69,7 +70,7 @@ public class MessageInHandlerTest
     public static void before()
     {
         DatabaseDescriptor.daemonInitialization();
-        addr = InetAddressAndPort.getByAddress(InetAddresses.forString("127.0.73.101"));
+        addr = Endpoint.getByAddress(InetAddresses.forString("127.0.73.101"));
     }
 
     public MessageInHandlerTest(int messagingVersion)
@@ -90,7 +91,7 @@ public class MessageInHandlerTest
             buf.release();
     }
 
-    private BaseMessageInHandler getHandler(InetAddressAndPort addr, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
+    private BaseMessageInHandler getHandler(Endpoint addr, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
     {
         if (messagingVersion >= MessagingService.VERSION_40)
             return new MessageInHandler(addr, messagingVersion, messageConsumer);

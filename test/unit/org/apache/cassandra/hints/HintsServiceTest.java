@@ -26,6 +26,9 @@ import javax.annotation.Nullable;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -33,7 +36,6 @@ import org.junit.Test;
 
 import com.datastax.driver.core.utils.MoreFutures;
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.DecoratedKey;
@@ -217,17 +219,17 @@ public class HintsServiceTest
     {
         private boolean isAlive = true;
 
-        public boolean isAlive(InetAddressAndPort ep)
+        public boolean isAlive(Endpoint ep)
         {
             return isAlive;
         }
 
-        public void interpret(InetAddressAndPort ep)
+        public void interpret(Endpoint ep)
         {
             throw new UnsupportedOperationException();
         }
 
-        public void report(InetAddressAndPort ep)
+        public void report(Endpoint ep)
         {
             throw new UnsupportedOperationException();
         }
@@ -242,12 +244,12 @@ public class HintsServiceTest
             throw new UnsupportedOperationException();
         }
 
-        public void remove(InetAddressAndPort ep)
+        public void remove(Endpoint ep)
         {
             throw new UnsupportedOperationException();
         }
 
-        public void forceConviction(InetAddressAndPort ep)
+        public void forceConviction(Endpoint ep)
         {
             throw new UnsupportedOperationException();
         }

@@ -27,7 +27,7 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.MessagingServiceTest;
 
 import static org.junit.Assert.assertEquals;
@@ -45,11 +45,11 @@ public class StreamSessionTest
     @Test
     public void testStreamSessionUsesCorrectRemoteIp_Succeeds() throws UnknownHostException
     {
-        InetAddressAndPort localAddr = InetAddressAndPort.getByName("127.0.0.1:7000");
-        InetAddressAndPort preferredAddr = InetAddressAndPort.getByName("127.0.0.2:7000");
+        Endpoint localAddr = Endpoint.getByName("127.0.0.1:7000");
+        Endpoint preferredAddr = Endpoint.getByName("127.0.0.2:7000");
         StreamSession streamSession = new StreamSession(StreamOperation.BOOTSTRAP, localAddr,
                           new DefaultConnectionFactory(), 0, UUID.randomUUID(), PreviewKind.ALL,
-                          inetAddressAndPort -> preferredAddr);
+                          VirtualEndpoint -> preferredAddr);
 
         assertEquals(preferredAddr, streamSession.getMessageSender().getConnectionId().connectionAddress());
     }
@@ -57,7 +57,7 @@ public class StreamSessionTest
     @Test
     public void testStreamSessionUsesCorrectRemoteIpNullMapper_Succeeds() throws UnknownHostException
     {
-        InetAddressAndPort localAddr = InetAddressAndPort.getByName("127.0.0.1:7000");
+        Endpoint localAddr = Endpoint.getByName("127.0.0.1:7000");
 
         StreamSession streamSession = new StreamSession(StreamOperation.BOOTSTRAP, localAddr,
                           new DefaultConnectionFactory(), 0, UUID.randomUUID(), PreviewKind.ALL, (peer) -> null);

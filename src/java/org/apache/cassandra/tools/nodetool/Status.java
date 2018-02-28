@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.SortedMap;
 
 import org.apache.cassandra.locator.EndpointSnitchInfoMBean;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.tools.NodeTool;
 import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
@@ -110,11 +110,11 @@ public class Status extends NodeToolCmd
 
                 printNodesHeader(hasEffectiveOwns, isTokenPerNode);
 
-                ArrayListMultimap<InetAddressAndPort, HostStatWithPort> hostToTokens = ArrayListMultimap.create();
+                ArrayListMultimap<Endpoint, HostStatWithPort> hostToTokens = ArrayListMultimap.create();
                 for (HostStatWithPort stat : dc.getValue())
                     hostToTokens.put(stat.endpoint, stat);
 
-                for (InetAddressAndPort endpoint : hostToTokens.keySet())
+                for (Endpoint endpoint : hostToTokens.keySet())
                 {
                     Float owns = ownerships.get(endpoint.toString());
                     List<HostStatWithPort> tokens = hostToTokens.get(endpoint);

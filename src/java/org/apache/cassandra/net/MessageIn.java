@@ -30,7 +30,7 @@ import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.MessagingService.Verb;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -42,14 +42,14 @@ import org.apache.cassandra.utils.FBUtilities;
  */
 public class MessageIn<T>
 {
-    public final InetAddressAndPort from;
+    public final Endpoint from;
     public final T payload;
     public final Map<ParameterType, Object> parameters;
     public final MessagingService.Verb verb;
     public final int version;
     public final long constructionTime;
 
-    private MessageIn(InetAddressAndPort from,
+    private MessageIn(Endpoint from,
                       T payload,
                       Map<ParameterType, Object> parameters,
                       Verb verb,
@@ -64,7 +64,7 @@ public class MessageIn<T>
         this.constructionTime = constructionTime;
     }
 
-    public static <T> MessageIn<T> create(InetAddressAndPort from,
+    public static <T> MessageIn<T> create(Endpoint from,
                                           T payload,
                                           Map<ParameterType, Object> parameters,
                                           Verb verb,
@@ -74,7 +74,7 @@ public class MessageIn<T>
         return new MessageIn<>(from, payload, parameters, verb, version, constructionTime);
     }
 
-    public static <T> MessageIn<T> create(InetAddressAndPort from,
+    public static <T> MessageIn<T> create(Endpoint from,
                                           T payload,
                                           Map<ParameterType, Object> parameters,
                                           MessagingService.Verb verb,
@@ -90,7 +90,7 @@ public class MessageIn<T>
 
     public static <T2> MessageIn<T2> read(DataInputPlus in, int version, int id, long constructionTime) throws IOException
     {
-        InetAddressAndPort from = CompactEndpointSerializationHelper.instance.deserialize(in, version);
+        Endpoint from = CompactEndpointSerializationHelper.instance.deserialize(in, version);
 
         MessagingService.Verb verb = MessagingService.Verb.fromId(in.readInt());
         Map<ParameterType, Object> parameters = readParameters(in, version);
@@ -132,7 +132,7 @@ public class MessageIn<T>
     }
 
     public static <T2> MessageIn<T2> read(DataInputPlus in, int version, int id, long constructionTime,
-                                          InetAddressAndPort from, int payloadSize, Verb verb, Map<ParameterType, Object> parameters) throws IOException
+                                          Endpoint from, int payloadSize, Verb verb, Map<ParameterType, Object> parameters) throws IOException
     {
         IVersionedSerializer<T2> serializer = (IVersionedSerializer<T2>) MessagingService.verbSerializers.get(verb);
         if (serializer instanceof MessagingService.CallbackDeterminedSerializer)
@@ -159,7 +159,7 @@ public class MessageIn<T>
         return MessageIn.create(from, payload, parameters, verb, version, constructionTime);
     }
 
-    public static long deriveConstructionTime(InetAddressAndPort from, int messageTimestamp, long currentTime)
+    public static long deriveConstructionTime(Endpoint from, int messageTimestamp, long currentTime)
     {
         // Reconstruct the message construction time sent by the remote host (we sent only the lower 4 bytes, assuming the
         // higher 4 bytes wouldn't change between the sender and receiver)

@@ -20,7 +20,6 @@ package org.apache.cassandra.streaming.async;
 
 import java.io.EOFException;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.UUID;
 
 import com.google.common.net.InetAddresses;
@@ -33,9 +32,7 @@ import org.junit.Test;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.io.sstable.format.SSTableFormat;
-import org.apache.cassandra.io.sstable.format.big.BigFormat;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.async.RebufferingByteBufDataInputPlus;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.streaming.PreviewKind;
@@ -53,7 +50,7 @@ import org.apache.cassandra.streaming.messages.StreamMessage;
 public class StreamingInboundHandlerTest
 {
     private static final int VERSION = StreamMessage.CURRENT_VERSION;
-    private static final InetAddressAndPort REMOTE_ADDR = InetAddressAndPort.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.2"), 0);
+    private static final Endpoint REMOTE_ADDR = Endpoint.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.2"), 0);
 
     private StreamingInboundHandler handler;
     private EmbeddedChannel channel;

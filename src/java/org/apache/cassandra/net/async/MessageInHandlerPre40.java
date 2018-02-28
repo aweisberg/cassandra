@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import org.apache.cassandra.io.util.DataInputBuffer;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
@@ -50,12 +50,12 @@ public class MessageInHandlerPre40 extends BaseMessageInHandler
     private State state;
     private MessageHeader messageHeader;
 
-    MessageInHandlerPre40(InetAddressAndPort peer, int messagingVersion)
+    MessageInHandlerPre40(Endpoint peer, int messagingVersion)
     {
         this (peer, messagingVersion, MESSAGING_SERVICE_CONSUMER);
     }
 
-    public MessageInHandlerPre40(InetAddressAndPort peer, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
+    public MessageInHandlerPre40(Endpoint peer, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
     {
         super(peer, messagingVersion, messageConsumer);
 

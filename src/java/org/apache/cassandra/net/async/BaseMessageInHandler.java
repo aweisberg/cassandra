@@ -35,7 +35,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
 import org.apache.cassandra.db.monitoring.ApproximateTime;
 import org.apache.cassandra.exceptions.UnknownTableException;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.ParameterType;
@@ -74,10 +74,10 @@ public abstract class BaseMessageInHandler extends ByteToMessageDecoder
      */
     final BiConsumer<MessageIn, Integer> messageConsumer;
 
-    final InetAddressAndPort peer;
+    final Endpoint peer;
     final int messagingVersion;
 
-    public BaseMessageInHandler(InetAddressAndPort peer, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
+    public BaseMessageInHandler(Endpoint peer, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
     {
         this.peer = peer;
         this.messagingVersion = messagingVersion;
@@ -132,7 +132,7 @@ public abstract class BaseMessageInHandler extends ByteToMessageDecoder
     {
         int messageId;
         long constructionTime;
-        InetAddressAndPort from;
+        Endpoint from;
         MessagingService.Verb verb;
         int payloadSize;
 

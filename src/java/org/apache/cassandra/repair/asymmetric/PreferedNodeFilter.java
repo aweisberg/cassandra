@@ -20,9 +20,9 @@ package org.apache.cassandra.repair.asymmetric;
 
 import java.util.Set;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 
 public interface PreferedNodeFilter
 {
-    public Set<InetAddressAndPort> apply(InetAddressAndPort streamingNode, Set<InetAddressAndPort> toStream);
+    public Set<Endpoint> apply(Endpoint streamingNode, Set<Endpoint> toStream);
 }

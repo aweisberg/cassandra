@@ -63,10 +63,10 @@ public class Ec2MultiRegionSnitch extends Ec2Snitch
     public void gossiperStarting()
     {
         super.gossiperStarting();
-        InetAddressAndPort address;
+        Endpoint address;
         try
         {
-            address = InetAddressAndPort.getByName(localPrivateAddress);
+            address = Endpoint.getByName(localPrivateAddress);
         }
         catch (UnknownHostException e)
         {

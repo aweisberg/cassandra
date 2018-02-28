@@ -24,12 +24,14 @@ import java.util.HashSet;
 import java.util.Set;
 
 import com.google.common.collect.Iterables;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.Test;
 
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.InetAddressAndPort;
 
 import static junit.framework.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -41,16 +43,16 @@ public class StreamFromOptionsTest
     public void addAllDiffingTest() throws UnknownHostException
     {
         StreamFromOptions sfo = new StreamFromOptions(new MockDiffs(true), range(0, 10));
-        Set<InetAddressAndPort> toAdd = new HashSet<>();
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.1"));
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.2"));
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.3"));
+        Set<Endpoint> toAdd = new HashSet<>();
+        toAdd.add(Endpoint.getByName("127.0.0.1"));
+        toAdd.add(Endpoint.getByName("127.0.0.2"));
+        toAdd.add(Endpoint.getByName("127.0.0.3"));
         toAdd.forEach(sfo::add);
 
         // if all added have differences, each set will contain a single host
         assertEquals(3, Iterables.size(sfo.allStreams()));
-        Set<InetAddressAndPort> allStreams = new HashSet<>();
-        for (Set<InetAddressAndPort> streams : sfo.allStreams())
+        Set<Endpoint> allStreams = new HashSet<>();
+        for (Set<Endpoint> streams : sfo.allStreams())
         {
             assertEquals(1, streams.size());
             allStreams.addAll(streams);
@@ -62,10 +64,10 @@ public class StreamFromOptionsTest
     public void addAllMatchingTest() throws UnknownHostException
     {
         StreamFromOptions sfo = new StreamFromOptions(new MockDiffs(false), range(0, 10));
-        Set<InetAddressAndPort> toAdd = new HashSet<>();
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.1"));
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.2"));
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.3"));
+        Set<Endpoint> toAdd = new HashSet<>();
+        toAdd.add(Endpoint.getByName("127.0.0.1"));
+        toAdd.add(Endpoint.getByName("127.0.0.2"));
+        toAdd.add(Endpoint.getByName("127.0.0.3"));
         toAdd.forEach(sfo::add);
 
         // if all added match, the set will contain all hosts
@@ -83,10 +85,10 @@ public class StreamFromOptionsTest
     private void splitTestHelper(boolean diffing) throws UnknownHostException
     {
         StreamFromOptions sfo = new StreamFromOptions(new MockDiffs(diffing), range(0, 10));
-        Set<InetAddressAndPort> toAdd = new HashSet<>();
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.1"));
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.2"));
-        toAdd.add(InetAddressAndPort.getByName("127.0.0.3"));
+        Set<Endpoint> toAdd = new HashSet<>();
+        toAdd.add(Endpoint.getByName("127.0.0.1"));
+        toAdd.add(Endpoint.getByName("127.0.0.2"));
+        toAdd.add(Endpoint.getByName("127.0.0.3"));
         toAdd.forEach(sfo::add);
         StreamFromOptions sfo1 = sfo.copy(range(0, 5));
         StreamFromOptions sfo2 = sfo.copy(range(5, 10));
@@ -95,8 +97,8 @@ public class StreamFromOptionsTest
         assertEquals(range(5, 10), sfo2.range);
         assertTrue(Iterables.elementsEqual(sfo1.allStreams(), sfo2.allStreams()));
         // verify the backing set is not shared between the copies:
-        sfo1.add(InetAddressAndPort.getByName("127.0.0.4"));
-        sfo2.add(InetAddressAndPort.getByName("127.0.0.5"));
+        sfo1.add(Endpoint.getByName("127.0.0.4"));
+        sfo2.add(Endpoint.getByName("127.0.0.5"));
         assertFalse(Iterables.elementsEqual(sfo1.allStreams(), sfo2.allStreams()));
     }
 
@@ -116,7 +118,7 @@ public class StreamFromOptionsTest
         }
 
         @Override
-        public boolean hasDifferenceBetween(InetAddressAndPort node1, InetAddressAndPort node2, Range<Token> range)
+        public boolean hasDifferenceBetween(Endpoint node1, Endpoint node2, Range<Token> range)
         {
             return hasDifference;
         }

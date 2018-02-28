@@ -26,13 +26,14 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.Ignore;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -41,19 +42,19 @@ import org.apache.cassandra.utils.UUIDGen;
 @Ignore
 public abstract class AbstractRepairTest
 {
-    protected static final InetAddressAndPort COORDINATOR;
-    protected static final InetAddressAndPort PARTICIPANT1;
-    protected static final InetAddressAndPort PARTICIPANT2;
-    protected static final InetAddressAndPort PARTICIPANT3;
+    protected static final Endpoint COORDINATOR;
+    protected static final Endpoint PARTICIPANT1;
+    protected static final Endpoint PARTICIPANT2;
+    protected static final Endpoint PARTICIPANT3;
 
     static
     {
         try
         {
-            COORDINATOR = InetAddressAndPort.getByName("10.0.0.1");
-            PARTICIPANT1 = InetAddressAndPort.getByName("10.0.0.1");
-            PARTICIPANT2 = InetAddressAndPort.getByName("10.0.0.2");
-            PARTICIPANT3 = InetAddressAndPort.getByName("10.0.0.3");
+            COORDINATOR = Endpoint.getByName("10.0.0.1");
+            PARTICIPANT1 = Endpoint.getByName("10.0.0.1");
+            PARTICIPANT2 = Endpoint.getByName("10.0.0.2");
+            PARTICIPANT3 = Endpoint.getByName("10.0.0.3");
         }
         catch (UnknownHostException e)
         {
@@ -64,7 +65,7 @@ public abstract class AbstractRepairTest
         DatabaseDescriptor.daemonInitialization();
     }
 
-    protected static final Set<InetAddressAndPort> PARTICIPANTS = ImmutableSet.of(PARTICIPANT1, PARTICIPANT2, PARTICIPANT3);
+    protected static final Set<Endpoint> PARTICIPANTS = ImmutableSet.of(PARTICIPANT1, PARTICIPANT2, PARTICIPANT3);
 
     protected static Token t(int v)
     {

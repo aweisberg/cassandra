@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.gms;
 
+import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -25,6 +26,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
+
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.locator.Endpoint;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -34,7 +39,6 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.dht.ByteOrderedPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.service.StorageService;
 import org.jboss.byteman.contrib.bmunit.BMRule;
 import org.jboss.byteman.contrib.bmunit.BMUnitRunner;
@@ -55,6 +59,7 @@ public class PendingRangeCalculatorServiceTest
     public static void setUp() throws ConfigurationException
     {
         SchemaLoader.prepareServer();
+        DatabaseDescriptor.setSystemKeyspaceReadable(true);
         StorageService.instance.initServer();
     }
 
@@ -66,11 +71,11 @@ public class PendingRangeCalculatorServiceTest
             action = "org.apache.cassandra.gms.PendingRangeCalculatorServiceTest.calculationLock.lock()")
     public void testDelayedResponse() throws UnknownHostException, InterruptedException
     {
-        InetAddressAndPort otherNodeAddr = InetAddressAndPort.getByName("127.0.0.2");
-        UUID otherHostId = UUID.randomUUID();
+        Endpoint otherNodeAddr = Endpoint.getByAddressOverrideDefaults(InetAddress.getByName("127.0.0.2"), null, UUID.randomUUID());
+        SystemKeyspace.updatePeerInfo(otherNodeAddr, "host_id", otherNodeAddr.hostId);
 
         // introduce node for first major state change
-        Gossiper.instance.applyStateLocally(getStates(otherNodeAddr, otherHostId, 1, false));
+        Gossiper.instance.applyStateLocally(getStates(otherNodeAddr,  1, false));
 
         // acquire lock to block pending range calculation via byteman
         calculationLock.lock();
@@ -82,7 +87,7 @@ public class PendingRangeCalculatorServiceTest
             {
                 public void run()
                 {
-                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr, otherHostId, 2, true));
+                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr,  2, true));
                 }
             };
             t1.start();
@@ -96,9 +101,9 @@ public class PendingRangeCalculatorServiceTest
             {
                 public void run()
                 {
-                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr, otherHostId, 3, false));
-                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr, otherHostId, 4, false));
-                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr, otherHostId, 5, false));
+                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr,  3, false));
+                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr,  4, false));
+                    Gossiper.instance.applyStateLocally(getStates(otherNodeAddr,  5, false));
                 }
             };
             t2.start();
@@ -112,7 +117,7 @@ public class PendingRangeCalculatorServiceTest
         }
     }
 
-    private Map<InetAddressAndPort, EndpointState> getStates(InetAddressAndPort otherNodeAddr, UUID hostId, int ver, boolean bootstrapping)
+    private Map<Endpoint, EndpointState> getStates(Endpoint otherNodeAddr, int ver, boolean bootstrapping)
     {
         HeartBeatState hb = new HeartBeatState(1, ver);
         EndpointState state = new EndpointState(hb);
@@ -122,10 +127,10 @@ public class PendingRangeCalculatorServiceTest
         state.addApplicationState(ApplicationState.TOKENS, StorageService.instance.valueFactory.tokens(tokens));
         state.addApplicationState(ApplicationState.STATUS, bootstrapping ?
                 StorageService.instance.valueFactory.bootstrapping(tokens) : StorageService.instance.valueFactory.normal(tokens));
-        state.addApplicationState(ApplicationState.HOST_ID, StorageService.instance.valueFactory.hostId(hostId));
+        state.addApplicationState(ApplicationState.HOST_ID, StorageService.instance.valueFactory.hostId(otherNodeAddr.hostId));
         state.addApplicationState(ApplicationState.NET_VERSION, StorageService.instance.valueFactory.networkVersion());
 
-        Map<InetAddressAndPort, EndpointState> states = new HashMap<>();
+        Map<Endpoint, EndpointState> states = new HashMap<>();
         states.put(otherNodeAddr, state);
         return states;
     }

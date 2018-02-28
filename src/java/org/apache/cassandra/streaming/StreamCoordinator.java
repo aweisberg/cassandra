@@ -19,10 +19,11 @@ package org.apache.cassandra.streaming;
 
 import java.util.*;
 
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
 
 /**
  * {@link StreamCoordinator} is a helper class that abstracts away maintaining multiple
@@ -37,7 +38,7 @@ public class StreamCoordinator
 
     private final boolean connectSequentially;
 
-    private final Map<InetAddressAndPort, HostStreamingData> peerSessions = new HashMap<>();
+    private final Map<Endpoint, HostStreamingData> peerSessions = new HashMap<>();
     private final StreamOperation streamOperation;
     private final int connectionsPerHost;
     private StreamConnectionFactory factory;
@@ -143,22 +144,22 @@ public class StreamCoordinator
             logger.debug("Finished connecting all sessions");
     }
 
-    public synchronized Set<InetAddressAndPort> getPeers()
+    public synchronized Set<Endpoint> getPeers()
     {
         return new HashSet<>(peerSessions.keySet());
     }
 
-    public synchronized StreamSession getOrCreateNextSession(InetAddressAndPort peer)
+    public synchronized StreamSession getOrCreateNextSession(Endpoint peer)
     {
         return getOrCreateHostData(peer).getOrCreateNextSession(peer);
     }
 
-    public synchronized StreamSession getOrCreateSessionById(InetAddressAndPort peer, int id)
+    public synchronized StreamSession getOrCreateSessionById(Endpoint peer, int id)
     {
         return getOrCreateHostData(peer).getOrCreateSessionById(peer, id);
     }
 
-    public StreamSession getSessionById(InetAddressAndPort peer, int id)
+    public StreamSession getSessionById(Endpoint peer, int id)
     {
         return getHostData(peer).getSessionById(id);
     }
@@ -184,7 +185,7 @@ public class StreamCoordinator
         return result;
     }
 
-    public synchronized void transferStreams(InetAddressAndPort to, Collection<OutgoingStream> streams)
+    public synchronized void transferStreams(Endpoint to, Collection<OutgoingStream> streams)
     {
         HostStreamingData sessionList = getOrCreateHostData(to);
 
@@ -228,7 +229,7 @@ public class StreamCoordinator
         return result;
     }
 
-    private HostStreamingData getHostData(InetAddressAndPort peer)
+    private HostStreamingData getHostData(Endpoint peer)
     {
         HostStreamingData data = peerSessions.get(peer);
 
@@ -237,7 +238,7 @@ public class StreamCoordinator
         return data;
     }
 
-    private HostStreamingData getOrCreateHostData(InetAddressAndPort peer)
+    private HostStreamingData getOrCreateHostData(Endpoint peer)
     {
         HostStreamingData data = peerSessions.get(peer);
         if (data == null)
@@ -277,7 +278,7 @@ public class StreamCoordinator
             return false;
         }
 
-        public StreamSession getOrCreateNextSession(InetAddressAndPort peer)
+        public StreamSession getOrCreateNextSession(Endpoint peer)
         {
             // create
             if (streamSessions.size() < connectionsPerHost)
@@ -309,7 +310,7 @@ public class StreamCoordinator
             return Collections.unmodifiableCollection(streamSessions.values());
         }
 
-        public StreamSession getOrCreateSessionById(InetAddressAndPort peer, int id)
+        public StreamSession getOrCreateSessionById(Endpoint peer, int id)
         {
             StreamSession session = streamSessions.get(id);
             if (session == null)

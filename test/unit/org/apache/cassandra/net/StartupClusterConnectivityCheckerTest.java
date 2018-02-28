@@ -35,14 +35,14 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.gms.EndpointState;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.HeartBeatState;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 
 import static org.apache.cassandra.net.async.OutboundConnectionIdentifier.ConnectionType.SMALL_MESSAGE;
 
 public class StartupClusterConnectivityCheckerTest
 {
     private StartupClusterConnectivityChecker connectivityChecker;
-    private Set<InetAddressAndPort> peers;
+    private Set<Endpoint> peers;
 
     @BeforeClass
     public static void before()
@@ -55,9 +55,9 @@ public class StartupClusterConnectivityCheckerTest
     {
         connectivityChecker = new StartupClusterConnectivityChecker(70, 10);
         peers = new HashSet<>();
-        peers.add(InetAddressAndPort.getByName("127.0.1.0"));
-        peers.add(InetAddressAndPort.getByName("127.0.1.1"));
-        peers.add(InetAddressAndPort.getByName("127.0.1.2"));
+        peers.add(Endpoint.getByName("127.0.1.0"));
+        peers.add(Endpoint.getByName("127.0.1.1"));
+        peers.add(Endpoint.getByName("127.0.1.2"));
     }
 
     @After
@@ -94,7 +94,7 @@ public class StartupClusterConnectivityCheckerTest
 
     private void checkAllConnectionTypesSeen(Sink sink)
     {
-        for (InetAddressAndPort peer : peers)
+        for (Endpoint peer : peers)
         {
             ConnectionTypeRecorder recorder = sink.seenConnectionRequests.get(peer);
             Assert.assertNotNull(recorder);
@@ -107,7 +107,7 @@ public class StartupClusterConnectivityCheckerTest
     {
         private final boolean markAliveInGossip;
         private final boolean processConnectAck;
-        private final Map<InetAddressAndPort, ConnectionTypeRecorder> seenConnectionRequests;
+        private final Map<Endpoint, ConnectionTypeRecorder> seenConnectionRequests;
 
         Sink(boolean markAliveInGossip, boolean processConnectAck)
         {
@@ -117,7 +117,7 @@ public class StartupClusterConnectivityCheckerTest
         }
 
         @Override
-        public boolean allowOutgoingMessage(MessageOut message, int id, InetAddressAndPort to)
+        public boolean allowOutgoingMessage(MessageOut message, int id, Endpoint to)
         {
             ConnectionTypeRecorder recorder = seenConnectionRequests.computeIfAbsent(to, inetAddress ->  new ConnectionTypeRecorder());
             if (message.connectionType == SMALL_MESSAGE)

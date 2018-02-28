@@ -21,10 +21,17 @@ package org.apache.cassandra.locator;
 import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Preconditions;
 import com.google.common.net.HostAndPort;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.utils.FastByteOperations;
 
 /**
@@ -40,9 +47,12 @@ import org.apache.cassandra.utils.FastByteOperations;
  * need to sometimes return a port and sometimes not.
  *
  */
-public final class InetAddressAndPort implements Comparable<InetAddressAndPort>, Serializable
+public final class Endpoint implements Comparable<Endpoint>, Serializable
 {
+    private static final Logger logger = LoggerFactory.getLogger(Endpoint.class);
     private static final long serialVersionUID = 0;
+
+    public static final UUID initialHostId = UUID.fromString("00000000-0000-0000-0000-000000000000");
 
     //Store these here to avoid requiring DatabaseDescriptor to be loaded. DatabaseDescriptor will set
     //these when it loads the config. A lot of unit tests won't end up loading DatabaseDescriptor.
@@ -53,8 +63,9 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
     public final InetAddress address;
     public final byte[] addressBytes;
     public final int port;
+    public UUID hostId;
 
-    private InetAddressAndPort(InetAddress address, byte[] addressBytes, int port)
+    private Endpoint(InetAddress address, byte[] addressBytes, int port, UUID hostId)
     {
         Preconditions.checkNotNull(address);
         Preconditions.checkNotNull(addressBytes);
@@ -62,6 +73,14 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
         this.address = address;
         this.port = port;
         this.addressBytes = addressBytes;
+        if (hostId == null)
+        {
+            this.hostId = initialHostId;
+        }
+        else
+        {
+            this.hostId = hostId;
+        }
     }
 
     private static void validatePortRange(int port)
@@ -75,10 +94,16 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
     @Override
     public boolean equals(Object o)
     {
+        Endpoint that = (Endpoint) o;
+        return equalAddresses(o) && hostId.equals(that.hostId);
+    }
+
+    public boolean equalAddresses(Object o)
+    {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
 
-        InetAddressAndPort that = (InetAddressAndPort) o;
+        Endpoint that = (Endpoint) o;
 
         if (port != that.port) return false;
         return address.equals(that.address);
@@ -88,17 +113,27 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
     public int hashCode()
     {
         int result = address.hashCode();
-        result = 31 * result + port;
+        result = 31 * result + port + hostId.hashCode();
         return result;
     }
 
     @Override
-    public int compareTo(InetAddressAndPort o)
+    public int compareTo(Endpoint o)
     {
+
+        if (o.hostId == null)
+            return 1;
+
         int retval = FastByteOperations.compareUnsigned(addressBytes, 0, addressBytes.length, o.addressBytes, 0, o.addressBytes.length);
         if (retval != 0)
         {
             return retval;
+        }
+
+        int retvalHostId = hostId.compareTo(o.hostId);
+        if (retvalHostId != 0)
+        {
+            return retvalHostId;
         }
 
         return Integer.compare(port, o.port);
@@ -134,7 +169,12 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
         }
     }
 
-    public static InetAddressAndPort getByName(String name) throws UnknownHostException
+    public String toStringWithHostId(boolean withPort)
+    {
+        return toString(withPort) + " (HostId: " + hostId + ")";
+    }
+
+    public static Endpoint getByName(String name) throws UnknownHostException
     {
         return getByNameOverrideDefaults(name, null);
     }
@@ -146,7 +186,7 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
      * @return
      * @throws UnknownHostException
      */
-    public static InetAddressAndPort getByNameOverrideDefaults(String name, Integer port) throws UnknownHostException
+    public static Endpoint getByNameOverrideDefaults(String name, Integer port) throws UnknownHostException
     {
         HostAndPort hap = HostAndPort.fromString(name);
         if (hap.hasPort())
@@ -156,44 +196,58 @@ public final class InetAddressAndPort implements Comparable<InetAddressAndPort>,
         return getByAddressOverrideDefaults(InetAddress.getByName(hap.getHost()), port);
     }
 
-    public static InetAddressAndPort getByAddress(byte[] address) throws UnknownHostException
+    public static Endpoint getByAddress(byte[] address) throws UnknownHostException
     {
-        return getByAddressOverrideDefaults(InetAddress.getByAddress(address), address, null);
+        return getByAddress(InetAddress.getByAddress(address));
     }
 
-    public static InetAddressAndPort getByAddress(InetAddress address)
+    public static Endpoint getByAddress(InetAddress address)
     {
         return getByAddressOverrideDefaults(address, null);
     }
 
-    public static InetAddressAndPort getByAddressOverrideDefaults(InetAddress address, Integer port)
+    public static Endpoint getByAddressOverrideDefaults(InetAddress address, Integer port)
     {
-        if (port == null)
+
+        UUID hostId = null;
+        if (DatabaseDescriptor.isClientInitialized() || DatabaseDescriptor.isSystemKeyspaceReadable())
         {
-            port = defaultPort;
+            // check the peers first
+            Endpoint testEndpoint = getByAddressOverrideDefaults(address, port, null);
+            Optional<Endpoint> ep = SystemKeyspace.loadHostIds().keySet()
+                                                  .stream().filter(e -> e.equalAddresses(testEndpoint)).findFirst();
+            if (ep.isPresent())
+                hostId = ep.get().hostId;
+
+            // if not found in peers, check local
+            if (hostId == null)
+            {
+                hostId = SystemKeyspace.getLocalHostId(false);
+            }
+
+            // If it's not local, and not a peer, it means it's not initialised yet, use null
+
         }
 
-        return new InetAddressAndPort(address, address.getAddress(), port);
+        return getByAddressOverrideDefaults(address, port, hostId);
     }
 
-    public static InetAddressAndPort getByAddressOverrideDefaults(InetAddress address, byte[] addressBytes, Integer port)
+    public static Endpoint getByAddressOverrideDefaults(InetAddress address, Integer port, UUID hostId)
     {
         if (port == null)
-        {
             port = defaultPort;
-        }
 
-        return new InetAddressAndPort(address, addressBytes, port);
+        return new Endpoint(address, address.getAddress(), port, hostId);
     }
 
-    public static InetAddressAndPort getLoopbackAddress()
+    public static Endpoint getLoopbackAddress()
     {
-        return InetAddressAndPort.getByAddress(InetAddress.getLoopbackAddress());
+        return Endpoint.getByAddress(InetAddress.getLoopbackAddress());
     }
 
-    public static InetAddressAndPort getLocalHost() throws UnknownHostException
+    public static Endpoint getLocalHost() throws UnknownHostException
     {
-        return InetAddressAndPort.getByAddress(InetAddress.getLocalHost());
+        return Endpoint.getByAddress(InetAddress.getLocalHost());
     }
 
     public static void initializeDefaultPort(int port)

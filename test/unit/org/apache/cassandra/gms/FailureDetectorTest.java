@@ -24,6 +24,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -32,7 +34,6 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 
@@ -60,7 +61,7 @@ public class FailureDetectorTest
 
         ArrayList<Token> endpointTokens = new ArrayList<>();
         ArrayList<Token> keyTokens = new ArrayList<>();
-        List<InetAddressAndPort> hosts = new ArrayList<>();
+        List<Endpoint> hosts = new ArrayList<>();
         List<UUID> hostIds = new ArrayList<>();
 
         // we want to convict if there is any heartbeat data present in the FD
@@ -69,7 +70,7 @@ public class FailureDetectorTest
         // create a ring of 2 nodes
         Util.createInitialRing(ss, partitioner, endpointTokens, keyTokens, hosts, hostIds, 3);
 
-        InetAddressAndPort leftHost = hosts.get(1);
+        Endpoint leftHost = hosts.get(1);
 
         FailureDetector.instance.report(leftHost);
 

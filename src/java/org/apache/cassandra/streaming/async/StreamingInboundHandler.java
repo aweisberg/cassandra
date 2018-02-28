@@ -27,6 +27,9 @@ import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.Uninterruptibles;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +39,6 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.FastThreadLocalThread;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.async.RebufferingByteBufDataInputPlus;
 import org.apache.cassandra.streaming.StreamManager;
 import org.apache.cassandra.streaming.StreamReceiveException;
@@ -64,7 +66,7 @@ public class StreamingInboundHandler extends ChannelInboundHandlerAdapter
     private static final int AUTO_READ_LOW_WATER_MARK = 1 << 15;
     private static final int AUTO_READ_HIGH_WATER_MARK = 1 << 16;
 
-    private final InetAddressAndPort remoteAddress;
+    private final Endpoint remoteAddress;
     private final int protocolVersion;
 
     private final StreamSession session;
@@ -81,7 +83,7 @@ public class StreamingInboundHandler extends ChannelInboundHandlerAdapter
 
     private volatile boolean closed;
 
-    public StreamingInboundHandler(InetAddressAndPort remoteAddress, int protocolVersion, @Nullable StreamSession session)
+    public StreamingInboundHandler(Endpoint remoteAddress, int protocolVersion, @Nullable StreamSession session)
     {
         this.remoteAddress = remoteAddress;
         this.protocolVersion = protocolVersion;
@@ -256,11 +258,11 @@ public class StreamingInboundHandler extends ChannelInboundHandlerAdapter
      */
     static class SessionIdentifier
     {
-        final InetAddressAndPort from;
+        final Endpoint from;
         final UUID planId;
         final int sessionIndex;
 
-        SessionIdentifier(InetAddressAndPort from, UUID planId, int sessionIndex)
+        SessionIdentifier(Endpoint from, UUID planId, int sessionIndex)
         {
             this.from = from;
             this.planId = planId;

@@ -29,6 +29,8 @@ import com.google.common.util.concurrent.Futures;
 
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,7 +41,6 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.*;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.metrics.StreamingMetrics;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.OutboundConnectionIdentifier;
@@ -129,14 +130,14 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     /**
      * Streaming endpoint.
      *
-     * Each {@code StreamSession} is identified by this InetAddressAndPort which is broadcast address of the node streaming.
+     * Each {@code StreamSession} is identified by this Endpoint which is broadcast address of the node streaming.
      */
-    public final InetAddressAndPort peer;
+    public final Endpoint peer;
 
     /**
      * Preferred IP Address/Port of the peer; this is the address that will be connect to. Can be the same as {@linkplain #peer}.
      */
-    private final InetAddressAndPort preferredPeerInetAddressAndPort;
+    private final Endpoint preferredPeerEndpoint;
 
     private final int index;
 
@@ -177,32 +178,32 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     /**
      * Create new streaming session with the peer.
      */
-    public StreamSession(StreamOperation streamOperation, InetAddressAndPort peer, StreamConnectionFactory factory,
+    public StreamSession(StreamOperation streamOperation, Endpoint peer, StreamConnectionFactory factory,
                          int index, UUID pendingRepair, PreviewKind previewKind)
     {
         this(streamOperation, peer, factory, index, pendingRepair, previewKind, MessagingService.instance()::getPreferredRemoteAddr);
     }
 
     @VisibleForTesting
-    public StreamSession(StreamOperation streamOperation, InetAddressAndPort peer, StreamConnectionFactory factory,
+    public StreamSession(StreamOperation streamOperation, Endpoint peer, StreamConnectionFactory factory,
                          int index, UUID pendingRepair, PreviewKind previewKind,
-                         Function<InetAddressAndPort, InetAddressAndPort> preferredIpMapper)
+                         Function<Endpoint, Endpoint> preferredIpMapper)
     {
         this.streamOperation = streamOperation;
         this.peer = peer;
         this.index = index;
-        InetAddressAndPort preferredPeerEndpoint = preferredIpMapper.apply(peer);
-        this.preferredPeerInetAddressAndPort = (preferredPeerEndpoint == null) ? peer : preferredPeerEndpoint;
+        Endpoint preferredPeerEndpoint = preferredIpMapper.apply(peer);
+        this.preferredPeerEndpoint = (preferredPeerEndpoint == null) ? peer : preferredPeerEndpoint;
 
-        OutboundConnectionIdentifier id = OutboundConnectionIdentifier.stream(InetAddressAndPort.getByAddressOverrideDefaults(FBUtilities.getJustLocalAddress(), 0),
-                                                                              preferredPeerInetAddressAndPort);
+        OutboundConnectionIdentifier id = OutboundConnectionIdentifier.stream(Endpoint.getByAddressOverrideDefaults(FBUtilities.getJustLocalAddress(), 0),
+                                                                              this.preferredPeerEndpoint);
 
         this.messageSender = new NettyStreamingMessageSender(this, id, factory, StreamMessage.CURRENT_VERSION, previewKind.isPreview());
-        this.metrics = StreamingMetrics.get(preferredPeerInetAddressAndPort);
+        this.metrics = StreamingMetrics.get(this.preferredPeerEndpoint);
         this.pendingRepair = pendingRepair;
         this.previewKind = previewKind;
 
-        logger.debug("Creating stream session peer={} preferredPeerInetAddressAndPort={}", peer, preferredPeerInetAddressAndPort);
+        logger.debug("Creating stream session peer={} preferredPeerEndpoint={}", peer, this.preferredPeerEndpoint);
     }
 
     public UUID planId()
@@ -281,7 +282,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         {
             logger.info("[Stream #{}] Starting streaming to {}{}", planId(),
                                                                    peer,
-                                                                   peer.equals(preferredPeerInetAddressAndPort) ? "" : " through " + preferredPeerInetAddressAndPort);
+                        peer.equals(preferredPeerEndpoint) ? "" : " through " + preferredPeerEndpoint);
             messageSender.initialize();
             onInitializationComplete();
         }
@@ -529,7 +530,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
             logger.error("[Stream #{}] Did not receive response from peer {}{} for {} secs. Is peer down? " +
                          "If not, maybe try increasing streaming_keep_alive_period_in_secs.", planId(),
                          peer.getHostAddress(true),
-                         peer.equals(preferredPeerInetAddressAndPort) ? "" : " through " + preferredPeerInetAddressAndPort.getHostAddress(true),
+                         peer.equals(preferredPeerEndpoint) ? "" : " through " + preferredPeerEndpoint.getHostAddress(true),
                          2 * DatabaseDescriptor.getStreamingKeepAlivePeriod(),
                          e);
         }
@@ -537,7 +538,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         {
             logger.error("[Stream #{}] Streaming error occurred on session with peer {}{}", planId(),
                          peer.getHostAddress(true),
-                         peer.equals(preferredPeerInetAddressAndPort) ? "" : " through " + preferredPeerInetAddressAndPort.getHostAddress(true),
+                         peer.equals(preferredPeerEndpoint) ? "" : " through " + preferredPeerEndpoint.getHostAddress(true),
                          e);
         }
     }
@@ -691,7 +692,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         List<StreamSummary> transferSummaries = Lists.newArrayList();
         for (StreamTask transfer : transfers.values())
             transferSummaries.add(transfer.getSummary());
-        return new SessionInfo(peer, index, preferredPeerInetAddressAndPort, receivingSummaries, transferSummaries, state);
+        return new SessionInfo(peer, index, preferredPeerEndpoint, receivingSummaries, transferSummaries, state);
     }
 
     public synchronized void taskCompleted(StreamReceiveTask completedTask)
@@ -706,19 +707,19 @@ public class StreamSession implements IEndpointStateChangeSubscriber
         maybeCompleted();
     }
 
-    public void onJoin(InetAddressAndPort endpoint, EndpointState epState) {}
-    public void beforeChange(InetAddressAndPort endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
-    public void onChange(InetAddressAndPort endpoint, ApplicationState state, VersionedValue value) {}
-    public void onAlive(InetAddressAndPort endpoint, EndpointState state) {}
-    public void onDead(InetAddressAndPort endpoint, EndpointState state) {}
+    public void onJoin(Endpoint endpoint, EndpointState epState) {}
+    public void beforeChange(Endpoint endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
+    public void onChange(Endpoint endpoint, ApplicationState state, VersionedValue value) {}
+    public void onAlive(Endpoint endpoint, EndpointState state) {}
+    public void onDead(Endpoint endpoint, EndpointState state) {}
 
-    public void onRemove(InetAddressAndPort endpoint)
+    public void onRemove(Endpoint endpoint)
     {
         logger.error("[Stream #{}] Session failed because remote peer {} has left.", planId(), peer.toString());
         closeSession(State.FAILED);
     }
 
-    public void onRestart(InetAddressAndPort endpoint, EndpointState epState)
+    public void onRestart(Endpoint endpoint, EndpointState epState)
     {
         logger.error("[Stream #{}] Session failed because remote peer {} was restarted.", planId(), peer.toString());
         closeSession(State.FAILED);

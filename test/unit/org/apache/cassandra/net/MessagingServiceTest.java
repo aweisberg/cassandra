@@ -47,7 +47,7 @@ import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.monitoring.ApproximateTime;
 import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.MessagingService.ServerChannel;
 import org.apache.cassandra.net.async.NettyFactory;
 import org.apache.cassandra.net.async.OutboundConnectionIdentifier;
@@ -81,7 +81,7 @@ public class MessagingServiceTest
     };
     private static IInternodeAuthenticator originalAuthenticator;
     private static ServerEncryptionOptions originalServerEncryptionOptions;
-    private static InetAddressAndPort originalListenAddress;
+    private static Endpoint originalListenAddress;
 
     private final MessagingService messagingService = MessagingService.test();
 
@@ -91,9 +91,11 @@ public class MessagingServiceTest
         DatabaseDescriptor.daemonInitialization();
         DatabaseDescriptor.setBackPressureStrategy(new MockBackPressureStrategy(Collections.emptyMap()));
         DatabaseDescriptor.setBroadcastAddress(InetAddress.getByName("127.0.0.1"));
+        SystemKeyspace.persistLocalMetadata();
+        DatabaseDescriptor.setSystemKeyspaceReadable(true);
         originalAuthenticator = DatabaseDescriptor.getInternodeAuthenticator();
         originalServerEncryptionOptions = DatabaseDescriptor.getInternodeMessagingEncyptionOptions();
-        originalListenAddress = InetAddressAndPort.getByAddressOverrideDefaults(DatabaseDescriptor.getListenAddress(), DatabaseDescriptor.getStoragePort());
+        originalListenAddress = Endpoint.getByAddressOverrideDefaults(DatabaseDescriptor.getListenAddress(), DatabaseDescriptor.getStoragePort());
     }
 
     private static int metricScopeId = 0;
@@ -103,8 +105,8 @@ public class MessagingServiceTest
     {
         messagingService.resetDroppedMessagesMap(Integer.toString(metricScopeId++));
         MockBackPressureStrategy.applied = false;
-        messagingService.destroyConnectionPool(InetAddressAndPort.getByName("127.0.0.2"));
-        messagingService.destroyConnectionPool(InetAddressAndPort.getByName("127.0.0.3"));
+        messagingService.destroyConnectionPool(Endpoint.getByName("127.0.0.2"));
+        messagingService.destroyConnectionPool(Endpoint.getByName("127.0.0.3"));
     }
 
     @After
@@ -221,44 +223,44 @@ public class MessagingServiceTest
     @Test
     public void testUpdatesBackPressureOnSendWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(InetAddressAndPort.getByName("127.0.0.2"));
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(Endpoint.getByName("127.0.0.2"));
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         MessageOut<?> ignored = null;
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnSend(InetAddressAndPort.getByName("127.0.0.2"), noCallback, ignored);
+        messagingService.updateBackPressureOnSend(Endpoint.getByName("127.0.0.2"), noCallback, ignored);
         assertFalse(backPressureState.onSend);
 
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.updateBackPressureOnSend(InetAddressAndPort.getByName("127.0.0.2"), bpCallback, ignored);
+        messagingService.updateBackPressureOnSend(Endpoint.getByName("127.0.0.2"), bpCallback, ignored);
         assertFalse(backPressureState.onSend);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnSend(InetAddressAndPort.getByName("127.0.0.2"), bpCallback, ignored);
+        messagingService.updateBackPressureOnSend(Endpoint.getByName("127.0.0.2"), bpCallback, ignored);
         assertTrue(backPressureState.onSend);
     }
 
     @Test
     public void testUpdatesBackPressureOnReceiveWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(InetAddressAndPort.getByName("127.0.0.2"));
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(Endpoint.getByName("127.0.0.2"));
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         boolean timeout = false;
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddressAndPort.getByName("127.0.0.2"), noCallback, timeout);
+        messagingService.updateBackPressureOnReceive(Endpoint.getByName("127.0.0.2"), noCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.updateBackPressureOnReceive(InetAddressAndPort.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(Endpoint.getByName("127.0.0.2"), bpCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddressAndPort.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(Endpoint.getByName("127.0.0.2"), bpCallback, timeout);
         assertTrue(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
     }
@@ -266,23 +268,23 @@ public class MessagingServiceTest
     @Test
     public void testUpdatesBackPressureOnTimeoutWhenEnabledAndWithSupportedCallback() throws UnknownHostException
     {
-        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(InetAddressAndPort.getByName("127.0.0.2"));
+        MockBackPressureStrategy.MockBackPressureState backPressureState = (MockBackPressureStrategy.MockBackPressureState) messagingService.getBackPressureState(Endpoint.getByName("127.0.0.2"));
         IAsyncCallback bpCallback = new BackPressureCallback();
         IAsyncCallback noCallback = new NoBackPressureCallback();
         boolean timeout = true;
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddressAndPort.getByName("127.0.0.2"), noCallback, timeout);
+        messagingService.updateBackPressureOnReceive(Endpoint.getByName("127.0.0.2"), noCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.updateBackPressureOnReceive(InetAddressAndPort.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(Endpoint.getByName("127.0.0.2"), bpCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertFalse(backPressureState.onTimeout);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.updateBackPressureOnReceive(InetAddressAndPort.getByName("127.0.0.2"), bpCallback, timeout);
+        messagingService.updateBackPressureOnReceive(Endpoint.getByName("127.0.0.2"), bpCallback, timeout);
         assertFalse(backPressureState.onReceive);
         assertTrue(backPressureState.onTimeout);
     }
@@ -291,11 +293,11 @@ public class MessagingServiceTest
     public void testAppliesBackPressureWhenEnabled() throws UnknownHostException
     {
         DatabaseDescriptor.setBackPressureEnabled(false);
-        messagingService.applyBackPressure(Arrays.asList(InetAddressAndPort.getByName("127.0.0.2")), ONE_SECOND);
+        messagingService.applyBackPressure(Arrays.asList(Endpoint.getByName("127.0.0.2")), ONE_SECOND);
         assertFalse(MockBackPressureStrategy.applied);
 
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.applyBackPressure(Arrays.asList(InetAddressAndPort.getByName("127.0.0.2")), ONE_SECOND);
+        messagingService.applyBackPressure(Arrays.asList(Endpoint.getByName("127.0.0.2")), ONE_SECOND);
         assertTrue(MockBackPressureStrategy.applied);
     }
 
@@ -303,13 +305,13 @@ public class MessagingServiceTest
     public void testDoesntApplyBackPressureToBroadcastAddress() throws UnknownHostException
     {
         DatabaseDescriptor.setBackPressureEnabled(true);
-        messagingService.applyBackPressure(Arrays.asList(InetAddressAndPort.getByName("127.0.0.1")), ONE_SECOND);
+        messagingService.applyBackPressure(Arrays.asList(Endpoint.getByName("127.0.0.1")), ONE_SECOND);
         assertFalse(MockBackPressureStrategy.applied);
     }
 
     private static void addDCLatency(long sentAt, long nowTime) throws IOException
     {
-        MessageIn.deriveConstructionTime(InetAddressAndPort.getLocalHost(), (int) sentAt, nowTime);
+        MessageIn.deriveConstructionTime(Endpoint.getLocalHost(), (int) sentAt, nowTime);
     }
 
     public static class MockBackPressureStrategy implements BackPressureStrategy<MockBackPressureStrategy.MockBackPressureState>
@@ -328,19 +330,19 @@ public class MessagingServiceTest
         }
 
         @Override
-        public MockBackPressureState newState(InetAddressAndPort host)
+        public MockBackPressureState newState(Endpoint host)
         {
             return new MockBackPressureState(host);
         }
 
         public static class MockBackPressureState implements BackPressureState
         {
-            private final InetAddressAndPort host;
+            private final Endpoint host;
             public volatile boolean onSend = false;
             public volatile boolean onReceive = false;
             public volatile boolean onTimeout = false;
 
-            private MockBackPressureState(InetAddressAndPort host)
+            private MockBackPressureState(Endpoint host)
             {
                 this.host = host;
             }
@@ -370,7 +372,7 @@ public class MessagingServiceTest
             }
 
             @Override
-            public InetAddressAndPort getHost()
+            public Endpoint getHost()
             {
                 return host;
             }
@@ -430,7 +432,7 @@ public class MessagingServiceTest
     {
         MessagingService ms = MessagingService.instance();
         DatabaseDescriptor.setInternodeAuthenticator(ALLOW_NOTHING_AUTHENTICATOR);
-        InetAddressAndPort address = InetAddressAndPort.getByName("127.0.0.250");
+        Endpoint address = Endpoint.getByName("127.0.0.250");
 
         //Should return null
         MessageOut messageOut = new MessageOut(MessagingService.Verb.GOSSIP_DIGEST_ACK);
@@ -445,8 +447,8 @@ public class MessagingServiceTest
     public void testOutboundMessagingConnectionCleansUp() throws Exception
     {
         MessagingService ms = MessagingService.instance();
-        InetAddressAndPort local = InetAddressAndPort.getByNameOverrideDefaults("127.0.0.1", 9876);
-        InetAddressAndPort remote = InetAddressAndPort.getByNameOverrideDefaults("127.0.0.2", 9876);
+        Endpoint local = Endpoint.getByNameOverrideDefaults("127.0.0.1", 9876);
+        Endpoint remote = Endpoint.getByNameOverrideDefaults("127.0.0.2", 9876);
 
         OutboundMessagingPool pool = new OutboundMessagingPool(remote, local, null, new MockBackPressureStrategy(null).newState(remote), ALLOW_NOTHING_AUTHENTICATOR);
         ms.channelManagers.put(remote, pool);
@@ -457,11 +459,12 @@ public class MessagingServiceTest
     @Test
     public void reconnectWithNewIp() throws Exception
     {
-        InetAddressAndPort publicIp = InetAddressAndPort.getByName("127.0.0.2");
-        InetAddressAndPort privateIp = InetAddressAndPort.getByName("127.0.0.3");
+        Endpoint publicIp = Endpoint.getByName("127.0.0.2");
+        Endpoint privateIp = Endpoint.getByName("127.0.0.3");
 
         // reset the preferred IP value, for good test hygene
         SystemKeyspace.updatePreferredIP(publicIp, publicIp);
+        SystemKeyspace.updatePeerInfo(publicIp, "host_id", publicIp.hostId);
 
         // create pool/conn with public addr
         Assert.assertEquals(publicIp, messagingService.getCurrentEndpoint(publicIp));
@@ -486,8 +489,8 @@ public class MessagingServiceTest
                 Assert.assertEquals(0, serverChannel.size());
 
             // now, create a connection and make sure it's in a channel group
-            InetAddressAndPort server = FBUtilities.getBroadcastAddressAndPort();
-            OutboundConnectionIdentifier id = OutboundConnectionIdentifier.small(InetAddressAndPort.getByNameOverrideDefaults("127.0.0.2", 0), server);
+            Endpoint server = FBUtilities.getBroadcastAddressAndPort();
+            OutboundConnectionIdentifier id = OutboundConnectionIdentifier.small(Endpoint.getByNameOverrideDefaults("127.0.0.2", 0), server);
 
             CountDownLatch latch = new CountDownLatch(1);
             OutboundConnectionParams params = OutboundConnectionParams.builder()
@@ -667,9 +670,9 @@ public class MessagingServiceTest
     public void getPreferredRemoteAddrUsesPrivateIp() throws UnknownHostException
     {
         MessagingService ms = MessagingService.instance();
-        InetAddressAndPort local = InetAddressAndPort.getByNameOverrideDefaults("127.0.0.4", 7000);
-        InetAddressAndPort remote = InetAddressAndPort.getByNameOverrideDefaults("127.0.0.151", 7000);
-        InetAddressAndPort privateIp = InetAddressAndPort.getByName("127.0.0.6");
+        Endpoint local = Endpoint.getByNameOverrideDefaults("127.0.0.4", 7000);
+        Endpoint remote = Endpoint.getByNameOverrideDefaults("127.0.0.151", 7000);
+        Endpoint privateIp = Endpoint.getByName("127.0.0.6");
 
         OutboundMessagingPool pool = new OutboundMessagingPool(privateIp, local, null,
                                                                new MockBackPressureStrategy(null).newState(remote),
@@ -683,9 +686,9 @@ public class MessagingServiceTest
     public void getPreferredRemoteAddrUsesPreferredIp() throws UnknownHostException
     {
         MessagingService ms = MessagingService.instance();
-        InetAddressAndPort remote = InetAddressAndPort.getByNameOverrideDefaults("127.0.0.115", 7000);
+        Endpoint remote = Endpoint.getByNameOverrideDefaults("127.0.0.115", 7000);
 
-        InetAddressAndPort preferredIp = InetAddressAndPort.getByName("127.0.0.16");
+        Endpoint preferredIp = Endpoint.getByName("127.0.0.16");
         SystemKeyspace.updatePreferredIP(remote, preferredIp);
 
         Assert.assertEquals(preferredIp, ms.getPreferredRemoteAddr(remote));
@@ -695,16 +698,16 @@ public class MessagingServiceTest
     public void getPreferredRemoteAddrUsesPrivateIpOverridesPreferredIp() throws UnknownHostException
     {
         MessagingService ms = MessagingService.instance();
-        InetAddressAndPort local = InetAddressAndPort.getByNameOverrideDefaults("127.0.0.4", 7000);
-        InetAddressAndPort remote = InetAddressAndPort.getByNameOverrideDefaults("127.0.0.105", 7000);
-        InetAddressAndPort privateIp = InetAddressAndPort.getByName("127.0.0.6");
+        Endpoint local = Endpoint.getByNameOverrideDefaults("127.0.0.4", 7000);
+        Endpoint remote = Endpoint.getByNameOverrideDefaults("127.0.0.105", 7000);
+        Endpoint privateIp = Endpoint.getByName("127.0.0.6");
 
         OutboundMessagingPool pool = new OutboundMessagingPool(privateIp, local, null,
                                                                new MockBackPressureStrategy(null).newState(remote),
                                                                ALLOW_NOTHING_AUTHENTICATOR);
         ms.channelManagers.put(remote, pool);
 
-        InetAddressAndPort preferredIp = InetAddressAndPort.getByName("127.0.0.16");
+        Endpoint preferredIp = Endpoint.getByName("127.0.0.16");
         SystemKeyspace.updatePreferredIP(remote, preferredIp);
 
         Assert.assertEquals(privateIp, ms.getPreferredRemoteAddr(remote));

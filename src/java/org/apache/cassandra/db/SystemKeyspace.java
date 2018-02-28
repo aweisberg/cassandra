@@ -36,6 +36,9 @@ import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
 import com.google.common.util.concurrent.ListenableFuture;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,7 +56,6 @@ import org.apache.cassandra.dht.*;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.util.*;
 import org.apache.cassandra.locator.IEndpointSnitch;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.metrics.RestorableMeter;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.*;
@@ -74,6 +76,7 @@ import static org.apache.cassandra.cql3.QueryProcessor.executeOnceInternal;
 
 public final class SystemKeyspace
 {
+
     private SystemKeyspace()
     {
     }
@@ -106,6 +109,7 @@ public final class SystemKeyspace
     public static final String BUILT_VIEWS = "built_views";
     public static final String PREPARED_STATEMENTS = "prepared_statements";
     public static final String REPAIRS = "repairs";
+
 
     @Deprecated public static final String LEGACY_PEERS = "peers";
     @Deprecated public static final String LEGACY_PEER_EVENTS = "peer_events";
@@ -672,18 +676,18 @@ public final class SystemKeyspace
     /**
      * Record tokens being used by another node
      */
-    public static synchronized void updateTokens(InetAddressAndPort ep, Collection<Token> tokens)
+    public static synchronized void updateTokens(Endpoint ep, Collection<Token> tokens)
     {
         if (ep.equals(FBUtilities.getBroadcastAddressAndPort()))
             return;
 
         String req = "INSERT INTO system.%s (peer, tokens) VALUES (?, ?)";
         executeInternal(String.format(req, LEGACY_PEERS), ep.address, tokensAsSet(tokens));
-        req = "INSERT INTO system.%s (peer, peer_port, tokens) VALUES (?, ?, ?)";
-        executeInternal(String.format(req, PEERS_V2), ep.address, ep.port, tokensAsSet(tokens));
+        req = "INSERT INTO system.%s (peer, peer_port, host_id, tokens) VALUES (?, ?, ?, ?)";
+        executeInternal(String.format(req, PEERS_V2), ep.address, ep.port, ep.hostId, tokensAsSet(tokens));
     }
 
-    public static synchronized void updatePreferredIP(InetAddressAndPort ep, InetAddressAndPort preferred_ip)
+    public static synchronized void updatePreferredIP(Endpoint ep, Endpoint preferred_ip)
     {
         if (getPreferredIP(ep) == preferred_ip)
             return;
@@ -695,7 +699,7 @@ public final class SystemKeyspace
         forceBlockingFlush(LEGACY_PEERS, PEERS_V2);
     }
 
-    public static synchronized void updatePeerInfo(InetAddressAndPort ep, String columnName, Object value)
+    public static synchronized void updatePeerInfo(Endpoint ep, String columnName, Object value)
     {
         if (ep.equals(FBUtilities.getBroadcastAddressAndPort()))
             return;
@@ -711,7 +715,7 @@ public final class SystemKeyspace
         executeInternal(String.format(req, PEERS_V2, columnName), ep.address, ep.port, value);
     }
 
-    public static synchronized void updatePeerNativeAddress(InetAddressAndPort ep, InetAddressAndPort address)
+    public static synchronized void updatePeerNativeAddress(Endpoint ep, Endpoint address)
     {
         if (ep.equals(FBUtilities.getBroadcastAddressAndPort()))
             return;
@@ -723,7 +727,7 @@ public final class SystemKeyspace
     }
 
 
-    public static synchronized void updateHintsDropped(InetAddressAndPort ep, UUID timePeriod, int value)
+    public static synchronized void updateHintsDropped(Endpoint ep, UUID timePeriod, int value)
     {
         // with 30 day TTL
         String req = "UPDATE system.%s USING TTL 2592000 SET hints_dropped[ ? ] = ? WHERE peer = ?";
@@ -761,7 +765,7 @@ public final class SystemKeyspace
     /**
      * Remove stored tokens being used by another node
      */
-    public static synchronized void removeEndpoint(InetAddressAndPort ep)
+    public static synchronized void removeEndpoint(Endpoint ep)
     {
         String req = "DELETE FROM system.%s WHERE peer = ?";
         executeInternal(String.format(req, LEGACY_PEERS), ep.address);
@@ -804,14 +808,17 @@ public final class SystemKeyspace
      * Return a map of stored tokens to IP addresses
      *
      */
-    public static SetMultimap<InetAddressAndPort, Token> loadTokens()
+    public static SetMultimap<Endpoint, Token> loadTokens()
     {
-        SetMultimap<InetAddressAndPort, Token> tokenMap = HashMultimap.create();
-        for (UntypedResultSet.Row row : executeInternal("SELECT peer, peer_port, tokens FROM system." + PEERS_V2))
+        SetMultimap<Endpoint, Token> tokenMap = HashMultimap.create();
+        for (UntypedResultSet.Row row : executeInternal("SELECT peer, peer_port, host_id, tokens FROM system." + PEERS_V2))
         {
             InetAddress address = row.getInetAddress("peer");
             Integer port = row.getInt("peer_port");
-            InetAddressAndPort peer = InetAddressAndPort.getByAddressOverrideDefaults(address, port);
+            UUID hostId = Endpoint.initialHostId;
+            if (row.has("host_id"))
+                hostId = row.getUUID("host_id");
+            Endpoint peer = Endpoint.getByAddressOverrideDefaults(address, port, hostId);
             if (row.has("tokens"))
                 tokenMap.putAll(peer, deserializeTokens(row.getSet("tokens", UTF8Type.instance)));
         }
@@ -823,36 +830,40 @@ public final class SystemKeyspace
      * Return a map of store host_ids to IP addresses
      *
      */
-    public static Map<InetAddressAndPort, UUID> loadHostIds()
+    public static Map<Endpoint, UUID> loadHostIds()
     {
-        Map<InetAddressAndPort, UUID> hostIdMap = new HashMap<>();
+        Map<Endpoint, UUID> hostIdMap = new HashMap<>();
         for (UntypedResultSet.Row row : executeInternal("SELECT peer, peer_port, host_id FROM system." + PEERS_V2))
         {
             InetAddress address = row.getInetAddress("peer");
             Integer port = row.getInt("peer_port");
-            InetAddressAndPort peer = InetAddressAndPort.getByAddressOverrideDefaults(address, port);
+            UUID hostId = Endpoint.initialHostId;
             if (row.has("host_id"))
-            {
-                hostIdMap.put(peer, row.getUUID("host_id"));
-            }
+                hostId = row.getUUID("host_id");
+
+            Endpoint peer = Endpoint.getByAddressOverrideDefaults(address, port, hostId);
+            hostIdMap.put(peer, hostId);
         }
         return hostIdMap;
     }
 
     /**
-     * Get preferred IP for given endpoint if it is known. Otherwise this returns given endpoint itself.
+     * Get a preferred IP (as an endpoint object) of the given endpoint IP if it is known. Otherwise this returns the given endpoint itself.
      *
-     * @param ep endpoint address to check
-     * @return Preferred IP for given endpoint if present, otherwise returns given ep
+     * @param ep endpoint to check
+     * @return endpoint object with the preferred IP for given endpoint if present, otherwise returns given ep
      */
-    public static InetAddressAndPort getPreferredIP(InetAddressAndPort ep)
+    public static Endpoint getPreferredIP(Endpoint ep)
     {
-        String req = "SELECT preferred_ip, preferred_port FROM system.%s WHERE peer=? AND peer_port = ?";
+        String req = "SELECT preferred_ip, preferred_port, host_id FROM system.%s WHERE peer=? AND peer_port = ?";
         UntypedResultSet result = executeInternal(String.format(req, PEERS_V2), ep.address, ep.port);
         if (!result.isEmpty() && result.one().has("preferred_ip"))
         {
             UntypedResultSet.Row row = result.one();
-            return InetAddressAndPort.getByAddressOverrideDefaults(row.getInetAddress("preferred_ip"), row.getInt("preferred_port"));
+            UUID hostId = Endpoint.initialHostId;
+            if (row.has("host_id"))
+                hostId = row.getUUID("host_id");
+            return Endpoint.getByAddressOverrideDefaults(row.getInetAddress("preferred_ip"), row.getInt("preferred_port"), hostId);
         }
         return ep;
     }
@@ -860,14 +871,14 @@ public final class SystemKeyspace
     /**
      * Return a map of IP addresses containing a map of dc and rack info
      */
-    public static Map<InetAddressAndPort, Map<String,String>> loadDcRackInfo()
+    public static Map<Endpoint, Map<String,String>> loadDcRackInfo()
     {
-        Map<InetAddressAndPort, Map<String, String>> result = new HashMap<>();
+        Map<Endpoint, Map<String, String>> result = new HashMap<>();
         for (UntypedResultSet.Row row : executeInternal("SELECT peer, peer_port, data_center, rack from system." + PEERS_V2))
         {
             InetAddress address = row.getInetAddress("peer");
             Integer port = row.getInt("peer_port");
-            InetAddressAndPort peer = InetAddressAndPort.getByAddressOverrideDefaults(address, port);
+            Endpoint peer = Endpoint.getByAddressOverrideDefaults(address, port);
             if (row.has("data_center") && row.has("rack"))
             {
                 Map<String, String> dcRack = new HashMap<>();
@@ -886,7 +897,7 @@ public final class SystemKeyspace
      * @param ep endpoint address to check
      * @return Release version or null if version is unknown.
      */
-    public static CassandraVersion getReleaseVersion(InetAddressAndPort ep)
+    public static CassandraVersion getReleaseVersion(Endpoint ep)
     {
         try
         {
@@ -1070,6 +1081,16 @@ public final class SystemKeyspace
      */
     public static UUID getLocalHostId()
     {
+        return getLocalHostId(true);
+    }
+
+    /**
+     * Read the host ID from the system keyspace
+     * Creating (and storing) one if none exists and adding requested.
+     * Return @null  if doesn't exists and no adding requested
+     */
+    public static UUID getLocalHostId(boolean addIfMissing)
+    {
         String req = "SELECT host_id FROM system.%s WHERE key='%s'";
         UntypedResultSet result = executeInternal(format(req, LOCAL, LOCAL));
 
@@ -1077,10 +1098,16 @@ public final class SystemKeyspace
         if (!result.isEmpty() && result.one().has("host_id"))
             return result.one().getUUID("host_id");
 
-        // ID not found, generate a new one, persist, and then return it.
-        UUID hostId = UUID.randomUUID();
-        logger.warn("No host ID found, created {} (Note: This should happen exactly once per node).", hostId);
-        return setLocalHostId(hostId);
+        // ID not found, and if a new requested, generate it, persist, and then return .
+        if (addIfMissing)
+        {
+            UUID hostId = UUID.randomUUID();
+            logger.warn("No host ID found, created {} (Note: This should happen exactly once per node).", hostId);
+            return setLocalHostId(hostId);
+        }
+
+        // ID not found, and requested not to add. Return null.
+        return null;
     }
 
     /**
@@ -1088,6 +1115,7 @@ public final class SystemKeyspace
      */
     public static UUID setLocalHostId(UUID hostId)
     {
+
         String req = "INSERT INTO system.%s (key, host_id) VALUES ('%s', ?)";
         executeInternal(format(req, LOCAL, LOCAL), hostId);
         return hostId;
@@ -1304,7 +1332,7 @@ public final class SystemKeyspace
     }
 
     public static synchronized void updateTransferredRanges(StreamOperation streamOperation,
-                                                         InetAddressAndPort peer,
+                                                         Endpoint peer,
                                                          String keyspace,
                                                          Collection<Range<Token>> streamedRanges)
     {
@@ -1319,16 +1347,16 @@ public final class SystemKeyspace
         executeInternal(String.format(cql, TRANSFERRED_RANGES_V2), rangesToUpdate, streamOperation.getDescription(), peer.address, peer.port, keyspace);
     }
 
-    public static synchronized Map<InetAddressAndPort, Set<Range<Token>>> getTransferredRanges(String description, String keyspace, IPartitioner partitioner)
+    public static synchronized Map<Endpoint, Set<Range<Token>>> getTransferredRanges(String description, String keyspace, IPartitioner partitioner)
     {
-        Map<InetAddressAndPort, Set<Range<Token>>> result = new HashMap<>();
+        Map<Endpoint, Set<Range<Token>>> result = new HashMap<>();
         String query = "SELECT * FROM system.%s WHERE operation = ? AND keyspace_name = ?";
         UntypedResultSet rs = executeInternal(String.format(query, TRANSFERRED_RANGES_V2), description, keyspace);
         for (UntypedResultSet.Row row : rs)
         {
             InetAddress peerAddress = row.getInetAddress("peer");
             int port = row.getInt("peer_port");
-            InetAddressAndPort peer = InetAddressAndPort.getByAddressOverrideDefaults(peerAddress, port);
+            Endpoint peer = Endpoint.getByAddressOverrideDefaults(peerAddress, port);
             Set<ByteBuffer> rawRanges = row.getSet("ranges", BytesType.instance);
             Set<Range<Token>> ranges = Sets.newHashSetWithExpectedSize(rawRanges.size());
             for (ByteBuffer rawRange : rawRanges)

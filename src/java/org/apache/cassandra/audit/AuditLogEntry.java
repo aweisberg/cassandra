@@ -27,15 +27,15 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.cassandra.auth.AuthenticatedUser;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryOptions;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.utils.FBUtilities;
 
 public class AuditLogEntry
 {
-    private final InetAddressAndPort host = FBUtilities.getBroadcastAddressAndPort();
-    private final InetAddressAndPort source;
+    private final Endpoint host = FBUtilities.getBroadcastAddressAndPort();
+    private final Endpoint source;
     private final String user;
     private final long timestamp;
     private final AuditLogEntryType type;
@@ -45,7 +45,7 @@ public class AuditLogEntry
     private final String operation;
     private final QueryOptions options;
 
-    private AuditLogEntry(AuditLogEntryType type, InetAddressAndPort source, String user, long timestamp, UUID batch, String keyspace, String scope, String operation, QueryOptions options)
+    private AuditLogEntry(AuditLogEntryType type, Endpoint source, String user, long timestamp, UUID batch, String keyspace, String scope, String operation, QueryOptions options)
     {
         this.type = type;
         this.source = source;
@@ -92,12 +92,12 @@ public class AuditLogEntry
         return builder.toString();
     }
 
-    public InetAddressAndPort getHost()
+    public Endpoint getHost()
     {
         return host;
     }
 
-    public InetAddressAndPort getSource()
+    public Endpoint getSource()
     {
         return source;
     }
@@ -144,13 +144,13 @@ public class AuditLogEntry
 
     public static class Builder
     {
-        private static final InetAddressAndPort DEFAULT_SOURCE;
+        private static final Endpoint DEFAULT_SOURCE;
 
         static
         {
             try
             {
-                DEFAULT_SOURCE = InetAddressAndPort.getByNameOverrideDefaults("0.0.0.0", 0);
+                DEFAULT_SOURCE = Endpoint.getByNameOverrideDefaults("0.0.0.0", 0);
             }
             catch (UnknownHostException e)
             {
@@ -162,7 +162,7 @@ public class AuditLogEntry
         private static final String DEFAULT_OPERATION = StringUtils.EMPTY;
 
         private AuditLogEntryType type;
-        private InetAddressAndPort source;
+        private Endpoint source;
         private String user;
         private long timestamp;
         private UUID batch;
@@ -178,7 +178,7 @@ public class AuditLogEntry
                 if (clientState.getRemoteAddress() != null)
                 {
                     InetSocketAddress addr = clientState.getRemoteAddress();
-                    source = InetAddressAndPort.getByAddressOverrideDefaults(addr.getAddress(), addr.getPort());
+                    source = Endpoint.getByAddressOverrideDefaults(addr.getAddress(), addr.getPort());
                 }
 
                 if (clientState.getUser() != null)

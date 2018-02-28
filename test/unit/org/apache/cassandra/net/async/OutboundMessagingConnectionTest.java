@@ -28,6 +28,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.net.ssl.SSLHandshakeException;
 
 import com.google.common.net.InetAddresses;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -45,7 +48,6 @@ import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.locator.AbstractEndpointSnitch;
 import org.apache.cassandra.locator.IEndpointSnitch;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.MessagingServiceTest;
@@ -60,9 +62,9 @@ import static org.apache.cassandra.net.async.OutboundMessagingConnection.State.R
 
 public class OutboundMessagingConnectionTest
 {
-    private static final InetAddressAndPort LOCAL_ADDR = InetAddressAndPort.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.1"), 9998);
-    private static final InetAddressAndPort REMOTE_ADDR = InetAddressAndPort.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.2"), 9999);
-    private static final InetAddressAndPort RECONNECT_ADDR = InetAddressAndPort.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.3"), 9999);
+    private static final Endpoint LOCAL_ADDR = Endpoint.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.1"), 9998);
+    private static final Endpoint REMOTE_ADDR = Endpoint.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.2"), 9999);
+    private static final Endpoint RECONNECT_ADDR = Endpoint.getByAddressOverrideDefaults(InetAddresses.forString("127.0.0.3"), 9999);
     private static final int MESSAGING_VERSION = MessagingService.current_version;
 
     private OutboundConnectionIdentifier connectionId;
@@ -155,24 +157,24 @@ public class OutboundMessagingConnectionTest
 
     private static class TestSnitch extends AbstractEndpointSnitch
     {
-        private Map<InetAddressAndPort, String> nodeToDc = new HashMap<>();
+        private Map<Endpoint, String> nodeToDc = new HashMap<>();
 
-        void add(InetAddressAndPort node, String dc)
+        void add(Endpoint node, String dc)
         {
             nodeToDc.put(node, dc);
         }
 
-        public String getRack(InetAddressAndPort endpoint)
+        public String getRack(Endpoint endpoint)
         {
             return null;
         }
 
-        public String getDatacenter(InetAddressAndPort endpoint)
+        public String getDatacenter(Endpoint endpoint)
         {
             return nodeToDc.get(endpoint);
         }
 
-        public int compareEndpoints(InetAddressAndPort target, InetAddressAndPort a1, InetAddressAndPort a2)
+        public int compareEndpoints(Endpoint target, Endpoint a1, Endpoint a2)
         {
             return 0;
         }
@@ -513,8 +515,8 @@ public class OutboundMessagingConnectionTest
         OutboundConnectionIdentifier connectionId = omc.getConnectionId();
         omc.maybeUpdateConnectionId();
         Assert.assertNotEquals(connectionId, omc.getConnectionId());
-        Assert.assertEquals(InetAddressAndPort.getByAddressOverrideDefaults(REMOTE_ADDR.address, DatabaseDescriptor.getSSLStoragePort()), omc.getConnectionId().remote());
-        Assert.assertEquals(InetAddressAndPort.getByAddressOverrideDefaults(REMOTE_ADDR.address, DatabaseDescriptor.getSSLStoragePort()), omc.getConnectionId().connectionAddress());
+        Assert.assertEquals(Endpoint.getByAddressOverrideDefaults(REMOTE_ADDR.address, DatabaseDescriptor.getSSLStoragePort()), omc.getConnectionId().remote());
+        Assert.assertEquals(Endpoint.getByAddressOverrideDefaults(REMOTE_ADDR.address, DatabaseDescriptor.getSSLStoragePort()), omc.getConnectionId().connectionAddress());
         Assert.assertEquals(peerVersion, omc.getTargetVersion());
     }
 }

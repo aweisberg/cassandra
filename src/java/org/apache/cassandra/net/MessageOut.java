@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.net;
 
-import java.io.IOError;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +31,7 @@ import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.async.OutboundConnectionIdentifier.ConnectionType;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.FBUtilities;
@@ -86,7 +85,7 @@ public class MessageOut<T>
     //Offset in a parameter tuple containing the actual parameter represented as a POJO
     public static final int PARAMETER_TUPLE_PARAMETER_OFFSET = 1;
 
-    public final InetAddressAndPort from;
+    public final Endpoint from;
     public final MessagingService.Verb verb;
     public final T payload;
     public final IVersionedSerializer<T> serializer;
@@ -144,7 +143,7 @@ public class MessageOut<T>
     }
 
     @VisibleForTesting
-    public MessageOut(InetAddressAndPort from, MessagingService.Verb verb, T payload, IVersionedSerializer<T> serializer, List<Object> parameters, ConnectionType connectionType)
+    public MessageOut(Endpoint from, MessagingService.Verb verb, T payload, IVersionedSerializer<T> serializer, List<Object> parameters, ConnectionType connectionType)
     {
         this.from = from;
         this.verb = verb;

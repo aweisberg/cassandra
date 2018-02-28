@@ -54,7 +54,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
     public static final String SNITCH_PROPERTIES_FILENAME = "cassandra-topology.properties";
     private static final int DEFAULT_REFRESH_PERIOD_IN_SECONDS = 5;
 
-    private static volatile Map<InetAddressAndPort, String[]> endpointMap;
+    private static volatile Map<Endpoint, String[]> endpointMap;
     private static volatile String[] defaultDCRack;
 
     private volatile boolean gossipStarted;
@@ -92,7 +92,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
      * @param endpoint endpoint to process
      * @return a array of string with the first index being the data center and the second being the rack
      */
-    public static String[] getEndpointInfo(InetAddressAndPort endpoint)
+    public static String[] getEndpointInfo(Endpoint endpoint)
     {
         String[] rawEndpointInfo = getRawEndpointInfo(endpoint);
         if (rawEndpointInfo == null)
@@ -100,7 +100,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
         return rawEndpointInfo;
     }
 
-    private static String[] getRawEndpointInfo(InetAddressAndPort endpoint)
+    private static String[] getRawEndpointInfo(Endpoint endpoint)
     {
         String[] value = endpointMap.get(endpoint);
         if (value == null)
@@ -117,7 +117,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
      * @param endpoint the endpoint to process
      * @return string of data center
      */
-    public String getDatacenter(InetAddressAndPort endpoint)
+    public String getDatacenter(Endpoint endpoint)
     {
         String[] info = getEndpointInfo(endpoint);
         assert info != null : "No location defined for endpoint " + endpoint;
@@ -130,7 +130,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
      * @param endpoint the endpoint to process
      * @return string of rack
      */
-    public String getRack(InetAddressAndPort endpoint)
+    public String getRack(Endpoint endpoint)
     {
         String[] info = getEndpointInfo(endpoint);
         assert info != null : "No location defined for endpoint " + endpoint;
@@ -139,7 +139,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
 
     public void reloadConfiguration(boolean isUpdate) throws ConfigurationException
     {
-        HashMap<InetAddressAndPort, String[]> reloadedMap = new HashMap<>();
+        HashMap<Endpoint, String[]> reloadedMap = new HashMap<>();
         String[] reloadedDefaultDCRack = null;
 
         Properties properties = new Properties();
@@ -167,11 +167,11 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
             }
             else
             {
-                InetAddressAndPort host;
+                Endpoint host;
                 String hostString = StringUtils.remove(key, '/');
                 try
                 {
-                    host = InetAddressAndPort.getByName(hostString);
+                    host = Endpoint.getByName(hostString);
                 }
                 catch (UnknownHostException e)
                 {
@@ -185,7 +185,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
                 reloadedMap.put(host, token);
             }
         }
-        InetAddressAndPort broadcastAddress = FBUtilities.getBroadcastAddressAndPort();
+        Endpoint broadcastAddress = FBUtilities.getBroadcastAddressAndPort();
         String[] localInfo = reloadedMap.get(broadcastAddress);
         if (reloadedDefaultDCRack == null && localInfo == null)
             throw new ConfigurationException(String.format("Snitch definitions at %s do not define a location for " +
@@ -193,7 +193,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
                                                            SNITCH_PROPERTIES_FILENAME, broadcastAddress));
         // internode messaging code converts our broadcast address to local,
         // make sure we can be found at that as well.
-        InetAddressAndPort localAddress = FBUtilities.getLocalAddressAndPort();
+        Endpoint localAddress = FBUtilities.getLocalAddressAndPort();
         if (!localAddress.equals(broadcastAddress) && !reloadedMap.containsKey(localAddress))
             reloadedMap.put(localAddress, localInfo);
 
@@ -203,7 +203,7 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
         if (logger.isTraceEnabled())
         {
             StringBuilder sb = new StringBuilder();
-            for (Map.Entry<InetAddressAndPort, String[]> entry : reloadedMap.entrySet())
+            for (Map.Entry<Endpoint, String[]> entry : reloadedMap.entrySet())
                 sb.append(entry.getKey()).append(':').append(Arrays.toString(entry.getValue())).append(", ");
             logger.trace("Loaded network topology from property file: {}", StringUtils.removeEnd(sb.toString(), ", "));
         }
@@ -230,17 +230,17 @@ public class PropertyFileSnitch extends AbstractNetworkTopologySnitch
      * @param reloadedDefaultDCRack - the default dc:rack or null if no default
      * @return true if we can continue updating (no live host had dc or rack updated)
      */
-    private static boolean livenessCheck(HashMap<InetAddressAndPort, String[]> reloadedMap, String[] reloadedDefaultDCRack)
+    private static boolean livenessCheck(HashMap<Endpoint, String[]> reloadedMap, String[] reloadedDefaultDCRack)
     {
         // If the default has changed we must check all live hosts but hopefully we will find a live
         // host quickly and interrupt the loop. Otherwise we only check the live hosts that were either
         // in the old set or in the new set
-        Set<InetAddressAndPort> hosts = Arrays.equals(defaultDCRack, reloadedDefaultDCRack)
+        Set<Endpoint> hosts = Arrays.equals(defaultDCRack, reloadedDefaultDCRack)
                                  ? Sets.intersection(StorageService.instance.getLiveRingMembers(), // same default
                                                      Sets.union(endpointMap.keySet(), reloadedMap.keySet()))
                                  : StorageService.instance.getLiveRingMembers(); // default updated
 
-        for (InetAddressAndPort host : hosts)
+        for (Endpoint host : hosts)
         {
             String[] origValue = endpointMap.containsKey(host) ? endpointMap.get(host) : defaultDCRack;
             String[] updateValue = reloadedMap.containsKey(host) ? reloadedMap.get(host) : reloadedDefaultDCRack;

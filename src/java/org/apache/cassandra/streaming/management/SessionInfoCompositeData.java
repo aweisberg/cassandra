@@ -26,7 +26,7 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.SessionInfo;
 import org.apache.cassandra.streaming.StreamSession;
@@ -129,11 +129,11 @@ public class SessionInfoCompositeData
         assert cd.getCompositeType().equals(COMPOSITE_TYPE);
 
         Object[] values = cd.getAll(ITEM_NAMES);
-        InetAddressAndPort peer, connecting;
+        Endpoint peer, connecting;
         try
         {
-            peer = InetAddressAndPort.getByNameOverrideDefaults((String) values[1], (Integer)values[2]);
-            connecting = InetAddressAndPort.getByNameOverrideDefaults((String) values[3], (Integer)values[4]);
+            peer = Endpoint.getByNameOverrideDefaults((String) values[1], (Integer)values[2]);
+            connecting = Endpoint.getByNameOverrideDefaults((String) values[3], (Integer)values[4]);
         }
         catch (UnknownHostException e)
         {

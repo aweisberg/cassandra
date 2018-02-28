@@ -34,6 +34,9 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
 import com.google.common.util.concurrent.Uninterruptibles;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,7 +66,6 @@ import org.apache.cassandra.io.sstable.metadata.ValidationMetadata;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputBufferFixed;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.AsyncOneResponse;
 
 
@@ -84,9 +86,9 @@ public class FBUtilities
     private static volatile InetAddress localInetAddress;
     private static volatile InetAddress broadcastInetAddress;
     private static volatile InetAddress broadcastNativeAddress;
-    private static volatile InetAddressAndPort broadcastNativeAddressAndPort;
-    private static volatile InetAddressAndPort broadcastInetAddressAndPort;
-    private static volatile InetAddressAndPort localInetAddressAndPort;
+    private static volatile Endpoint broadcastNativeEndpoint;
+    private static volatile Endpoint endpoint;
+    private static volatile Endpoint localEndpoint;
 
     public static int getAvailableProcessors()
     {
@@ -123,13 +125,13 @@ public class FBUtilities
      * The address and port to listen on for intra-cluster storage traffic (not client). Use this to get the correct
      * stuff to listen on for intra-cluster communication.
      */
-    public static InetAddressAndPort getLocalAddressAndPort()
+    public static Endpoint getLocalAddressAndPort()
     {
-        if (localInetAddressAndPort == null)
+        if (localEndpoint == null || localEndpoint.hostId == Endpoint.initialHostId)
         {
-            localInetAddressAndPort = InetAddressAndPort.getByAddress(getJustLocalAddress());
+            localEndpoint = Endpoint.getByAddress(getJustLocalAddress());
         }
-        return localInetAddressAndPort;
+        return localEndpoint;
     }
 
     /**
@@ -150,27 +152,26 @@ public class FBUtilities
      * identifies the node and is reachable from everywhere. This is the one you want unless you are trying to connect
      * to the local address specifically.
      */
-    public static InetAddressAndPort getBroadcastAddressAndPort()
+    public static Endpoint getBroadcastAddressAndPort()
     {
-        if (broadcastInetAddressAndPort == null)
+        if (endpoint == null || endpoint.hostId == Endpoint.initialHostId)
         {
-            broadcastInetAddressAndPort = InetAddressAndPort.getByAddress(getJustBroadcastAddress());
+            endpoint = Endpoint.getByAddress(getJustBroadcastAddress());
         }
-        return broadcastInetAddressAndPort;
+        return endpoint;
     }
-
     /**
      * <b>THIS IS FOR TESTING ONLY!!</b>
      */
     public static void setBroadcastInetAddress(InetAddress addr)
     {
         broadcastInetAddress = addr;
-        broadcastInetAddressAndPort = InetAddressAndPort.getByAddress(broadcastInetAddress);
+        endpoint = Endpoint.getByAddress(broadcastInetAddress);
     }
 
     /**
      * This returns the address that is bound to for the native protocol for communicating with clients. This is ambiguous
-     * because it doesn't include the port and it's almost always the wrong thing to be using you want getBroadcastNativeAddressAndPort
+     * because it doesn't include the port and it's almost always the wrong thing to be using you want getBroadcastNativeEndpoint
      */
     public static InetAddress getJustBroadcastNativeAddress()
     {
@@ -181,16 +182,17 @@ public class FBUtilities
         return broadcastNativeAddress;
     }
 
+
     /**
      * This returns the address that is bound to for the native protocol for communicating with clients. This is almost
      * always what you need to identify a node and how to connect to it as a client.
      */
-    public static InetAddressAndPort getBroadcastNativeAddressAndPort()
+    public static Endpoint getBroadcastNativeEndpoint()
     {
-        if (broadcastNativeAddressAndPort == null)
-            broadcastNativeAddressAndPort = InetAddressAndPort.getByAddressOverrideDefaults(getJustBroadcastNativeAddress(),
-                                                                                             DatabaseDescriptor.getNativeTransportPort());
-        return broadcastNativeAddressAndPort;
+        if (broadcastNativeEndpoint == null)
+            broadcastNativeEndpoint = Endpoint.getByAddressOverrideDefaults(getJustBroadcastNativeAddress(),
+                                                                            DatabaseDescriptor.getNativeTransportPort());
+        return broadcastNativeEndpoint;
     }
 
     public static String getNetworkInterface(InetAddress localAddress)
@@ -947,9 +949,9 @@ public class FBUtilities
     public static void reset()
     {
         localInetAddress = null;
-        localInetAddressAndPort = null;
+        localEndpoint = null;
         broadcastInetAddress = null;
-        broadcastInetAddressAndPort = null;
+        endpoint = null;
         broadcastNativeAddress = null;
     }
 }

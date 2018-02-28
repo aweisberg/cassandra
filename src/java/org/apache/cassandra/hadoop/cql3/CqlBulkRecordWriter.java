@@ -28,6 +28,9 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import com.google.common.net.HostAndPort;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +44,6 @@ import org.apache.cassandra.hadoop.HadoopCompat;
 import org.apache.cassandra.io.sstable.CQLSSTableWriter;
 import org.apache.cassandra.io.sstable.SSTableLoader;
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.streaming.StreamState;
 import org.apache.cassandra.utils.NativeSSTableLoaderClient;
@@ -83,7 +85,7 @@ public class CqlBulkRecordWriter extends RecordWriter<Object, List<ByteBuffer>>
     protected SSTableLoader loader;
     protected Progressable progress;
     protected TaskAttemptContext context;
-    protected final Set<InetAddressAndPort> ignores = new HashSet<>();
+    protected final Set<Endpoint> ignores = new HashSet<>();
 
     private String keyspace;
     private String table;
@@ -142,7 +144,7 @@ public class CqlBulkRecordWriter extends RecordWriter<Object, List<ByteBuffer>>
         try
         {
             for (String hostToIgnore : CqlBulkOutputFormat.getIgnoreHosts(conf))
-                ignores.add(InetAddressAndPort.getByName(hostToIgnore));
+                ignores.add(Endpoint.getByName(hostToIgnore));
         }
         catch (UnknownHostException e)
         {

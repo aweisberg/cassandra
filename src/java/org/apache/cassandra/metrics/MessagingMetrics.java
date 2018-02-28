@@ -21,11 +21,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.locator.Endpoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.codahale.metrics.Timer;
-import org.apache.cassandra.locator.InetAddressAndPort;
 
 import static org.apache.cassandra.metrics.CassandraMetricsRegistry.Metrics;
 
@@ -47,7 +48,7 @@ public class MessagingMetrics
         queueWaitLatency = new ConcurrentHashMap<>();
     }
 
-    public void addTimeTaken(InetAddressAndPort from, long timeTaken)
+    public void addTimeTaken(Endpoint from, long timeTaken)
     {
         String dc = DatabaseDescriptor.getEndpointSnitch().getDatacenter(from);
         Timer timer = dcLatency.get(dc);

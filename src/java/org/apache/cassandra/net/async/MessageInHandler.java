@@ -33,9 +33,8 @@ import org.slf4j.LoggerFactory;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import org.apache.cassandra.db.monitoring.ApproximateTime;
 import org.apache.cassandra.io.util.DataInputBuffer;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.ParameterType;
@@ -56,12 +55,12 @@ public class MessageInHandler extends BaseMessageInHandler
     private State state;
     private MessageHeader messageHeader;
 
-    MessageInHandler(InetAddressAndPort peer, int messagingVersion)
+    MessageInHandler(Endpoint peer, int messagingVersion)
     {
         this (peer, messagingVersion, MESSAGING_SERVICE_CONSUMER);
     }
 
-    public MessageInHandler(InetAddressAndPort peer, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
+    public MessageInHandler(Endpoint peer, int messagingVersion, BiConsumer<MessageIn, Integer> messageConsumer)
     {
         super(peer, messagingVersion, messageConsumer);
 

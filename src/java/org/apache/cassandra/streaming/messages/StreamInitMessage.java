@@ -23,7 +23,7 @@ import java.util.UUID;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputStreamPlus;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.streaming.StreamOperation;
@@ -39,7 +39,7 @@ public class StreamInitMessage extends StreamMessage
 {
     public static Serializer<StreamInitMessage> serializer = new StreamInitMessageSerializer();
 
-    public final InetAddressAndPort from;
+    public final Endpoint from;
     public final int sessionIndex;
     public final UUID planId;
     public final StreamOperation streamOperation;
@@ -47,7 +47,7 @@ public class StreamInitMessage extends StreamMessage
     public final UUID pendingRepair;
     public final PreviewKind previewKind;
 
-    public StreamInitMessage(InetAddressAndPort from, int sessionIndex, UUID planId, StreamOperation streamOperation, UUID pendingRepair, PreviewKind previewKind)
+    public StreamInitMessage(Endpoint from, int sessionIndex, UUID planId, StreamOperation streamOperation, UUID pendingRepair, PreviewKind previewKind)
     {
         super(Type.STREAM_INIT);
         this.from = from;
@@ -86,7 +86,7 @@ public class StreamInitMessage extends StreamMessage
 
         public StreamInitMessage deserialize(DataInputPlus in, int version, StreamSession session) throws IOException
         {
-            InetAddressAndPort from = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
+            Endpoint from = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
             int sessionIndex = in.readInt();
             UUID planId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             String description = in.readUTF();

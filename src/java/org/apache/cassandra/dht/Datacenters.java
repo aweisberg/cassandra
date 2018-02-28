@@ -22,8 +22,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.locator.IEndpointSnitch;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -53,7 +53,7 @@ public class Datacenters
         // Add data center of localhost.
         validDataCenters.add(thisDatacenter());
         // Fetch and add DCs of all peers.
-        for (InetAddressAndPort peer : StorageService.instance.getTokenMetadata().getAllEndpoints())
+        for (Endpoint peer : StorageService.instance.getTokenMetadata().getAllEndpoints())
         {
             validDataCenters.add(snitch.getDatacenter(peer));
         }

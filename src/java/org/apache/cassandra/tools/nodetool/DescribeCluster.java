@@ -26,7 +26,7 @@ import com.google.common.collect.ArrayListMultimap;
 
 import io.airlift.airline.Command;
 import org.apache.cassandra.locator.DynamicEndpointSnitch;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.tools.NodeProbe;
 import org.apache.cassandra.tools.NodeTool;
 import org.apache.cassandra.tools.NodeTool.NodeToolCmd;
@@ -107,14 +107,14 @@ public class DescribeCluster extends NodeToolCmd
         {
             System.out.print("\t" + dc.getKey());
 
-            ArrayListMultimap<InetAddressAndPort, HostStatWithPort> hostToTokens = ArrayListMultimap.create();
+            ArrayListMultimap<Endpoint, HostStatWithPort> hostToTokens = ArrayListMultimap.create();
             for (HostStatWithPort stat : dc.getValue())
                 hostToTokens.put(stat.endpoint, stat);
 
             int totalNodes = 0; // total number of nodes in a datacenter
             int downNodes = 0; // number of down nodes in a datacenter
 
-            for (InetAddressAndPort endpoint : hostToTokens.keySet())
+            for (Endpoint endpoint : hostToTokens.keySet())
             {
                 totalNodes++;
                 if (unreachableNodes.contains(endpoint.toString()))

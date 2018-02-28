@@ -46,7 +46,7 @@ import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.net.AsyncOneResponse;
 import org.apache.cassandra.net.MessageOut;
@@ -68,7 +68,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
         Boolean.getBoolean("cassandra.drop_oversized_readrepair_mutations");
 
     private final ReadCommand command;
-    private final List<InetAddressAndPort> endpoints;
+    private final List<Endpoint> endpoints;
     private final long queryStartNanoTime;
     private final ConsistencyLevel consistency;
 
@@ -91,7 +91,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
     }
 
     public BlockingReadRepair(ReadCommand command,
-                              List<InetAddressAndPort> endpoints,
+                              List<Endpoint> endpoints,
                               long queryStartNanoTime,
                               ConsistencyLevel consistency)
     {
@@ -101,7 +101,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
         this.consistency = consistency;
     }
 
-    public UnfilteredPartitionIterators.MergeListener getMergeListener(InetAddressAndPort[] endpoints)
+    public UnfilteredPartitionIterators.MergeListener getMergeListener(Endpoint[] endpoints)
     {
         return new PartitionIteratorMergeListener(endpoints, command, this);
     }
@@ -120,7 +120,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
             this.consistency = consistency;
         }
 
-        private AsyncOneResponse sendRepairMutation(Mutation mutation, InetAddressAndPort destination)
+        private AsyncOneResponse sendRepairMutation(Mutation mutation, Endpoint destination)
         {
             DecoratedKey key = mutation.key();
             Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
@@ -164,7 +164,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
             return callback;
         }
 
-        public void reportMutation(InetAddressAndPort endpoint, Mutation mutation)
+        public void reportMutation(Endpoint endpoint, Mutation mutation)
         {
             AsyncOneResponse<?> response = sendRepairMutation(mutation, endpoint);
 
@@ -220,7 +220,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
         return repair;
     }
 
-    public void startRepair(DigestResolver digestResolver, List<InetAddressAndPort> allEndpoints, List<InetAddressAndPort> contactedEndpoints, Consumer<PartitionIterator> resultConsumer)
+    public void startRepair(DigestResolver digestResolver, List<Endpoint> allEndpoints, List<Endpoint> contactedEndpoints, Consumer<PartitionIterator> resultConsumer)
     {
         ReadRepairMetrics.repairedBlocking.mark();
 
@@ -232,7 +232,7 @@ public class BlockingReadRepair implements ReadRepair, RepairListener
 
         digestRepair = new DigestRepair(resolver, readCallback, resultConsumer);
 
-        for (InetAddressAndPort endpoint : contactedEndpoints)
+        for (Endpoint endpoint : contactedEndpoints)
         {
             Tracing.trace("Enqueuing full data read to {}", endpoint);
             MessagingService.instance().sendRRWithFailure(command.createMessage(), endpoint, readCallback);

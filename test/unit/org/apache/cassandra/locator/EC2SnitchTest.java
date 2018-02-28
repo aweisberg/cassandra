@@ -89,8 +89,8 @@ public class EC2SnitchTest
     {
         az = "us-east-1d";
         Ec2Snitch snitch = new TestEC2Snitch(legacySnitchProps);
-        InetAddressAndPort local = InetAddressAndPort.getByName("127.0.0.1");
-        InetAddressAndPort nonlocal = InetAddressAndPort.getByName("127.0.0.7");
+        Endpoint local = Endpoint.getByName("127.0.0.1");
+        Endpoint nonlocal = Endpoint.getByName("127.0.0.7");
 
         Gossiper.instance.addSavedEndpoint(nonlocal);
         Map<ApplicationState, VersionedValue> stateMap = new EnumMap<>(ApplicationState.class);
@@ -110,7 +110,7 @@ public class EC2SnitchTest
     {
         az = "us-east-2d";
         Ec2Snitch snitch = new TestEC2Snitch(legacySnitchProps);
-        InetAddressAndPort local = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint local = Endpoint.getByName("127.0.0.1");
         assertEquals("us-east-2", snitch.getDatacenter(local));
         assertEquals("2d", snitch.getRack(local));
     }
@@ -118,7 +118,7 @@ public class EC2SnitchTest
     @Test
     public void testFullNamingScheme() throws IOException, ConfigurationException
     {
-        InetAddressAndPort local = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint local = Endpoint.getByName("127.0.0.1");
         az = "us-east-2d";
         Ec2Snitch snitch = new TestEC2Snitch();
 

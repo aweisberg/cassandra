@@ -48,11 +48,11 @@ public class ReconnectableSnitchHelper implements IEndpointStateChangeSubscriber
         this.preferLocal = preferLocal;
     }
 
-    private void reconnect(InetAddressAndPort publicAddress, VersionedValue localAddressValue)
+    private void reconnect(Endpoint publicAddress, VersionedValue localAddressValue)
     {
         try
         {
-            reconnect(publicAddress, InetAddressAndPort.getByName(localAddressValue.value), snitch, localDc);
+            reconnect(publicAddress, Endpoint.getByName(localAddressValue.value), snitch, localDc);
         }
         catch (UnknownHostException e)
         {
@@ -61,7 +61,7 @@ public class ReconnectableSnitchHelper implements IEndpointStateChangeSubscriber
     }
 
     @VisibleForTesting
-    static void reconnect(InetAddressAndPort publicAddress, InetAddressAndPort localAddress, IEndpointSnitch snitch, String localDc)
+    static void reconnect(Endpoint publicAddress, Endpoint localAddress, IEndpointSnitch snitch, String localDc)
     {
         if (!DatabaseDescriptor.getInternodeAuthenticator().authenticate(publicAddress.address, MessagingService.instance().portFor(publicAddress)))
         {
@@ -77,12 +77,12 @@ public class ReconnectableSnitchHelper implements IEndpointStateChangeSubscriber
         }
     }
 
-    public void beforeChange(InetAddressAndPort endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue)
+    public void beforeChange(Endpoint endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue)
     {
         // no-op
     }
 
-    public void onJoin(InetAddressAndPort endpoint, EndpointState epState)
+    public void onJoin(Endpoint endpoint, EndpointState epState)
     {
         if (preferLocal && !Gossiper.instance.isDeadState(epState))
         {
@@ -100,7 +100,7 @@ public class ReconnectableSnitchHelper implements IEndpointStateChangeSubscriber
 
     //Skeptical this will always do the right thing all the time port wise. It will converge on the right thing
     //eventually once INTERNAL_ADDRESS_AND_PORT is populated
-    public void onChange(InetAddressAndPort endpoint, ApplicationState state, VersionedValue value)
+    public void onChange(Endpoint endpoint, ApplicationState state, VersionedValue value)
     {
         if (preferLocal && !Gossiper.instance.isDeadState(Gossiper.instance.getEndpointStateForEndpoint(endpoint)))
         {
@@ -117,7 +117,7 @@ public class ReconnectableSnitchHelper implements IEndpointStateChangeSubscriber
         }
     }
 
-    public void onAlive(InetAddressAndPort endpoint, EndpointState state)
+    public void onAlive(Endpoint endpoint, EndpointState state)
     {
         VersionedValue internalIP = state.getApplicationState(ApplicationState.INTERNAL_IP);
         VersionedValue internalIPAndPorts = state.getApplicationState(ApplicationState.INTERNAL_ADDRESS_AND_PORT);
@@ -125,17 +125,17 @@ public class ReconnectableSnitchHelper implements IEndpointStateChangeSubscriber
             reconnect(endpoint, internalIPAndPorts != null ? internalIPAndPorts : internalIP);
     }
 
-    public void onDead(InetAddressAndPort endpoint, EndpointState state)
+    public void onDead(Endpoint endpoint, EndpointState state)
     {
         // do nothing.
     }
 
-    public void onRemove(InetAddressAndPort endpoint)
+    public void onRemove(Endpoint endpoint)
     {
         // do nothing.
     }
 
-    public void onRestart(InetAddressAndPort endpoint, EndpointState state)
+    public void onRestart(Endpoint endpoint, EndpointState state)
     {
         // do nothing.
     }

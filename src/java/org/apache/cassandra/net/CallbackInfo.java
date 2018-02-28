@@ -18,7 +18,7 @@
 package org.apache.cassandra.net;
 
 import org.apache.cassandra.io.IVersionedSerializer;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 
 /**
  * Encapsulates the callback information.
@@ -27,7 +27,7 @@ import org.apache.cassandra.locator.InetAddressAndPort;
  */
 public class CallbackInfo
 {
-    protected final InetAddressAndPort target;
+    protected final Endpoint target;
     protected final IAsyncCallback callback;
     protected final IVersionedSerializer<?> serializer;
     private final boolean failureCallback;
@@ -40,7 +40,7 @@ public class CallbackInfo
      * @param serializer serializer to deserialize response message
      * @param failureCallback True when we have a callback to handle failures
      */
-    public CallbackInfo(InetAddressAndPort target, IAsyncCallback callback, IVersionedSerializer<?> serializer, boolean failureCallback)
+    public CallbackInfo(Endpoint target, IAsyncCallback callback, IVersionedSerializer<?> serializer, boolean failureCallback)
     {
         this.target = target;
         this.callback = callback;

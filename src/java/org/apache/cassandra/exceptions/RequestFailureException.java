@@ -21,16 +21,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 
 public class RequestFailureException extends RequestExecutionException
 {
     public final ConsistencyLevel consistency;
     public final int received;
     public final int blockFor;
-    public final Map<InetAddressAndPort, RequestFailureReason> failureReasonByEndpoint;
+    public final Map<Endpoint, RequestFailureReason> failureReasonByEndpoint;
 
-    protected RequestFailureException(ExceptionCode code, ConsistencyLevel consistency, int received, int blockFor, Map<InetAddressAndPort, RequestFailureReason> failureReasonByEndpoint)
+    protected RequestFailureException(ExceptionCode code, ConsistencyLevel consistency, int received, int blockFor, Map<Endpoint, RequestFailureReason> failureReasonByEndpoint)
     {
         super(code, String.format("Operation failed - received %d responses and %d failures", received, failureReasonByEndpoint.size()));
         this.consistency = consistency;

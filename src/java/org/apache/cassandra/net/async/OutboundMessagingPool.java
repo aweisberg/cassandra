@@ -27,7 +27,7 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.config.EncryptionOptions.ServerEncryptionOptions;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.metrics.ConnectionMetrics;
 import org.apache.cassandra.net.BackPressureState;
 import org.apache.cassandra.net.MessageOut;
@@ -56,9 +56,9 @@ public class OutboundMessagingPool
      * An override address on which to communicate with the peer. Typically used for something like EC2 public IP addresses
      * which need to be used for communication between EC2 regions.
      */
-    private InetAddressAndPort preferredRemoteAddr;
+    private Endpoint preferredRemoteAddr;
 
-    public OutboundMessagingPool(InetAddressAndPort remoteAddr, InetAddressAndPort localAddr, ServerEncryptionOptions encryptionOptions,
+    public OutboundMessagingPool(Endpoint remoteAddr, Endpoint localAddr, ServerEncryptionOptions encryptionOptions,
                                  BackPressureState backPressureState, IInternodeAuthenticator authenticator)
     {
         preferredRemoteAddr = remoteAddr;
@@ -76,7 +76,7 @@ public class OutboundMessagingPool
                                                         encryptionOptions, Optional.empty(), authenticator);
     }
 
-    private static Optional<CoalescingStrategy> coalescingStrategy(InetAddressAndPort remoteAddr)
+    private static Optional<CoalescingStrategy> coalescingStrategy(Endpoint remoteAddr)
     {
         String strategyName = DatabaseDescriptor.getOtcCoalescingStrategy();
         String displayName = remoteAddr.toString();
@@ -124,7 +124,7 @@ public class OutboundMessagingPool
      *
      * @param addr IP Address to use (and prefer) going forward for connecting to the peer
      */
-    public void reconnectWithNewIp(InetAddressAndPort addr)
+    public void reconnectWithNewIp(Endpoint addr)
     {
         preferredRemoteAddr = addr;
         gossipChannel.reconnectWithNewIp(addr);
@@ -170,7 +170,7 @@ public class OutboundMessagingPool
         return metrics.timeouts.getCount();
     }
 
-    public InetAddressAndPort getPreferredRemoteAddr()
+    public Endpoint getPreferredRemoteAddr()
     {
         return preferredRemoteAddr;
     }

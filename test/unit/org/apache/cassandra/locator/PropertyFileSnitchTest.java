@@ -18,6 +18,7 @@
 package org.apache.cassandra.locator;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -35,6 +36,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.dht.Token;
@@ -60,7 +62,7 @@ public class PropertyFileSnitchTest
     private Path backupFile;
 
     private VersionedValue.VersionedValueFactory valueFactory;
-    private Map<InetAddressAndPort, Set<Token>> tokenMap;
+    private Map<Endpoint, Set<Token>> tokenMap;
 
     @BeforeClass
     public static void setupDD()
@@ -77,25 +79,31 @@ public class PropertyFileSnitchTest
 
         restoreOrigConfigFile();
 
-        InetAddressAndPort[] hosts = {
-        InetAddressAndPort.getByName("127.0.0.1"), // this exists in the config file
-        InetAddressAndPort.getByName("127.0.0.2"), // this exists in the config file
-        InetAddressAndPort.getByName("127.0.0.9"), // this does not exist in the config file
+        Endpoint[] hosts = {
+        Endpoint.getByAddressOverrideDefaults(InetAddress.getByName("127.0.0.1"), null, UUID.randomUUID()), // this exists in the config file
+        Endpoint.getByAddressOverrideDefaults(InetAddress.getByName("127.0.0.2"), null, UUID.randomUUID()), // this exists in the config file
+        Endpoint.getByAddressOverrideDefaults(InetAddress.getByName("127.0.0.9"), null, UUID.randomUUID()), // this doesn't exists in the config file
         };
 
         IPartitioner partitioner = new RandomPartitioner();
         valueFactory = new VersionedValue.VersionedValueFactory(partitioner);
         tokenMap = new HashMap<>();
 
-        for (InetAddressAndPort host : hosts)
+        for (Endpoint host : hosts)
         {
             Set<Token> tokens = Collections.singleton(partitioner.getRandomToken());
-            Gossiper.instance.initializeNodeUnsafe(host, UUID.randomUUID(), 1);
+            Gossiper.instance.initializeNodeUnsafe(host, 1);
             Gossiper.instance.injectApplicationState(host, ApplicationState.TOKENS, valueFactory.tokens(tokens));
+            if (host.equalAddresses(FBUtilities.getBroadcastAddressAndPort()))
+                SystemKeyspace.setLocalHostId(host.hostId);
+            else
+                SystemKeyspace.updatePeerInfo(host, "host_id", host.hostId);
 
             setNodeShutdown(host);
             tokenMap.put(host, tokens);
         }
+
+        DatabaseDescriptor.setSystemKeyspaceReadable(true);
     }
 
     private void restoreOrigConfigFile() throws IOException
@@ -118,7 +126,7 @@ public class PropertyFileSnitchTest
             String[] info = line.split("=");
             if (info.length == 2 && !line.startsWith("#") && !line.startsWith("default="))
             {
-                InetAddressAndPort address = InetAddressAndPort.getByName(info[0].replaceAll(Matcher.quoteReplacement("\\:"), ":"));
+                Endpoint address = Endpoint.getByName(info[0].replaceAll(Matcher.quoteReplacement("\\:"), ":"));
                 String replacement = replacements.get(address.toString());
                 if (replacement != null)
                 {
@@ -154,7 +162,7 @@ public class PropertyFileSnitchTest
         Files.write(effectiveFile, newLines, StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
-    private void setNodeShutdown(InetAddressAndPort host)
+    private void setNodeShutdown(Endpoint host)
     {
         StorageService.instance.getTokenMetadata().removeEndpoint(host);
         Gossiper.instance.injectApplicationState(host, ApplicationState.STATUS_WITH_PORT, valueFactory.shutdown(true));
@@ -162,7 +170,7 @@ public class PropertyFileSnitchTest
         Gossiper.instance.markDead(host, Gossiper.instance.getEndpointStateForEndpoint(host));
     }
 
-    private void setNodeLive(InetAddressAndPort host)
+    private void setNodeLive(Endpoint host)
     {
         Gossiper.instance.injectApplicationState(host, ApplicationState.STATUS_WITH_PORT, valueFactory.normal(tokenMap.get(host)));
         Gossiper.instance.injectApplicationState(host, ApplicationState.STATUS, valueFactory.normal(tokenMap.get(host)));
@@ -174,7 +182,7 @@ public class PropertyFileSnitchTest
                                       final String endpointString, final String expectedDatacenter,
                                       final String expectedRack) throws UnknownHostException
     {
-        final InetAddressAndPort endpoint = InetAddressAndPort.getByName(endpointString);
+        final Endpoint endpoint = Endpoint.getByName(endpointString);
         assertEquals(expectedDatacenter, snitch.getDatacenter(endpoint));
         assertEquals(expectedRack, snitch.getRack(endpoint));
     }
@@ -186,7 +194,7 @@ public class PropertyFileSnitchTest
     @Test
     public void testChangeHostRack() throws Exception
     {
-        final InetAddressAndPort host = InetAddressAndPort.getByName("127.0.0.1");
+        final Endpoint host = Endpoint.getByName("127.0.0.1");
         final PropertyFileSnitch snitch = new PropertyFileSnitch(/*refreshPeriodInSeconds*/1);
         checkEndpoint(snitch, host.toString(), "DC1", "RAC1");
 
@@ -220,7 +228,7 @@ public class PropertyFileSnitchTest
     @Test
     public void testChangeHostDc() throws Exception
     {
-        final InetAddressAndPort host = InetAddressAndPort.getByName("127.0.0.1");
+        final Endpoint host = Endpoint.getByName("127.0.0.1");
         final PropertyFileSnitch snitch = new PropertyFileSnitch(/*refreshPeriodInSeconds*/1);
         checkEndpoint(snitch, host.toString(), "DC1", "RAC1");
 
@@ -255,7 +263,7 @@ public class PropertyFileSnitchTest
     @Test
     public void testAddHost() throws Exception
     {
-        final InetAddressAndPort host = InetAddressAndPort.getByName("127.0.0.9");
+        final Endpoint host = Endpoint.getByName("127.0.0.9");
         final PropertyFileSnitch snitch = new PropertyFileSnitch(/*refreshPeriodInSeconds*/1);
         checkEndpoint(snitch, host.toString(), "DC1", "r1"); // default
 
@@ -290,7 +298,7 @@ public class PropertyFileSnitchTest
     @Test
     public void testRemoveHost() throws Exception
     {
-        final InetAddressAndPort host = InetAddressAndPort.getByName("127.0.0.2");
+        final Endpoint host = Endpoint.getByName("127.0.0.2");
         final PropertyFileSnitch snitch = new PropertyFileSnitch(/*refreshPeriodInSeconds*/1);
         checkEndpoint(snitch, host.toString(), "DC1", "RAC2");
 
@@ -325,7 +333,7 @@ public class PropertyFileSnitchTest
     @Test
     public void testChangeDefault() throws Exception
     {
-        final InetAddressAndPort host = InetAddressAndPort.getByName("127.0.0.9");
+        final Endpoint host = Endpoint.getByName("127.0.0.9");
         final PropertyFileSnitch snitch = new PropertyFileSnitch(/*refreshPeriodInSeconds*/1);
         checkEndpoint(snitch, host.toString(), "DC1", "r1"); // default
 

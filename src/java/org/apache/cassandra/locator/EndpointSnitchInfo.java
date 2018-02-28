@@ -43,12 +43,12 @@ public class EndpointSnitchInfo implements EndpointSnitchInfoMBean
 
     public String getDatacenter(String host) throws UnknownHostException
     {
-        return DatabaseDescriptor.getEndpointSnitch().getDatacenter(InetAddressAndPort.getByName(host));
+        return DatabaseDescriptor.getEndpointSnitch().getDatacenter(Endpoint.getByName(host));
     }
 
     public String getRack(String host) throws UnknownHostException
     {
-        return DatabaseDescriptor.getEndpointSnitch().getRack(InetAddressAndPort.getByName(host));
+        return DatabaseDescriptor.getEndpointSnitch().getRack(Endpoint.getByName(host));
     }
 
     public String getDatacenter()

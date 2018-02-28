@@ -25,6 +25,9 @@ import java.util.UUID;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -32,8 +35,6 @@ import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.cql3.statements.CreateTableStatement;
-import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -61,7 +62,7 @@ public class CompactionManagerGetSSTablesForValidationTest
     private String ks;
     private static final String tbl = "tbl";
     private ColumnFamilyStore cfs;
-    private static InetAddressAndPort coordinator;
+    private static Endpoint coordinator;
 
     private static Token MT;
 
@@ -76,7 +77,7 @@ public class CompactionManagerGetSSTablesForValidationTest
     public static void setupClass() throws Exception
     {
         SchemaLoader.prepareServer();
-        coordinator = InetAddressAndPort.getByName("10.0.0.1");
+        coordinator = Endpoint.getByName("10.0.0.1");
         MT = DatabaseDescriptor.getPartitioner().getMinimumToken();
     }
 

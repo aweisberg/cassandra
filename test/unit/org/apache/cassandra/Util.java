@@ -22,6 +22,7 @@ package org.apache.cassandra;
 import java.io.Closeable;
 import java.io.EOFException;
 import java.io.IOError;
+import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -33,12 +34,14 @@ import java.util.function.Supplier;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.apache.commons.lang3.StringUtils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
@@ -192,7 +195,7 @@ public class Util
      * Creates initial set of nodes and tokens. Nodes are added to StorageService as 'normal'
      */
     public static void createInitialRing(StorageService ss, IPartitioner partitioner, List<Token> endpointTokens,
-                                         List<Token> keyTokens, List<InetAddressAndPort> hosts, List<UUID> hostIds, int howMany)
+                                         List<Token> keyTokens, List<Endpoint> hosts, List<UUID> hostIds, int howMany)
         throws UnknownHostException
     {
         // Expand pool of host IDs as necessary
@@ -210,8 +213,8 @@ public class Util
 
         for (int i=0; i<endpointTokens.size(); i++)
         {
-            InetAddressAndPort ep = InetAddressAndPort.getByName("127.0.0." + String.valueOf(i + 1));
-            Gossiper.instance.initializeNodeUnsafe(ep, hostIds.get(i), 1);
+            Endpoint ep = Endpoint.getByAddressOverrideDefaults(InetAddress.getByName("127.0.0." + (i + 1)), null, hostIds.get(i));
+            Gossiper.instance.initializeNodeUnsafe(ep, 1);
             Gossiper.instance.injectApplicationState(ep, ApplicationState.TOKENS, new VersionedValue.VersionedValueFactory(partitioner).tokens(Collections.singleton(endpointTokens.get(i))));
             ss.onChange(ep,
                         ApplicationState.STATUS_WITH_PORT,
@@ -220,6 +223,15 @@ public class Util
                         ApplicationState.STATUS,
                         new VersionedValue.VersionedValueFactory(partitioner).normal(Collections.singleton(endpointTokens.get(i))));
             hosts.add(ep);
+            if (ep.equalAddresses(FBUtilities.getJustBroadcastAddress()))
+            {
+                SystemKeyspace.setLocalHostId(ep.hostId);
+            }
+            else
+            {
+                SystemKeyspace.updatePeerInfo(ep, "host_id", ep.hostId);
+            }
+            ss.getTokenMetadata().addIfMissing(ep);
         }
 
         // check that all nodes are in token metadata

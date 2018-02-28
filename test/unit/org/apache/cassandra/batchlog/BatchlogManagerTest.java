@@ -18,17 +18,20 @@
 package org.apache.cassandra.batchlog;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 
 import com.google.common.collect.Lists;
+
+import org.apache.cassandra.gms.Gossiper;
+import org.apache.cassandra.locator.Endpoint;
 
 import org.junit.*;
 
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.Util.PartitionerSwitcher;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -68,6 +71,8 @@ public class BatchlogManagerTest
 
     static PartitionerSwitcher sw;
 
+    private static final UUID hostId = UUID.randomUUID();
+
     @BeforeClass
     public static void defineSchema() throws ConfigurationException
     {
@@ -94,10 +99,19 @@ public class BatchlogManagerTest
     public void setUp() throws Exception
     {
         TokenMetadata metadata = StorageService.instance.getTokenMetadata();
-        InetAddressAndPort localhost = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint localhost = Endpoint.getByAddressOverrideDefaults(InetAddress.getByName("127.0.0.1"), null, hostId);
         metadata.updateNormalToken(Util.token("A"), localhost);
-        metadata.updateHostId(UUIDGen.getTimeUUID(), localhost);
+        metadata.addIfMissing(localhost);
+        SystemKeyspace.setLocalHostId(localhost.hostId);
         Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME).getColumnFamilyStore(SystemKeyspace.BATCHES).truncateBlocking();
+        Gossiper.instance.initializeNodeUnsafe(localhost, 1);
+    }
+
+    @After
+    public void tearDown() throws Exception
+    {
+        TokenMetadata metadata = StorageService.instance.getTokenMetadata();
+        metadata.clearUnsafe();
     }
 
     @Test
@@ -344,7 +358,7 @@ public class BatchlogManagerTest
     @Test
     public void testReplayWithNoPeers() throws Exception
     {
-        StorageService.instance.getTokenMetadata().removeEndpoint(InetAddressAndPort.getByName("127.0.0.1"));
+        StorageService.instance.getTokenMetadata().removeEndpoint(Endpoint.getByName("127.0.0.1"));
 
         long initialAllBatches = BatchlogManager.instance.countAllBatches();
         long initialReplayedBatches = BatchlogManager.instance.getTotalBatchesReplayed();

@@ -18,14 +18,12 @@
 
 package org.apache.cassandra.service.reads;
 
-import java.net.InetAddress;
-
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.transform.MorePartitions;
 import org.apache.cassandra.db.transform.Transformation;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 
 /**
  * We have a potential short read if the result from a given node contains the requested number of rows
@@ -39,7 +37,7 @@ import org.apache.cassandra.locator.InetAddressAndPort;
  */
 public class ShortReadProtection
 {
-    public static UnfilteredPartitionIterator extend(InetAddressAndPort source, UnfilteredPartitionIterator partitions,
+    public static UnfilteredPartitionIterator extend(Endpoint source, UnfilteredPartitionIterator partitions,
                                                      ReadCommand command, DataLimits.Counter mergedResultCounter,
                                                      long queryStartNanoTime, boolean enforceStrictLiveness)
     {

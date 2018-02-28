@@ -36,7 +36,7 @@ import org.apache.cassandra.gms.EndpointState;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.IEndpointStateChangeSubscriber;
 import org.apache.cassandra.gms.VersionedValue;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.async.OutboundConnectionIdentifier.ConnectionType;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -73,7 +73,7 @@ public class StartupClusterConnectivityChecker
      * @return true if the requested percentage of peers are marked ALIVE in gossip and have their connections opened;
      * else false.
      */
-    public boolean execute(Set<InetAddressAndPort> peers)
+    public boolean execute(Set<Endpoint> peers)
     {
         if (targetPercent == 0 || peers == null)
             return true;
@@ -95,14 +95,14 @@ public class StartupClusterConnectivityChecker
         CountDownLatch latch = new CountDownLatch(target);
 
         // set up a listener to react to new nodes becoming alive (in gossip), and account for all the nodes that are already alive
-        Set<InetAddressAndPort> alivePeers = Sets.newSetFromMap(new ConcurrentHashMap<>());
+        Set<Endpoint> alivePeers = Sets.newSetFromMap(new ConcurrentHashMap<>());
         AliveListener listener = new AliveListener(alivePeers, latch, acks);
         Gossiper.instance.register(listener);
 
         // send out a ping message to open up the non-gossip connections
         sendPingMessages(peers, latch, acks);
 
-        for (InetAddressAndPort peer : peers)
+        for (Endpoint peer : peers)
             if (Gossiper.instance.isAlive(peer) && alivePeers.add(peer) && acks.incrementAndCheck(peer))
                 latch.countDown();
 
@@ -122,7 +122,7 @@ public class StartupClusterConnectivityChecker
      * Sends a "connection warmup" message to each peer in the collection, on every {@link ConnectionType}
      * used for internode messaging (that is not gossip).
      */
-    private void sendPingMessages(Set<InetAddressAndPort> peers, CountDownLatch latch, AckMap acks)
+    private void sendPingMessages(Set<Endpoint> peers, CountDownLatch latch, AckMap acks)
     {
         IAsyncCallback responseHandler = new IAsyncCallback()
         {
@@ -142,7 +142,7 @@ public class StartupClusterConnectivityChecker
                                                                           PingMessage.serializer, SMALL_MESSAGE);
         MessageOut<PingMessage> largeChannelMessageOut = new MessageOut<>(PING, PingMessage.largeChannelMessage,
                                                                           PingMessage.serializer, LARGE_MESSAGE);
-        for (InetAddressAndPort peer : peers)
+        for (Endpoint peer : peers)
         {
             MessagingService.instance().sendRR(smallChannelMessageOut, peer, responseHandler);
             MessagingService.instance().sendRR(largeChannelMessageOut, peer, responseHandler);
@@ -151,48 +151,48 @@ public class StartupClusterConnectivityChecker
 
     /**
      * A trivial implementation of {@link IEndpointStateChangeSubscriber} that really only cares about
-     * {@link #onAlive(InetAddressAndPort, EndpointState)} invocations.
+     * {@link #onAlive(Endpoint, EndpointState)} invocations.
      */
     private static final class AliveListener implements IEndpointStateChangeSubscriber
     {
         private final CountDownLatch latch;
-        private final Set<InetAddressAndPort> livePeers;
+        private final Set<Endpoint> livePeers;
         private final AckMap acks;
 
-        AliveListener(Set<InetAddressAndPort> livePeers, CountDownLatch latch, AckMap acks)
+        AliveListener(Set<Endpoint> livePeers, CountDownLatch latch, AckMap acks)
         {
             this.latch = latch;
             this.livePeers = livePeers;
             this.acks = acks;
         }
 
-        public void onJoin(InetAddressAndPort endpoint, EndpointState epState)
+        public void onJoin(Endpoint endpoint, EndpointState epState)
         {
         }
 
-        public void beforeChange(InetAddressAndPort endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue)
+        public void beforeChange(Endpoint endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue)
         {
         }
 
-        public void onChange(InetAddressAndPort endpoint, ApplicationState state, VersionedValue value)
+        public void onChange(Endpoint endpoint, ApplicationState state, VersionedValue value)
         {
         }
 
-        public void onAlive(InetAddressAndPort endpoint, EndpointState state)
+        public void onAlive(Endpoint endpoint, EndpointState state)
         {
             if (livePeers.add(endpoint) && acks.incrementAndCheck(endpoint))
                 latch.countDown();
         }
 
-        public void onDead(InetAddressAndPort endpoint, EndpointState state)
+        public void onDead(Endpoint endpoint, EndpointState state)
         {
         }
 
-        public void onRemove(InetAddressAndPort endpoint)
+        public void onRemove(Endpoint endpoint)
         {
         }
 
-        public void onRestart(InetAddressAndPort endpoint, EndpointState state)
+        public void onRestart(Endpoint endpoint, EndpointState state)
         {
         }
     }
@@ -200,7 +200,7 @@ public class StartupClusterConnectivityChecker
     private static final class AckMap
     {
         private final int threshold;
-        private final Map<InetAddressAndPort, AtomicInteger> acks;
+        private final Map<Endpoint, AtomicInteger> acks;
 
         AckMap(int threshold)
         {
@@ -208,7 +208,7 @@ public class StartupClusterConnectivityChecker
             acks = new ConcurrentHashMap<>();
         }
 
-        boolean incrementAndCheck(InetAddressAndPort address)
+        boolean incrementAndCheck(Endpoint address)
         {
             return acks.computeIfAbsent(address, addr -> new AtomicInteger(0)).incrementAndGet() == threshold;
         }

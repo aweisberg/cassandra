@@ -17,7 +17,6 @@
  */
 package org.apache.cassandra.repair;
 
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
@@ -29,15 +28,15 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.hash.Hasher;
 
-import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.db.compaction.CompactionsTest;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -99,7 +98,7 @@ public class ValidatorTest
 
         final CompletableFuture<MessageOut> outgoingMessageSink = registerOutgoingMessageSink();
 
-        InetAddressAndPort remote = InetAddressAndPort.getByName("127.0.0.2");
+        Endpoint remote = Endpoint.getByName("127.0.0.2");
 
         ColumnFamilyStore cfs = Keyspace.open(keyspace).getColumnFamilyStore(columnFamily);
 
@@ -138,7 +137,7 @@ public class ValidatorTest
 
         final CompletableFuture<MessageOut> outgoingMessageSink = registerOutgoingMessageSink();
 
-        InetAddressAndPort remote = InetAddressAndPort.getByName("127.0.0.2");
+        Endpoint remote = Endpoint.getByName("127.0.0.2");
 
         Validator validator = new Validator(desc, remote, 0, PreviewKind.NONE);
         validator.fail();
@@ -261,7 +260,7 @@ public class ValidatorTest
         final CompletableFuture<MessageOut> future = new CompletableFuture<>();
         MessagingService.instance().addMessageSink(new IMessageSink()
         {
-            public boolean allowOutgoingMessage(MessageOut message, int id, InetAddressAndPort to)
+            public boolean allowOutgoingMessage(MessageOut message, int id, Endpoint to)
             {
                 future.complete(message);
                 return false;

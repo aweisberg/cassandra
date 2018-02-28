@@ -23,9 +23,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.Test;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -514,18 +515,18 @@ public class CreateTest extends CQLTester
         DatabaseDescriptor.setEndpointSnitch(new AbstractEndpointSnitch()
         {
             @Override
-            public String getRack(InetAddressAndPort endpoint) { return RACK1; }
+            public String getRack(Endpoint endpoint) { return RACK1; }
 
             @Override
-            public String getDatacenter(InetAddressAndPort endpoint) { return "us-east-1"; }
+            public String getDatacenter(Endpoint endpoint) { return "us-east-1"; }
 
             @Override
-            public int compareEndpoints(InetAddressAndPort target, InetAddressAndPort a1, InetAddressAndPort a2) { return 0; }
+            public int compareEndpoints(Endpoint target, Endpoint a1, Endpoint a2) { return 0; }
         });
 
         // this forces the dc above to be added to the list of known datacenters (fixes static init problem
         // with this group of tests), ok to remove at some point if doing so doesn't break the test
-        StorageService.instance.getTokenMetadata().updateHostId(UUID.randomUUID(), InetAddressAndPort.getByName("127.0.0.255"));
+        StorageService.instance.getTokenMetadata().updateHostId(UUID.randomUUID(), Endpoint.getByName("127.0.0.255"));
         execute("CREATE KEYSPACE Foo WITH replication = { 'class' : 'NetworkTopologyStrategy', 'us-east-1' : 1 };");
 
         // Restore the previous EndpointSnitch

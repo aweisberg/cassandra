@@ -49,7 +49,7 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableMetadata;
@@ -95,7 +95,7 @@ public class CassandraStreamManagerTest
         try
         {
             return new StreamSession(StreamOperation.REPAIR,
-                                     InetAddressAndPort.getByName("127.0.0.1"),
+                                     Endpoint.getByName("127.0.0.1"),
                                      connectionFactory,
                                      0,
                                      pendingRepair,

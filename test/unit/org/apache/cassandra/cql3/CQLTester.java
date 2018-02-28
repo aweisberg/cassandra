@@ -36,6 +36,9 @@ import java.util.stream.Collectors;
 import com.google.common.base.Objects;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +51,6 @@ import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.index.SecondaryIndexManager;
 import org.apache.cassandra.config.EncryptionOptions;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.schema.*;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.functions.FunctionName;
@@ -145,9 +147,9 @@ public abstract class CQLTester
         // Register an EndpointSnitch which returns fixed values for test.
         DatabaseDescriptor.setEndpointSnitch(new AbstractEndpointSnitch()
         {
-            @Override public String getRack(InetAddressAndPort endpoint) { return RACK1; }
-            @Override public String getDatacenter(InetAddressAndPort endpoint) { return DATA_CENTER; }
-            @Override public int compareEndpoints(InetAddressAndPort target, InetAddressAndPort a1, InetAddressAndPort a2) { return 0; }
+            @Override public String getRack(Endpoint endpoint) { return RACK1; }
+            @Override public String getDatacenter(Endpoint endpoint) { return DATA_CENTER; }
+            @Override public int compareEndpoints(Endpoint target, Endpoint a1, Endpoint a2) { return 0; }
         });
 
         try
@@ -212,6 +214,7 @@ public abstract class CQLTester
 
         Keyspace.setInitialized();
         SystemKeyspace.persistLocalMetadata();
+        DatabaseDescriptor.setSystemKeyspaceReadable(true);
         isServerPrepared = true;
     }
 

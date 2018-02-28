@@ -17,9 +17,6 @@
  */
 package org.apache.cassandra.streaming;
 
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
@@ -29,7 +26,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.channel.Channel;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.utils.FBUtilities;
 
 /**
@@ -104,7 +101,7 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
     public static synchronized StreamResultFuture initReceivingSide(int sessionIndex,
                                                                     UUID planId,
                                                                     StreamOperation streamOperation,
-                                                                    InetAddressAndPort from,
+                                                                    Endpoint from,
                                                                     Channel channel,
                                                                     UUID pendingRepair,
                                                                     PreviewKind previewKind)
@@ -137,7 +134,7 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
         return coordinator;
     }
 
-    private void attachConnection(InetAddressAndPort from, int sessionIndex, Channel channel)
+    private void attachConnection(Endpoint from, int sessionIndex, Channel channel)
     {
         StreamSession session = coordinator.getOrCreateSessionById(from, sessionIndex);
         session.init(this);
@@ -228,7 +225,7 @@ public final class StreamResultFuture extends AbstractFuture<StreamState>
         }
     }
 
-    StreamSession getSession(InetAddressAndPort peer, int sessionIndex)
+    StreamSession getSession(Endpoint peer, int sessionIndex)
     {
         return coordinator.getSessionById(peer, sessionIndex);
     }

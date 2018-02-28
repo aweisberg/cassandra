@@ -20,10 +20,11 @@ package org.apache.cassandra.service;
 
 import java.util.*;
 
-import javax.xml.crypto.Data;
-
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -36,13 +37,11 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.RowUpdateBuilder;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
-import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.streaming.PreviewKind;
@@ -69,7 +68,7 @@ public class ActiveRepairServiceTest
 
     public String cfname;
     public ColumnFamilyStore store;
-    public InetAddressAndPort LOCAL, REMOTE;
+    public Endpoint LOCAL, REMOTE;
 
     private boolean initialized;
 
@@ -93,7 +92,7 @@ public class ActiveRepairServiceTest
 
             LOCAL = FBUtilities.getBroadcastAddressAndPort();
             // generate a fake endpoint for which we can spoof receiving/sending trees
-            REMOTE = InetAddressAndPort.getByName("127.0.0.2");
+            REMOTE = Endpoint.getByName("127.0.0.2");
         }
 
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
@@ -107,10 +106,10 @@ public class ActiveRepairServiceTest
     public void testGetNeighborsPlusOne() throws Throwable
     {
         // generate rf+1 nodes, and ensure that all nodes are returned
-        Set<InetAddressAndPort> expected = addTokens(1 + Keyspace.open(KEYSPACE5).getReplicationStrategy().getReplicationFactor());
+        Set<Endpoint> expected = addTokens(1 + Keyspace.open(KEYSPACE5).getReplicationStrategy().getReplicationFactor());
         expected.remove(FBUtilities.getBroadcastAddressAndPort());
         Collection<Range<Token>> ranges = StorageService.instance.getLocalRanges(KEYSPACE5);
-        Set<InetAddressAndPort> neighbors = new HashSet<>();
+        Set<Endpoint> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
             neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, null, null));
@@ -126,14 +125,14 @@ public class ActiveRepairServiceTest
         // generate rf*2 nodes, and ensure that only neighbors specified by the ARS are returned
         addTokens(2 * Keyspace.open(KEYSPACE5).getReplicationStrategy().getReplicationFactor());
         AbstractReplicationStrategy ars = Keyspace.open(KEYSPACE5).getReplicationStrategy();
-        Set<InetAddressAndPort> expected = new HashSet<>();
+        Set<Endpoint> expected = new HashSet<>();
         for (Range<Token> replicaRange : ars.getAddressRanges().get(FBUtilities.getBroadcastAddressAndPort()))
         {
             expected.addAll(ars.getRangeAddresses(tmd.cloneOnlyTokenMap()).get(replicaRange));
         }
         expected.remove(FBUtilities.getBroadcastAddressAndPort());
         Collection<Range<Token>> ranges = StorageService.instance.getLocalRanges(KEYSPACE5);
-        Set<InetAddressAndPort> neighbors = new HashSet<>();
+        Set<Endpoint> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
             neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, null, null));
@@ -147,15 +146,15 @@ public class ActiveRepairServiceTest
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
 
         // generate rf+1 nodes, and ensure that all nodes are returned
-        Set<InetAddressAndPort> expected = addTokens(1 + Keyspace.open(KEYSPACE5).getReplicationStrategy().getReplicationFactor());
+        Set<Endpoint> expected = addTokens(1 + Keyspace.open(KEYSPACE5).getReplicationStrategy().getReplicationFactor());
         expected.remove(FBUtilities.getBroadcastAddressAndPort());
         // remove remote endpoints
         TokenMetadata.Topology topology = tmd.cloneOnlyTokenMap().getTopology();
-        HashSet<InetAddressAndPort> localEndpoints = Sets.newHashSet(topology.getDatacenterEndpoints().get(DatabaseDescriptor.getLocalDataCenter()));
+        HashSet<Endpoint> localEndpoints = Sets.newHashSet(topology.getDatacenterEndpoints().get(DatabaseDescriptor.getLocalDataCenter()));
         expected = Sets.intersection(expected, localEndpoints);
 
         Collection<Range<Token>> ranges = StorageService.instance.getLocalRanges(KEYSPACE5);
-        Set<InetAddressAndPort> neighbors = new HashSet<>();
+        Set<Endpoint> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
             neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, Arrays.asList(DatabaseDescriptor.getLocalDataCenter()), null));
@@ -171,7 +170,7 @@ public class ActiveRepairServiceTest
         // generate rf*2 nodes, and ensure that only neighbors specified by the ARS are returned
         addTokens(2 * Keyspace.open(KEYSPACE5).getReplicationStrategy().getReplicationFactor());
         AbstractReplicationStrategy ars = Keyspace.open(KEYSPACE5).getReplicationStrategy();
-        Set<InetAddressAndPort> expected = new HashSet<>();
+        Set<Endpoint> expected = new HashSet<>();
         for (Range<Token> replicaRange : ars.getAddressRanges().get(FBUtilities.getBroadcastAddressAndPort()))
         {
             expected.addAll(ars.getRangeAddresses(tmd.cloneOnlyTokenMap()).get(replicaRange));
@@ -179,11 +178,11 @@ public class ActiveRepairServiceTest
         expected.remove(FBUtilities.getBroadcastAddressAndPort());
         // remove remote endpoints
         TokenMetadata.Topology topology = tmd.cloneOnlyTokenMap().getTopology();
-        HashSet<InetAddressAndPort> localEndpoints = Sets.newHashSet(topology.getDatacenterEndpoints().get(DatabaseDescriptor.getLocalDataCenter()));
+        HashSet<Endpoint> localEndpoints = Sets.newHashSet(topology.getDatacenterEndpoints().get(DatabaseDescriptor.getLocalDataCenter()));
         expected = Sets.intersection(expected, localEndpoints);
 
         Collection<Range<Token>> ranges = StorageService.instance.getLocalRanges(KEYSPACE5);
-        Set<InetAddressAndPort> neighbors = new HashSet<>();
+        Set<Endpoint> neighbors = new HashSet<>();
         for (Range<Token> range : ranges)
         {
             neighbors.addAll(ActiveRepairService.getNeighbors(KEYSPACE5, ranges, range, Arrays.asList(DatabaseDescriptor.getLocalDataCenter()), null));
@@ -199,7 +198,7 @@ public class ActiveRepairServiceTest
         // generate rf*2 nodes, and ensure that only neighbors specified by the hosts are returned
         addTokens(2 * Keyspace.open(KEYSPACE5).getReplicationStrategy().getReplicationFactor());
         AbstractReplicationStrategy ars = Keyspace.open(KEYSPACE5).getReplicationStrategy();
-        List<InetAddressAndPort> expected = new ArrayList<>();
+        List<Endpoint> expected = new ArrayList<>();
         for (Range<Token> replicaRange : ars.getAddressRanges().get(FBUtilities.getBroadcastAddressAndPort()))
         {
             expected.addAll(ars.getRangeAddresses(tmd.cloneOnlyTokenMap()).get(replicaRange));
@@ -245,13 +244,13 @@ public class ActiveRepairServiceTest
 
     }
 
-    Set<InetAddressAndPort> addTokens(int max) throws Throwable
+    Set<Endpoint> addTokens(int max) throws Throwable
     {
         TokenMetadata tmd = StorageService.instance.getTokenMetadata();
-        Set<InetAddressAndPort> endpoints = new HashSet<>();
+        Set<Endpoint> endpoints = new HashSet<>();
         for (int i = 1; i <= max; i++)
         {
-            InetAddressAndPort endpoint = InetAddressAndPort.getByName("127.0.0." + i);
+            Endpoint endpoint = Endpoint.getByName("127.0.0." + i);
             tmd.updateNormalToken(tmd.partitioner.getRandomToken(), endpoint);
             endpoints.add(endpoint);
         }

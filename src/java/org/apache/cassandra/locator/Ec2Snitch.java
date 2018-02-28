@@ -57,7 +57,7 @@ public class Ec2Snitch extends AbstractNetworkTopologySnitch
     private final String ec2zone;
     private final boolean usingLegacyNaming;
 
-    private Map<InetAddressAndPort, Map<String, String>> savedEndpoints;
+    private Map<Endpoint, Map<String, String>> savedEndpoints;
 
     public Ec2Snitch() throws IOException, ConfigurationException
     {
@@ -126,7 +126,7 @@ public class Ec2Snitch extends AbstractNetworkTopologySnitch
         }
     }
 
-    public String getRack(InetAddressAndPort endpoint)
+    public String getRack(Endpoint endpoint)
     {
         if (endpoint.equals(FBUtilities.getBroadcastAddressAndPort()))
             return ec2zone;
@@ -142,7 +142,7 @@ public class Ec2Snitch extends AbstractNetworkTopologySnitch
         return state.getApplicationState(ApplicationState.RACK).value;
     }
 
-    public String getDatacenter(InetAddressAndPort endpoint)
+    public String getDatacenter(Endpoint endpoint)
     {
         if (endpoint.equals(FBUtilities.getBroadcastAddressAndPort()))
             return ec2region;

@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.metrics.StorageMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,21 +38,21 @@ public class LoadBroadcaster implements IEndpointStateChangeSubscriber
 
     private static final Logger logger = LoggerFactory.getLogger(LoadBroadcaster.class);
 
-    private ConcurrentMap<InetAddressAndPort, Double> loadInfo = new ConcurrentHashMap<>();
+    private ConcurrentMap<Endpoint, Double> loadInfo = new ConcurrentHashMap<>();
 
     private LoadBroadcaster()
     {
         Gossiper.instance.register(this);
     }
 
-    public void onChange(InetAddressAndPort endpoint, ApplicationState state, VersionedValue value)
+    public void onChange(Endpoint endpoint, ApplicationState state, VersionedValue value)
     {
         if (state != ApplicationState.LOAD)
             return;
         loadInfo.put(endpoint, Double.valueOf(value.value));
     }
 
-    public void onJoin(InetAddressAndPort endpoint, EndpointState epState)
+    public void onJoin(Endpoint endpoint, EndpointState epState)
     {
         VersionedValue localValue = epState.getApplicationState(ApplicationState.LOAD);
         if (localValue != null)
@@ -61,20 +61,20 @@ public class LoadBroadcaster implements IEndpointStateChangeSubscriber
         }
     }
     
-    public void beforeChange(InetAddressAndPort endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
+    public void beforeChange(Endpoint endpoint, EndpointState currentState, ApplicationState newStateKey, VersionedValue newValue) {}
 
-    public void onAlive(InetAddressAndPort endpoint, EndpointState state) {}
+    public void onAlive(Endpoint endpoint, EndpointState state) {}
 
-    public void onDead(InetAddressAndPort endpoint, EndpointState state) {}
+    public void onDead(Endpoint endpoint, EndpointState state) {}
 
-    public void onRestart(InetAddressAndPort endpoint, EndpointState state) {}
+    public void onRestart(Endpoint endpoint, EndpointState state) {}
 
-    public void onRemove(InetAddressAndPort endpoint)
+    public void onRemove(Endpoint endpoint)
     {
         loadInfo.remove(endpoint);
     }
 
-    public Map<InetAddressAndPort, Double> getLoadInfo()
+    public Map<Endpoint, Double> getLoadInfo()
     {
         return Collections.unmodifiableMap(loadInfo);
     }

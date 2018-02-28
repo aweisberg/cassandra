@@ -26,23 +26,23 @@ import java.util.List;
  */
 public class SimpleSnitch extends AbstractEndpointSnitch
 {
-    public String getRack(InetAddressAndPort endpoint)
+    public String getRack(Endpoint endpoint)
     {
         return "rack1";
     }
 
-    public String getDatacenter(InetAddressAndPort endpoint)
+    public String getDatacenter(Endpoint endpoint)
     {
         return "datacenter1";
     }
 
     @Override
-    public void sortByProximity(final InetAddressAndPort address, List<InetAddressAndPort> addresses)
+    public void sortByProximity(final Endpoint address, List<Endpoint> addresses)
     {
         // Optimization to avoid walking the list
     }
 
-    public int compareEndpoints(InetAddressAndPort target, InetAddressAndPort a1, InetAddressAndPort a2)
+    public int compareEndpoints(Endpoint target, Endpoint a1, Endpoint a2)
     {
         // Making all endpoints equal ensures we won't change the original ordering (since
         // Collections.sort is guaranteed to be stable)

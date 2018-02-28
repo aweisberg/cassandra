@@ -23,7 +23,7 @@ import java.util.UUID;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.net.CompactEndpointSerializationHelper;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
@@ -43,10 +43,10 @@ public class StreamMessageHeader
     public final int sequenceNumber;
     public final long repairedAt;
     public final UUID pendingRepair;
-    public final InetAddressAndPort sender;
+    public final Endpoint sender;
 
     public StreamMessageHeader(TableId tableId,
-                               InetAddressAndPort sender,
+                               Endpoint sender,
                                UUID planId,
                                int sessionIndex,
                                int sequenceNumber,
@@ -117,7 +117,7 @@ public class StreamMessageHeader
         public StreamMessageHeader deserialize(DataInputPlus in, int version) throws IOException
         {
             TableId tableId = TableId.deserialize(in);
-            InetAddressAndPort sender = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
+            Endpoint sender = CompactEndpointSerializationHelper.streamingInstance.deserialize(in, version);
             UUID planId = UUIDSerializer.serializer.deserialize(in, MessagingService.current_version);
             int sessionIndex = in.readInt();
             int sequenceNumber = in.readInt();

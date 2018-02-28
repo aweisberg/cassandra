@@ -22,6 +22,8 @@ import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.cassandra.locator.Endpoint;
+
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -32,27 +34,26 @@ import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.exceptions.WriteFailureException;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.transport.messages.ErrorMessage;
 
 import static org.junit.Assert.assertEquals;
 
 public class ErrorMessageTest
 {
-    private static Map<InetAddressAndPort, RequestFailureReason> failureReasonMap1;
-    private static Map<InetAddressAndPort, RequestFailureReason> failureReasonMap2;
+    private static Map<Endpoint, RequestFailureReason> failureReasonMap1;
+    private static Map<Endpoint, RequestFailureReason> failureReasonMap2;
 
     @BeforeClass
     public static void setUpFixtures() throws UnknownHostException
     {
         failureReasonMap1 = new HashMap<>();
-        failureReasonMap1.put(InetAddressAndPort.getByName("127.0.0.1"), RequestFailureReason.READ_TOO_MANY_TOMBSTONES);
-        failureReasonMap1.put(InetAddressAndPort.getByName("127.0.0.2"), RequestFailureReason.READ_TOO_MANY_TOMBSTONES);
-        failureReasonMap1.put(InetAddressAndPort.getByName("127.0.0.3"), RequestFailureReason.UNKNOWN);
+        failureReasonMap1.put(Endpoint.getByName("127.0.0.1"), RequestFailureReason.READ_TOO_MANY_TOMBSTONES);
+        failureReasonMap1.put(Endpoint.getByName("127.0.0.2"), RequestFailureReason.READ_TOO_MANY_TOMBSTONES);
+        failureReasonMap1.put(Endpoint.getByName("127.0.0.3"), RequestFailureReason.UNKNOWN);
 
         failureReasonMap2 = new HashMap<>();
-        failureReasonMap2.put(InetAddressAndPort.getByName("127.0.0.1"), RequestFailureReason.UNKNOWN);
-        failureReasonMap2.put(InetAddressAndPort.getByName("127.0.0.2"), RequestFailureReason.UNKNOWN);
+        failureReasonMap2.put(Endpoint.getByName("127.0.0.1"), RequestFailureReason.UNKNOWN);
+        failureReasonMap2.put(Endpoint.getByName("127.0.0.2"), RequestFailureReason.UNKNOWN);
     }
 
     @Test
@@ -102,11 +103,11 @@ public class ErrorMessageTest
     @Test
     public void testRequestFailureExceptionMakesCopy() throws UnknownHostException
     {
-        Map<InetAddressAndPort, RequestFailureReason> modifiableFailureReasons = new HashMap<>(failureReasonMap1);
+        Map<Endpoint, RequestFailureReason> modifiableFailureReasons = new HashMap<>(failureReasonMap1);
         ReadFailureException rfe = new ReadFailureException(ConsistencyLevel.ALL, 3, 3, false, modifiableFailureReasons);
         WriteFailureException wfe = new WriteFailureException(ConsistencyLevel.ALL, 3, 3, WriteType.SIMPLE, modifiableFailureReasons);
 
-        modifiableFailureReasons.put(InetAddressAndPort.getByName("127.0.0.4"), RequestFailureReason.UNKNOWN);
+        modifiableFailureReasons.put(Endpoint.getByName("127.0.0.4"), RequestFailureReason.UNKNOWN);
 
         assertEquals(failureReasonMap1, rfe.failureReasonByEndpoint);
         assertEquals(failureReasonMap1, wfe.failureReasonByEndpoint);

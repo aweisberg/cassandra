@@ -29,7 +29,7 @@ import org.junit.Test;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 
 public class MessageInTest
 {
@@ -54,7 +54,7 @@ public class MessageInTest
 
     private void read(MessagingService.Verb verb) throws IOException
     {
-        InetAddressAndPort addr = InetAddressAndPort.getByName("127.0.0.1");
+        Endpoint addr = Endpoint.getByName("127.0.0.1");
         ByteBuffer buf = ByteBuffer.allocate(64);
         buf.limit(buf.capacity());
         DataInputPlus dataInputBuffer = new DataInputBuffer(buf, false);

@@ -18,7 +18,6 @@
 package org.apache.cassandra.repair;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -29,8 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -38,8 +35,10 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.*;
+
+import org.apache.cassandra.locator.Endpoint;
+
 import org.apache.commons.lang3.time.DurationFormatUtils;
-import org.junit.internal.runners.statements.Fail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,7 +60,6 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.repair.consistent.CoordinatorSession;
 import org.apache.cassandra.metrics.StorageMetrics;
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.QueryState;
@@ -73,7 +71,6 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.UUIDGen;
 import org.apache.cassandra.utils.WrappedRunnable;
 import org.apache.cassandra.utils.progress.ProgressEvent;
@@ -143,10 +140,10 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
     @VisibleForTesting
     static class CommonRange
     {
-        public final Set<InetAddressAndPort> endpoints;
+        public final Set<Endpoint> endpoints;
         public final Collection<Range<Token>> ranges;
 
-        public CommonRange(Set<InetAddressAndPort> endpoints, Collection<Range<Token>> ranges)
+        public CommonRange(Set<Endpoint> endpoints, Collection<Range<Token>> ranges)
         {
             Preconditions.checkArgument(endpoints != null && !endpoints.isEmpty());
             Preconditions.checkArgument(ranges != null && !ranges.isEmpty());
@@ -234,7 +231,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
             traceState = null;
         }
 
-        Set<InetAddressAndPort> allNeighbors = new HashSet<>();
+        Set<Endpoint> allNeighbors = new HashSet<>();
         List<CommonRange> commonRanges = new ArrayList<>();
 
         //pre-calculate output of getLocalRanges and pass it to getNeighbors to increase performance and prevent
@@ -245,9 +242,9 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
         {
             for (Range<Token> range : options.getRanges())
             {
-                Set<InetAddressAndPort> neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
-                                                                                     options.getDataCenters(),
-                                                                                     options.getHosts());
+                Set<Endpoint> neighbors = ActiveRepairService.getNeighbors(keyspace, keyspaceLocalRanges, range,
+                                                                           options.getDataCenters(),
+                                                                           options.getHosts());
 
                 addRangeToNeighbors(commonRanges, range, neighbors);
                 allNeighbors.addAll(neighbors);
@@ -290,7 +287,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
 
         if (force && options.isIncremental())
         {
-            Set<InetAddressAndPort> actualNeighbors = Sets.newHashSet(Iterables.filter(allNeighbors, FailureDetector.instance::isAlive));
+            Set<Endpoint> actualNeighbors = Sets.newHashSet(Iterables.filter(allNeighbors, FailureDetector.instance::isAlive));
             force = !allNeighbors.equals(actualNeighbors);
             allNeighbors = actualNeighbors;
         }
@@ -373,7 +370,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
      * removes dead nodes from common ranges, and exludes ranges left without any participants
      */
     @VisibleForTesting
-    static List<CommonRange> filterCommonRanges(List<CommonRange> commonRanges, Set<InetAddressAndPort> liveEndpoints, boolean force)
+    static List<CommonRange> filterCommonRanges(List<CommonRange> commonRanges, Set<Endpoint> liveEndpoints, boolean force)
     {
         if (!force)
         {
@@ -385,7 +382,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
 
             for (CommonRange commonRange: commonRanges)
             {
-                Set<InetAddressAndPort> endpoints = ImmutableSet.copyOf(Iterables.filter(commonRange.endpoints, liveEndpoints::contains));
+                Set<Endpoint> endpoints = ImmutableSet.copyOf(Iterables.filter(commonRange.endpoints, liveEndpoints::contains));
 
                 // this node is implicitly a participant in this repair, so a single endpoint is ok here
                 if (!endpoints.isEmpty())
@@ -402,12 +399,12 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                    long startTime,
                                    boolean forceRepair,
                                    TraceState traceState,
-                                   Set<InetAddressAndPort> allNeighbors,
+                                   Set<Endpoint> allNeighbors,
                                    List<CommonRange> commonRanges,
                                    String... cfnames)
     {
         // the local node also needs to be included in the set of participants, since coordinator sessions aren't persisted
-        Set<InetAddressAndPort> allParticipants = ImmutableSet.<InetAddressAndPort>builder()
+        Set<Endpoint> allParticipants = ImmutableSet.<Endpoint>builder()
                                            .addAll(allNeighbors)
                                            .add(FBUtilities.getBroadcastAddressAndPort())
                                            .build();
@@ -683,7 +680,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                                                ImmutableList.of(failureMessage, completionMessage));
     }
 
-    private void addRangeToNeighbors(List<CommonRange> neighborRangeList, Range<Token> range, Set<InetAddressAndPort> neighbors)
+    private void addRangeToNeighbors(List<CommonRange> neighborRangeList, Range<Token> range, Set<Endpoint> neighbors)
     {
         for (int i = 0; i < neighborRangeList.size(); i++)
         {
@@ -718,7 +715,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                 SelectStatement statement = (SelectStatement) QueryProcessor.parseStatement(query).prepare().statement;
 
                 ByteBuffer sessionIdBytes = ByteBufferUtil.bytes(sessionId);
-                InetAddressAndPort source = FBUtilities.getBroadcastAddressAndPort();
+                Endpoint source = FBUtilities.getBroadcastAddressAndPort();
 
                 HashSet<UUID>[] seen = new HashSet[] { new HashSet<>(), new HashSet<>() };
                 int si = 0;
@@ -757,7 +754,7 @@ public class RepairRunnable extends WrappedRunnable implements ProgressEventNoti
                         int port = DatabaseDescriptor.getStoragePort();
                         if (r.has("source_port"))
                             port = r.getInt("source_port");
-                        InetAddressAndPort eventNode = InetAddressAndPort.getByAddressOverrideDefaults(r.getInetAddress("source"), port);
+                        Endpoint eventNode = Endpoint.getByAddressOverrideDefaults(r.getInetAddress("source"), port);
                         if (source.equals(eventNode))
                             continue;
                         if ((uuid = r.getUUID("event_id")).timestamp() > (tcur - 1000) * 10000)

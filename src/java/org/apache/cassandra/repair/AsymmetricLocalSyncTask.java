@@ -23,7 +23,7 @@ import java.util.UUID;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Endpoint;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.streaming.ProgressInfo;
 import org.apache.cassandra.streaming.StreamEvent;
@@ -40,7 +40,7 @@ public class AsymmetricLocalSyncTask extends AsymmetricSyncTask implements Strea
     private final UUID pendingRepair;
     private final TraceState state = Tracing.instance.get();
 
-    public AsymmetricLocalSyncTask(RepairJobDesc desc, InetAddressAndPort fetchFrom, List<Range<Token>> rangesToFetch, UUID pendingRepair, PreviewKind previewKind)
+    public AsymmetricLocalSyncTask(RepairJobDesc desc, Endpoint fetchFrom, List<Range<Token>> rangesToFetch, UUID pendingRepair, PreviewKind previewKind)
     {
         super(desc, FBUtilities.getBroadcastAddressAndPort(), fetchFrom, rangesToFetch, previewKind);
         this.pendingRepair = pendingRepair;
