@@ -211,9 +211,9 @@ class MessageInHandler extends ByteToMessageDecoder
 
             String key = DataInputStream.readUTF(inputPlus);
             ParameterType parameterType = ParameterType.byName.get(key);
-            byte[] value = new byte[in.readInt()];
-            in.readBytes(value);
-            parameters.put(parameterType, parameterType.serializer.deserialize(new DataInputBuffer(value), messagingVersion));
+            //Skip length prefix
+            in.readInt();
+            parameters.put(parameterType, parameterType.serializer.deserialize(inputPlus, messagingVersion));
         }
 
         return true;

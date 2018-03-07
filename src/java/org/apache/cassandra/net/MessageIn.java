@@ -115,9 +115,12 @@ public class MessageIn<T>
                 ParameterType type = ParameterType.byName.get(key);
                 if (type != null)
                 {
-                    byte[] value = new byte[in.readInt()];
-                    in.readFully(value);
-                    builder.put(type, type.serializer.deserialize(new DataInputBuffer(value), version));
+                    //Skip length prefix if present
+                    if (version < MessagingService.VERSION_40)
+                    {
+                        in.readInt();
+                    }
+                    builder.put(type, type.serializer.deserialize(in, version));
                 }
                 else
                 {
