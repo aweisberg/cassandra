@@ -115,11 +115,7 @@ public class MessageIn<T>
                 ParameterType type = ParameterType.byName.get(key);
                 if (type != null)
                 {
-                    //Skip length prefix if present
-                    if (version < MessagingService.VERSION_40)
-                    {
-                        in.readInt();
-                    }
+                    in.readInt();
                     builder.put(type, type.serializer.deserialize(in, version));
                 }
                 else

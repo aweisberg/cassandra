@@ -196,10 +196,7 @@ public class MessageOut<T>
             out.writeUTF(type.key);
             IVersionedSerializer serializer = type.serializer;
             Object parameter = parameters.get(ii + PARAMETER_TUPLE_PARAMETER_OFFSET);
-            if (version < MessagingService.VERSION_40)
-            {
-                out.writeInt(Ints.checkedCast(serializer.serializedSize(parameter, version)));
-            }
+            out.writeInt(Ints.checkedCast(serializer.serializedSize(parameter, version)));
             serializer.serialize(parameter, out, version);
         }
 
@@ -229,10 +226,7 @@ public class MessageOut<T>
         {
             ParameterType type = (ParameterType)parameters.get(ii + PARAMETER_TUPLE_TYPE_OFFSET);
             size += TypeSizes.sizeof(type.key());
-            if (version < MessagingService.VERSION_40)
-            {
-                size += 4;//length prefix
-            }
+            size += 4;//length prefix
             IVersionedSerializer serializer = type.serializer;
             Object parameter = parameters.get(ii + PARAMETER_TUPLE_PARAMETER_OFFSET);
             size += serializer.serializedSize(parameter, version);
