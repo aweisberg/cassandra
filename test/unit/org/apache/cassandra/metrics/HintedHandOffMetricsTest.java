@@ -53,7 +53,9 @@ public class HintedHandOffMetricsTest
         DatabaseDescriptor.getHintsDirectory().mkdirs();
 
         for (int i = 0; i < 99; i++)
+        {
             HintsService.instance.metrics.incrPastWindow(InetAddressAndPort.getLocalHost());
+        }
         HintsService.instance.metrics.log();
 
         UntypedResultSet rows = executeInternal("SELECT hints_dropped FROM system." + SystemKeyspace.PEER_EVENTS_V2);

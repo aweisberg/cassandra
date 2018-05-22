@@ -57,6 +57,9 @@ public class TokenMetadataTest
         tmd = StorageService.instance.getTokenMetadata();
         tmd.updateNormalToken(token(ONE), InetAddressAndPort.getByName("127.0.0.1"));
         tmd.updateNormalToken(token(SIX), InetAddressAndPort.getByName("127.0.0.6"));
+        System.out.println(tmd.getEndpoint(token("0")));
+        System.out.println(tmd.getEndpoint(token("1")));
+        System.out.println(tmd.getEndpoint(token("2")));
     }
 
     private static void testRingIterator(ArrayList<Token> ring, String start, boolean includeMin, String... expected)

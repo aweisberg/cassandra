@@ -25,7 +25,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
-
+import java.util.function.Predicate;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -68,12 +68,6 @@ public class ReplicaSet extends Replicas
     public int hashCode()
     {
         return replicaSet.hashCode();
-    }
-
-    @Override
-    public String toString()
-    {
-        return replicaSet.toString();
     }
 
     @Override
@@ -139,6 +133,28 @@ public class ReplicaSet extends Replicas
 
     }
 
+    public ReplicaSet filter(Predicate<Replica>... predicates)
+    {
+        return filter(predicates, ReplicaSet::new);
+    }
+
+    public ReplicaSet limit(int limit)
+    {
+        if (size() < limit)
+            return this;
+        ReplicaSet replacement = new ReplicaSet(limit);
+        int count = 0;
+        for (Replica replica : this)
+        {
+            if (count < limit)
+                count++;
+            else
+                break;
+            replacement.add(replica);
+        }
+        return replacement;
+    }
+
     public static ReplicaSet immutableCopyOf(ReplicaSet from)
     {
         return new ReplicaSet(ImmutableSet.copyOf(from.replicaSet));
@@ -147,6 +163,23 @@ public class ReplicaSet extends Replicas
     public static ReplicaSet immutableCopyOf(Replicas from)
     {
         return new ReplicaSet(ImmutableSet.<Replica>builder().addAll(from).build());
+    }
+
+    public static ReplicaSet of(Replica replica)
+    {
+        HashSet<Replica> set = Sets.newHashSetWithExpectedSize(1);
+        set.add(replica);
+        return new ReplicaSet(set);
+    }
+
+    public static ReplicaSet of(Replica... replicas)
+    {
+        ReplicaSet set = new ReplicaSet(Sets.newHashSetWithExpectedSize(replicas.length));
+        for (Replica replica : replicas)
+        {
+            set.add(replica);
+        }
+        return set;
     }
 
     public static ReplicaSet ordered()

@@ -20,6 +20,7 @@ package org.apache.cassandra.locator;
 
 import java.util.Objects;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -32,7 +33,8 @@ public class ReplicationFactor
     public final int replicas;
     public transient final int full;
 
-    private ReplicationFactor(int replicas, int trans)
+    @VisibleForTesting
+    public ReplicationFactor(int replicas, int trans)
     {
         validate(replicas, trans);
         this.replicas = replicas;

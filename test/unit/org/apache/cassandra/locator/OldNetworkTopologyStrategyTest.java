@@ -26,7 +26,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import com.google.common.base.Predicates;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Multimap;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -39,12 +46,31 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.Pair;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class OldNetworkTopologyStrategyTest
 {
+
+    static InetAddressAndPort aAddress;
+    static InetAddressAndPort bAddress;
+    static InetAddressAndPort cAddress;
+    static InetAddressAndPort dAddress;
+    static InetAddressAndPort eAddress;
+
+    @BeforeClass
+    public static void setUpClass() throws Exception
+    {
+        aAddress = InetAddressAndPort.getByName("127.0.0.1");
+        bAddress = InetAddressAndPort.getByName("127.0.0.2");
+        cAddress = InetAddressAndPort.getByName("127.0.0.3");
+        dAddress = InetAddressAndPort.getByName("127.0.0.4");
+        eAddress = InetAddressAndPort.getByName("127.0.0.5");
+    }
+
     private List<Token> keyTokens;
     private TokenMetadata tmd;
     private Map<String, ArrayList<InetAddressAndPort>> expectedResults;
+
 
     @BeforeClass
     public static void setupDD()
@@ -53,7 +79,7 @@ public class OldNetworkTopologyStrategyTest
     }
 
     @Before
-    public void init()
+    public void init() throws Exception
     {
         keyTokens = new ArrayList<Token>();
         tmd = new TokenMetadata();
@@ -188,7 +214,6 @@ public class OldNetworkTopologyStrategyTest
         assertEquals(ranges.left.iterator().next().left, tokensAfterMove[movingNodeIdx]);
         assertEquals(ranges.left.iterator().next().right, tokens[movingNodeIdx]);
         assertEquals("No data should be fetched", ranges.right.size(), 0);
-
     }
 
     @Test
@@ -205,7 +230,6 @@ public class OldNetworkTopologyStrategyTest
         assertEquals("No data should be streamed", ranges.left.size(), 0);
         assertEquals(ranges.right.iterator().next().left, tokens[movingNodeIdx]);
         assertEquals(ranges.right.iterator().next().right, tokensAfterMove[movingNodeIdx]);
-
     }
 
     @SuppressWarnings("unchecked")
@@ -309,6 +333,429 @@ public class OldNetworkTopologyStrategyTest
         assertEquals(Arrays.equals(toFetch, toFetchExpected), true);
     }
 
+    Token oneToken = new BigIntegerToken("1");
+    Token twoToken = new BigIntegerToken("2");
+    Token threeToken = new BigIntegerToken("3");
+    Token fourToken = new BigIntegerToken("4");
+    Token sixToken = new BigIntegerToken("6");
+    Token sevenToken = new BigIntegerToken("7");
+    Token nineToken = new BigIntegerToken("9");
+    Token elevenToken = new BigIntegerToken("11");
+    Token fourteenToken = new BigIntegerToken("14");
+    Token negativeToken = new BigIntegerToken(Integer.toString(Integer.MIN_VALUE));
+
+    Range aRange = new Range(oneToken, threeToken);
+    Range bRange = new Range(threeToken, sixToken);
+    Range cRange = new Range(sixToken, nineToken);
+    Range dRange = new Range(nineToken, elevenToken);
+    Range eRange = new Range(elevenToken, oneToken);
+
+
+    ReplicaSet current = ReplicaSet.of(new Replica(aAddress, aRange, true),
+                                             new Replica(aAddress, eRange, true),
+                                             new Replica(aAddress, dRange, false));
+
+
+    /**
+     * Ring with start A 1-3 B 3-6 C 6-9 D 9-1
+     * A's token moves from 3 to 4.
+     * <p>
+     * Result is A gains some range
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testCalculateStreamAndFetchRangesMoveForward() throws Exception
+    {
+        Range aPrimeRange = new Range(oneToken, fourToken);
+
+        ReplicaSet updated = new ReplicaSet();
+        updated.add(new Replica(aAddress, aPrimeRange, true));
+        updated.add(new Replica(aAddress, eRange, true));
+        updated.add(new Replica(aAddress, dRange, false));
+
+
+        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        System.out.println("To stream");
+        System.out.println(result.left);
+        System.out.println("To fetch");
+        System.out.println(result.right);
+
+        assertEquals(ReplicaSet.EMPTY, result.left);
+        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(threeToken, fourToken), true)), result.right);
+    }
+
+    /**
+     * Ring with start A 1-3 B 3-6 C 6-9 D 9-11 E 11-1
+     * A's token moves from 3 to 14
+     * <p>
+     * Result is A loses range and it must be streamed
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testCalculateStreamAndFetchRangesMoveBackwardsBetween() throws Exception
+    {
+        calculateStreamAndFetchRangesMoveBackwardsBetween();
+    }
+
+    public Pair<ReplicaSet, ReplicaSet> calculateStreamAndFetchRangesMoveBackwardsBetween() throws Exception
+    {
+        Range aPrimeRange = new Range(elevenToken, fourteenToken);
+
+        ReplicaSet updated = new ReplicaSet();
+        updated.add(new Replica(aAddress, aPrimeRange, true));
+        updated.add(new Replica(aAddress, dRange, true));
+        updated.add(new Replica(aAddress, cRange, false));
+
+
+        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        System.out.println("To stream");
+        System.out.println(result.left);
+        System.out.println("To fetch");
+        System.out.println(result.right);
+
+        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(fourteenToken, oneToken), true), new Replica(aAddress, new Range(oneToken, threeToken), true)), result.left);
+        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(sixToken, nineToken), false), new Replica(aAddress, new Range(nineToken, elevenToken), true)), result.right);
+        return result;
+    }
+
+    /**
+     * Ring with start A 1-3 B 3-6 C 6-9 D 9-11 E 11-1
+     * A's token moves from 3 to 2
+     *
+     * Result is A loses range and it must be streamed
+     * @throws Exception
+     */
+    @Test
+    public void testCalculateStreamAndFetchRangesMoveBackwards() throws Exception
+    {
+        Range aPrimeRange = new Range(oneToken, twoToken);
+
+        ReplicaSet updated = new ReplicaSet();
+        updated.add(new Replica(aAddress, aPrimeRange, true));
+        updated.add(new Replica(aAddress, eRange, true));
+        updated.add(new Replica(aAddress, dRange, false));
+
+
+        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        System.out.println("To stream");
+        System.out.println(result.left);
+        System.out.println("To fetch");
+        System.out.println(result.right);
+
+        //Moving backwards has no impact on any replica. We already fully replicate counter clockwise
+        //The transient replica does transiently replicate slightly more, but that is addressed by cleanup
+        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(twoToken, threeToken), true)), result.left);
+        assertEquals(ReplicaSet.of(), result.right);
+    }
+
+    /**
+     * Ring with start A 1-3 B 3-6 C 6-9 D 9-11 E 11-1
+     * A's moves from 3 to 7
+     *
+     * @throws Exception
+     */
+    private Pair<ReplicaSet, ReplicaSet> calculateStreamAndFetchRangesMoveForwardsBetween() throws Exception
+    {
+        Range aPrimeRange = new Range(sixToken, sevenToken);
+        Range bPrimeRange = new Range(oneToken, sixToken);
+
+
+        ReplicaSet updated = new ReplicaSet();
+        updated.add(new Replica(aAddress, aPrimeRange, true));
+        updated.add(new Replica(aAddress, bPrimeRange, true));
+        updated.add(new Replica(aAddress, eRange, false));
+
+
+        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
+        System.out.println("To stream");
+        System.out.println(result.left);
+        System.out.println("To fetch");
+        System.out.println(result.right);
+
+        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(nineToken, elevenToken), false), new Replica(aAddress, new Range(elevenToken, oneToken), true)), result.left);
+        assertEquals(ReplicaSet.of(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(aAddress, new Range(sixToken, sevenToken), true)), result.right);
+        return result;
+    }
+
+    /**
+     * Ring with start A 1-3 B 3-6 C 6-9 D 9-11 E 11-1
+     * A's token moves from 3 to 7
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testCalculateStreamAndFetchRangesMoveForwardsBetween() throws Exception
+    {
+        calculateStreamAndFetchRangesMoveForwardsBetween();
+    }
+
+    /**
+     * Construct the ring state for calculateStreamAndFetchRangesMoveBackwardsBetween
+     * Where are A moves from 3 to 14
+     * @return
+     */
+    private Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> constructRangeAddressesMoveBackwardsBetween()
+    {
+        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = ReplicaMultimap.set();
+        rangeAddresses.put(aRange, new Replica(aAddress, aRange, true));
+        rangeAddresses.put(eRange, new Replica(aAddress, eRange, true));
+        rangeAddresses.put(dRange, new Replica(aAddress, dRange, false));
+
+        rangeAddresses.put(bRange, new Replica(bAddress, bRange, true));
+        rangeAddresses.put(aRange, new Replica(bAddress, aRange, true));
+        rangeAddresses.put(eRange, new Replica(bAddress, eRange, false));
+
+        rangeAddresses.put(cRange, new Replica(cAddress, cRange, true));
+        rangeAddresses.put(bRange, new Replica(cAddress, bRange, true));
+        rangeAddresses.put(aRange, new Replica(cAddress, aRange, false));
+
+        rangeAddresses.put(dRange, new Replica(dAddress, dRange, true));
+        rangeAddresses.put(cRange, new Replica(dAddress, cRange, true));
+        rangeAddresses.put(bRange, new Replica(dAddress, bRange, false));
+
+        rangeAddresses.put(eRange, new Replica(eAddress, eRange, true));
+        rangeAddresses.put(dRange, new Replica(eAddress, dRange, true));
+        rangeAddresses.put(cRange, new Replica(eAddress, cRange, false));
+
+        Range aPrimeRange = new Range(elevenToken, fourteenToken);
+        Range ePrimeRange = new Range(fourteenToken, oneToken);
+        Range bPrimeRange = new Range(oneToken, sixToken);
+
+        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = ReplicaMultimap.list();
+        rangeAddressesSettled.put(aPrimeRange, new Replica(aAddress, aPrimeRange, true));
+        rangeAddressesSettled.put(dRange, new Replica(aAddress, dRange, true));
+        rangeAddressesSettled.put(cRange, new Replica(aAddress, cRange, false));
+
+        rangeAddressesSettled.put(bPrimeRange, new Replica(bAddress, bPrimeRange, true));
+        rangeAddressesSettled.put(ePrimeRange, new Replica(bAddress, ePrimeRange, true));
+        rangeAddressesSettled.put(aPrimeRange, new Replica(bAddress, aPrimeRange, false));
+
+        rangeAddressesSettled.put(cRange, new Replica(cAddress, cRange, true));
+        rangeAddressesSettled.put(bPrimeRange, new Replica(cAddress, bPrimeRange, true));
+        rangeAddressesSettled.put(ePrimeRange, new Replica(cAddress, ePrimeRange, false));
+
+        rangeAddressesSettled.put(dRange, new Replica(dAddress, dRange, true));
+        rangeAddressesSettled.put(cRange, new Replica(dAddress, cRange, true));
+        rangeAddressesSettled.put(bPrimeRange, new Replica(dAddress, bPrimeRange, false));
+
+        rangeAddressesSettled.put(ePrimeRange, new Replica(eAddress, ePrimeRange, true));
+        rangeAddressesSettled.put(aPrimeRange, new Replica(eAddress, aPrimeRange, true));
+        rangeAddressesSettled.put(dRange, new Replica(eAddress, dRange, false));
+
+        return Pair.create(rangeAddresses, rangeAddressesSettled);
+    }
+
+
+    /**
+     * Construct the ring state for calculateStreamAndFetchRangesMoveForwardsBetween
+     * Where are A moves from 3 to 7
+     * @return
+     */
+    private Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> constructRangeAddressesMoveForwardsBetween()
+    {
+        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = ReplicaMultimap.set();
+        rangeAddresses.put(aRange, new Replica(aAddress, aRange, true));
+        rangeAddresses.put(eRange, new Replica(aAddress, eRange, true));
+        rangeAddresses.put(dRange, new Replica(aAddress, dRange, false));
+
+        rangeAddresses.put(bRange, new Replica(bAddress, bRange, true));
+        rangeAddresses.put(aRange, new Replica(bAddress, aRange, true));
+        rangeAddresses.put(eRange, new Replica(bAddress, eRange, false));
+
+        rangeAddresses.put(cRange, new Replica(cAddress, cRange, true));
+        rangeAddresses.put(bRange, new Replica(cAddress, bRange, true));
+        rangeAddresses.put(aRange, new Replica(cAddress, aRange, false));
+
+        rangeAddresses.put(dRange, new Replica(dAddress, dRange, true));
+        rangeAddresses.put(cRange, new Replica(dAddress, cRange, true));
+        rangeAddresses.put(bRange, new Replica(dAddress, bRange, false));
+
+        rangeAddresses.put(eRange, new Replica(eAddress, eRange, true));
+        rangeAddresses.put(dRange, new Replica(eAddress, dRange, true));
+        rangeAddresses.put(cRange, new Replica(eAddress, cRange, false));
+
+        Range aPrimeRange = new Range(sixToken, sevenToken);
+        Range bPrimeRange = new Range(oneToken, sixToken);
+        Range cPrimeRange = new Range(sevenToken, nineToken);
+
+        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = ReplicaMultimap.list();
+        rangeAddressesSettled.put(aPrimeRange, new Replica(aAddress, aPrimeRange, true));
+        rangeAddressesSettled.put(bPrimeRange, new Replica(aAddress, bPrimeRange, true));
+        rangeAddressesSettled.put(eRange, new Replica(aAddress, eRange, false));
+
+        rangeAddressesSettled.put(bPrimeRange, new Replica(bAddress, bPrimeRange, true));
+        rangeAddressesSettled.put(eRange, new Replica(bAddress, eRange, true));
+        rangeAddressesSettled.put(dRange, new Replica(bAddress, dRange, false));
+
+        rangeAddressesSettled.put(cPrimeRange, new Replica(cAddress, cPrimeRange, true));
+        rangeAddressesSettled.put(aPrimeRange, new Replica(cAddress, aPrimeRange, true));
+        rangeAddressesSettled.put(bPrimeRange, new Replica(cAddress, bPrimeRange, false));
+
+        rangeAddressesSettled.put(dRange, new Replica(dAddress, dRange, true));
+        rangeAddressesSettled.put(cPrimeRange, new Replica(dAddress, cPrimeRange, true));
+        rangeAddressesSettled.put(aPrimeRange, new Replica(dAddress, aPrimeRange, false));
+
+        rangeAddressesSettled.put(eRange, new Replica(eAddress, eRange, true));
+        rangeAddressesSettled.put(dRange, new Replica(eAddress, dRange, true));
+        rangeAddressesSettled.put(cPrimeRange, new Replica(eAddress, cPrimeRange, false));
+
+        return Pair.create(rangeAddresses, rangeAddressesSettled);
+    }
+
+    @Test
+    public void testMoveForwardsBetweenCalculateRangesToFetchWithPreferredEndpoints() throws Exception
+    {
+        DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
+        ReplicaSet toFetch = calculateStreamAndFetchRangesMoveForwardsBetween().right;
+        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
+
+        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = constructRangeAddressesMoveForwardsBetween().left;
+        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveForwardsBetween().right;
+
+        ReplicaMultimap<Replica, ReplicaList>  result = relocator.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
+                                                               rangeAddresses,
+                                                               toFetch,
+                                                               true,
+                                                               token -> {
+                                                                 for (Range<Token> range : rangeAddressesSettled.keySet())
+                                                                 {
+                                                                     if (range.contains(token))
+                                                                         return new ReplicaList(rangeAddressesSettled.get(range));
+                                                                 }
+                                                                   return null;
+                                                               },
+                                                               new ReplicationFactor(3, 1),
+                                                               Predicates.alwaysTrue());
+        System.out.println(result);
+        ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
+
+        //Need to pull the full replica and the transient replica that is losing the range
+        expectedResult.put(new Replica(aAddress, new Range(sixToken, sevenToken), true),  new Replica(dAddress, new Range(sixToken, nineToken), true));
+        expectedResult.put(new Replica(aAddress, new Range(sixToken, sevenToken), true), new Replica(eAddress, new Range(sixToken, nineToken), false));
+
+        //Same need both here as well
+        expectedResult.put(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(cAddress, new Range(threeToken, sixToken), true));
+        expectedResult.put(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(dAddress, new Range(threeToken, sixToken), false));
+
+        assertEquals(expectedResult, result);
+    }
+
+    @Test
+    public void testMoveBackwardsBetweenCalculateRangesToFetchWithPreferredEndpoints() throws Exception
+    {
+        DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
+        ReplicaSet toFetch = calculateStreamAndFetchRangesMoveBackwardsBetween().right;
+        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
+
+        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = constructRangeAddressesMoveBackwardsBetween().left;
+        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveBackwardsBetween().right;
+
+        ReplicaMultimap<Replica, ReplicaList>  result = relocator.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
+                                                                                                         rangeAddresses,
+                                                                                                         toFetch,
+                                                                                                         true,
+                                                                                                         token -> {
+                                                                                                             for (Range<Token> range : rangeAddressesSettled.keySet())
+                                                                                                             {
+                                                                                                                 if (range.contains(token))
+                                                                                                                     return new ReplicaList(rangeAddressesSettled.get(range));
+                                                                                                             }
+                                                                                                             return null;
+                                                                                                         },
+                                                                                                         new ReplicationFactor(3, 1),
+                                                                                                         Predicates.alwaysTrue());
+        System.out.println(result);
+        ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
+
+        //Need to pull the full replica and the transient replica that is losing the range
+        expectedResult.put(new Replica(aAddress, new Range(nineToken, elevenToken), true), new Replica(eAddress, new Range(nineToken, elevenToken), true));
+        expectedResult.put(new Replica(aAddress, new Range(sixToken, nineToken), false), new Replica(eAddress, new Range(sixToken, nineToken), false));
+        assertEquals(expectedResult, result);
+    }
+
+
+    @Test
+    public void testMoveForwardsBetweenCalculateRangesToStreamWithPreferredEndpoints() throws Exception
+    {
+        DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
+        ReplicaSet toStream = calculateStreamAndFetchRangesMoveForwardsBetween().left;
+        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
+
+        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = constructRangeAddressesMoveForwardsBetween().left;
+        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveForwardsBetween().right;
+
+        ReplicaMultimap<InetAddressAndPort, ReplicaList> result = relocator.calculateRangesToStreamWithPreferredEndpoints(toStream,
+                                                                token ->
+                                                                {
+                                                                    for (Range<Token> range : rangeAddresses.keySet())
+                                                                    {
+                                                                        if (range.contains(token))
+                                                                            return new ReplicaList(rangeAddresses.get(range));
+                                                                    }
+                                                                    return null;
+                                                                },
+                                                                token ->
+                                                                {
+                                                                    for (Range<Token> range : rangeAddressesSettled.keySet())
+                                                                    {
+                                                                        if (range.contains(token))
+                                                                            return rangeAddressesSettled.get(range);
+                                                                    }
+                                                                    return null;
+                                                                });
+        System.out.println(result);
+        ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
+
+        //Need to pull the full replica and the transient replica that is losing the range
+        expectedResult.put(bAddress, new Replica(bAddress, new Range(nineToken, elevenToken), false));
+        expectedResult.put(bAddress, new Replica(bAddress, new Range(elevenToken, oneToken), true));
+        assertEquals(expectedResult, result);
+    }
+
+    @Test
+    public void testMoveBackwardsBetweenCalculateRangesToStreamWithPreferredEndpoints() throws Exception
+    {
+        DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
+        ReplicaSet toStream = calculateStreamAndFetchRangesMoveBackwardsBetween().left;
+        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
+
+        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = constructRangeAddressesMoveBackwardsBetween().left;
+        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveBackwardsBetween().right;
+
+        ReplicaMultimap<InetAddressAndPort, ReplicaList> result = relocator.calculateRangesToStreamWithPreferredEndpoints(toStream,
+                                                                                                               token ->
+                                                                                                               {
+                                                                                                                   for (Range<Token> range : rangeAddresses.keySet())
+                                                                                                                   {
+                                                                                                                       if (range.contains(token))
+                                                                                                                           return new ReplicaList(rangeAddresses.get(range));
+                                                                                                                   }
+                                                                                                                   return null;
+                                                                                                               },
+                                                                                                               token ->
+                                                                                                               {
+                                                                                                                   for (Range<Token> range : rangeAddressesSettled.keySet())
+                                                                                                                   {
+                                                                                                                       if (range.contains(token))
+                                                                                                                           return rangeAddressesSettled.get(range);
+                                                                                                                   }
+                                                                                                                   return null;
+                                                                                                               });
+        System.out.println(result);
+        ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
+
+        expectedResult.put(bAddress, new Replica(bAddress, new Range(fourteenToken, oneToken), true));
+
+        expectedResult.put(dAddress, new Replica(dAddress, new Range(oneToken, threeToken), false));
+
+        expectedResult.put(cAddress, new Replica(cAddress, new Range(oneToken, threeToken), true));
+        expectedResult.put(cAddress, new Replica(cAddress, new Range(fourteenToken, oneToken), false));
+
+        assertEquals(expectedResult, result);
+    }
+
     private BigIntegerToken[] initTokensAfterMove(BigIntegerToken[] tokens,
             int movingNodeIdx, BigIntegerToken newToken)
     {
@@ -369,11 +816,18 @@ public class OldNetworkTopologyStrategyTest
         ReplicaSet currentRanges = strategy.getAddressReplicas().get(movingNode);
         ReplicaSet updatedRanges = strategy.getPendingAddressRanges(tokenMetadataAfterMove, tokensAfterMove[movingNodeIdx], movingNode);
 
-        return StorageService.instance.calculateStreamAndFetchRanges(currentRanges, updatedRanges);
+        return asRanges(StorageService.calculateStreamAndFetchRanges(currentRanges, updatedRanges));
     }
 
     private static Map<String, String> optsWithRF(int rf)
     {
         return Collections.singletonMap("replication_factor", Integer.toString(rf));
+    }
+
+    public static Pair<Set<Range<Token>>, Set<Range<Token>>> asRanges(Pair<ReplicaSet, ReplicaSet> replicas)
+    {
+        Set<Range<Token>> leftRanges = replicas.left.asRangeSet();
+        Set<Range<Token>> rightRanges = replicas.right.asRangeSet();
+        return Pair.create(leftRanges, rightRanges);
     }
 }

@@ -41,6 +41,7 @@ import org.apache.cassandra.OrderedJUnit4ClassRunner;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.tokenallocator.TokenAllocation;
@@ -115,14 +116,19 @@ public class BootStrapperTest
             public void forceConviction(InetAddressAndPort ep) { throw new UnsupportedOperationException(); }
         };
         s.addSourceFilter(new RangeStreamer.FailureDetectorSourceFilter(mockFailureDetector));
+        if (numOldNodes == 5 && replicationFactor == 5)
+        {
+            System.out.println("Oh crap");
+        }
         s.addRanges(keyspaceName, Keyspace.open(keyspaceName).getReplicationStrategy().getPendingAddressRanges(tmd, myToken, myEndpoint));
 
-        Collection<Map.Entry<InetAddressAndPort, Collection<Range<Token>>>> toFetch = s.toFetch().get(keyspaceName);
+
+        Collection<Map.Entry<InetAddressAndPort, ReplicaSet>> toFetch = s.toFetch().get(keyspaceName);
 
         // Check we get get RF new ranges in total
         Set<Range<Token>> ranges = new HashSet<>();
-        for (Map.Entry<InetAddressAndPort, Collection<Range<Token>>> e : toFetch)
-            ranges.addAll(e.getValue());
+        for (Map.Entry<InetAddressAndPort, ReplicaSet> e : toFetch)
+            ranges.addAll(e.getValue().asRangeSet());
 
         assertEquals(replicationFactor, ranges.size());
 

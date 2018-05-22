@@ -19,12 +19,14 @@
 package org.apache.cassandra.locator;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -33,10 +35,15 @@ import org.apache.cassandra.utils.FBUtilities;
 /**
  * Decorated Endpoint
  */
-public class Replica
+public class Replica implements Comparable<Replica>
 {
-    private final InetAddressAndPort endpoint;
+    enum ReplicaState {
+        TRANSIENT,
+        FULL
+    }
+
     private final Range<Token> range;
+    private final InetAddressAndPort endpoint;
     private final boolean full;
 
     public Replica(InetAddressAndPort endpoint, Range<Token> range, boolean full)
@@ -146,6 +153,28 @@ public class Replica
         }
     }
 
+    public ReplicaSet subtractIgnoreTransientStatus(Replica that)
+    {
+        Set<Range<Token>> ranges = range.subtract(that.range);
+        ReplicaSet replicatedRanges = new ReplicaSet(ranges.size());
+        for (Range<Token> subrange : ranges)
+        {
+            replicatedRanges.add(decorateSubrange(subrange));
+        }
+        return replicatedRanges;
+    }
+
+    public ReplicaList normalize()
+    {
+        List<Range<Token>> normalized = Range.normalize(Collections.singleton(getRange()));
+        ReplicaList replicas = new ReplicaList(normalized.size());
+        for (Range<Token> normalizedRange: normalized)
+        {
+            replicas.add(decorateSubrange(normalizedRange));
+        }
+        return replicas;
+    }
+
     public boolean contains(Range<Token> that)
     {
         return getRange().contains(that);
@@ -196,6 +225,17 @@ public class Replica
     public static Replica trans(InetAddressAndPort endpoint, Token start, Token end)
     {
         return trans(endpoint, new Range<>(start, end));
+    }
+
+    @Override
+    public int compareTo(Replica o)
+    {
+        int c = range.compareTo(o.range);
+        if (c == 0)
+            c = endpoint.compareTo(o.endpoint);
+        if (c == 0)
+            c =  Boolean.compare(full, o.full);
+        return c;
     }
 }
 

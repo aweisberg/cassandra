@@ -64,6 +64,19 @@ public abstract class ReplicaMultimap<K, V extends Replicas>
         return result;
     }
 
+    public boolean putAll(ReplicaMultimap<K, ? extends Replicas> map)
+    {
+        boolean result = false;
+        for (K key : map.keySet())
+        {
+            for (Replica replica : map.get(key))
+            {
+                result |= put(key, replica);
+            }
+        }
+        return result;
+    }
+
     public boolean isEmpty()
     {
         return map.isEmpty();
@@ -128,5 +141,11 @@ public abstract class ReplicaMultimap<K, V extends Replicas>
                 return new ReplicaSet();
             }
         };
+    }
+
+    @Override
+    public String toString()
+    {
+        return map.toString();
     }
 }

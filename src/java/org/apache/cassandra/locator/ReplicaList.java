@@ -152,18 +152,9 @@ public class ReplicaList extends Replicas
         return false;
     }
 
-    public ReplicaList filter(Predicate<Replica> predicate)
+    public ReplicaList filter(Predicate<Replica>... predicates)
     {
-        ArrayList<Replica> newReplicaList = size() < 10 ? new ArrayList<>(size()) : new ArrayList<>();
-        for (int i=0; i<size(); i++)
-        {
-            Replica replica = replicaList.get(i);
-            if (predicate.test(replica))
-            {
-                newReplicaList.add(replica);
-            }
-        }
-        return new ReplicaList(newReplicaList);
+        return filter(predicates, ReplicaList::new);
     }
 
     public void sort(Comparator<Replica> comparator)

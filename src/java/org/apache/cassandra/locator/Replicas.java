@@ -23,13 +23,19 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Sets;
+import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -42,12 +48,12 @@ import org.apache.cassandra.utils.FBUtilities;
  */
 public abstract class Replicas implements Iterable<Replica>
 {
-
     public abstract boolean add(Replica replica);
     public abstract void addAll(Iterable<Replica> replicas);
     public abstract void removeEndpoint(InetAddressAndPort endpoint);
     public abstract void removeReplica(Replica replica);
     public abstract int size();
+
     protected abstract Collection<Replica> getUnmodifiableCollection();
 
     public Iterable<InetAddressAndPort> asEndpoints()
@@ -103,6 +109,11 @@ public abstract class Replicas implements Iterable<Replica>
     public Iterable<Range<Token>> fullRanges()
     {
         return Iterables.transform(Iterables.filter(this, Replica::isFull), Replica::getRange);
+    }
+
+    public Iterable<Range<Token>> transientRanges()
+    {
+        return Iterables.transform(Iterables.filter(this, Replica::isTransient), Replica::getRange);
     }
 
     public boolean containsEndpoint(InetAddressAndPort endpoint)
@@ -333,6 +344,21 @@ public abstract class Replicas implements Iterable<Replica>
         };
     }
 
+    public boolean noneMatch(Predicate<Replica> predicate)
+    {
+        return !anyMatch(predicate);
+    }
+
+    public boolean anyMatch(Predicate<Replica> predicate)
+    {
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+                return true;
+        }
+        return false;
+    }
+
     private static Replicas EMPTY = new ImmutableReplicaContainer()
     {
         public int size()
@@ -361,6 +387,71 @@ public abstract class Replicas implements Iterable<Replica>
         return of(replica);
     }
 
+    public <T extends Replicas> T filter(java.util.function.Predicate<Replica> predicates[],
+                                         Supplier<T> collectorSupplier)
+    {
+        T newReplicas = collectorSupplier.get();
+        for (Replica replica: this)
+        {
+            boolean success = true;
+            for (java.util.function.Predicate<Replica> predicate : predicates)
+            {
+                if (!predicate.test(replica))
+                {
+                    success = false;
+                    break;
+                }
+            }
+            if (success)
+            {
+                newReplicas.add(replica);
+            }
+        }
+        return newReplicas;
+    }
+
+    public long count(Predicate<Replica> predicate)
+    {
+        long count = 0;
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+                count++;
+        }
+
+        return count;
+    }
+
+    public Optional<Replica> findFirst(Predicate<Replica> predicate)
+    {
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+                return Optional.of(replica);
+        }
+
+        return Optional.empty();
+    }
+
+    public static void removeAllIgnoreTransientStatus(Collection<Replica> replica, Collection<Replica> toRemove)
+    {
+          Iterator<Replica> toRemoveIterator = toRemove.iterator();
+          while (toRemoveIterator.hasNext())
+          {
+               Replica toRemoveReplica = toRemoveIterator.next();
+
+               Iterator<Replica> replicaIterator = replica.iterator();
+               while (replicaIterator.hasNext())
+               {
+                   Replica maybeRemoveReplica = replicaIterator.next();
+                   if (toRemoveReplica.getEndpoint().equals(maybeRemoveReplica.getEndpoint()))
+                   {
+                       replicaIterator.remove();
+                   }
+               }
+          }
+    }
+
     /**
      * Basically a placeholder for places new logic for transient replicas should go
      */
@@ -382,6 +473,25 @@ public abstract class Replicas implements Iterable<Replica>
         {
             // FIXME: add support for transient replicas
             throw new UnsupportedOperationException("transient replicas are currently unsupported");
+        }
+    }
+
+    @Override
+    public String toString()
+    {
+        Iterator<Replica> i = iterator();
+        if (!i.hasNext())
+            return "[]";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append('[');
+        while (true)
+        {
+            Replica replica = i.next();
+            sb.append(replica);
+            if (!i.hasNext())
+                return sb.append(']').toString();
+            sb.append(", ");
         }
     }
 
