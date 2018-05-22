@@ -4349,7 +4349,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         else
                         {
                             //Without strict consistency we have given up on correctness so no point in fetching from
-                            //A random full + transient replica since it's also likely to lose data
+                            //a random full + transient replica since it's also likely to lose data
                             Predicate<Replica> replicaFilter = toFetch.isFull() ? Replica::isFull : Predicates.alwaysTrue();
                             endpoints = snitchGetSortedListByProximity.apply(localAddress, rangeAddresses.get(range))
                                                                       .filter(replicaFilter, notSelf);
@@ -4490,7 +4490,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         throw new AssertionError("Unexpected current tokens: " + currentTokens);
                     }
-                    Token currentToken = currentTokens.iterator().next();
+
                     // collection of ranges which this node will serve after move to the new token
                     ReplicaSet updatedReplicas = strategy.getPendingAddressRanges(tokenMetaClone, newToken, localAddress);
 

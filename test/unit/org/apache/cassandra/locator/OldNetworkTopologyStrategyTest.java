@@ -639,7 +639,7 @@ public class OldNetworkTopologyStrategyTest
         expectedResult.put(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(cAddress, new Range(threeToken, sixToken), true));
         expectedResult.put(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(dAddress, new Range(threeToken, sixToken), false));
 
-        assertEquals(expectedResult, result);
+        assertMultimapEqualsIgnoreOrder(expectedResult, result);
     }
 
     @Test
@@ -672,7 +672,7 @@ public class OldNetworkTopologyStrategyTest
         //Need to pull the full replica and the transient replica that is losing the range
         expectedResult.put(new Replica(aAddress, new Range(nineToken, elevenToken), true), new Replica(eAddress, new Range(nineToken, elevenToken), true));
         expectedResult.put(new Replica(aAddress, new Range(sixToken, nineToken), false), new Replica(eAddress, new Range(sixToken, nineToken), false));
-        assertEquals(expectedResult, result);
+        assertMultimapEqualsIgnoreOrder(expectedResult, result);
     }
 
 
@@ -711,7 +711,7 @@ public class OldNetworkTopologyStrategyTest
         //Need to pull the full replica and the transient replica that is losing the range
         expectedResult.put(bAddress, new Replica(bAddress, new Range(nineToken, elevenToken), false));
         expectedResult.put(bAddress, new Replica(bAddress, new Range(elevenToken, oneToken), true));
-        assertEquals(expectedResult, result);
+        assertMultimapEqualsIgnoreOrder(expectedResult, result);
     }
 
     @Test
@@ -753,7 +753,7 @@ public class OldNetworkTopologyStrategyTest
         expectedResult.put(cAddress, new Replica(cAddress, new Range(oneToken, threeToken), true));
         expectedResult.put(cAddress, new Replica(cAddress, new Range(fourteenToken, oneToken), false));
 
-        assertEquals(expectedResult, result);
+        assertMultimapEqualsIgnoreOrder(expectedResult, result);
     }
 
     private BigIntegerToken[] initTokensAfterMove(BigIntegerToken[] tokens,
@@ -829,5 +829,23 @@ public class OldNetworkTopologyStrategyTest
         Set<Range<Token>> leftRanges = replicas.left.asRangeSet();
         Set<Range<Token>> rightRanges = replicas.right.asRangeSet();
         return Pair.create(leftRanges, rightRanges);
+    }
+
+    public static <K>  void assertMultimapEqualsIgnoreOrder(ReplicaMultimap<K, ReplicaList> a, ReplicaMultimap<K, ReplicaList> b)
+    {
+        assertEquals(a.keySet(), b.keySet());
+        for (K key : a.keySet())
+        {
+            ReplicaList aList = a.get(key);
+            ReplicaList bList = b.get(key);
+            if (a == null && b == null)
+                return;
+            assertEquals(aList.size(), bList.size());
+            for (Replica r : aList)
+            {
+                if (!bList.anyMatch(replica -> r.equals(replica)))
+                    assertEquals(a, b);
+            }
+        }
     }
 }
