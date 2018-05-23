@@ -42,6 +42,7 @@ import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaMultimap;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.Replicas;
+import org.apache.cassandra.locator.ReplicationFactor;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.PreviewKind;
@@ -322,83 +323,63 @@ public class RangeStreamer
     }
 
     /**
-     *
-     * For transient replication we may want to fetch from two places, one full replica and one transient replica
-     * so now it tries to find a source for both if possible.
-     *
      * @param rangesWithSources The ranges we want to fetch (key) and their potential sources (value)
      * @param sourceFilters A (possibly empty) collection of source filters to apply. In addition to any filters given
      *                      here, we always exclude ourselves.
      * @param keyspace keyspace name
      * @return Map of source endpoint to collection of ranges
      */
-    private static ReplicaMultimap<InetAddressAndPort, ReplicaSet> getRangeFetchMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSources,
+    @VisibleForTesting
+    public static ReplicaMultimap<InetAddressAndPort, ReplicaSet> getRangeFetchMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSources,
                                                                                Collection<ISourceFilter> sourceFilters, String keyspace,
                                                                                boolean useStrictConsistency)
     {
         ReplicaMultimap<InetAddressAndPort, ReplicaSet> rangeFetchMapMap = ReplicaMultimap.set();
-        for (Replica range : rangesWithSources.keySet())
+        for (Replica toFetchReplica : rangesWithSources.keySet())
         {
-            boolean foundFullSource = false;
-            boolean foundTransientSource = false;
+            boolean foundSource = false;
 
             outer:
-            for (Replica replica : rangesWithSources.get(range))
+            for (Replica sourceReplica : rangesWithSources.get(toFetchReplica))
             {
-                Replicas.checkFull(replica);
+                Replicas.checkFull(sourceReplica);
                 for (ISourceFilter filter : sourceFilters)
                 {
-                    if (!filter.shouldInclude(replica))
+                    if (!filter.shouldInclude(sourceReplica))
                         continue outer;
                 }
 
-                //For nodetool move this is not as relevant as it used to be as the
-                //code should never ask to fetch from the local node. Other uses might rely on this behavior though.
-                if (replica.isLocal())
+                if (sourceReplica.isLocal())
                 {
                     // If localhost is a source, we have found one, but we don't add it to the map to avoid streaming locally
-                    if (replica.isFull())
-                        foundFullSource = true;
-                    else
-                        foundTransientSource = true;
-                    //TODO Why do we continue if we have the data? I mean I know there is one reason
-                    //which is that we need to fetch data from a source that is losing the range since
-                    //it might have the only copy
-                    //But shouldn't that be conditional on strict consistency then?
+                    foundSource = true;
                     continue;
                 }
 
-                if (replica.isFull() && !foundFullSource)
-                {
-                    rangeFetchMapMap.put(replica.getEndpoint(), range);
-                }
-                else if (replica.isTransient() && !foundTransientSource)
-                {
-                    rangeFetchMapMap.put(replica.getEndpoint(), range);
-                    foundTransientSource = true;
-                }
+                rangeFetchMapMap.put(sourceReplica.getEndpoint(), toFetchReplica);
+                foundSource = true;
+                break; // ensure we only stream from one other node for each range
             }
 
-            if (!foundFullSource && !foundTransientSource)
+            if (!foundSource)
             {
                 AbstractReplicationStrategy strat = Keyspace.open(keyspace).getReplicationStrategy();
                 if (strat != null && strat.getReplicationFactor().replicas == 1)
                 {
                     if (useStrictConsistency)
-                        throw new IllegalStateException("Unable to find sufficient sources for streaming range " + range + " in keyspace " + keyspace + " with RF=1. " +
+                        throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetchReplica + " in keyspace " + keyspace + " with RF=1. " +
                                                         "Ensure this keyspace contains replicas in the source datacenter.");
                     else
                         logger.warn("Unable to find sufficient sources for streaming range {} in keyspace {} with RF=1. " +
-                                    "Keyspace might be missing data.", range, keyspace);
+                                    "Keyspace might be missing data.", toFetchReplica, keyspace);
                 }
                 else
-                    throw new IllegalStateException("Unable to find sufficient sources for streaming range " + range + " in keyspace " + keyspace);
+                    throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetchReplica + " in keyspace " + keyspace);
             }
         }
 
         return rangeFetchMapMap;
     }
-
 
     private static ReplicaMultimap<InetAddressAndPort, ReplicaSet> getOptimizedRangeFetchMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSources,
                                                                                         Collection<ISourceFilter> sourceFilters, String keyspace)

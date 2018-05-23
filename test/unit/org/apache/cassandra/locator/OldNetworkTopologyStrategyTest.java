@@ -41,6 +41,7 @@ import org.junit.Test;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.RangeStreamer;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.utils.Pair;
@@ -627,7 +628,8 @@ public class OldNetworkTopologyStrategyTest
                                                                    return null;
                                                                },
                                                                new ReplicationFactor(3, 1),
-                                                               Predicates.alwaysTrue());
+                                                               Predicates.alwaysTrue(),
+                                                               "OldNetworkTopologyStrategyTest");
         System.out.println(result);
         ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
 
@@ -645,6 +647,11 @@ public class OldNetworkTopologyStrategyTest
     @Test
     public void testMoveBackwardsBetweenCalculateRangesToFetchWithPreferredEndpoints() throws Exception
     {
+        runMoveBackwardsBetweenCalculateRangesToFetchWithPreferredEndpoints();
+    }
+
+    public ReplicaMultimap<Replica, ReplicaList> runMoveBackwardsBetweenCalculateRangesToFetchWithPreferredEndpoints() throws Exception
+    {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
         ReplicaSet toFetch = calculateStreamAndFetchRangesMoveBackwardsBetween().right;
         StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
@@ -653,19 +660,20 @@ public class OldNetworkTopologyStrategyTest
         ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveBackwardsBetween().right;
 
         ReplicaMultimap<Replica, ReplicaList>  result = relocator.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
-                                                                                                         rangeAddresses,
-                                                                                                         toFetch,
-                                                                                                         true,
-                                                                                                         token -> {
-                                                                                                             for (Range<Token> range : rangeAddressesSettled.keySet())
-                                                                                                             {
-                                                                                                                 if (range.contains(token))
-                                                                                                                     return new ReplicaList(rangeAddressesSettled.get(range));
-                                                                                                             }
-                                                                                                             return null;
-                                                                                                         },
-                                                                                                         new ReplicationFactor(3, 1),
-                                                                                                         Predicates.alwaysTrue());
+                                                                                                               rangeAddresses,
+                                                                                                               toFetch,
+                                                                                                               true,
+                                                                                                               token -> {
+                                                                                                                   for (Range<Token> range : rangeAddressesSettled.keySet())
+                                                                                                                   {
+                                                                                                                       if (range.contains(token))
+                                                                                                                           return new ReplicaList(rangeAddressesSettled.get(range));
+                                                                                                                   }
+                                                                                                                   return null;
+                                                                                                               },
+                                                                                                               new ReplicationFactor(3, 1),
+                                                                                                               Predicates.alwaysTrue(),
+                                                                                                               "OldNetworkTopologyStrategyTest");
         System.out.println(result);
         ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
 
@@ -673,8 +681,8 @@ public class OldNetworkTopologyStrategyTest
         expectedResult.put(new Replica(aAddress, new Range(nineToken, elevenToken), true), new Replica(eAddress, new Range(nineToken, elevenToken), true));
         expectedResult.put(new Replica(aAddress, new Range(sixToken, nineToken), false), new Replica(eAddress, new Range(sixToken, nineToken), false));
         assertMultimapEqualsIgnoreOrder(expectedResult, result);
+        return result;
     }
-
 
     @Test
     public void testMoveForwardsBetweenCalculateRangesToStreamWithPreferredEndpoints() throws Exception
@@ -754,6 +762,15 @@ public class OldNetworkTopologyStrategyTest
         expectedResult.put(cAddress, new Replica(cAddress, new Range(fourteenToken, oneToken), false));
 
         assertMultimapEqualsIgnoreOrder(expectedResult, result);
+    }
+
+    @Test
+    public void testGetWorkMap() throws Exception
+    {
+//        DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
+//        ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = runMoveBackwardsBetweenCalculateRangesToFetchWithPreferredEndpoints();
+//        ReplicaMultimap<InetAddressAndPort, ReplicaSet> shitToFetch = RangeStreamer.getRangeFetchMap(rangesToFetchWithPreferredEndpoints, Collections.emptyList(), "OldNetworkTopologyStrategyTest", true);
+//        System.out.println(shitToFetch);
     }
 
     private BigIntegerToken[] initTokensAfterMove(BigIntegerToken[] tokens,

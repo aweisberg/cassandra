@@ -4250,7 +4250,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
          * @param fetchRanges
          * @return
          */
-        private ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges)
+        private ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges, String keyspace)
         {
             // ring ranges and endpoints associated with them
             // this used to determine what nodes should we ping about range data
@@ -4261,7 +4261,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                                                  useStrictConsistency,
                                                                  token -> strategy.calculateNaturalReplicas(token, tokenMetaCloneAllSettled),
                                                                  strategy.getReplicationFactor(),
-                                                                 replica -> Gossiper.instance.isEnabled() && Gossiper.instance.getEndpointStateForEndpoint(replica.getEndpoint()).isAlive());
+                                                                 replica -> Gossiper.instance.isEnabled() && Gossiper.instance.getEndpointStateForEndpoint(replica.getEndpoint()).isAlive() && FailureDetector.instance.isAlive(replica.getEndpoint()),
+                                                                 keyspace);
         }
 
         /**
@@ -4283,7 +4284,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                                                                             boolean useStrictConsistency,
                                                                                             Function<Token, ReplicaList> calculateNaturalReplicas,
                                                                                             ReplicationFactor replicationFactor,
-                                                                                            Predicate<Replica> isAlive)
+                                                                                            Predicate<Replica> isAlive,
+                                                                                            String keyspace)
         {
 
             System.out.printf("To fetch RN: %s%n", fetchRanges);
@@ -4293,6 +4295,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = ReplicaMultimap.list();
             for (Replica toFetch : fetchRanges)
             {
+                //Replica is sufficient for what data we need to fetch
+                Predicate<Replica> replicaIsSufficientFilter = toFetch.isFull() ? Replica::isFull : Predicates.alwaysTrue();
                 System.out.printf("To fetch %s%n", toFetch);
                 for (Range<Token> range : rangeAddresses.keySet())
                 {
@@ -4327,21 +4331,25 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                 {
                                     if (toFetch.isTransient())
                                         throw new AssertionError("If there are no endpoints to fetch from then we must be transitioning from transient to full for range " + toFetch);
-                                    oldEndpoints = rangeAddresses.get(range).filter(Replica::isFull, notSelf).limit(1);
-                                    if (oldEndpoints.size() < 1)
+                                    oldEndpoints = rangeAddresses.get(range).filter(Replica::isFull, notSelf, isAlive).limit(1);
+                                    if (oldEndpoints.isEmpty())
                                         throw new IllegalStateException("Couldn't find an alive full replica to stream from");
                                 }
 
                                 //Need an additional full replica
                                 if (toFetch.isFull() && oldEndpoints.noneMatch(Replica::isFull))
                                 {
-                                    Optional<Replica> fullReplica = rangeAddresses.get(range).findFirst(Predicates.and(Replica::isFull, isAlive));
+                                    Optional<Replica> fullReplica = rangeAddresses.get(range).findFirst(Predicates.and(Replica::isFull, notSelf, isAlive));
                                     if (!fullReplica.isPresent())
                                     {
                                         throw new IllegalStateException("Couldn't find an alive full replica");
                                     }
                                     oldEndpoints.add(fullReplica.get());
                                 }
+                            }
+                            else
+                            {
+                                oldEndpoints = oldEndpoints.filter(notSelf, isAlive, replicaIsSufficientFilter);
                             }
 
                             endpoints = oldEndpoints;
@@ -4350,9 +4358,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         {
                             //Without strict consistency we have given up on correctness so no point in fetching from
                             //a random full + transient replica since it's also likely to lose data
-                            Predicate<Replica> replicaFilter = toFetch.isFull() ? Replica::isFull : Predicates.alwaysTrue();
                             endpoints = snitchGetSortedListByProximity.apply(localAddress, rangeAddresses.get(range))
-                                                                      .filter(replicaFilter, notSelf);
+                                                                      .filter(replicaIsSufficientFilter, notSelf, isAlive);
                         }
 
                         // storing range and preferred endpoint set
@@ -4364,22 +4371,34 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 if (addressList == null)
                     throw new IllegalStateException("Failed to find endpoints to fetch " + toFetch);
 
-                if (useStrictConsistency)
-                {
-                    /**
-                     * When we move forwards (shrink our bucket) we are the one losing a range an no one else loses
-                     * from that action (we also don't gain). When we move backwards there are two people losing a range. One is a full replica
-                     * and the other is a transient replica. So we must need fetch from two places in that case for the full range we gain.
-                     * For a transient range we only need to fetch from one.
-                     */
-                    if (addressList.count(Replica::isFull) > 1 || addressList.count(Replica::isTransient) > 1)
-                        throw new IllegalStateException(String.format("Multiple strict sources found for %s, sources: %s", toFetch, addressList));
+                /**
+                 * When we move forwards (shrink our bucket) we are the one losing a range an no one else loses
+                 * from that action (we also don't gain). When we move backwards there are two people losing a range. One is a full replica
+                 * and the other is a transient replica. So we must need fetch from two places in that case for the full range we gain.
+                 * For a transient range we only need to fetch from one.
+                 */
+                if (useStrictConsistency && (addressList.count(Replica::isFull) > 1 || addressList.count(Replica::isTransient) > 1))
+                    throw new IllegalStateException(String.format("Multiple strict sources found for %s, sources: %s", toFetch, addressList));
 
-                    addressList.findFirst(Predicates.not(isAlive)).ifPresent(downReplica ->
-                    {
-                        throw new RuntimeException("A node required to move the data consistently is down (" + downReplica.getEndpoint() + ").  If you wish to move the data from a potentially inconsistent replica, restart the node with -Dcassandra.consistent.rangemovement=false");
-                    });
-                }
+                //We must have enough stuff to fetch from
+               if ((toFetch.isFull() && !addressList.findFirst(Replica::isFull).isPresent()) ||
+                    addressList.isEmpty())
+               {
+                   if (replicationFactor.replicas == 1)
+                   {
+                       if (useStrictConsistency)
+                           throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace + " with RF=1. " +
+                                                           "Ensure this keyspace contains replicas in the source datacenter.");
+                       else
+                           logger.warn("Unable to find sufficient sources for streaming range {} in keyspace {} with RF=1. " +
+                                       "Keyspace might be missing data.", toFetch, keyspace);
+
+                   }
+                   else
+                   {
+                       throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace);
+                   }
+               }
             }
             return rangesToFetchWithPreferredEndpoints;
         }
@@ -4497,7 +4516,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     // calculated parts of the ranges to request/stream from/to nodes in the ring
                     Pair<ReplicaSet, ReplicaSet> rangesPerKeyspace = calculateStreamAndFetchRanges(currentReplicas, updatedReplicas);
 
-                    ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right);
+                    ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right, keyspace);
+                    //Invert this into a work map for now. At this point it's kind of safe to unwrap the source Replica.
+                    //We definitely need the fetch replica to know what range and transientness to fetch.
+                    ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = ReplicaMultimap.set();
+                    for (Replica toFetch : rangesToFetchWithPreferredEndpoints.keySet())
+                    {
+                        for (Replica source : rangesToFetchWithPreferredEndpoints.get(toFetch))
+                        {
+                            workMap.put(source.getEndpoint(), toFetch);
+                        }
+                    }
 
                     ReplicaMultimap<InetAddressAndPort, ReplicaList> endpointRanges = calculateRangesToStreamWithPreferredEndpoints(strategy, rangesPerKeyspace.left);
 
@@ -4506,16 +4535,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         logger.debug("Will stream range {} of keyspace {} to endpoint {}", endpointRanges.get(address), keyspace, address);
                         ReplicaList ranges = endpointRanges.get(address);
-                        Replicas.checkFull(ranges);
                         streamPlan.transferRanges(address, keyspace, ranges.asRangeSet());
                     }
 
                     // stream requests
-                    ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = RangeStreamer.getWorkMap(rangesToFetchWithPreferredEndpoints, keyspace, FailureDetector.instance, useStrictConsistency);
                     for (InetAddressAndPort address : workMap.keySet())
                     {
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
-                        Replicas.checkFull(workMap.get(address));
                         streamPlan.requestRanges(address, keyspace, workMap.get(address).asRangeSet());
                     }
 
