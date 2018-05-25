@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.locator;
 
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -26,10 +27,14 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
+
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 
 public class ReplicaList extends Replicas
 {
@@ -270,5 +275,39 @@ public class ReplicaList extends Replicas
     public static ReplicaList withMaxSize(int size)
     {
         return size < 10 ? new ReplicaList(size) : new ReplicaList();
+    }
+
+    /**
+     * Use of this method to synthesize Replicas is almost always wrong. In repair it turns out the concerns of transient
+     * vs non-transient are handled at a higher level, but eventually repair needs to ask streaming to actually move
+     * the data and at that point it doesn't have a great handle on what the teplicas are and it doesn't really matter.
+     *
+     * Streaming expects to be given Replicas with each replica indicating what type of data (transient or not transient)
+     * should be sent.
+     *
+     * So in this one instance we can lie to streaming and pretend all the replicas are full and use a dummy address
+     * and it doesn't matter because streaming doesn't rely on the address for anything other than debugging and full
+     * is a valid value for transientness because streaming is selecting candidate tables from the repair/unrepaired
+     * set already.
+     * @param ranges
+     * @return
+     */
+    public static ReplicaList toDummyList(Collection<Range<Token>> ranges)
+    {
+        InetAddressAndPort dummy;
+        try
+        {
+            dummy = InetAddressAndPort.getByNameOverrideDefaults("0.0.0.0", 0);
+        }
+        catch (UnknownHostException e)
+        {
+            throw new RuntimeException(e);
+        }
+        //For repair we are less concerned with full vs transient since repair is already dealing with those concerns.
+        //Always say full and then if the repair isincremental or not will determine what is streamed.
+        return new ReplicaList(ranges.stream()
+                               .map(range -> new Replica(dummy, range, true))
+                               .collect(Collectors.toList()));
+
     }
 }

@@ -73,7 +73,7 @@ public class StreamStateStore implements StreamEventHandler
                 }
                 for (StreamRequest request : se.requests)
                 {
-                    SystemKeyspace.updateAvailableRanges(request.keyspace, request.ranges);
+                    SystemKeyspace.updateAvailableRanges(request.keyspace, request.replicas.asRangeSet());
                 }
             }
         }

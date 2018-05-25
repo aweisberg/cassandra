@@ -40,6 +40,9 @@ import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.gms.*;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.metrics.StreamingMetrics;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.async.OutboundConnectionIdentifier;
@@ -48,6 +51,7 @@ import org.apache.cassandra.streaming.async.NettyStreamingMessageSender;
 import org.apache.cassandra.streaming.messages.*;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.JVMStabilityInspector;
+import org.apache.cassandra.utils.Pair;
 
 /**
  * Handles the streaming a one or more streams to and from a specific remote node.
@@ -299,8 +303,9 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      * @param ranges Ranges to retrieve data
      * @param columnFamilies ColumnFamily names. Can be empty if requesting all CF under the keyspace.
      */
-    public void addStreamRequest(String keyspace, Collection<Range<Token>> ranges, Collection<String> columnFamilies)
+    public void addStreamRequest(String keyspace, Replicas ranges, Collection<String> columnFamilies)
     {
+        assert ranges.allMatch(Replica::isLocal);
         requests.add(new StreamRequest(keyspace, ranges, columnFamilies));
     }
 
@@ -312,22 +317,32 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      * @param columnFamilies Transfer ColumnFamilies
      * @param flushTables flush tables?
      */
-    synchronized void addTransferRanges(String keyspace, Collection<Range<Token>> ranges, Collection<String> columnFamilies, boolean flushTables)
+    synchronized void addTransferRanges(String keyspace, Replicas replicas, Collection<String> columnFamilies, boolean flushTables)
     {
         failIfFinished();
         Collection<ColumnFamilyStore> stores = getColumnFamilyStores(keyspace, columnFamilies);
         if (flushTables)
             flushSSTables(stores);
 
-        List<Range<Token>> normalizedRanges = Range.normalize(ranges);
-        List<OutgoingStream> streams = getOutgoingStreamsForRanges(normalizedRanges, stores, pendingRepair, previewKind);
+        //Was it safe to remove this normalize, sorting seems not to matter, merging? Maybe we should have?
+        //Do we need to unwrap here also or is that just making it worse?
+        //Range and if it's transient
+        ReplicaList unwrappedRanges = new ReplicaList(replicas.size());
+        for (Replica replica : replicas)
+        {
+            for (Range<Token> unwrapped : replica.getRange().unwrap())
+            {
+                unwrappedRanges.add(new Replica(replica.getEndpoint(), unwrapped, replica.isFull()));
+            }
+        }
+        List<OutgoingStream> streams = getOutgoingStreamsForRanges(unwrappedRanges, stores, pendingRepair, previewKind);
         addTransferStreams(streams);
         Set<Range<Token>> toBeUpdated = transferredRangesPerKeyspace.get(keyspace);
         if (toBeUpdated == null)
         {
             toBeUpdated = new HashSet<>();
         }
-        toBeUpdated.addAll(ranges);
+        toBeUpdated.addAll(replicas.asRangeSet());
         transferredRangesPerKeyspace.put(keyspace, toBeUpdated);
     }
 
@@ -354,14 +369,14 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     }
 
     @VisibleForTesting
-    public List<OutgoingStream> getOutgoingStreamsForRanges(Collection<Range<Token>> ranges, Collection<ColumnFamilyStore> stores, UUID pendingRepair, PreviewKind previewKind)
+    public List<OutgoingStream> getOutgoingStreamsForRanges(ReplicaList replicas, Collection<ColumnFamilyStore> stores, UUID pendingRepair, PreviewKind previewKind)
     {
         List<OutgoingStream> streams = new ArrayList<>();
         try
         {
             for (ColumnFamilyStore cfs: stores)
             {
-                streams.addAll(cfs.getStreamManager().createOutgoingStreams(this, ranges, pendingRepair, previewKind));
+                streams.addAll(cfs.getStreamManager().createOutgoingStreams(this, replicas, pendingRepair, previewKind));
             }
         }
         catch (Throwable t)
@@ -560,7 +575,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     {
 
         for (StreamRequest request : requests)
-            addTransferRanges(request.keyspace, request.ranges, request.columnFamilies, true); // always flush on stream request
+            addTransferRanges(request.keyspace, request.replicas, request.columnFamilies, true); // always flush on stream request
         for (StreamSummary summary : summaries)
             prepareReceiving(summary);
 

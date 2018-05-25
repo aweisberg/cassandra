@@ -468,7 +468,7 @@ public class RangeStreamer
             if (logger.isTraceEnabled())
                 logger.trace("{}ing from {} ranges {}", description, source, StringUtils.join(ranges, ", "));
             /* Send messages to respective folks to stream data over to me */
-            streamPlan.requestRanges(source, keyspace, ranges);
+            streamPlan.requestRanges(source, keyspace, entry.getValue().getValue());
         }
 
         return streamPlan.execute();

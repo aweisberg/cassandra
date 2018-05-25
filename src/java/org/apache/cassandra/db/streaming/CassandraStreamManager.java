@@ -20,9 +20,12 @@ package org.apache.cassandra.db.streaming;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
@@ -39,6 +42,9 @@ import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.IncomingStream;
 import org.apache.cassandra.streaming.OutgoingStream;
@@ -97,14 +103,14 @@ public class CassandraStreamManager implements TableStreamManager
     }
 
     @Override
-    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, Collection<Range<Token>> ranges, UUID pendingRepair, PreviewKind previewKind)
+    public Collection<OutgoingStream> createOutgoingStreams(StreamSession session, ReplicaList replicas, UUID pendingRepair, PreviewKind previewKind)
     {
         Refs<SSTableReader> refs = new Refs<>();
         try
         {
-            final List<Range<PartitionPosition>> keyRanges = new ArrayList<>(ranges.size());
-            for (Range<Token> range : ranges)
-                keyRanges.add(Range.makeRowRange(range));
+            final List<Range<PartitionPosition>> keyRanges = new ArrayList<>(replicas.size());
+            for (Replica replica : replicas)
+                keyRanges.add(Range.makeRowRange(replica.getRange()));
             refs.addAll(cfs.selectAndReference(view -> {
                 Set<SSTableReader> sstables = Sets.newHashSet();
                 SSTableIntervalTree intervalTree = SSTableIntervalTree.build(view.select(SSTableSet.CANONICAL));
@@ -143,17 +149,39 @@ public class CassandraStreamManager implements TableStreamManager
 
 
             List<OutgoingStream> streams = new ArrayList<>(refs.size());
-            for (SSTableReader sstable: refs)
+            Set<Range<Token>> fullRanges = replicas.filter(Replica::isFull).asRangeSet();
+            Set<Range<Token>> transientRanges = replicas.filter(Replica::isTransient).asRangeSet();
+
+            //Track tables that were referenced but didn't end up getting used
+            Set<SSTableReader> unusedSSTables = new HashSet<>(refs);
+
+            //Create outgoing file streams for ranges possibly skipping repaired sstables
+            BiConsumer<Set<Range<Token>>, Boolean> streamBuilder = (ranges, skipRepaired) ->
             {
-                Ref<SSTableReader> ref = refs.get(sstable);
-                List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
-                if (sections.isEmpty())
+                for (SSTableReader sstable : refs)
                 {
-                    ref.release();
-                    continue;
+                    if (sstable.isRepaired() && skipRepaired)
+                    {
+                        continue;
+                    }
+
+                    Ref<SSTableReader> ref = refs.get(sstable);
+                    List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
+                    if (sections.isEmpty())
+                    {
+                        continue;
+                    }
+                    //We ended up using the table so remove it from the unused set
+                    unusedSSTables.remove(sstable);
+                    streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, sstable.estimatedKeysForRanges(ranges)));
                 }
-                streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, sstable.estimatedKeysForRanges(ranges)));
-            }
+            };
+
+            streamBuilder.accept(fullRanges, false);
+            streamBuilder.accept(transientRanges, true);
+
+            //Deref unused sstables
+            unusedSSTables.forEach(sstable -> refs.get(sstable).release());
 
             return streams;
         }

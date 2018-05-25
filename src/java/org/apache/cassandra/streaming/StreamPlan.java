@@ -22,6 +22,8 @@ import java.util.*;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
+import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.utils.UUIDGen;
 
 import static org.apache.cassandra.service.ActiveRepairService.NO_PENDING_REPAIR;
@@ -72,7 +74,7 @@ public class StreamPlan
      * @param ranges ranges to fetch
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, Collection<Range<Token>> ranges)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, Replicas ranges)
     {
         return requestRanges(from, keyspace, ranges, EMPTY_COLUMN_FAMILIES);
     }
@@ -86,8 +88,9 @@ public class StreamPlan
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
+    public StreamPlan requestRanges(InetAddressAndPort from, String keyspace, Replicas ranges, String... columnFamilies)
     {
+        assert ranges.allMatch(Replica::isLocal);
         StreamSession session = coordinator.getOrCreateNextSession(from);
         session.addStreamRequest(keyspace, ranges, Arrays.asList(columnFamilies));
         return this;
@@ -98,14 +101,14 @@ public class StreamPlan
      *
      * @param to endpoint address of receiver
      * @param keyspace name of keyspace
-     * @param ranges ranges to send
+     * @param replicas ranges to send
      * @param columnFamilies specific column families
      * @return this object for chaining
      */
-    public StreamPlan transferRanges(InetAddressAndPort to, String keyspace, Collection<Range<Token>> ranges, String... columnFamilies)
+    public StreamPlan transferRanges(InetAddressAndPort to, String keyspace, Replicas replicas, String... columnFamilies)
     {
         StreamSession session = coordinator.getOrCreateNextSession(to);
-        session.addTransferRanges(keyspace, ranges, Arrays.asList(columnFamilies), flushBeforeTransfer);
+        session.addTransferRanges(keyspace, replicas, Arrays.asList(columnFamilies), flushBeforeTransfer);
         return this;
     }
 

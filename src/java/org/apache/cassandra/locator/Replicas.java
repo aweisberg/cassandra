@@ -359,6 +359,18 @@ public abstract class Replicas implements Iterable<Replica>
         return false;
     }
 
+    public boolean allMatch(Predicate<Replica> predicate)
+    {
+        for (Replica replica : this)
+        {
+            if (!predicate.apply(replica))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static Replicas EMPTY = new ImmutableReplicaContainer()
     {
         public int size()
