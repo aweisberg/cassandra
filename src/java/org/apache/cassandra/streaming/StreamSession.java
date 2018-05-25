@@ -305,7 +305,8 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      */
     public void addStreamRequest(String keyspace, Replicas ranges, Collection<String> columnFamilies)
     {
-        assert ranges.allMatch(Replica::isLocal);
+        //It should either be a dummy address for repair or if it's a bootstrap/move/rebuild it should be this node
+        assert ranges.allMatch(Replica::isLocal) | ranges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0"));
         requests.add(new StreamRequest(keyspace, ranges, columnFamilies));
     }
 
