@@ -382,7 +382,7 @@ public class RangeStreamer
     }
 
     private static ReplicaMultimap<InetAddressAndPort, ReplicaSet> getOptimizedRangeFetchMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSources,
-                                                                                        Collection<ISourceFilter> sourceFilters, String keyspace)
+                                                                                             Collection<ISourceFilter> sourceFilters, String keyspace)
     {
         //The range fetch map calculator shouldn't really need to know anything about transient replication.
         //It just needs to know who the players are.
@@ -404,8 +404,19 @@ public class RangeStreamer
         ReplicaMultimap<InetAddressAndPort, ReplicaSet> wrapped = ReplicaMultimap.set();
         for (Map.Entry<InetAddressAndPort, Range<Token>> entry : rangeFetchMapMap.entries())
         {
-
-            wrapped.put(entry.getKey(), Replica.full(entry.getKey(), entry.getValue()));
+            Replica toFetch = null;
+            for (Replica r : rangesWithSources.keySet())
+            {
+                if (r.getRange().equals(entry.getValue()))
+                {
+                    if (toFetch != null)
+                        throw new AssertionError(String.format("There shouldn't be multiple replicas for range %s, replica %s and %s here", r.getRange(), r, toFetch));
+                    toFetch = r;
+                }
+            }
+            if (toFetch == null)
+                throw new AssertionError("Shouldn't be possible for the Replica we fetch to be null here");
+            wrapped.put(entry.getKey(), toFetch);
         }
 
         return wrapped;
