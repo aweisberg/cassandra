@@ -399,6 +399,11 @@ public abstract class Replicas implements Iterable<Replica>
         return of(replica);
     }
 
+    public ReplicaSet filterToSet(java.util.function.Predicate<Replica>... predicates)
+    {
+        return filter(predicates, ReplicaSet::new);
+    }
+
     public <T extends Replicas> T filter(java.util.function.Predicate<Replica> predicates[],
                                          Supplier<T> collectorSupplier)
     {

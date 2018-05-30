@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.collect.Lists;
 
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
@@ -41,6 +43,7 @@ import org.apache.cassandra.OrderedJUnit4ClassRunner;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.db.Keyspace;
@@ -61,6 +64,7 @@ public class BootStrapperTest
 {
     static IPartitioner oldPartitioner;
 
+    static Predicate<Replica> originalAlivePredicate = RangeStreamer.ALIVE_PREDICATE;
     @BeforeClass
     public static void setup() throws ConfigurationException
     {
@@ -69,12 +73,14 @@ public class BootStrapperTest
         SchemaLoader.startGossiper();
         SchemaLoader.prepareServer();
         SchemaLoader.schemaDefinition("BootStrapperTest");
+        RangeStreamer.ALIVE_PREDICATE = Predicates.alwaysTrue();
     }
 
     @AfterClass
     public static void tearDown()
     {
         DatabaseDescriptor.setPartitionerUnsafe(oldPartitioner);
+        RangeStreamer.ALIVE_PREDICATE = replica -> true;
     }
 
     @Test

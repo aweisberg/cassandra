@@ -610,12 +610,11 @@ public class OldNetworkTopologyStrategyTest
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
         ReplicaSet toFetch = calculateStreamAndFetchRangesMoveForwardsBetween().right;
-        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
 
         ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = constructRangeAddressesMoveForwardsBetween().left;
         ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveForwardsBetween().right;
 
-        ReplicaMultimap<Replica, ReplicaList>  result = relocator.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
+        ReplicaMultimap<Replica, ReplicaList>  result = RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
                                                                rangeAddresses,
                                                                toFetch,
                                                                true,
@@ -629,7 +628,8 @@ public class OldNetworkTopologyStrategyTest
                                                                },
                                                                new ReplicationFactor(3, 1),
                                                                Predicates.alwaysTrue(),
-                                                               "OldNetworkTopologyStrategyTest");
+                                                               "OldNetworkTopologyStrategyTest",
+                                                               Collections.emptyList());
         System.out.println(result);
         ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
 
@@ -654,12 +654,11 @@ public class OldNetworkTopologyStrategyTest
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
         ReplicaSet toFetch = calculateStreamAndFetchRangesMoveBackwardsBetween().right;
-        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
 
         ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = constructRangeAddressesMoveBackwardsBetween().left;
         ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveBackwardsBetween().right;
 
-        ReplicaMultimap<Replica, ReplicaList>  result = relocator.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
+        ReplicaMultimap<Replica, ReplicaList>  result = RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
                                                                                                                rangeAddresses,
                                                                                                                toFetch,
                                                                                                                true,
@@ -673,7 +672,8 @@ public class OldNetworkTopologyStrategyTest
                                                                                                                },
                                                                                                                new ReplicationFactor(3, 1),
                                                                                                                Predicates.alwaysTrue(),
-                                                                                                               "OldNetworkTopologyStrategyTest");
+                                                                                                               "OldNetworkTopologyStrategyTest",
+                                                                                                               Collections.emptyList());
         System.out.println(result);
         ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
 

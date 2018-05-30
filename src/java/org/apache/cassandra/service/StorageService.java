@@ -4281,157 +4281,22 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
          * @param fetchRanges
          * @return
          */
-        private ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges, String keyspace)
+        private ReplicaMultimap<InetAddressAndPort, ReplicaSet> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges, String keyspace)
         {
             // ring ranges and endpoints associated with them
             // this used to determine what nodes should we ping about range data
             ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = strategy.getRangeAddresses(tokenMetaClone);
-            return  calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> DatabaseDescriptor.getEndpointSnitch().getSortedListByProximity(address, replicas),
-                                                                 rangeAddresses,
-                                                                 fetchRanges,
-                                                                 useStrictConsistency,
-                                                                 token -> strategy.calculateNaturalReplicas(token, tokenMetaCloneAllSettled),
-                                                                 strategy.getReplicationFactor(),
-                                                                 replica -> Gossiper.instance.isEnabled() && Gossiper.instance.getEndpointStateForEndpoint(replica.getEndpoint()).isAlive() && FailureDetector.instance.isAlive(replica.getEndpoint()),
-                                                                 keyspace);
-        }
-
-        /**
-         * Actual implementation that doesn't access any global state so it can be tested
-         * @param snitchGetSortedListByProximity
-         * @param rangeAddresses
-         * @param fetchRanges
-         * @param useStrictConsistency
-         * @param calculateNaturalReplicas
-         * @param replicationFactor
-         * @param isAlive
-         *
-         * @return
-         */
-        @VisibleForTesting
-        public ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(BiFunction<InetAddressAndPort, ReplicaSet, ReplicaList> snitchGetSortedListByProximity,
-                                                                                            ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses,
-                                                                                            ReplicaSet fetchRanges,
-                                                                                            boolean useStrictConsistency,
-                                                                                            Function<Token, ReplicaList> calculateNaturalReplicas,
-                                                                                            ReplicationFactor replicationFactor,
-                                                                                            Predicate<Replica> isAlive,
-                                                                                            String keyspace)
-        {
-
-            System.out.printf("To fetch RN: %s%n", fetchRanges);
-            System.out.printf("Fetch ranges: %s%n", rangeAddresses);
-
-            //This list of replicas is just candidates. With strict consistency it's going to be a narrow list.
-            ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = ReplicaMultimap.list();
-            for (Replica toFetch : fetchRanges)
-            {
-                //Replica is sufficient for what data we need to fetch
-                Predicate<Replica> replicaIsSufficientFilter = toFetch.isFull() ? Replica::isFull : Predicates.alwaysTrue();
-                System.out.printf("To fetch %s%n", toFetch);
-                for (Range<Token> range : rangeAddresses.keySet())
-                {
-                    if (range.contains(toFetch.getRange()))
-                    {
-                        Replicas endpoints;
-                        Predicate<Replica> notSelf = replica -> !replica.getEndpoint().equals(localAddress);
-                        if (useStrictConsistency)
-                        {
-                            ReplicaSet oldEndpoints = new ReplicaSet(rangeAddresses.get(range));
-                            ReplicaSet newEndpoints = new ReplicaSet(calculateNaturalReplicas.apply(toFetch.getRange().right));
-                            System.out.printf("Old endpoints %s%n", oldEndpoints);
-                            System.out.printf("New endpoints %s%n", newEndpoints);
-
-                            //Due to CASSANDRA-5953 we can have a higher RF then we have endpoints.
-                            //So we need to be careful to only be strict when endpoints == RF
-                            if (oldEndpoints.size() == replicationFactor.replicas)
-                            {
-                                Predicate<Replica> endpointNotReplicatedAnymore = replica -> newEndpoints.noneMatch(newReplica -> newReplica.getEndpoint().equals(replica.getEndpoint()));
-                                //Remove new endpoints from old endpoints based on address
-                                oldEndpoints = oldEndpoints.filter(endpointNotReplicatedAnymore);
-
-                                if (oldEndpoints.size() > 1)
-                                    throw new AssertionError("Expected <= 1 endpoint but found " + oldEndpoints);
-
-                                //If we are transitioning from transient to full and and the set of replicas for the range is not changing
-                                //we might end up with no endpoints to fetch from by address. In that case we can pick any full replica safely
-                                //since we are already a transient replica.
-                                //The old behavior where we might be asked to fetch ranges we don't need shouldn't occur anymore.
-                                //So it's an error if we don't find what we need.
-                                if (oldEndpoints.isEmpty())
-                                {
-                                    if (toFetch.isTransient())
-                                        throw new AssertionError("If there are no endpoints to fetch from then we must be transitioning from transient to full for range " + toFetch);
-                                    oldEndpoints = rangeAddresses.get(range).filter(Replica::isFull, notSelf, isAlive).limit(1);
-                                    if (oldEndpoints.isEmpty())
-                                        throw new IllegalStateException("Couldn't find an alive full replica to stream from");
-                                }
-
-                                //Need an additional full replica
-                                if (toFetch.isFull() && oldEndpoints.noneMatch(Replica::isFull))
-                                {
-                                    Optional<Replica> fullReplica = rangeAddresses.get(range).findFirst(Predicates.and(Replica::isFull, notSelf, isAlive));
-                                    if (!fullReplica.isPresent())
-                                    {
-                                        throw new IllegalStateException("Couldn't find an alive full replica");
-                                    }
-                                    oldEndpoints.add(fullReplica.get());
-                                }
-                            }
-                            else
-                            {
-                                oldEndpoints = oldEndpoints.filter(notSelf, isAlive, replicaIsSufficientFilter);
-                            }
-
-                            endpoints = oldEndpoints;
-                        }
-                        else
-                        {
-                            //Without strict consistency we have given up on correctness so no point in fetching from
-                            //a random full + transient replica since it's also likely to lose data
-                            endpoints = snitchGetSortedListByProximity.apply(localAddress, rangeAddresses.get(range))
-                                                                      .filter(replicaIsSufficientFilter, notSelf, isAlive);
-                        }
-
-                        // storing range and preferred endpoint set
-                        rangesToFetchWithPreferredEndpoints.putAll(toFetch, endpoints);
-                    }
-                }
-
-                ReplicaList addressList = rangesToFetchWithPreferredEndpoints.get(toFetch);
-                if (addressList == null)
-                    throw new IllegalStateException("Failed to find endpoints to fetch " + toFetch);
-
-                /**
-                 * When we move forwards (shrink our bucket) we are the one losing a range an no one else loses
-                 * from that action (we also don't gain). When we move backwards there are two people losing a range. One is a full replica
-                 * and the other is a transient replica. So we must need fetch from two places in that case for the full range we gain.
-                 * For a transient range we only need to fetch from one.
-                 */
-                if (useStrictConsistency && (addressList.count(Replica::isFull) > 1 || addressList.count(Replica::isTransient) > 1))
-                    throw new IllegalStateException(String.format("Multiple strict sources found for %s, sources: %s", toFetch, addressList));
-
-                //We must have enough stuff to fetch from
-               if ((toFetch.isFull() && !addressList.findFirst(Replica::isFull).isPresent()) ||
-                    addressList.isEmpty())
-               {
-                   if (replicationFactor.replicas == 1)
-                   {
-                       if (useStrictConsistency)
-                           throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace + " with RF=1. " +
-                                                           "Ensure this keyspace contains replicas in the source datacenter.");
-                       else
-                           logger.warn("Unable to find sufficient sources for streaming range {} in keyspace {} with RF=1. " +
-                                       "Keyspace might be missing data.", toFetch, keyspace);
-
-                   }
-                   else
-                   {
-                       throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace);
-                   }
-               }
-            }
-            return rangesToFetchWithPreferredEndpoints;
+            ReplicaMultimap<Replica, ReplicaList> preferredEndpoints =
+            RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> DatabaseDescriptor.getEndpointSnitch().getSortedListByProximity(address, replicas),
+                                                                       rangeAddresses,
+                                                                       fetchRanges,
+                                                                       useStrictConsistency,
+                                                                       token -> strategy.calculateNaturalReplicas(token, tokenMetaCloneAllSettled),
+                                                                       strategy.getReplicationFactor(),
+                                                                       RangeStreamer.ALIVE_PREDICATE,
+                                                                       keyspace,
+                                                                       Collections.emptyList());
+            return RangeStreamer.convertPreferredEndpointsToWorkMap(preferredEndpoints);
         }
 
         private ReplicaMultimap<InetAddressAndPort, ReplicaList> calculateRangesToStreamWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet streamRanges)
@@ -4547,17 +4412,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     // calculated parts of the ranges to request/stream from/to nodes in the ring
                     Pair<ReplicaSet, ReplicaSet> rangesPerKeyspace = calculateStreamAndFetchRanges(currentReplicas, updatedReplicas);
 
-                    ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right, keyspace);
-                    //Invert this into a work map for now. At this point it's kind of safe to unwrap the source Replica.
-                    //We definitely need the fetch replica to know what range and transientness to fetch.
-                    ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = ReplicaMultimap.set();
-                    for (Replica toFetch : rangesToFetchWithPreferredEndpoints.keySet())
-                    {
-                        for (Replica source : rangesToFetchWithPreferredEndpoints.get(toFetch))
-                        {
-                            workMap.put(source.getEndpoint(), toFetch);
-                        }
-                    }
+                    ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right, keyspace);
 
                     ReplicaMultimap<InetAddressAndPort, ReplicaList> endpointRanges = calculateRangesToStreamWithPreferredEndpoints(strategy, rangesPerKeyspace.left);
 
@@ -5379,7 +5234,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             {
                  System.out.printf("Comparing %s and %s%n", r1, r2);
                 //If we will end up transiently replicating send the entire thing and don't subtract
-                if (r1.intersectsOnRange(r2) && !(r1.isFull() && r2.isTransient()))
+                if (r1.intersectsOnRange(r2)
+                    && !(r1.isFull() && r2.isTransient())
+                    && (!r2.getRange().isWrapAround() && !r1.getRange().isWrapAround()))
                 {
                     ReplicaSet oldRemainder = remainder;
                     remainder = new ReplicaSet();
@@ -5432,16 +5289,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 //            }
 //        }
 
-        System.out.println("Calculating toFetch");
+        logger.info("Calculating toFetch");
         for (Replica r2 : updated)
         {
             boolean intersect = false;
             ReplicaSet remainder = null;
             for (Replica r1 : current)
             {
-                System.out.printf("Comparing %s and %s%n", r2, r1);
+                logger.info("Comparing {} and {}", r2, r1);
                 //Transitioning from transient to full means fetch everything so intersection doesn't matter.
-                if (r2.intersectsOnRange(r1) && !(r1.isTransient() && r2.isFull()))
+                if (r2.intersectsOnRange(r1)
+                    && !(r1.isTransient() && r2.isFull())
+                    && (!r2.getRange().isWrapAround() && !r1.getRange().isWrapAround()))
                 {
                     //For fetching we can afford to be strict, and whittle away
                     ReplicaSet oldRemainder = remainder;
@@ -5457,17 +5316,18 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         remainder.addAll(r2.subtractIgnoreTransientStatus(r1));
                     }
-                    System.out.printf("    Intersects adding %s%n", remainder);
+                    logger.info("    Intersects adding {}", remainder);
                     intersect = true;
                 }
             }
             if (!intersect)
             {
-                System.out.printf("    Doesn't intersect adding %s%n", r2);
+                logger.info("    Doesn't intersect adding {}", r2);
                 toFetch.add(r2); // should fetch whole old range
             }
             else
             {
+                logger.info("    Adding remainder {}", remainder);
                 toFetch.addAll(remainder);
             }
         }

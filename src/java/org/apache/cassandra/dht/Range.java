@@ -419,6 +419,12 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         return isWrapAround(left, right);
     }
 
+    public static void main(String args[])
+    {
+        Range<Token> first = new Range<Token>(new Murmur3Partitioner.LongToken(33554432L), new Murmur3Partitioner.LongToken(33554433L));
+        Range<Token> second = new Range<Token>(new Murmur3Partitioner.LongToken(1L), new Murmur3Partitioner.LongToken(1L));
+        System.out.println(first.subtract(second));
+    }
     /**
      * @return A copy of the given list of with all ranges unwrapped, sorted by left bound and with overlapping bounds merged.
      */

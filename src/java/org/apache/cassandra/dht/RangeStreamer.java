@@ -18,12 +18,17 @@
 package org.apache.cassandra.dht;
 
 import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 
+import org.apache.cassandra.gms.FailureDetector;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.LocalStrategy;
 
@@ -32,7 +37,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.gms.EndpointState;
 import org.apache.cassandra.gms.Gossiper;
 import org.apache.cassandra.gms.IFailureDetector;
 import org.apache.cassandra.locator.AbstractReplicationStrategy;
@@ -57,6 +61,12 @@ import org.apache.cassandra.utils.FBUtilities;
 public class RangeStreamer
 {
     private static final Logger logger = LoggerFactory.getLogger(RangeStreamer.class);
+
+    public static Predicate<Replica> ALIVE_PREDICATE = replica ->
+                                                             (!Gossiper.instance.isEnabled() ||
+                                                              (Gossiper.instance.getEndpointStateForEndpoint(replica.getEndpoint()) == null ||
+                                                               Gossiper.instance.getEndpointStateForEndpoint(replica.getEndpoint()).isAlive())) &&
+                                                             FailureDetector.instance.isAlive(replica.getEndpoint());
 
     /* bootstrap tokens. can be null if replacing the node. */
     private final Collection<Token> tokens;
@@ -193,17 +203,23 @@ public class RangeStreamer
         Replicas.checkFull(replicas);
 
         boolean useStrictSource = useStrictSourcesForRanges(keyspaceName);
-        ReplicaMultimap<Replica, ReplicaList> rangesForKeyspace = useStrictSource
-                                                                       ? getAllRangesWithStrictSourcesFor(keyspaceName, replicas)
-                                                                       : getAllRangesWithSourcesFor(keyspaceName, replicas);
+        ReplicaMultimap<Replica, ReplicaList> rangesForKeyspace = calculateRangesToFetchWithPreferredEndpoints(replicas, keyspaceName, useStrictSource);
+        logger.info("Ranges for keyspace {}", rangesForKeyspace);
 
         for (Map.Entry<Replica, Replica> entry : rangesForKeyspace.entries())
             logger.info("{}: range {} exists on {} for keyspace {}", description, entry.getKey(), entry.getValue(), keyspaceName);
 
         AbstractReplicationStrategy strat = Keyspace.open(keyspaceName).getReplicationStrategy();
-        ReplicaMultimap<InetAddressAndPort, ReplicaSet> rangeFetchMap = useStrictSource || strat == null || strat.getReplicationFactor().replicas == 1
-                                                            ? getRangeFetchMap(rangesForKeyspace, sourceFilters, keyspaceName, useStrictConsistency)
-                                                            : getOptimizedRangeFetchMap(rangesForKeyspace, sourceFilters, keyspaceName);
+
+        ReplicaMultimap<InetAddressAndPort, ReplicaSet> rangeFetchMap;
+        if (useStrictSource || strat == null || strat.getReplicationFactor().replicas == 1 || strat.getReplicationFactor().trans < 1)
+        {
+            rangeFetchMap = convertPreferredEndpointsToWorkMap(rangesForKeyspace);
+        }
+        else
+        {
+            rangeFetchMap = getOptimizedRangeFetchMap(rangesForKeyspace, sourceFilters, keyspaceName);
+        }
 
         for (Map.Entry<InetAddressAndPort, ReplicaSet> entry : rangeFetchMap.asMap().entrySet())
         {
@@ -228,157 +244,208 @@ public class RangeStreamer
                 && metadata.getSizeOfAllEndpoints() != strat.getReplicationFactor().replicas;
     }
 
-    /**
-     * Get a map of all ranges and their respective sources that are candidates for streaming the given ranges
-     * to us. For each range, the list of sources is sorted by proximity relative to the given destAddress.
-     *
-     * @throws java.lang.IllegalStateException when there is no source to get data streamed
-     */
-    private ReplicaMultimap<Replica, ReplicaList> getAllRangesWithSourcesFor(String keyspaceName, Iterable<Replica> desiredRanges)
+//    private ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges, String keyspace)
+//    {
+//        // ring ranges and endpoints associated with them
+//        // this used to determine what nodes should we ping about range data
+//        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = strategy.getRangeAddresses(tokenMetaClone);
+//        return  calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> DatabaseDescriptor.getEndpointSnitch().getSortedListByProximity(address, replicas),
+//                                                             rangeAddresses,
+//                                                             fetchRanges,
+//                                                             useStrictConsistency,
+//                                                             token -> strategy.calculateNaturalReplicas(token, tokenMetaCloneAllSettled),
+//                                                             strategy.getReplicationFactor(),
+//                                                             replica -> Gossiper.instance.isEnabled() && Gossiper.instance.getEndpointStateForEndpoint(replica.getEndpoint()).isAlive() && FailureDetector.instance.isAlive(replica.getEndpoint()),
+//                                                             keyspace);
+//    }
+
+    private ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(Replicas fetchRanges, String keyspace, boolean useStrictConsistency)
     {
-        AbstractReplicationStrategy strat = Keyspace.open(keyspaceName).getReplicationStrategy();
-        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = strat.getRangeAddresses(metadata.cloneOnlyTokenMap());
-        Replicas.checkFull(rangeAddresses.values());
-
-        ReplicaMultimap<Replica, ReplicaList> rangeSources = ReplicaMultimap.list();
-        for (Replica desiredRange : desiredRanges)
-        {
-            for (Range<Token> range : rangeAddresses.keySet())
-            {
-                if (range.contains(desiredRange.getRange()))
-                {
-                    ReplicaList preferred = snitch.getSortedListByProximity(address, rangeAddresses.get(range));
-                    rangeSources.putAll(desiredRange, preferred);
-                    break;
-                }
-            }
-
-            if (!rangeSources.keySet().contains(desiredRange))
-                throw new IllegalStateException("No sources found for " + desiredRange);
-        }
-
-        return rangeSources;
-    }
-
-    /**
-     * Get a map of all ranges and the source that will be cleaned up once this bootstrapped node is added for the given ranges.
-     * For each range, the list should only contain a single source. This allows us to consistently migrate data without violating
-     * consistency.
-     *
-     * @throws java.lang.IllegalStateException when there is no source to get data streamed, or more than 1 source found.
-     */
-    private ReplicaMultimap<Replica, ReplicaList> getAllRangesWithStrictSourcesFor(String keyspace, Iterable<Replica> desiredRanges)
-    {
-        assert tokens != null;
         AbstractReplicationStrategy strat = Keyspace.open(keyspace).getReplicationStrategy();
 
         // Active ranges
         TokenMetadata metadataClone = metadata.cloneOnlyTokenMap();
         ReplicaMultimap<Range<Token>, ReplicaSet> addressRanges = strat.getRangeAddresses(metadataClone);
 
-        // Pending ranges
-        metadataClone.updateNormalTokens(tokens, address);
-        ReplicaMultimap<Range<Token>, ReplicaSet> pendingRangeAddresses = strat.getRangeAddresses(metadataClone);
+        Function<Token, ReplicaList> calculateNaturalReplicas = token -> {
+            throw new AssertionError("Can't calculate natural replicas if updated tokens weren't supplied");
+        };
 
-        // Collects the source that will have its range moved to the new node
-        ReplicaMultimap<Replica, ReplicaList> rangeSources = ReplicaMultimap.list();
-
-        for (Replica desiredRange : desiredRanges)
+        if (tokens != null)
         {
-            for (Map.Entry<Range<Token>, ReplicaSet> preEntry : addressRanges.asMap().entrySet())
-            {
-                if (preEntry.getKey().contains(desiredRange.getRange()))
-                {
-                    ReplicaSet oldEndpoints = new ReplicaSet(preEntry.getValue());
-                    ReplicaSet newEndpoints = new ReplicaSet(pendingRangeAddresses.get(desiredRange.getRange()));
-
-                    // Due to CASSANDRA-5953 we can have a higher RF then we have endpoints.
-                    // So we need to be careful to only be strict when endpoints == RF
-                    if (oldEndpoints.size() == strat.getReplicationFactor().replicas)
-                    {
-                        oldEndpoints.removeEndpoints(newEndpoints);
-                        assert oldEndpoints.size() == 1 : "Expected 1 endpoint but found " + oldEndpoints.size();
-                    }
-
-                    rangeSources.put(desiredRange, oldEndpoints.iterator().next());
-                }
-            }
-
-            // Validate
-            ReplicaList replicaList = rangeSources.get(desiredRange);
-            if (replicaList == null || replicaList.isEmpty())
-                throw new IllegalStateException("No sources found for " + desiredRange);
-
-            if (replicaList.size() > 1)
-                throw new IllegalStateException("Multiple endpoints found for " + desiredRange);
-
-            Replica sourceReplica = replicaList.iterator().next();
-            EndpointState sourceState = Gossiper.instance.getEndpointStateForEndpoint(sourceReplica.getEndpoint());
-            if (Gossiper.instance.isEnabled() && (sourceState == null || !sourceState.isAlive()))
-                throw new RuntimeException("A node required to move the data consistently is down (" + sourceReplica + "). " +
-                                           "If you wish to move the data from a potentially inconsistent replica, restart the node with -Dcassandra.consistent.rangemovement=false");
+            // Pending ranges
+            metadataClone.updateNormalTokens(tokens, address);
+            calculateNaturalReplicas = token -> strat.calculateNaturalReplicas(token, metadataClone);
+        }
+        else if (useStrictConsistency)
+        {
+            throw new IllegalArgumentException("Can't ask for strict consistency and not supply tokens");
         }
 
-        return rangeSources;
+        return  RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> snitch.getSortedListByProximity(address, replicas),
+                                                                           addressRanges,
+                                                                           fetchRanges,
+                                                                           useStrictConsistency,
+                                                                           calculateNaturalReplicas,
+                                                                           strat.getReplicationFactor(),
+                                                                           ALIVE_PREDICATE,
+                                                                           keyspace,
+                                                                           sourceFilters);
+
     }
 
     /**
-     * @param rangesWithSources The ranges we want to fetch (key) and their potential sources (value)
-     * @param sourceFilters A (possibly empty) collection of source filters to apply. In addition to any filters given
-     *                      here, we always exclude ourselves.
-     * @param keyspace keyspace name
-     * @return Map of source endpoint to collection of ranges
-     */
-    @VisibleForTesting
-    public static ReplicaMultimap<InetAddressAndPort, ReplicaSet> getRangeFetchMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSources,
-                                                                               Collection<ISourceFilter> sourceFilters, String keyspace,
-                                                                               boolean useStrictConsistency)
+     * Get a map of all ranges and the source that will be cleaned up once this bootstrapped node is added for the given ranges.
+     * For each range, the list should only contain a single source. This allows us to consistently migrate data without violating
+     * consistency.
+     **/
+     public static ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(BiFunction<InetAddressAndPort, ReplicaSet, ReplicaList> snitchGetSortedListByProximity,
+                                                                                              ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses,
+                                                                                              Replicas fetchRanges,
+                                                                                              boolean useStrictConsistency,
+                                                                                              Function<Token, ReplicaList> calculateNaturalReplicas,
+                                                                                              ReplicationFactor replicationFactor,
+                                                                                              Predicate<Replica> isAlive,
+                                                                                              String keyspace,
+                                                                                              Collection<ISourceFilter> sourceFilters)
     {
-        ReplicaMultimap<InetAddressAndPort, ReplicaSet> rangeFetchMapMap = ReplicaMultimap.set();
-        for (Replica toFetchReplica : rangesWithSources.keySet())
+        InetAddressAndPort localAddress = FBUtilities.getLocalAddressAndPort();
+        System.out.printf("To fetch RN: %s%n", fetchRanges);
+        System.out.printf("Fetch ranges: %s%n", rangeAddresses);
+
+        //This list of replicas is just candidates. With strict consistency it's going to be a narrow list.
+        ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = ReplicaMultimap.list();
+        for (Replica toFetch : fetchRanges)
         {
-            boolean foundSource = false;
-
-            outer:
-            for (Replica sourceReplica : rangesWithSources.get(toFetchReplica))
+            //Replica is sufficient for what data we need to fetch
+            Predicate<Replica> replicaIsSufficientFilter = toFetch.isFull() ? Replica::isFull : Predicates.alwaysTrue();
+            System.out.printf("To fetch %s%n", toFetch);
+            for (Range<Token> range : rangeAddresses.keySet())
             {
-                Replicas.checkFull(sourceReplica);
-                for (ISourceFilter filter : sourceFilters)
+                if (range.contains(toFetch.getRange()))
                 {
-                    if (!filter.shouldInclude(sourceReplica))
-                        continue outer;
-                }
+                    Replicas endpoints;
+                    Predicate<Replica> notSelf = replica -> !replica.getEndpoint().equals(localAddress);
+                    if (useStrictConsistency)
+                    {
+                        ReplicaSet oldEndpoints = new ReplicaSet(rangeAddresses.get(range));
+                        ReplicaSet newEndpoints = new ReplicaSet(calculateNaturalReplicas.apply(toFetch.getRange().right));
+                        System.out.printf("Old endpoints %s%n", oldEndpoints);
+                        System.out.printf("New endpoints %s%n", newEndpoints);
 
-                if (sourceReplica.isLocal())
-                {
-                    // If localhost is a source, we have found one, but we don't add it to the map to avoid streaming locally
-                    foundSource = true;
-                    continue;
-                }
+                        //Due to CASSANDRA-5953 we can have a higher RF then we have endpoints.
+                        //So we need to be careful to only be strict when endpoints == RF
+                        if (oldEndpoints.size() == replicationFactor.replicas)
+                        {
+                            Predicate<Replica> endpointNotReplicatedAnymore = replica -> newEndpoints.noneMatch(newReplica -> newReplica.getEndpoint().equals(replica.getEndpoint()));
+                            //Remove new endpoints from old endpoints based on address
+                            oldEndpoints = oldEndpoints.filter(endpointNotReplicatedAnymore);
 
-                rangeFetchMapMap.put(sourceReplica.getEndpoint(), toFetchReplica);
-                foundSource = true;
-                break; // ensure we only stream from one other node for each range
+                            if (oldEndpoints.size() > 1)
+                                throw new AssertionError("Expected <= 1 endpoint but found " + oldEndpoints);
+
+                            //If we are transitioning from transient to full and and the set of replicas for the range is not changing
+                            //we might end up with no endpoints to fetch from by address. In that case we can pick any full replica safely
+                            //since we are already a transient replica.
+                            //The old behavior where we might be asked to fetch ranges we don't need shouldn't occur anymore.
+                            //So it's an error if we don't find what we need.
+                            if (oldEndpoints.isEmpty())
+                            {
+                                if (toFetch.isTransient())
+                                    throw new AssertionError("If there are no endpoints to fetch from then we must be transitioning from transient to full for range " + toFetch);
+                                oldEndpoints = rangeAddresses.get(range).filter(Replica::isFull, notSelf, isAlive).limit(1);
+                                if (oldEndpoints.isEmpty())
+                                    throw new IllegalStateException("Couldn't find an alive full replica to stream from");
+                            }
+
+                            //Need an additional full replica
+                            if (toFetch.isFull() && oldEndpoints.noneMatch(Replica::isFull))
+                            {
+                                Optional<Replica> fullReplica = rangeAddresses.get(range).findFirst(Predicates.and(Replica::isFull, notSelf, isAlive));
+                                if (!fullReplica.isPresent())
+                                {
+                                    throw new IllegalStateException("Couldn't find an alive full replica");
+                                }
+                                oldEndpoints.add(fullReplica.get());
+                            }
+                        }
+                        else
+                        {
+                            oldEndpoints = oldEndpoints.filter(notSelf, isAlive, replicaIsSufficientFilter);
+                        }
+
+                        endpoints = oldEndpoints;
+                    }
+                    else
+                    {
+                        //Without strict consistency we have given up on correctness so no point in fetching from
+                        //a random full + transient replica since it's also likely to lose data
+                        endpoints = snitchGetSortedListByProximity.apply(localAddress, rangeAddresses.get(range))
+                                                                  .filter(replicaIsSufficientFilter, notSelf, isAlive);
+                    }
+
+                    //Apply additional policy filters that were given to us
+                    endpoints = endpoints.filterToSet(replica -> {
+                        for (ISourceFilter filter : sourceFilters)
+                        {
+                            if (!filter.shouldInclude(replica))
+                                return false;
+                        }
+                        return true;
+                    });
+
+                    // storing range and preferred endpoint set
+                    rangesToFetchWithPreferredEndpoints.putAll(toFetch, endpoints);
+                }
             }
 
-            if (!foundSource)
+            ReplicaList addressList = rangesToFetchWithPreferredEndpoints.get(toFetch);
+            if (addressList == null)
+                throw new IllegalStateException("Failed to find endpoints to fetch " + toFetch);
+
+            /**
+             * When we move forwards (shrink our bucket) we are the one losing a range an no one else loses
+             * from that action (we also don't gain). When we move backwards there are two people losing a range. One is a full replica
+             * and the other is a transient replica. So we must need fetch from two places in that case for the full range we gain.
+             * For a transient range we only need to fetch from one.
+             */
+            if (useStrictConsistency && (addressList.count(Replica::isFull) > 1 || addressList.count(Replica::isTransient) > 1))
+                throw new IllegalStateException(String.format("Multiple strict sources found for %s, sources: %s", toFetch, addressList));
+
+            //We must have enough stuff to fetch from
+            if ((toFetch.isFull() && !addressList.findFirst(Replica::isFull).isPresent()) ||
+                addressList.isEmpty())
             {
-                AbstractReplicationStrategy strat = Keyspace.open(keyspace).getReplicationStrategy();
-                if (strat != null && strat.getReplicationFactor().replicas == 1)
+                if (replicationFactor.replicas == 1)
                 {
                     if (useStrictConsistency)
-                        throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetchReplica + " in keyspace " + keyspace + " with RF=1. " +
+                        throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace + " with RF=1. " +
                                                         "Ensure this keyspace contains replicas in the source datacenter.");
                     else
                         logger.warn("Unable to find sufficient sources for streaming range {} in keyspace {} with RF=1. " +
-                                    "Keyspace might be missing data.", toFetchReplica, keyspace);
+                                    "Keyspace might be missing data.", toFetch, keyspace);
+
                 }
                 else
-                    throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetchReplica + " in keyspace " + keyspace);
+                {
+                    throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace);
+                }
             }
         }
+        return rangesToFetchWithPreferredEndpoints;
+    }
 
-        return rangeFetchMapMap;
+    public static ReplicaMultimap<InetAddressAndPort, ReplicaSet> convertPreferredEndpointsToWorkMap(ReplicaMultimap<Replica, ReplicaList> preferredEndpoints)
+    {
+        ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = ReplicaMultimap.set();
+        for (Replica toFetch : preferredEndpoints.keySet())
+        {
+            for (Replica source : preferredEndpoints.get(toFetch))
+            {
+                workMap.put(source.getEndpoint(), toFetch);
+            }
+        }
+        return workMap;
     }
 
     private static ReplicaMultimap<InetAddressAndPort, ReplicaSet> getOptimizedRangeFetchMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSources,
@@ -446,12 +513,6 @@ public class RangeStreamer
 
             logger.info("Streaming range {} from endpoint {} for keyspace {}", entry.getValue(), entry.getKey(), keyspace);
         }
-    }
-
-    public static ReplicaMultimap<InetAddressAndPort, ReplicaSet> getWorkMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSourceTarget, String keyspace,
-                                                                        IFailureDetector fd, boolean useStrictConsistency)
-    {
-        return getRangeFetchMap(rangesWithSourceTarget, Collections.<ISourceFilter>singleton(new FailureDetectorSourceFilter(fd)), keyspace, useStrictConsistency);
     }
 
     // For testing purposes
