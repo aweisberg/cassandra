@@ -5230,11 +5230,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             boolean intersect = false;
             ReplicaSet remainder = null;
-            for (Replica nonnormalized : updated)
+            for (Replica wrapped : updated)
             {
-                logger.info("Comparing {} and {}", nonnormalized, r1);
-                for (Replica r2 : nonnormalized.normalize())
+                logger.info("Comparing {} and {}", wrapped, r1);
+                Iterator<Replica> unwrapped = wrapped.getRange().unwrap().stream().map(wrapped::decorateSubrange).iterator();
+                while (unwrapped.hasNext())
                 {
+                    Replica r2 = unwrapped.next();
                     //If we will end up transiently replicating send the entire thing and don't subtract
                     if (r1.intersectsOnRange(r2)
                         && !(r1.isFull() && r2.isTransient()))
@@ -5257,6 +5259,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     }
                 }
             }
+
             if (!intersect)
             {
                 System.out.printf("    Doesn't intersect adding %s%n", r1);
@@ -5296,16 +5299,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             boolean intersect = false;
             ReplicaSet remainder = null;
-            for (Replica nonnormalized : current)
+            for (Replica wrapped : current)
             {
-                logger.info("Comparing {} and {}", r2, nonnormalized);
-                for (Replica r1 : nonnormalized.normalize())
+                logger.info("Comparing {} and {}", r2, wrapped);
+                Iterator<Replica> unwrapped = wrapped.getRange().unwrap().stream().map(wrapped::decorateSubrange).iterator();
+                while (unwrapped.hasNext())
                 {
+                    Replica r1 = unwrapped.next();
                     //Transitioning from transient to full means fetch everything so intersection doesn't matter.
                     if (r2.intersectsOnRange(r1)
                         && !(r1.isTransient() && r2.isFull()))
                     {
-                        //For fetching we can afford to be strict, and whittle away
                         ReplicaSet oldRemainder = remainder;
                         remainder = new ReplicaSet();
                         if (oldRemainder != null)
@@ -5324,6 +5328,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     }
                 }
             }
+
             if (!intersect)
             {
                 logger.info("    Doesn't intersect adding {}", r2);
