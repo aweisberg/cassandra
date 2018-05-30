@@ -5230,29 +5230,31 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             boolean intersect = false;
             ReplicaSet remainder = null;
-            for (Replica r2 : updated)
+            for (Replica nonnormalized : updated)
             {
-                 System.out.printf("Comparing %s and %s%n", r1, r2);
-                //If we will end up transiently replicating send the entire thing and don't subtract
-                if (r1.intersectsOnRange(r2)
-                    && !(r1.isFull() && r2.isTransient())
-                    && (!r2.getRange().isWrapAround() && !r1.getRange().isWrapAround()))
+                logger.info("Comparing {} and {}", nonnormalized, r1);
+                for (Replica r2 : nonnormalized.normalize())
                 {
-                    ReplicaSet oldRemainder = remainder;
-                    remainder = new ReplicaSet();
-                    if (oldRemainder != null)
+                    //If we will end up transiently replicating send the entire thing and don't subtract
+                    if (r1.intersectsOnRange(r2)
+                        && !(r1.isFull() && r2.isTransient()))
                     {
-                        for (Replica replica : oldRemainder)
+                        ReplicaSet oldRemainder = remainder;
+                        remainder = new ReplicaSet();
+                        if (oldRemainder != null)
                         {
-                            remainder.addAll(replica.subtractIgnoreTransientStatus(r2));
+                            for (Replica replica : oldRemainder)
+                            {
+                                remainder.addAll(replica.subtractIgnoreTransientStatus(r2));
+                            }
                         }
+                        else
+                        {
+                            remainder.addAll(r1.subtractIgnoreTransientStatus(r2));
+                        }
+                        System.out.printf("    Intersects adding %s%n", remainder);
+                        intersect = true;
                     }
-                    else
-                    {
-                        remainder.addAll(r1.subtractIgnoreTransientStatus(r2));
-                    }
-                    System.out.printf("    Intersects adding %s%n", remainder);
-                    intersect = true;
                 }
             }
             if (!intersect)
@@ -5294,30 +5296,32 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             boolean intersect = false;
             ReplicaSet remainder = null;
-            for (Replica r1 : current)
+            for (Replica nonnormalized : current)
             {
-                logger.info("Comparing {} and {}", r2, r1);
-                //Transitioning from transient to full means fetch everything so intersection doesn't matter.
-                if (r2.intersectsOnRange(r1)
-                    && !(r1.isTransient() && r2.isFull())
-                    && (!r2.getRange().isWrapAround() && !r1.getRange().isWrapAround()))
+                logger.info("Comparing {} and {}", r2, nonnormalized);
+                for (Replica r1 : nonnormalized.normalize())
                 {
-                    //For fetching we can afford to be strict, and whittle away
-                    ReplicaSet oldRemainder = remainder;
-                    remainder = new ReplicaSet();
-                    if (oldRemainder != null)
+                    //Transitioning from transient to full means fetch everything so intersection doesn't matter.
+                    if (r2.intersectsOnRange(r1)
+                        && !(r1.isTransient() && r2.isFull()))
                     {
-                        for (Replica replica : oldRemainder)
+                        //For fetching we can afford to be strict, and whittle away
+                        ReplicaSet oldRemainder = remainder;
+                        remainder = new ReplicaSet();
+                        if (oldRemainder != null)
                         {
-                            remainder.addAll(replica.subtractIgnoreTransientStatus(r1));
+                            for (Replica replica : oldRemainder)
+                            {
+                                remainder.addAll(replica.subtractIgnoreTransientStatus(r1));
+                            }
                         }
+                        else
+                        {
+                            remainder.addAll(r2.subtractIgnoreTransientStatus(r1));
+                        }
+                        logger.info("    Intersects adding {}", remainder);
+                        intersect = true;
                     }
-                    else
-                    {
-                        remainder.addAll(r2.subtractIgnoreTransientStatus(r1));
-                    }
-                    logger.info("    Intersects adding {}", remainder);
-                    intersect = true;
                 }
             }
             if (!intersect)
