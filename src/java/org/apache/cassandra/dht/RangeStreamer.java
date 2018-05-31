@@ -309,7 +309,7 @@ public class RangeStreamer
                                                                                               String keyspace,
                                                                                               Collection<ISourceFilter> sourceFilters)
     {
-        InetAddressAndPort localAddress = FBUtilities.getLocalAddressAndPort();
+        InetAddressAndPort localAddress = FBUtilities.getBroadcastAddressAndPort();
         System.out.printf("To fetch RN: %s%n", fetchRanges);
         System.out.printf("Fetch ranges: %s%n", rangeAddresses);
 
