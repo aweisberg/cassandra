@@ -419,8 +419,11 @@ public class RangeStreamer
                 if (replicationFactor.replicas == 1)
                 {
                     if (useStrictConsistency)
+                    {
+                        logger.warn("A node required to move the data consistently is down");
                         throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace + " with RF=1. " +
                                                         "Ensure this keyspace contains replicas in the source datacenter.");
+                    }
                     else
                         logger.warn("Unable to find sufficient sources for streaming range {} in keyspace {} with RF=1. " +
                                     "Keyspace might be missing data.", toFetch, keyspace);
@@ -428,6 +431,8 @@ public class RangeStreamer
                 }
                 else
                 {
+                    if (useStrictConsistency)
+                        logger.warn("A node required to move the data consistently is down");
                     throw new IllegalStateException("Unable to find sufficient sources for streaming range " + toFetch + " in keyspace " + keyspace);
                 }
             }

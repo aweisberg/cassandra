@@ -5225,7 +5225,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         ReplicaSet toStream = new ReplicaSet();
         ReplicaSet toFetch  = new ReplicaSet();
 
-        System.out.println("Calculating toStream");
+        logger.info("Calculating toStream");
         for (Replica r1 : current)
         {
             boolean intersect = false;
@@ -5254,7 +5254,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         {
                             remainder.addAll(r1.subtractIgnoreTransientStatus(r2));
                         }
-                        System.out.printf("    Intersects adding %s%n", remainder);
+                        logger.info("    Intersects adding {}", remainder);
                         intersect = true;
                     }
                 }
@@ -5262,11 +5262,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
             if (!intersect)
             {
-                System.out.printf("    Doesn't intersect adding %s%n", r1);
+                logger.info("    Doesn't intersect adding {}", r1);
                 toStream.add(r1); // should stream whole old range
             }
             else
             {
+                logger.info("    Adding remainder {}", remainder);
                 toStream.addAll(remainder);
             }
         }
@@ -5341,6 +5342,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             }
         }
 
+        logger.info("To stream {}", toStream);
+        logger.info("To fetch {}", toFetch);
         return Pair.create(toStream, toFetch);
     }
 
