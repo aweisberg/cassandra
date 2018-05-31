@@ -384,7 +384,7 @@ public class RangeStreamer
                                                                   .filter(replicaIsSufficientFilter, notSelf, isAlive);
                     }
 
-                    //Apply additional policy filters that were given to us
+                    //Apply additional policy filters that were given to us, and establish everything remaining is alive for the strict case
                     endpoints = endpoints.filterToSet(replica -> {
                         for (ISourceFilter filter : sourceFilters)
                         {
@@ -392,7 +392,7 @@ public class RangeStreamer
                                 return false;
                         }
                         return true;
-                    });
+                    }).filterToSet(isAlive);
 
                     // storing range and preferred endpoint set
                     rangesToFetchWithPreferredEndpoints.putAll(toFetch, endpoints);
