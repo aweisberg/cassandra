@@ -1257,7 +1257,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     }
                     if (!foundParentRange)
                     {
-                        throw new IllegalArgumentException(String.format("The specified range %s is not a range that is owned and fully replicated by this node. Please ensure that all token ranges specified to be rebuilt belong to this node.", specifiedRange.toString()));
+                        throw new IllegalArgumentException(String.format("The specified range %s is not a range that is owned by this node. Please ensure that all token ranges specified to be rebuilt belong to this node.", specifiedRange.toString()));
                     }
                 }
 
