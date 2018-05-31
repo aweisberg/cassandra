@@ -5225,41 +5225,45 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         ReplicaSet toStream = new ReplicaSet();
         ReplicaSet toFetch  = new ReplicaSet();
 
+        if(current.size() == 1
+            && updated.size() == 1
+            && current.iterator().next().getRange().isWrapAround()
+            && updated.iterator().next().getRange().isWrapAround())
+        {
+            //The infernal single node move case.
+            //Subtraction is just supremely broken with wrap around ranges, but works fine for the cases we have
+            //to handle here. So just identify it and special case it.
+            return Pair.create(toStream, toFetch);
+        }
+
         logger.info("Calculating toStream");
         for (Replica r1 : current)
         {
             boolean intersect = false;
             ReplicaSet remainder = null;
-            for (Replica wrapped : updated)
+            for (Replica r2 : updated)
             {
-                logger.info("Comparing {} and {}", wrapped, r1);
-                Iterator<Replica> unwrapped = wrapped.getRange().unwrap().stream().map(wrapped::decorateSubrange).iterator();
-                while (unwrapped.hasNext())
+                logger.info("Comparing {} and {}", r1, r2);
+                //If we will end up transiently replicating send the entire thing and don't subtract
+                if (r1.intersectsOnRange(r2) && !(r1.isFull() && r2.isTransient()))
                 {
-                    Replica r2 = unwrapped.next();
-                    //If we will end up transiently replicating send the entire thing and don't subtract
-                    if (r1.intersectsOnRange(r2)
-                        && !(r1.isFull() && r2.isTransient()))
+                    ReplicaSet oldRemainder = remainder;
+                    remainder = new ReplicaSet();
+                    if (oldRemainder != null)
                     {
-                        ReplicaSet oldRemainder = remainder;
-                        remainder = new ReplicaSet();
-                        if (oldRemainder != null)
+                        for (Replica replica : oldRemainder)
                         {
-                            for (Replica replica : oldRemainder)
-                            {
-                                remainder.addAll(replica.subtractIgnoreTransientStatus(r2));
-                            }
+                            remainder.addAll(replica.subtractIgnoreTransientStatus(r2));
                         }
-                        else
-                        {
-                            remainder.addAll(r1.subtractIgnoreTransientStatus(r2));
-                        }
-                        logger.info("    Intersects adding {}", remainder);
-                        intersect = true;
                     }
+                    else
+                    {
+                        remainder.addAll(r1.subtractIgnoreTransientStatus(r2));
+                    }
+                    logger.info("    Intersects adding {}", remainder);
+                    intersect = true;
                 }
             }
-
             if (!intersect)
             {
                 logger.info("    Doesn't intersect adding {}", r1);
@@ -5267,7 +5271,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             }
             else
             {
-                logger.info("    Adding remainder {}", remainder);
                 toStream.addAll(remainder);
             }
         }
@@ -5300,36 +5303,30 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             boolean intersect = false;
             ReplicaSet remainder = null;
-            for (Replica wrapped : current)
+            for (Replica r1 : current)
             {
-                logger.info("Comparing {} and {}", r2, wrapped);
-                Iterator<Replica> unwrapped = wrapped.getRange().unwrap().stream().map(wrapped::decorateSubrange).iterator();
-                while (unwrapped.hasNext())
+                logger.info("Comparing {} and {}", r2, r1);
+                //Transitioning from transient to full means fetch everything so intersection doesn't matter.
+                if (r2.intersectsOnRange(r1) && !(r1.isTransient() && r2.isFull()))
                 {
-                    Replica r1 = unwrapped.next();
-                    //Transitioning from transient to full means fetch everything so intersection doesn't matter.
-                    if (r2.intersectsOnRange(r1)
-                        && !(r1.isTransient() && r2.isFull()))
+                    //For fetching we can afford to be strict, and whittle away
+                    ReplicaSet oldRemainder = remainder;
+                    remainder = new ReplicaSet();
+                    if (oldRemainder != null)
                     {
-                        ReplicaSet oldRemainder = remainder;
-                        remainder = new ReplicaSet();
-                        if (oldRemainder != null)
+                        for (Replica replica : oldRemainder)
                         {
-                            for (Replica replica : oldRemainder)
-                            {
-                                remainder.addAll(replica.subtractIgnoreTransientStatus(r1));
-                            }
+                            remainder.addAll(replica.subtractIgnoreTransientStatus(r1));
                         }
-                        else
-                        {
-                            remainder.addAll(r2.subtractIgnoreTransientStatus(r1));
-                        }
-                        logger.info("    Intersects adding {}", remainder);
-                        intersect = true;
                     }
+                    else
+                    {
+                        remainder.addAll(r2.subtractIgnoreTransientStatus(r1));
+                    }
+                    logger.info("    Intersects adding {}", remainder);
+                    intersect = true;
                 }
             }
-
             if (!intersect)
             {
                 logger.info("    Doesn't intersect adding {}", r2);
@@ -5337,13 +5334,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             }
             else
             {
-                logger.info("    Adding remainder {}", remainder);
                 toFetch.addAll(remainder);
             }
         }
 
         logger.info("To stream {}", toStream);
         logger.info("To fetch {}", toFetch);
+
         return Pair.create(toStream, toFetch);
     }
 
