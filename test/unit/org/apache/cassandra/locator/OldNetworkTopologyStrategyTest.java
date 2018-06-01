@@ -422,47 +422,6 @@ public class OldNetworkTopologyStrategyTest
         return result;
     }
 
-    @Test
-    public void testCalculateStreamAndFetchRangesWrapArounds() throws Exception
-    {
-        Murmur3Partitioner.LongToken currentToken = new Murmur3Partitioner.LongToken(0L);
-        Murmur3Partitioner.LongToken updatedToken = new Murmur3Partitioner.LongToken(33554432L);
-        ReplicaSet current = new ReplicaSet();
-        current.add(new Replica(aAddress, new Range(currentToken, currentToken), true));
-        ReplicaSet updated = new ReplicaSet();
-        updated.add(new Replica(aAddress, new Range(updatedToken, updatedToken), true));
-
-        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
-        System.out.println("To stream");
-        System.out.println(result.left);
-        System.out.println("To fetch");
-        System.out.println(result.right);
-
-        assertTrue(result.left.isEmpty());
-        assertTrue(result.right.isEmpty());
-    }
-
-    @Test
-    public void testCalculateStreamAndFetchRangesWrapArounds2() throws Exception
-    {
-        Murmur3Partitioner.LongToken currentToken = new Murmur3Partitioner.LongToken(33554432L);
-        Murmur3Partitioner.LongToken updatedToken = new Murmur3Partitioner.LongToken(0L);
-        ReplicaSet current = new ReplicaSet();
-        current.add(new Replica(aAddress, new Range(currentToken, currentToken), true));
-        ReplicaSet updated = new ReplicaSet();
-        updated.add(new Replica(aAddress, new Range(updatedToken, updatedToken), true));
-
-        Pair<ReplicaSet, ReplicaSet> result = StorageService.instance.calculateStreamAndFetchRanges(current, updated);
-        System.out.println("To stream");
-        System.out.println(result.left);
-        System.out.println("To fetch");
-        System.out.println(result.right);
-
-        assertTrue(result.left.isEmpty());
-        assertTrue(result.right.isEmpty());
-    }
-
-
     /**
      * Ring with start A 1-3 B 3-6 C 6-9 D 9-11 E 11-1
      * A's token moves from 3 to 2
