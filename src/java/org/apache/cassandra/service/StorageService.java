@@ -4322,6 +4322,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 //the repaired data
                 ReplicaList currentEndpoints = calculateNaturalReplicas.apply(toStream.getRange().right);
                 ReplicaList newEndpoints = calculateNaturalReplicasSettled.apply(toStream.getRange().right);
+                logger.info("Need to stream {}, current endpoints {}, new endpoints {}", toStream, currentEndpoints, newEndpoints);
 
                 for (Replica current : currentEndpoints)
                 {
@@ -4388,13 +4389,15 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         private void calculateToFromStreams()
         {
+            logger.info("Current tmd " + tokenMetaClone);
+            logger.info("Updated tmd " + tokenMetaCloneAllSettled);
             for (String keyspace : keyspaceNames)
             {
                 // replication strategy of the current keyspace
                 AbstractReplicationStrategy strategy = Keyspace.open(keyspace).getReplicationStrategy();
                 ReplicaMultimap<InetAddressAndPort, ReplicaSet> endpointToRanges = strategy.getAddressReplicas();
 
-                logger.debug("Calculating ranges to stream and request for keyspace {}", keyspace);
+                logger.info("Calculating ranges to stream and request for keyspace {}", keyspace);
                 //From what I have seen we only ever call this with a single token from StorageService.move(Token)
                 for (Token newToken : tokens)
                 {
@@ -4410,11 +4413,19 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     ReplicaSet updatedReplicas = strategy.getPendingAddressRanges(tokenMetaClone, newToken, localAddress);
 
                     // calculated parts of the ranges to request/stream from/to nodes in the ring
-                    Pair<ReplicaSet, ReplicaSet> rangesPerKeyspace = calculateStreamAndFetchRanges(currentReplicas, updatedReplicas);
+                    Pair<ReplicaSet, ReplicaSet> rangesPerKeyspace = Pair.create(new ReplicaSet(), new ReplicaSet());
+                    //In the single node token move there is nothing to do and Range subtraction is broken
+                    //so it's easier to just identify this case up front.
+                    if (tokenMetaClone.sortedTokens().size() > 1)
+                    {
+                        rangesPerKeyspace = calculateStreamAndFetchRanges(currentReplicas, updatedReplicas);
+                    }
 
                     ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right, keyspace);
 
                     ReplicaMultimap<InetAddressAndPort, ReplicaList> endpointRanges = calculateRangesToStreamWithPreferredEndpoints(strategy, rangesPerKeyspace.left);
+
+                    logger.info("Endpoint ranges to stream to " + endpointRanges);
 
                     // stream ranges
                     for (InetAddressAndPort address : endpointRanges.keySet())
@@ -5224,17 +5235,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // FIXME: transient replication
         ReplicaSet toStream = new ReplicaSet();
         ReplicaSet toFetch  = new ReplicaSet();
-
-        if(current.size() == 1
-            && updated.size() == 1
-            && current.iterator().next().getRange().isWrapAround()
-            && updated.iterator().next().getRange().isWrapAround())
-        {
-            //The infernal single node move case.
-            //Subtraction is just supremely broken with wrap around ranges, but works fine for the cases we have
-            //to handle here. So just identify it and special case it.
-            return Pair.create(toStream, toFetch);
-        }
 
         logger.info("Calculating toStream");
         for (Replica r1 : current)
