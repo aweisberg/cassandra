@@ -4334,10 +4334,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                             if (current.equals(updated))
                                 break;
 
-                            //Yeah we can't fix this by streaming, don't think it should ever happen
+                            //Can't fix this by streaming, don't think it should ever happen
                             if (updated.isFull() && toStream.isTransient())
                             {
-                                throw new AssertionError("Huh?");
+                                throw new AssertionError("Should never end up needing to stream a full range while we can only provide a transient range");
                             }
 
                             //In these two (really three) cases the existing data is sufficient and we should subtract whatever is already replicated
@@ -4416,7 +4416,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     Pair<ReplicaSet, ReplicaSet> rangesPerKeyspace = Pair.create(new ReplicaSet(), new ReplicaSet());
                     //In the single node token move there is nothing to do and Range subtraction is broken
                     //so it's easier to just identify this case up front.
-                    if (tokenMetaClone.sortedTokens().size() > 1)
+                    if (tokenMetaClone.getTopology().getDatacenterEndpoints().get(DatabaseDescriptor.getEndpointSnitch().getDatacenter(FBUtilities.getBroadcastAddressAndPort()
+)).size() > 1)
                     {
                         rangesPerKeyspace = calculateStreamAndFetchRanges(currentReplicas, updatedReplicas);
                     }

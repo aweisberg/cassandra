@@ -34,6 +34,11 @@ public class ReplicaSet extends Replicas
 {
     static final ReplicaSet EMPTY = new ReplicaSet(ImmutableSet.of());
 
+    public static ReplicaSet empty()
+    {
+        return EMPTY;
+    }
+
     private final Set<Replica> replicaSet;
 
     public ReplicaSet()
