@@ -48,7 +48,6 @@ public final class ChannelProxy extends SharedCloseableImpl
     {
         try
         {
-            StandardOpenOption.READ.toString();
             return FileChannel.open(file.toPath(), StandardOpenOption.READ);
         }
         catch (IOException e)
