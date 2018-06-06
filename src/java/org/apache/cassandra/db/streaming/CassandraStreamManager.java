@@ -20,17 +20,16 @@ package org.apache.cassandra.db.streaming;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
+import com.google.common.collect.Streams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,7 +43,6 @@ import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
-import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.streaming.IncomingStream;
 import org.apache.cassandra.streaming.OutgoingStream;
@@ -53,7 +51,6 @@ import org.apache.cassandra.streaming.StreamReceiver;
 import org.apache.cassandra.streaming.StreamSession;
 import org.apache.cassandra.streaming.TableStreamManager;
 import org.apache.cassandra.streaming.messages.StreamMessageHeader;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Ref;
 import org.apache.cassandra.utils.concurrent.Refs;
 
@@ -152,36 +149,30 @@ public class CassandraStreamManager implements TableStreamManager
             Set<Range<Token>> fullRanges = replicas.filter(Replica::isFull).asRangeSet();
             Set<Range<Token>> transientRanges = replicas.filter(Replica::isTransient).asRangeSet();
 
-            //Track tables that were referenced but didn't end up getting used
-            Set<SSTableReader> unusedSSTables = new HashSet<>(refs);
-
-            //Create outgoing file streams for ranges possibly skipping repaired sstables
-            BiConsumer<Set<Range<Token>>, Boolean> streamBuilder = (ranges, skipRepaired) ->
+            //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables
+            for (SSTableReader sstable : refs)
             {
-                for (SSTableReader sstable : refs)
+                Ref<SSTableReader> ref = refs.get(sstable);
+
+                Set<Range<Token>> ranges;
+                if (!sstable.isRepaired())
                 {
-                    if (sstable.isRepaired() && skipRepaired)
-                    {
-                        continue;
-                    }
-
-                    Ref<SSTableReader> ref = refs.get(sstable);
-                    List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
-                    if (sections.isEmpty())
-                    {
-                        continue;
-                    }
-                    //We ended up using the table so remove it from the unused set
-                    unusedSSTables.remove(sstable);
-                    streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, sstable.estimatedKeysForRanges(ranges)));
+                    ranges = Streams.concat(fullRanges.stream(), transientRanges.stream()).collect(Collectors.toSet());
                 }
-            };
+                else
+                {
+                    ranges = fullRanges;
+                }
 
-            streamBuilder.accept(fullRanges, false);
-            streamBuilder.accept(transientRanges, true);
+                List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
+                if (sections.isEmpty())
+                {
+                    refs.get(sstable).release();
+                    continue;
+                }
 
-            //Deref unused sstables
-            unusedSSTables.forEach(sstable -> refs.get(sstable).release());
+                streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, sstable.estimatedKeysForRanges(ranges)));
+            }
 
             return streams;
         }
