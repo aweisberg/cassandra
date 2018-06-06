@@ -508,7 +508,7 @@ public class MoveTransientTest
             {
                 ise.printStackTrace();
                 assertTrue(downNode.toString(),
-                           ise.getMessage().startsWith("Can't fetch from down replicas that are losing range:")
+                           ise.getMessage().startsWith("A node required to move the data consistently is down:")
                                     && ise.getMessage().contains(downNode.toString()));
                 threw = true;
             }
@@ -634,7 +634,7 @@ public class MoveTransientTest
         {
             ise.printStackTrace();
             assertTrue(dAddress.toString(),
-                       ise.getMessage().startsWith("Can't fetch from down replicas that are losing range:")
+                       ise.getMessage().startsWith("A node required to move the data consistently is down:")
                        && ise.getMessage().contains(dAddress.toString()));
             threw = true;
         }

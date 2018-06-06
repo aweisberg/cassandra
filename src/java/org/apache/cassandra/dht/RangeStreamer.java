@@ -323,7 +323,7 @@ public class RangeStreamer
                             oldEndpoints = oldEndpoints.filter(endpointNotReplicatedAnymore);
 
                             if (oldEndpoints.anyMatch(isNotAlive))
-                                throw new IllegalStateException("Can't fetch from down replicas that are losing range: "
+                                throw new IllegalStateException("A node required to move the data consistently is down: "
                                                                 + oldEndpoints.filter(isNotAlive));
 
                             if (oldEndpoints.size() > 1)
