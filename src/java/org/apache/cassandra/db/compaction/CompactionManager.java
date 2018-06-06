@@ -472,6 +472,8 @@ public class CompactionManager implements CompactionManagerMBean
         final Set<Range<Token>> allRanges = replicatedRanges.asRangeSet();
         final Set<Range<Token>> transientRanges = new HashSet<>();
         Iterables.addAll(transientRanges, replicatedRanges.transientRanges());
+        final Set<Range<Token>> fullRanges = new HashSet<>();
+        Iterables.addAll(fullRanges, replicatedRanges.fullRanges());
         final boolean hasIndexes = cfStore.indexManager.hasIndexes();
 
         return parallelAllSSTableOperation(cfStore, new OneSSTableOperation()
@@ -488,7 +490,7 @@ public class CompactionManager implements CompactionManagerMBean
             public void execute(LifecycleTransaction txn) throws IOException
             {
                 CleanupStrategy cleanupStrategy = CleanupStrategy.get(cfStore, allRanges, transientRanges, txn.onlyOne().isRepaired(), FBUtilities.nowInSeconds());
-                doCleanupOne(cfStore, txn, cleanupStrategy, allRanges, hasIndexes);
+                doCleanupOne(cfStore, txn, cleanupStrategy, allRanges, fullRanges, transientRanges, hasIndexes);
             }
         }, jobs, OperationType.CLEANUP);
     }
@@ -877,6 +879,8 @@ public class CompactionManager implements CompactionManagerMBean
             final Set<Range<Token>> allRanges = replicatedRanges.asRangeSet();
             final Set<Range<Token>> transientRanges = new HashSet<>();
             Iterables.addAll(transientRanges, replicatedRanges.transientRanges());
+            final Set<Range<Token>> fullRanges = new HashSet<>();
+            Iterables.addAll(fullRanges, replicatedRanges.fullRanges());
             boolean hasIndexes = cfs.indexManager.hasIndexes();
             SSTableReader sstable = lookupSSTable(cfs, entry.getValue());
 
@@ -889,7 +893,7 @@ public class CompactionManager implements CompactionManagerMBean
                 CleanupStrategy cleanupStrategy = CleanupStrategy.get(cfs, allRanges, transientRanges, sstable.isRepaired(), FBUtilities.nowInSeconds());
                 try (LifecycleTransaction txn = cfs.getTracker().tryModify(sstable, OperationType.CLEANUP))
                 {
-                    doCleanupOne(cfs, txn, cleanupStrategy, allRanges, hasIndexes);
+                    doCleanupOne(cfs, txn, cleanupStrategy, allRanges, fullRanges, transientRanges, hasIndexes);
                 }
                 catch (IOException e)
                 {
@@ -1066,7 +1070,7 @@ public class CompactionManager implements CompactionManagerMBean
      *
      * @throws IOException
      */
-    private void doCleanupOne(final ColumnFamilyStore cfs, LifecycleTransaction txn, CleanupStrategy cleanupStrategy, Collection<Range<Token>> allRanges, boolean hasIndexes) throws IOException
+    private void doCleanupOne(final ColumnFamilyStore cfs, LifecycleTransaction txn, CleanupStrategy cleanupStrategy, Collection<Range<Token>> allRanges, Collection<Range<Token>> fullRanges, Collection<Range<Token>> transientRanges, boolean hasIndexes) throws IOException
     {
         assert !cfs.isIndex();
 
@@ -1079,9 +1083,14 @@ public class CompactionManager implements CompactionManagerMBean
             txn.finish();
             return;
         }
-        if (!needsCleanup(sstable, allRanges))
+
+        boolean needsCleanupFull = needsCleanup(sstable, fullRanges);
+        boolean needsCleanupTransient = needsCleanup(sstable, transientRanges);
+        //If there is no ranges for which the table needs cleanup either do to lack of intersection or lack
+        //of the table being repaired.
+        if (!needsCleanupFull && (!needsCleanupTransient || (!sstable.isRepaired() && needsCleanupTransient)))
         {
-            logger.trace("Skipping {} for cleanup; all rows should be kept", sstable);
+            logger.trace("Skipping {} for cleanup; all rows should be kept. Needs cleanup full ranges: {} Needs cleanup transient ranges: {} Repaired: {}", sstable, needsCleanupFull, needsCleanupTransient, sstable.isRepaired());
             return;
         }
 
