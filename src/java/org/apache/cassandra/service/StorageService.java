@@ -1215,11 +1215,11 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             if (keyspace == null)
             {
                 for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
-                    streamer.addRanges(keyspaceName, getLocalFullRanges(keyspaceName));
+                    streamer.addRanges(keyspaceName, getLocalReplicas(keyspaceName));
             }
             else if (tokens == null)
             {
-                streamer.addRanges(keyspace, getLocalFullRanges(keyspace));
+                streamer.addRanges(keyspace, getLocalReplicas(keyspace));
             }
             else
             {
@@ -1241,16 +1241,16 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 }
 
                 // Ensure all specified ranges are actually ranges owned by this host
-                ReplicaSet localFullRanges = getLocalFullRanges(keyspace);
+                ReplicaSet localReplicas = getLocalReplicas(keyspace);
                 ReplicaList streamRanges = new ReplicaList(ranges.size());
                 for (Range<Token> specifiedRange : ranges)
                 {
                     boolean foundParentRange = false;
-                    for (Replica localRange : localFullRanges)
+                    for (Replica localReplica : localReplicas)
                     {
-                        if (localRange.contains(specifiedRange))
+                        if (localReplica.contains(specifiedRange))
                         {
-                            streamRanges.add(localRange.decorateSubrange(specifiedRange));
+                            streamRanges.add(localReplica.decorateSubrange(specifiedRange));
                             foundParentRange = true;
                             break;
                         }
