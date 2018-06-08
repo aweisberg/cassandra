@@ -419,37 +419,6 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         return isWrapAround(left, right);
     }
 
-    public static void main(String args[])
-    {
-        Range<Token> first = new Range<Token>(new Murmur3Partitioner.LongToken(33554432L), new Murmur3Partitioner.LongToken(33554432L));
-        Range<Token> second = new Range<Token>(new Murmur3Partitioner.LongToken(1L), new Murmur3Partitioner.LongToken(1L));
-        System.out.printf("Normalize result %s%n", Range.normalize(Collections.singleton(second)));
-        System.out.println("Not normalized subtracted");
-        for (Range<Token> normalized : Range.normalize(Collections.singleton(second)))
-        {
-            System.out.println(normalized.subtract(first));
-        }
-        System.out.println("Normalized subtracted");
-        for (Range<Token> normalized : Range.normalize(Collections.singleton(second)))
-        {
-            System.out.println(first.subtract(normalized));
-        }
-
-        System.out.printf("Unwrap result %s%n", second.unwrap());
-        System.out.println("Wrapped subtracted");
-        for (Range<Token> unwrapped : second.unwrap())
-        {
-            System.out.println(unwrapped.subtract(first));
-        }
-        System.out.println("Unwrapped subtracted");
-        for (Range<Token> unwrapped : second.unwrap())
-        {
-            System.out.println(first.subtract(unwrapped));
-        }
-        System.out.println(first.subtract(second));
-
-
-    }
     /**
      * @return A copy of the given list of with all ranges unwrapped, sorted by left bound and with overlapping bounds merged.
      */
