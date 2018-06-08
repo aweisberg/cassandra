@@ -666,7 +666,7 @@ public class MoveTransientTest
                 assertEquals(a, b);
             for (Replica r : aList)
             {
-                if (!bList.anyMatch(replica -> r.equals(replica)))
+                if (!bList.anyMatch(r::equals))
                     assertEquals(a, b);
             }
         }

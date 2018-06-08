@@ -2796,7 +2796,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
-            ReplicaMultimap<Replica, ReplicaSet> changedReplicas = getChangedReplicasForLeaving(keyspaceName, endpoint);
+            ReplicaMultimap<Replica, ReplicaSet> changedReplicas = getChangedReplicasForLeaving(keyspaceName, endpoint, tokenMetadata, Keyspace.open(keyspaceName).getReplicationStrategy());
             ReplicaSet myNewReplicas = new ReplicaSet();
             for (Map.Entry<Replica, Replica> entry : changedReplicas.entries())
             {
@@ -2861,10 +2861,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @return
      */
     // needs to be modified to accept either a keyspace or ARS.
-    private ReplicaMultimap<Replica, ReplicaSet> getChangedReplicasForLeaving(String keyspaceName, InetAddressAndPort endpoint)
+    static ReplicaMultimap<Replica, ReplicaSet> getChangedReplicasForLeaving(String keyspaceName, InetAddressAndPort endpoint, TokenMetadata tokenMetadata, AbstractReplicationStrategy strat)
     {
         // First get all ranges the leaving endpoint is responsible for
-        ReplicaSet replicas = getReplicasForEndpoint(keyspaceName, endpoint);
+        ReplicaSet replicas = strat.getAddressReplicas().get(endpoint);
 
         if (logger.isDebugEnabled())
             logger.debug("Node {} replicas [{}]", endpoint, StringUtils.join(replicas, ", "));
@@ -2874,7 +2874,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // Find (for each range) all nodes that store replicas for these ranges as well
         TokenMetadata metadata = tokenMetadata.cloneOnlyTokenMap(); // don't do this in the loop! #7758
         for (Replica replica : replicas)
-            currentReplicaEndpoints.put(replica, Keyspace.open(keyspaceName).getReplicationStrategy().calculateNaturalReplicas(replica.getRange().right, metadata));
+            currentReplicaEndpoints.put(replica, strat.calculateNaturalReplicas(replica.getRange().right, metadata));
 
         TokenMetadata temp = tokenMetadata.cloneAfterAllLeft();
 
@@ -2892,7 +2892,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // range.
         for (Replica replica : replicas)
         {
-            ReplicaList newReplicaEndpoints = Keyspace.open(keyspaceName).getReplicationStrategy().calculateNaturalReplicas(replica.getRange().right, temp);
+            ReplicaList newReplicaEndpoints = strat.calculateNaturalReplicas(replica.getRange().right, temp);
             newReplicaEndpoints = newReplicaEndpoints.filter(newReplica -> {
                 Optional<Replica> currentReplicaOptional =
                     currentReplicaEndpoints.get(replica)
@@ -4099,7 +4099,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
-            ReplicaMultimap<Replica, ReplicaSet> rangesMM = getChangedReplicasForLeaving(keyspaceName, FBUtilities.getBroadcastAddressAndPort());
+            ReplicaMultimap<Replica, ReplicaSet> rangesMM = getChangedReplicasForLeaving(keyspaceName, FBUtilities.getBroadcastAddressAndPort(), tokenMetadata, Keyspace.open(keyspaceName).getReplicationStrategy());
             //TODO, I want to leave in all the Replicas.checkFulls and then if all the tests pass and some are left
             //we know we have not tested with transient replication. So I need to add back any that I removed
             //heck better add more
@@ -4556,7 +4556,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
             // get all ranges that change ownership (that is, a node needs
             // to take responsibility for new range)
-            ReplicaMultimap<Replica, ReplicaSet> changedRanges = getChangedReplicasForLeaving(keyspaceName, endpoint);
+            ReplicaMultimap<Replica, ReplicaSet> changedRanges = getChangedReplicasForLeaving(keyspaceName, endpoint, tokenMetadata, Keyspace.open(keyspaceName).getReplicationStrategy());
             IFailureDetector failureDetector = FailureDetector.instance;
             for (InetAddressAndPort ep: changedRanges.values().asEndpoints())
             {
