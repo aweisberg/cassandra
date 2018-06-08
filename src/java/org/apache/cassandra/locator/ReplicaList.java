@@ -280,7 +280,7 @@ public class ReplicaList extends Replicas
     /**
      * Use of this method to synthesize Replicas is almost always wrong. In repair it turns out the concerns of transient
      * vs non-transient are handled at a higher level, but eventually repair needs to ask streaming to actually move
-     * the data and at that point it doesn't have a great handle on what the teplicas are and it doesn't really matter.
+     * the data and at that point it doesn't have a great handle on what the replicas are and it doesn't really matter.
      *
      * Streaming expects to be given Replicas with each replica indicating what type of data (transient or not transient)
      * should be sent.
@@ -304,7 +304,7 @@ public class ReplicaList extends Replicas
             throw new RuntimeException(e);
         }
         //For repair we are less concerned with full vs transient since repair is already dealing with those concerns.
-        //Always say full and then if the repair isincremental or not will determine what is streamed.
+        //Always say full and then if the repair is incremental or not will determine what is streamed.
         return new ReplicaList(ranges.stream()
                                .map(range -> new Replica(dummy, range, true))
                                .collect(Collectors.toList()));
