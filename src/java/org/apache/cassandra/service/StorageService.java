@@ -2893,7 +2893,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         for (Replica replica : replicas)
         {
             ReplicaList newReplicaEndpoints = Keyspace.open(keyspaceName).getReplicationStrategy().calculateNaturalReplicas(replica.getRange().right, temp);
-            newReplicaEndpoints.filter(newReplica -> {
+            newReplicaEndpoints = newReplicaEndpoints.filter(newReplica -> {
                 Optional<Replica> currentReplicaOptional =
                     currentReplicaEndpoints.get(replica)
                                            .findFirst(currentReplica -> newReplica.getEndpoint().equals(currentReplica.getEndpoint()));
@@ -2909,7 +2909,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     return true;
                 return false;
             });
-            newReplicaEndpoints.removeEndpoints(currentReplicaEndpoints.get(replica));
+
             if (logger.isDebugEnabled())
                 if (newReplicaEndpoints.isEmpty())
                     logger.debug("Replica {} already in all replicas", replica);
