@@ -80,7 +80,7 @@ public class BootStrapperTest
     public static void tearDown()
     {
         DatabaseDescriptor.setPartitionerUnsafe(oldPartitioner);
-        RangeStreamer.ALIVE_PREDICATE = replica -> true;
+        RangeStreamer.ALIVE_PREDICATE = originalAlivePredicate;
     }
 
     @Test
@@ -122,10 +122,6 @@ public class BootStrapperTest
             public void forceConviction(InetAddressAndPort ep) { throw new UnsupportedOperationException(); }
         };
         s.addSourceFilter(new RangeStreamer.FailureDetectorSourceFilter(mockFailureDetector));
-        if (numOldNodes == 5 && replicationFactor == 5)
-        {
-            System.out.println("Oh crap");
-        }
         s.addRanges(keyspaceName, Keyspace.open(keyspaceName).getReplicationStrategy().getPendingAddressRanges(tmd, myToken, myEndpoint));
 
 
