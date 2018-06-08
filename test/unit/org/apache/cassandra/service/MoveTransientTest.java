@@ -25,7 +25,6 @@ import java.util.Collections;
 import java.util.List;
 
 import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -35,12 +34,16 @@ import org.apache.cassandra.dht.RandomPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.RangeStreamer;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.locator.AbstractEndpointSnitch;
+import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.locator.IEndpointSnitch;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaMultimap;
 import org.apache.cassandra.locator.ReplicaSet;
-import org.apache.cassandra.locator.ReplicationFactor;
+import org.apache.cassandra.locator.SimpleStrategy;
+import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.utils.Pair;
 
 import static org.junit.Assert.assertEquals;
@@ -98,11 +101,11 @@ public class MoveTransientTest
     Token elevenToken = new RandomPartitioner.BigIntegerToken("11");
     Token fourteenToken = new RandomPartitioner.BigIntegerToken("14");
 
-    Range aRange = new Range(oneToken, threeToken);
-    Range bRange = new Range(threeToken, sixToken);
-    Range cRange = new Range(sixToken, nineToken);
-    Range dRange = new Range(nineToken, elevenToken);
-    Range eRange = new Range(elevenToken, oneToken);
+    Range<Token> aRange = new Range(oneToken, threeToken);
+    Range<Token> bRange = new Range(threeToken, sixToken);
+    Range<Token> cRange = new Range(sixToken, nineToken);
+    Range<Token> dRange = new Range(nineToken, elevenToken);
+    Range<Token> eRange = new Range(elevenToken, oneToken);
 
 
     ReplicaSet current = ReplicaSet.of(new Replica(aAddress, aRange, true),
@@ -263,55 +266,18 @@ public class MoveTransientTest
      * Where are A moves from 3 to 14
      * @return
      */
-    private Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> constructRangeAddressesMoveBackwardBetween()
+    private Pair<TokenMetadata, TokenMetadata> constructTMDsMoveBackwardBetween()
     {
-        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = ReplicaMultimap.set();
-        rangeAddresses.put(aRange, new Replica(aAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(aAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(aAddress, dRange, false));
+        TokenMetadata tmd = new TokenMetadata();
+        tmd.updateNormalToken(aRange.right, aAddress);
+        tmd.updateNormalToken(bRange.right, bAddress);
+        tmd.updateNormalToken(cRange.right, cAddress);
+        tmd.updateNormalToken(dRange.right, dAddress);
+        tmd.updateNormalToken(eRange.right, eAddress);
+        tmd.addMovingEndpoint(fourteenToken, aAddress);
+        TokenMetadata updated = tmd.cloneAfterAllSettled();
 
-        rangeAddresses.put(bRange, new Replica(bAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(bAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(bAddress, eRange, false));
-
-        rangeAddresses.put(cRange, new Replica(cAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(cAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(cAddress, aRange, false));
-
-        rangeAddresses.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(dAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(dAddress, bRange, false));
-
-        rangeAddresses.put(eRange, new Replica(eAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(eAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(eAddress, cRange, false));
-
-        Range aPrimeRange = new Range(elevenToken, fourteenToken);
-        Range ePrimeRange = new Range(fourteenToken, oneToken);
-        Range bPrimeRange = new Range(oneToken, sixToken);
-
-        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = ReplicaMultimap.list();
-        rangeAddressesSettled.put(aPrimeRange, new Replica(aAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(dRange, new Replica(aAddress, dRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(aAddress, cRange, false));
-
-        rangeAddressesSettled.put(bPrimeRange, new Replica(bAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(ePrimeRange, new Replica(bAddress, ePrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(bAddress, aPrimeRange, false));
-
-        rangeAddressesSettled.put(cRange, new Replica(cAddress, cRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(cAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(ePrimeRange, new Replica(cAddress, ePrimeRange, false));
-
-        rangeAddressesSettled.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(dAddress, cRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(dAddress, bPrimeRange, false));
-
-        rangeAddressesSettled.put(ePrimeRange, new Replica(eAddress, ePrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(eAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(dRange, new Replica(eAddress, dRange, false));
-
-        return Pair.create(rangeAddresses, rangeAddressesSettled);
+        return Pair.create(tmd, updated);
     }
 
 
@@ -320,155 +286,46 @@ public class MoveTransientTest
      * Where are A moves from 3 to 7
      * @return
      */
-    private Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> constructRangeAddressesMoveForwardBetween()
+    private Pair<TokenMetadata, TokenMetadata> constructTMDsMoveForwardBetween()
     {
-        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = ReplicaMultimap.set();
-        rangeAddresses.put(aRange, new Replica(aAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(aAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(aAddress, dRange, false));
+        TokenMetadata tmd = new TokenMetadata();
+        tmd.updateNormalToken(aRange.right, aAddress);
+        tmd.updateNormalToken(bRange.right, bAddress);
+        tmd.updateNormalToken(cRange.right, cAddress);
+        tmd.updateNormalToken(dRange.right, dAddress);
+        tmd.updateNormalToken(eRange.right, eAddress);
+        tmd.addMovingEndpoint(sevenToken, aAddress);
+        TokenMetadata updated = tmd.cloneAfterAllSettled();
 
-        rangeAddresses.put(bRange, new Replica(bAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(bAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(bAddress, eRange, false));
-
-        rangeAddresses.put(cRange, new Replica(cAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(cAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(cAddress, aRange, false));
-
-        rangeAddresses.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(dAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(dAddress, bRange, false));
-
-        rangeAddresses.put(eRange, new Replica(eAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(eAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(eAddress, cRange, false));
-
-        Range aPrimeRange = new Range(sixToken, sevenToken);
-        Range bPrimeRange = new Range(oneToken, sixToken);
-        Range cPrimeRange = new Range(sevenToken, nineToken);
-
-        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = ReplicaMultimap.list();
-        rangeAddressesSettled.put(aPrimeRange, new Replica(aAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(aAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(eRange, new Replica(aAddress, eRange, false));
-
-        rangeAddressesSettled.put(bPrimeRange, new Replica(bAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(eRange, new Replica(bAddress, eRange, true));
-        rangeAddressesSettled.put(dRange, new Replica(bAddress, dRange, false));
-
-        rangeAddressesSettled.put(cPrimeRange, new Replica(cAddress, cPrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(cAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(cAddress, bPrimeRange, false));
-
-        rangeAddressesSettled.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddressesSettled.put(cPrimeRange, new Replica(dAddress, cPrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(dAddress, aPrimeRange, false));
-
-        rangeAddressesSettled.put(eRange, new Replica(eAddress, eRange, true));
-        rangeAddressesSettled.put(dRange, new Replica(eAddress, dRange, true));
-        rangeAddressesSettled.put(cPrimeRange, new Replica(eAddress, cPrimeRange, false));
-
-        return Pair.create(rangeAddresses, rangeAddressesSettled);
+        return Pair.create(tmd, updated);
     }
 
-    private Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> constructRangeAddressesMoveBackward()
+    private Pair<TokenMetadata, TokenMetadata> constructTMDsMoveBackward()
     {
-        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = ReplicaMultimap.set();
-        rangeAddresses.put(aRange, new Replica(aAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(aAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(aAddress, dRange, false));
+        TokenMetadata tmd = new TokenMetadata();
+        tmd.updateNormalToken(aRange.right, aAddress);
+        tmd.updateNormalToken(bRange.right, bAddress);
+        tmd.updateNormalToken(cRange.right, cAddress);
+        tmd.updateNormalToken(dRange.right, dAddress);
+        tmd.updateNormalToken(eRange.right, eAddress);
+        tmd.addMovingEndpoint(twoToken, aAddress);
+        TokenMetadata updated = tmd.cloneAfterAllSettled();
 
-        rangeAddresses.put(bRange, new Replica(bAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(bAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(bAddress, eRange, false));
-
-        rangeAddresses.put(cRange, new Replica(cAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(cAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(cAddress, aRange, false));
-
-        rangeAddresses.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(dAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(dAddress, bRange, false));
-
-        rangeAddresses.put(eRange, new Replica(eAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(eAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(eAddress, cRange, false));
-
-        Range aPrimeRange = new Range(oneToken, twoToken);
-        Range bPrimeRange = new Range(twoToken, sixToken);
-
-        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = ReplicaMultimap.list();
-        rangeAddressesSettled.put(aPrimeRange, new Replica(aAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(dRange, new Replica(aAddress, dRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(aAddress, cRange, false));
-
-        rangeAddressesSettled.put(bPrimeRange, new Replica(bAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(bAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(eRange, new Replica(bAddress, eRange, false));
-
-        rangeAddressesSettled.put(cRange, new Replica(cAddress, cRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(cAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(cAddress, aPrimeRange, false));
-
-        rangeAddressesSettled.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(dAddress, cRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(dAddress, bPrimeRange, false));
-
-        rangeAddressesSettled.put(eRange, new Replica(eAddress, eRange, true));
-        rangeAddressesSettled.put(dRange, new Replica(eAddress, dRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(eAddress, cRange, false));
-
-        return Pair.create(rangeAddresses, rangeAddressesSettled);
+        return Pair.create(tmd, updated);
     }
 
-    private Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> constructRangeAddressesMoveForward()
+    private Pair<TokenMetadata, TokenMetadata> constructTMDsMoveForward()
     {
-        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = ReplicaMultimap.set();
-        rangeAddresses.put(aRange, new Replica(aAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(aAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(aAddress, dRange, false));
+        TokenMetadata tmd = new TokenMetadata();
+        tmd.updateNormalToken(aRange.right, aAddress);
+        tmd.updateNormalToken(bRange.right, bAddress);
+        tmd.updateNormalToken(cRange.right, cAddress);
+        tmd.updateNormalToken(dRange.right, dAddress);
+        tmd.updateNormalToken(eRange.right, eAddress);
+        tmd.addMovingEndpoint(fourToken, aAddress);
+        TokenMetadata updated = tmd.cloneAfterAllSettled();
 
-        rangeAddresses.put(bRange, new Replica(bAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(bAddress, aRange, true));
-        rangeAddresses.put(eRange, new Replica(bAddress, eRange, false));
-
-        rangeAddresses.put(cRange, new Replica(cAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(cAddress, bRange, true));
-        rangeAddresses.put(aRange, new Replica(cAddress, aRange, false));
-
-        rangeAddresses.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(dAddress, cRange, true));
-        rangeAddresses.put(bRange, new Replica(dAddress, bRange, false));
-
-        rangeAddresses.put(eRange, new Replica(eAddress, eRange, true));
-        rangeAddresses.put(dRange, new Replica(eAddress, dRange, true));
-        rangeAddresses.put(cRange, new Replica(eAddress, cRange, false));
-
-        Range aPrimeRange = new Range(oneToken, fourToken);
-        Range bPrimeRange = new Range(fourToken, sixToken);
-
-        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = ReplicaMultimap.list();
-        rangeAddressesSettled.put(aPrimeRange, new Replica(aAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(eRange, new Replica(aAddress, eRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(aAddress, cRange, false));
-
-        rangeAddressesSettled.put(bPrimeRange, new Replica(bAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(bAddress, aPrimeRange, true));
-        rangeAddressesSettled.put(eRange, new Replica(bAddress, eRange, false));
-
-        rangeAddressesSettled.put(cRange, new Replica(cAddress, cRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(cAddress, bPrimeRange, true));
-        rangeAddressesSettled.put(aPrimeRange, new Replica(cAddress, aPrimeRange, false));
-
-        rangeAddressesSettled.put(dRange, new Replica(dAddress, dRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(dAddress, cRange, true));
-        rangeAddressesSettled.put(bPrimeRange, new Replica(dAddress, bPrimeRange, false));
-
-        rangeAddressesSettled.put(eRange, new Replica(eAddress, eRange, true));
-        rangeAddressesSettled.put(dRange, new Replica(eAddress, dRange, true));
-        rangeAddressesSettled.put(cRange, new Replica(eAddress, cRange, false));
-
-        return Pair.create(rangeAddresses, rangeAddressesSettled);
+        return Pair.create(tmd, updated);
     }
 
 
@@ -488,7 +345,7 @@ public class MoveTransientTest
         expectedResult.put(new Replica(aAddress, new Range(threeToken, sixToken), true), new Replica(dAddress, new Range(threeToken, sixToken), false));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForwardBetween().right,
-                                                           constructRangeAddressesMoveForwardBetween(),
+                                                           constructTMDsMoveForwardBetween(),
                                                            expectedResult);
     }
 
@@ -558,7 +415,6 @@ public class MoveTransientTest
         testMoveForwardBetweenCalculateRangesToFetchWithPreferredEndpoints();
     }
 
-
     @Test
     public void testMoveBackwardBetweenCalculateRangesToFetchWithPreferredEndpoints() throws Exception
     {
@@ -569,7 +425,7 @@ public class MoveTransientTest
         expectedResult.put(new Replica(aAddress, new Range(sixToken, nineToken), false), new Replica(eAddress, new Range(sixToken, nineToken), false));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackwardBetween().right,
-                                                           constructRangeAddressesMoveBackwardBetween(),
+                                                           constructTMDsMoveBackwardBetween(),
                                                            expectedResult);
 
     }
@@ -599,7 +455,7 @@ public class MoveTransientTest
         ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackward().right,
-                                                           constructRangeAddressesMoveBackward(),
+                                                           constructTMDsMoveBackward(),
                                                            expectedResult);
 
     }
@@ -616,7 +472,7 @@ public class MoveTransientTest
         expectedResult.put(new Replica(aAddress, new Range(threeToken, fourToken), true), new Replica(dAddress, new Range(threeToken, sixToken), false));
 
         invokeCalculateRangesToFetchWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForward().right,
-                                                           constructRangeAddressesMoveForward(),
+                                                           constructTMDsMoveForward(),
                                                            expectedResult);
 
     }
@@ -680,24 +536,17 @@ public class MoveTransientTest
     }
 
     private void invokeCalculateRangesToFetchWithPreferredEndpoints(ReplicaSet toFetch,
-                                                                    Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> rangeAddresses,
+                                                                    Pair<TokenMetadata, TokenMetadata> tmds,
                                                                     ReplicaMultimap<Replica, ReplicaList> expectedResult)
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
 
         ReplicaMultimap<Replica, ReplicaList>  result = RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> new ReplicaList(replicas),
-                                                                                                                   rangeAddresses.left,
+                                                                                                                   simpleStrategy(tmds.left),
                                                                                                                    toFetch,
                                                                                                                    true,
-                                                                                                                   token -> {
-                                                                                                                       for (Range<Token> range : rangeAddresses.right.keySet())
-                                                                                                                       {
-                                                                                                                           if (range.contains(token))
-                                                                                                                               return new ReplicaList(rangeAddresses.right.get(range));
-                                                                                                                       }
-                                                                                                                       return null;
-                                                                                                                   },
-                                                                                                                   new ReplicationFactor(3, 1),
+                                                                                                                   tmds.left,
+                                                                                                                   tmds.right,
                                                                                                                    alivePredicate,
                                                                                                                    "OldNetworkTopologyStrategyTest",
                                                                                                                    sourceFilters);
@@ -706,36 +555,36 @@ public class MoveTransientTest
 
     }
 
+    private AbstractReplicationStrategy simpleStrategy(TokenMetadata tmd)
+    {
+        IEndpointSnitch snitch = new AbstractEndpointSnitch()
+        {
+            public int compareEndpoints(InetAddressAndPort target, Replica r1, Replica r2)
+            {
+                return 0;
+            }
+
+            public String getRack(InetAddressAndPort endpoint)
+            {
+                return "R1";
+            }
+
+            public String getDatacenter(InetAddressAndPort endpoint)
+            {
+                return "DC1";
+            }
+        };
+
+        return new SimpleStrategy("MoveTransientTest",
+                                  tmd,
+                                  snitch,
+                                  com.google.common.collect.ImmutableMap.of("replication_factor", "3/1"));
+    }
+
     @Test
     public void testMoveForwardBetweenCalculateRangesToStreamWithPreferredEndpoints() throws Exception
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
-        ReplicaSet toStream = calculateStreamAndFetchRangesMoveForwardBetween().left;
-        StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
-
-        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = constructRangeAddressesMoveForwardBetween().left;
-        ReplicaMultimap<Range<Token>, ReplicaList> rangeAddressesSettled = constructRangeAddressesMoveForwardBetween().right;
-
-        ReplicaMultimap<InetAddressAndPort, ReplicaList> result = relocator.calculateRangesToStreamWithPreferredEndpoints(toStream,
-                                                                                                                          token ->
-                                                                                                                          {
-                                                                                                                              for (Range<Token> range : rangeAddresses.keySet())
-                                                                                                                              {
-                                                                                                                                  if (range.contains(token))
-                                                                                                                                      return new ReplicaList(rangeAddresses.get(range));
-                                                                                                                              }
-                                                                                                                              return null;
-                                                                                                                          },
-                                                                                                                          token ->
-                                                                                                                          {
-                                                                                                                              for (Range<Token> range : rangeAddressesSettled.keySet())
-                                                                                                                              {
-                                                                                                                                  if (range.contains(token))
-                                                                                                                                      return rangeAddressesSettled.get(range);
-                                                                                                                              }
-                                                                                                                              return null;
-                                                                                                                          });
-        System.out.println(result);
         ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
 
         //Need to pull the full replica and the transient replica that is losing the range
@@ -743,7 +592,7 @@ public class MoveTransientTest
         expectedResult.put(bAddress, new Replica(bAddress, new Range(elevenToken, oneToken), true));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForwardBetween().left,
-                                                            constructRangeAddressesMoveForwardBetween(),
+                                                            constructTMDsMoveForwardBetween(),
                                                             expectedResult);
     }
 
@@ -760,7 +609,7 @@ public class MoveTransientTest
         expectedResult.put(cAddress, new Replica(cAddress, new Range(fourteenToken, oneToken), false));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackwardBetween().left,
-                                                            constructRangeAddressesMoveBackwardBetween(),
+                                                            constructTMDsMoveBackwardBetween(),
                                                             expectedResult);
     }
 
@@ -774,7 +623,7 @@ public class MoveTransientTest
         expectedResult.put(dAddress, new Replica(dAddress, new Range(twoToken, threeToken), false));
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveBackward().left,
-                                                            constructRangeAddressesMoveBackward(),
+                                                            constructTMDsMoveBackward(),
                                                             expectedResult);
     }
 
@@ -785,37 +634,20 @@ public class MoveTransientTest
         ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult = ReplicaMultimap.list();
 
         invokeCalculateRangesToStreamWithPreferredEndpoints(calculateStreamAndFetchRangesMoveForward().left,
-                                                            constructRangeAddressesMoveForward(),
+                                                            constructTMDsMoveForward(),
                                                             expectedResult);
     }
 
-
-
     private void invokeCalculateRangesToStreamWithPreferredEndpoints(ReplicaSet toStream,
-                                                                     Pair<ReplicaMultimap<Range<Token>, ReplicaSet>, ReplicaMultimap<Range<Token>, ReplicaList>> rangeAddresses,
+                                                                     Pair<TokenMetadata, TokenMetadata> tmds,
                                                                      ReplicaMultimap<InetAddressAndPort, ReplicaList> expectedResult)
     {
         DatabaseDescriptor.setTransientReplicationEnabledUnsafe(true);
         StorageService.RangeRelocator relocator = new StorageService.RangeRelocator();
         ReplicaMultimap<InetAddressAndPort, ReplicaList> result = relocator.calculateRangesToStreamWithPreferredEndpoints(toStream,
-                                                                                                                          token ->
-                                                                                                                          {
-                                                                                                                              for (Range<Token> range : rangeAddresses.left.keySet())
-                                                                                                                              {
-                                                                                                                                  if (range.contains(token))
-                                                                                                                                      return new ReplicaList(rangeAddresses.left.get(range));
-                                                                                                                              }
-                                                                                                                              return null;
-                                                                                                                          },
-                                                                                                                          token ->
-                                                                                                                          {
-                                                                                                                              for (Range<Token> range : rangeAddresses.right.keySet())
-                                                                                                                              {
-                                                                                                                                  if (range.contains(token))
-                                                                                                                                      return rangeAddresses.right.get(range);
-                                                                                                                              }
-                                                                                                                              return null;
-                                                                                                                          });
+                                                                                                                          simpleStrategy(tmds.left),
+                                                                                                                          tmds.left,
+                                                                                                                          tmds.right);
         System.out.println(result);
         assertMultimapEqualsIgnoreOrder(expectedResult, result);
     }
@@ -839,5 +671,4 @@ public class MoveTransientTest
             }
         }
     }
-
 }

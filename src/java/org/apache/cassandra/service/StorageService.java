@@ -4283,27 +4283,17 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
          */
         private ReplicaMultimap<InetAddressAndPort, ReplicaSet> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges, String keyspace)
         {
-            // ring ranges and endpoints associated with them
-            // this used to determine what nodes should we ping about range data
-            ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = strategy.getRangeAddresses(tokenMetaClone);
             ReplicaMultimap<Replica, ReplicaList> preferredEndpoints =
             RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> DatabaseDescriptor.getEndpointSnitch().getSortedListByProximity(address, replicas),
-                                                                       rangeAddresses,
+                                                                       strategy,
                                                                        fetchRanges,
                                                                        useStrictConsistency,
-                                                                       token -> strategy.calculateNaturalReplicas(token, tokenMetaCloneAllSettled),
-                                                                       strategy.getReplicationFactor(),
+                                                                       tokenMetaClone,
+                                                                       tokenMetaCloneAllSettled,
                                                                        RangeStreamer.ALIVE_PREDICATE,
                                                                        keyspace,
                                                                        Collections.emptyList());
             return RangeStreamer.convertPreferredEndpointsToWorkMap(preferredEndpoints);
-        }
-
-        private ReplicaMultimap<InetAddressAndPort, ReplicaList> calculateRangesToStreamWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet streamRanges)
-        {
-            return calculateRangesToStreamWithPreferredEndpoints(streamRanges,
-                                                                 token -> strategy.calculateNaturalReplicas(token, tokenMetaClone),
-                                                                 token -> strategy.calculateNaturalReplicas(token, tokenMetaCloneAllSettled));
         }
 
         /**
@@ -4311,8 +4301,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
          * in some situations node will handle current ranges as part of the new ranges
          **/
         public ReplicaMultimap<InetAddressAndPort, ReplicaList> calculateRangesToStreamWithPreferredEndpoints(ReplicaSet streamRanges,
-                                                                                                    Function<Token, ReplicaList> calculateNaturalReplicas,
-                                                                                                    Function<Token, ReplicaList> calculateNaturalReplicasSettled)
+                                                                                                              AbstractReplicationStrategy strat,
+                                                                                                              TokenMetadata tmdBefore,
+                                                                                                              TokenMetadata tmdAfter)
         {
             ReplicaMultimap<InetAddressAndPort, ReplicaList> endpointRanges = ReplicaMultimap.list();
             for (Replica toStream : streamRanges)
@@ -4320,8 +4311,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 //If the range we are sending is full only send it to the new full replica
                 //There will also be a new transient replica we need to send the data to, but not
                 //the repaired data
-                ReplicaList currentEndpoints = calculateNaturalReplicas.apply(toStream.getRange().right);
-                ReplicaList newEndpoints = calculateNaturalReplicasSettled.apply(toStream.getRange().right);
+                ReplicaList currentEndpoints = strat.calculateNaturalReplicas(toStream.getRange().right, tmdBefore);
+                ReplicaList newEndpoints = strat.calculateNaturalReplicas(toStream.getRange().right, tmdAfter);
                 logger.info("Need to stream {}, current endpoints {}, new endpoints {}", toStream, currentEndpoints, newEndpoints);
 
                 for (Replica current : currentEndpoints)
@@ -4424,7 +4415,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
                     ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right, keyspace);
 
-                    ReplicaMultimap<InetAddressAndPort, ReplicaList> endpointRanges = calculateRangesToStreamWithPreferredEndpoints(strategy, rangesPerKeyspace.left);
+                    ReplicaMultimap<InetAddressAndPort, ReplicaList> endpointRanges = calculateRangesToStreamWithPreferredEndpoints(rangesPerKeyspace.left, strategy, tokenMetaClone, tokenMetaCloneAllSettled);
 
                     logger.info("Endpoint ranges to stream to " + endpointRanges);
 

@@ -240,31 +240,25 @@ public class RangeStreamer
     {
         AbstractReplicationStrategy strat = Keyspace.open(keyspace).getReplicationStrategy();
 
-        // Active ranges
-        TokenMetadata metadataClone = metadata.cloneOnlyTokenMap();
-        ReplicaMultimap<Range<Token>, ReplicaSet> addressRanges = strat.getRangeAddresses(metadataClone);
-
-        Function<Token, ReplicaList> calculateNaturalReplicas = token -> {
-            throw new AssertionError("Can't calculate natural replicas if updated tokens weren't supplied");
-        };
+        TokenMetadata tmdAfter = null;
 
         if (tokens != null)
         {
             // Pending ranges
-            metadataClone.updateNormalTokens(tokens, address);
-            calculateNaturalReplicas = token -> strat.calculateNaturalReplicas(token, metadataClone);
+            tmdAfter =  metadata.cloneOnlyTokenMap();
+            tmdAfter.updateNormalTokens(tokens, address);
         }
         else if (useStrictConsistency)
         {
             throw new IllegalArgumentException("Can't ask for strict consistency and not supply tokens");
         }
 
-        return  RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> snitch.getSortedListByProximity(address, replicas),
-                                                                           addressRanges,
+        return RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> snitch.getSortedListByProximity(address, replicas),
+                                                                           strat,
                                                                            fetchRanges,
                                                                            useStrictConsistency,
-                                                                           calculateNaturalReplicas,
-                                                                           strat.getReplicationFactor(),
+                                                                           metadata,
+                                                                           tmdAfter,
                                                                            ALIVE_PREDICATE,
                                                                            keyspace,
                                                                            sourceFilters);
@@ -278,15 +272,17 @@ public class RangeStreamer
      *
      **/
      public static ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(BiFunction<InetAddressAndPort, ReplicaSet, ReplicaList> snitchGetSortedListByProximity,
-                                                                                              ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses,
+                                                                                              AbstractReplicationStrategy strat,
                                                                                               Replicas fetchRanges,
                                                                                               boolean useStrictConsistency,
-                                                                                              Function<Token, ReplicaList> calculateNaturalReplicas,
-                                                                                              ReplicationFactor replicationFactor,
+                                                                                              TokenMetadata tmdBefore,
+                                                                                              TokenMetadata tmdAfter,
                                                                                               Predicate<Replica> isAlive,
                                                                                               String keyspace,
                                                                                               Collection<Predicate<Replica>> sourceFilters)
     {
+        ReplicaMultimap<Range<Token>, ReplicaSet> rangeAddresses = strat.getRangeAddresses(tmdBefore);
+
         Predicate<Replica> isNotAlive = Predicates.not(isAlive);
         InetAddressAndPort localAddress = FBUtilities.getBroadcastAddressAndPort();
         System.out.printf("To fetch RN: %s%n", fetchRanges);
@@ -310,13 +306,13 @@ public class RangeStreamer
                     if (useStrictConsistency)
                     {
                         ReplicaSet oldEndpoints = new ReplicaSet(rangeAddresses.get(range));
-                        ReplicaSet newEndpoints = new ReplicaSet(calculateNaturalReplicas.apply(toFetch.getRange().right));
+                        ReplicaSet newEndpoints = new ReplicaSet(strat.calculateNaturalReplicas(toFetch.getRange().right, tmdAfter));
                         System.out.printf("Old endpoints %s%n", oldEndpoints);
                         System.out.printf("New endpoints %s%n", newEndpoints);
 
                         //Due to CASSANDRA-5953 we can have a higher RF then we have endpoints.
                         //So we need to be careful to only be strict when endpoints == RF
-                        if (oldEndpoints.size() == replicationFactor.replicas)
+                        if (oldEndpoints.size() == strat.getReplicationFactor().replicas)
                         {
                             Predicate<Replica> endpointNotReplicatedAnymore = replica -> newEndpoints.noneMatch(newReplica -> newReplica.getEndpoint().equals(replica.getEndpoint()));
                             //Remove new endpoints from old endpoints based on address
@@ -401,7 +397,7 @@ public class RangeStreamer
             if ((toFetch.isFull() && !addressList.findFirst(Replica::isFull).isPresent()) ||
                 addressList.isEmpty())
             {
-                if (replicationFactor.replicas == 1)
+                if (strat.getReplicationFactor().replicas == 1)
                 {
                     if (useStrictConsistency)
                     {
