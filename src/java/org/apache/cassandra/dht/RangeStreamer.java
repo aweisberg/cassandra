@@ -240,12 +240,14 @@ public class RangeStreamer
     {
         AbstractReplicationStrategy strat = Keyspace.open(keyspace).getReplicationStrategy();
 
+        TokenMetadata tmd = metadata.cloneOnlyTokenMap();
+
         TokenMetadata tmdAfter = null;
 
         if (tokens != null)
         {
             // Pending ranges
-            tmdAfter =  metadata.cloneOnlyTokenMap();
+            tmdAfter =  tmd.cloneOnlyTokenMap();
             tmdAfter.updateNormalTokens(tokens, address);
         }
         else if (useStrictConsistency)
@@ -257,7 +259,7 @@ public class RangeStreamer
                                                                            strat,
                                                                            fetchRanges,
                                                                            useStrictConsistency,
-                                                                           metadata,
+                                                                           tmd,
                                                                            tmdAfter,
                                                                            ALIVE_PREDICATE,
                                                                            keyspace,
