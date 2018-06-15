@@ -95,12 +95,10 @@ public final class SystemKeyspace
     public static final String LOCAL = "local";
     public static final String PEERS_V2 = "peers_v2";
     public static final String PEER_EVENTS_V2 = "peer_events_v2";
-    public static final String RANGE_XFERS = "range_xfers";
     public static final String COMPACTION_HISTORY = "compaction_history";
     public static final String SSTABLE_ACTIVITY = "sstable_activity";
     public static final String SIZE_ESTIMATES = "size_estimates";
     public static final String AVAILABLE_RANGES = "available_ranges";
-    public static final String TRANSFERRED_RANGES = "transferred_ranges";
     public static final String TRANSFERRED_RANGES_V2 = "transferred_ranges_v2";
     public static final String VIEW_BUILDS_IN_PROGRESS = "view_builds_in_progress";
     public static final String BUILT_VIEWS = "built_views";
@@ -205,15 +203,6 @@ public final class SystemKeyspace
                 + "peer_port int,"
                 + "hints_dropped map<uuid, int>,"
                 + "PRIMARY KEY ((peer), peer_port))")
-                .build();
-
-    private static final TableMetadata RangeXfers =
-        parse(RANGE_XFERS,
-                "ranges requested for transfer",
-                "CREATE TABLE %s ("
-                + "token_bytes blob,"
-                + "requested_at timestamp,"
-                + "PRIMARY KEY ((token_bytes)))")
                 .build();
 
     private static final TableMetadata CompactionHistory =
@@ -390,7 +379,6 @@ public final class SystemKeyspace
                          LegacyPeers,
                          PeerEventsV2,
                          LegacyPeerEvents,
-                         RangeXfers,
                          CompactionHistory,
                          SSTableActivity,
                          SizeEstimates,
