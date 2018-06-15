@@ -167,10 +167,9 @@ public class CassandraStreamManager implements TableStreamManager
                 List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
                 if (sections.isEmpty())
                 {
-                    refs.get(sstable).release();
+                    ref.release();
                     continue;
                 }
-
                 streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, sstable.estimatedKeysForRanges(ranges)));
             }
 

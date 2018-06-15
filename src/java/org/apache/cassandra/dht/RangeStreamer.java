@@ -19,7 +19,6 @@ package org.apache.cassandra.dht;
 
 import java.util.*;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -46,7 +45,6 @@ import org.apache.cassandra.locator.ReplicaList;
 import org.apache.cassandra.locator.ReplicaMultimap;
 import org.apache.cassandra.locator.ReplicaSet;
 import org.apache.cassandra.locator.Replicas;
-import org.apache.cassandra.locator.ReplicationFactor;
 import org.apache.cassandra.locator.TokenMetadata;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.PreviewKind;
@@ -196,7 +194,6 @@ public class RangeStreamer
 
         boolean useStrictSource = useStrictSourcesForRanges(keyspaceName);
         ReplicaMultimap<Replica, ReplicaList> rangesForKeyspace = calculateRangesToFetchWithPreferredEndpoints(replicas, keyspaceName, useStrictSource);
-        logger.info("Ranges for keyspace {}", rangesForKeyspace);
 
         for (Map.Entry<Replica, Replica> entry : rangesForKeyspace.entries())
             logger.info("{}: range {} exists on {} for keyspace {}", description, entry.getKey(), entry.getValue(), keyspaceName);
@@ -204,6 +201,8 @@ public class RangeStreamer
         AbstractReplicationStrategy strat = Keyspace.open(keyspaceName).getReplicationStrategy();
 
         ReplicaMultimap<InetAddressAndPort, ReplicaSet> rangeFetchMap;
+        //Only use the optimized strategy if we don't care about strict sources, have a replication factor > 1, and no
+        //transient replicas.
         if (useStrictSource || strat == null || strat.getReplicationFactor().replicas == 1 || strat.getReplicationFactor().trans > 1)
         {
             rangeFetchMap = convertPreferredEndpointsToWorkMap(rangesForKeyspace);
@@ -236,6 +235,13 @@ public class RangeStreamer
                 && metadata.getSizeOfAllEndpoints() != strat.getReplicationFactor().replicas;
     }
 
+    /**
+     * Wrapper method to assemble the arguments for invoking the implementation with RangeStreamer's parameters
+     * @param fetchRanges
+     * @param keyspace
+     * @param useStrictConsistency
+     * @return
+     */
     private ReplicaMultimap<Replica, ReplicaList> calculateRangesToFetchWithPreferredEndpoints(Replicas fetchRanges, String keyspace, boolean useStrictConsistency)
     {
         AbstractReplicationStrategy strat = Keyspace.open(keyspace).getReplicationStrategy();
@@ -287,8 +293,8 @@ public class RangeStreamer
 
         Predicate<Replica> isNotAlive = Predicates.not(isAlive);
         InetAddressAndPort localAddress = FBUtilities.getBroadcastAddressAndPort();
-        System.out.printf("To fetch RN: %s%n", fetchRanges);
-        System.out.printf("Fetch ranges: %s%n", rangeAddresses);
+        logger.debug("To fetch RN: {}", fetchRanges);
+        logger.debug("Fetch ranges: {}", rangeAddresses);
 
         Predicate<Replica> sourceFiltersPredicate = Predicates.and(sourceFilters);
 
@@ -296,21 +302,28 @@ public class RangeStreamer
         ReplicaMultimap<Replica, ReplicaList> rangesToFetchWithPreferredEndpoints = ReplicaMultimap.list();
         for (Replica toFetch : fetchRanges)
         {
-            //Replica is sufficient for what data we need to fetch
+            //Replica that is sufficient to provide the data we need
+            //With strict consistency and transient replication we may end up with multiple types
+            //so this isn't used with strict consistency
             Predicate<Replica> replicaIsSufficientFilter = toFetch.isFull() ? Replica::isFull : Predicates.alwaysTrue();
-            System.out.printf("To fetch %s%n", toFetch);
+            logger.debug("To fetch {}", toFetch);
             for (Range<Token> range : rangeAddresses.keySet())
             {
                 if (range.contains(toFetch.getRange()))
                 {
+                    //Ultimately we populate this with whatever is going to be fetched from to satisfy toFetch
+                    //It could be multiple endpoints and we must fetch from all of them if they are there
+                    //With transient replication and strict consistency this is to get the full data from a full replica and
+                    //transient data from the transient replica losing data
                     Replicas endpoints;
                     Predicate<Replica> notSelf = replica -> !replica.getEndpoint().equals(localAddress);
                     if (useStrictConsistency)
                     {
+                        //Start with two sets of who replicates the range before and who replicates it after
                         ReplicaSet oldEndpoints = new ReplicaSet(rangeAddresses.get(range));
                         ReplicaSet newEndpoints = new ReplicaSet(strat.calculateNaturalReplicas(toFetch.getRange().right, tmdAfter));
-                        System.out.printf("Old endpoints %s%n", oldEndpoints);
-                        System.out.printf("New endpoints %s%n", newEndpoints);
+                        logger.debug("Old endpoints {}", oldEndpoints);
+                        logger.debug("New endpoints{}", newEndpoints);
 
                         //Due to CASSANDRA-5953 we can have a higher RF then we have endpoints.
                         //So we need to be careful to only be strict when endpoints == RF
@@ -329,16 +342,12 @@ public class RangeStreamer
 
                             //If we are transitioning from transient to full and and the set of replicas for the range is not changing
                             //we might end up with no endpoints to fetch from by address. In that case we can pick any full replica safely
-                            //since we are already a transient replica.
+                            //since we are already a transient replica and the existing replica remains.
                             //The old behavior where we might be asked to fetch ranges we don't need shouldn't occur anymore.
                             //So it's an error if we don't find what we need.
-                            if (oldEndpoints.isEmpty())
+                            if (oldEndpoints.isEmpty() && toFetch.isTransient())
                             {
-                                if (toFetch.isTransient())
-                                    throw new AssertionError("If there are no endpoints to fetch from then we must be transitioning from transient to full for range " + toFetch);
-                                oldEndpoints = rangeAddresses.get(range).filter(Replica::isFull, notSelf, isAlive, sourceFiltersPredicate).limit(1);
-                                if (oldEndpoints.isEmpty())
-                                    throw new IllegalStateException("Couldn't find an alive full replica to stream from");
+                                throw new AssertionError("If there are no endpoints to fetch from then we must be transitioning from transient to full for range " + toFetch);
                             }
 
                             //Need an additional full replica
@@ -386,8 +395,8 @@ public class RangeStreamer
             if (addressList == null)
                 throw new IllegalStateException("Failed to find endpoints to fetch " + toFetch);
 
-            /**
-             * When we move forwards (shrink our bucket) we are the one losing a range an no one else loses
+            /*
+             * When we move forwards (shrink our bucket) we are the one losing a range and no one else loses
              * from that action (we also don't gain). When we move backwards there are two people losing a range. One is a full replica
              * and the other is a transient replica. So we must need fetch from two places in that case for the full range we gain.
              * For a transient range we only need to fetch from one.
@@ -423,6 +432,12 @@ public class RangeStreamer
         return rangesToFetchWithPreferredEndpoints;
     }
 
+    /**
+     * The preferred endpoint list is the wrong format because it is keyed by Replica (this node) rather than the source
+     * endpoint we will fetch from which streaming wants.
+     * @param preferredEndpoints
+     * @return
+     */
     public static ReplicaMultimap<InetAddressAndPort, ReplicaSet> convertPreferredEndpointsToWorkMap(ReplicaMultimap<Replica, ReplicaList> preferredEndpoints)
     {
         ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = ReplicaMultimap.set();
@@ -430,6 +445,8 @@ public class RangeStreamer
         {
             for (Replica source : preferredEndpoints.get(toFetch))
             {
+                assert toFetch.isLocal();
+                assert !source.isLocal();
                 workMap.put(source.getEndpoint(), toFetch);
             }
         }

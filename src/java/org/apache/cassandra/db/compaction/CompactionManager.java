@@ -40,9 +40,7 @@ import org.apache.cassandra.cache.AutoSavingCache;
 import org.apache.cassandra.concurrent.DebuggableThreadPoolExecutor;
 import org.apache.cassandra.concurrent.JMXEnabledThreadPoolExecutor;
 import org.apache.cassandra.concurrent.NamedThreadFactory;
-import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaSet;
-import org.apache.cassandra.locator.Replicas;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.schema.Schema;
@@ -1086,7 +1084,7 @@ public class CompactionManager implements CompactionManagerMBean
 
         boolean needsCleanupFull = needsCleanup(sstable, fullRanges);
         boolean needsCleanupTransient = needsCleanup(sstable, transientRanges);
-        //If there is no ranges for which the table needs cleanup either do to lack of intersection or lack
+        //If there are no ranges for which the table needs cleanup either due to lack of intersection or lack
         //of the table being repaired.
         if (!needsCleanupFull && (!needsCleanupTransient || (!sstable.isRepaired() && needsCleanupTransient)))
         {
@@ -1213,6 +1211,7 @@ public class CompactionManager implements CompactionManagerMBean
         {
             private final Collection<Range<Token>> transientRanges;
             private final boolean isRepaired;
+
             public Bounded(final ColumnFamilyStore cfs, Collection<Range<Token>> ranges, Collection<Range<Token>> transientRanges, boolean isRepaired, int nowInSec)
             {
                 super(ranges, nowInSec);
@@ -1235,7 +1234,6 @@ public class CompactionManager implements CompactionManagerMBean
                 //then cleanup should remove any partitions that are repaired and in the transient range
                 //as they should already be synchronized at other full replicas.
                 //So just don't scan the portion of the table containing the repaired transient ranges
-                //TODO Dtest this
                 Collection<Range<Token>> rangesToScan = ranges;
                 if (isRepaired)
                 {
@@ -1273,7 +1271,6 @@ public class CompactionManager implements CompactionManagerMBean
                 if (Range.isInRanges(partition.partitionKey().getToken(), ranges))
                     return partition;
 
-                //TODO Why are these two things done? Do I need to do them in the transient case?
                 cfs.invalidateCachedPartition(partition.partitionKey());
 
                 cfs.indexManager.deletePartition(partition, nowInSec);
