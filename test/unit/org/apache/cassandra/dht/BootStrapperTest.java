@@ -31,6 +31,7 @@ import java.util.UUID;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
 
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 
@@ -58,6 +59,7 @@ import org.apache.cassandra.schema.KeyspaceParams;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.streaming.StreamOperation;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 
 @RunWith(OrderedJUnit4ClassRunner.class)
 public class BootStrapperTest
@@ -125,19 +127,21 @@ public class BootStrapperTest
         s.addRanges(keyspaceName, Keyspace.open(keyspaceName).getReplicationStrategy().getPendingAddressRanges(tmd, myToken, myEndpoint));
 
 
-        Collection<Map.Entry<InetAddressAndPort, ReplicaSet>> toFetch = s.toFetch().get(keyspaceName);
+        Collection<Multimap<InetAddressAndPort, Pair<Replica, Replica>>> toFetch = s.toFetch().get(keyspaceName);
 
         // Check we get get RF new ranges in total
-        Set<Range<Token>> ranges = new HashSet<>();
-        for (Map.Entry<InetAddressAndPort, ReplicaSet> e : toFetch)
-            ranges.addAll(e.getValue().asRangeSet());
-
-        assertEquals(replicationFactor, ranges.size());
+        long rangesCount = toFetch.stream()
+               .map(Multimap::values)
+               .flatMap(Collection::stream)
+               .map(Pair::left)
+               .map(Replica::getRange)
+               .count();
+        assertEquals(replicationFactor, rangesCount);
 
         // there isn't any point in testing the size of these collections for any specific size.  When a random partitioner
         // is used, they will vary.
-        assert toFetch.iterator().next().getValue().size() > 0;
-        assert !toFetch.iterator().next().getKey().equals(myEndpoint);
+        assert toFetch.stream().map(Multimap::values).flatMap(Collection::stream).count() > 0;
+        assert toFetch.stream().map(Multimap::keySet).map(Collection::stream).noneMatch(myEndpoint::equals);
         return s;
     }
 

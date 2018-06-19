@@ -300,14 +300,16 @@ public class StreamSession implements IEndpointStateChangeSubscriber
      * Request data fetch task to this session.
      *
      * @param keyspace Requesting keyspace
-     * @param ranges Ranges to retrieve data
+     * @param fullRanges Ranges to retrieve data that will return full data from the source
+     * @param transientRanges Ranges to retrieve data that will return transient data from the source
      * @param columnFamilies ColumnFamily names. Can be empty if requesting all CF under the keyspace.
      */
-    public void addStreamRequest(String keyspace, Replicas ranges, Collection<String> columnFamilies)
+    public void addStreamRequest(String keyspace, Replicas fullRanges, Replicas transientRanges, Collection<String> columnFamilies)
     {
         //It should either be a dummy address for repair or if it's a bootstrap/move/rebuild it should be this node
-        assert ranges.allMatch(Replica::isLocal) | ranges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) : ranges.toString();
-        requests.add(new StreamRequest(keyspace, ranges, columnFamilies));
+        assert fullRanges.allMatch(Replica::isLocal) | fullRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) : fullRanges.toString();
+        assert transientRanges.allMatch(Replica::isLocal) | transientRanges.allMatch(range -> range.getEndpoint().getHostAddress(true).equals("0.0.0.0:0")) : transientRanges.toString();
+        requests.add(new StreamRequest(keyspace, fullRanges, transientRanges, columnFamilies));
     }
 
     /**
@@ -576,7 +578,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     {
 
         for (StreamRequest request : requests)
-            addTransferRanges(request.keyspace, request.replicas, request.columnFamilies, true); // always flush on stream request
+            addTransferRanges(request.keyspace, Replicas.concat(ImmutableList.of(request.fullReplicas, request.transientReplicas)), request.columnFamilies, true); // always flush on stream request
         for (StreamSummary summary : summaries)
             prepareReceiving(summary);
 

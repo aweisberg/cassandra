@@ -2723,30 +2723,36 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @param ranges the ranges to find sources for
      * @return multimap of addresses to ranges the address is responsible for
      */
-    private ReplicaMultimap<InetAddressAndPort, ReplicaSet> getNewSourceReplicas(String keyspaceName, ReplicaSet newReplicas)
+    private Multimap<InetAddressAndPort, Pair<Replica, Replica>> getNewSourceReplicas(String keyspaceName, ReplicaSet newReplicas)
     {
         InetAddressAndPort myAddress = FBUtilities.getBroadcastAddressAndPort();
         ReplicaMultimap<Range<Token>, ReplicaSet> rangeReplicas = Keyspace.open(keyspaceName).getReplicationStrategy().getRangeAddresses(tokenMetadata.cloneOnlyTokenMap());
-        ReplicaMultimap<InetAddressAndPort, ReplicaSet> sourceRanges = ReplicaMultimap.set();
+        Multimap<InetAddressAndPort, Pair<Replica, Replica>> sourceRanges = HashMultimap.create();
         IFailureDetector failureDetector = FailureDetector.instance;
 
         // find alive sources for our new ranges
         for (Replica newReplica : newReplicas)
         {
+            //Only consider full replicas if we need all the data
+            Predicate<Replica> replicaFilter = newReplica.isFull() ? Replica::isFull : Predicates.alwaysTrue();
             Replicas possibleReplicas = rangeReplicas.get(newReplica.getRange());
             IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
             ReplicaList sortedPossibleReplicas = snitch.getSortedListByProximity(myAddress, possibleReplicas);
 
             assert !sortedPossibleReplicas.containsEndpoint(myAddress);
 
-            for (Replica possibleReplica : sortedPossibleReplicas)
+            //Originally this didn't even log if it couldn't restore replication and that seems wrong
+            boolean foundLiveReplica = false;
+            for (Replica possibleReplica : sortedPossibleReplicas.filter(replicaFilter))
             {
                 if (failureDetector.isAlive(possibleReplica.getEndpoint()))
                 {
-                    sourceRanges.put(possibleReplica.getEndpoint(), possibleReplica);
+                    foundLiveReplica = true;
+                    sourceRanges.put(possibleReplica.getEndpoint(), Pair.create(possibleReplica, newReplica));
                     break;
                 }
             }
+            logger.warn("Didn't find live replica to restore replication for " + newReplica);
         }
         return sourceRanges;
     }
@@ -2790,7 +2796,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     private void restoreReplicaCount(InetAddressAndPort endpoint, final InetAddressAndPort notifyEndpoint)
     {
-        Multimap<String, Map.Entry<InetAddressAndPort, ReplicaSet>> replicasToFetch = HashMultimap.create();
+        Map<String, Multimap<InetAddressAndPort, Pair<Replica, Replica>>> replicasToFetch = new HashMap<>();
 
         InetAddressAndPort myAddress = FBUtilities.getBroadcastAddressAndPort();
 
@@ -2809,25 +2815,26 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     myNewReplicas.add(entry.getKey());
                 }
             }
-            ReplicaMultimap<InetAddressAndPort, ReplicaSet> sourceReplicas = getNewSourceReplicas(keyspaceName, myNewReplicas);
-            for (Map.Entry<InetAddressAndPort, ReplicaSet> entry : sourceReplicas.asMap().entrySet())
-            {
-                replicasToFetch.put(keyspaceName, entry);
-            }
+            replicasToFetch.put(keyspaceName, getNewSourceReplicas(keyspaceName, myNewReplicas));
         }
 
         StreamPlan stream = new StreamPlan(StreamOperation.RESTORE_REPLICA_COUNT);
-        for (String keyspaceName : replicasToFetch.keySet())
-        {
-            for (Map.Entry<InetAddressAndPort, ReplicaSet> entry : replicasToFetch.get(keyspaceName))
-            {
-                InetAddressAndPort source = entry.getKey();
-                ReplicaSet replicas = entry.getValue();
+        replicasToFetch.forEach((keyspaceName, sources) -> {
+            sources.asMap().forEach((sourceAddress, sourceAndOurReplicas) -> {
                 if (logger.isDebugEnabled())
-                    logger.debug("Requesting from {} replicas {}", source, StringUtils.join(replicas, ", "));
-                stream.requestRanges(source, keyspaceName, replicas);
-            }
-        }
+                    logger.debug("Requesting from {} replicas {}", sourceAddress, StringUtils.join(sourceAndOurReplicas, ", "));
+                //Remember whether this node is providing the full or transient replicas for this range. We are going
+                //to pass streaming the local instance of Replica for the range which doesn't tell us anything about the source
+                //By encoding it as two separate sets we retain this information about the source.
+                Replicas fullReplicas = new ReplicaList(sourceAndOurReplicas.stream()
+                                                                            .filter(pair -> pair.left.isFull()).map(pair -> pair.right)
+                                                                            .collect(toList()));
+                Replicas transientReplicas = new ReplicaList(sourceAndOurReplicas.stream()
+                                                                                 .filter(pair -> pair.left.isTransient())
+                                                                                 .map(pair -> pair.right).collect(toList()));
+                stream.requestRanges(sourceAddress, keyspaceName, fullReplicas, transientReplicas);
+            });
+        });
         StreamResultFuture future = stream.execute();
         Futures.addCallback(future, new FutureCallback<StreamState>()
         {
@@ -4281,7 +4288,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
          * @param fetchRanges
          * @return
          */
-        private ReplicaMultimap<InetAddressAndPort, ReplicaSet> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges, String keyspace)
+        private Multimap<InetAddressAndPort, Pair<Replica, Replica>> calculateRangesToFetchWithPreferredEndpoints(AbstractReplicationStrategy strategy, ReplicaSet fetchRanges, String keyspace)
         {
             ReplicaMultimap<Replica, ReplicaList> preferredEndpoints =
             RangeStreamer.calculateRangesToFetchWithPreferredEndpoints((address, replicas) -> DatabaseDescriptor.getEndpointSnitch().getSortedListByProximity(address, replicas),
@@ -4413,7 +4420,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         rangesPerKeyspace = calculateStreamAndFetchRanges(currentReplicas, updatedReplicas);
                     }
 
-                    ReplicaMultimap<InetAddressAndPort, ReplicaSet> workMap = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right, keyspace);
+                    Multimap<InetAddressAndPort, Pair<Replica, Replica>> workMap = calculateRangesToFetchWithPreferredEndpoints(strategy, rangesPerKeyspace.right, keyspace);
 
                     ReplicaMultimap<InetAddressAndPort, ReplicaList> endpointRanges = calculateRangesToStreamWithPreferredEndpoints(rangesPerKeyspace.left, strategy, tokenMetaClone, tokenMetaCloneAllSettled);
 
@@ -4428,11 +4435,16 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     }
 
                     // stream requests
-                    for (InetAddressAndPort address : workMap.keySet())
-                    {
+                    workMap.asMap().forEach((address, sourceAndOurReplicas) -> {
+                        Replicas fullReplicas = new ReplicaList(sourceAndOurReplicas.stream()
+                                                                                    .filter(pair -> pair.left.isFull()).map(pair -> pair.right)
+                                                                                    .collect(toList()));
+                        Replicas transientReplicas = new ReplicaList(sourceAndOurReplicas.stream()
+                                                                                         .filter(pair -> pair.left.isTransient())
+                                                                                         .map(pair -> pair.right).collect(toList()));
                         logger.debug("Will request range {} of keyspace {} from endpoint {}", workMap.get(address), keyspace, address);
-                        streamPlan.requestRanges(address, keyspace, workMap.get(address));
-                    }
+                        streamPlan.requestRanges(address, keyspace, fullReplicas, transientReplicas);
+                    });
 
                     logger.debug("Keyspace {}: work map {}.", keyspace, workMap);
                 }

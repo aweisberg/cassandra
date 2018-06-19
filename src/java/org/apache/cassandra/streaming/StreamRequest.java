@@ -41,12 +41,19 @@ public class StreamRequest
     public static final IVersionedSerializer<StreamRequest> serializer = new StreamRequestSerializer();
 
     public final String keyspace;
-    public final Replicas replicas;
+    //Full replicas/transient replicas are not about the data to send, but about whether the requester
+    //Is going to fully or transiently replicate that range ultimately.
+    //This is necessary to disambiguate when enough data has been received for each range such as a fully replicated
+    //range where it will some of the time need to fetch both full and transient ranges
+    public final Replicas fullReplicas;
+    public final Replicas transientReplicas;
     public final Collection<String> columnFamilies = new HashSet<>();
-    public StreamRequest(String keyspace, Replicas replicas, Collection<String> columnFamilies)
+
+    public StreamRequest(String keyspace, Replicas fullReplicas, Replicas transientReplicas, Collection<String> columnFamilies)
     {
         this.keyspace = keyspace;
-        this.replicas = replicas;
+        this.fullReplicas = fullReplicas;
+        this.transientReplicas = transientReplicas;
         this.columnFamilies.addAll(columnFamilies);
     }
 
@@ -55,8 +62,17 @@ public class StreamRequest
         public void serialize(StreamRequest request, DataOutputPlus out, int version) throws IOException
         {
             out.writeUTF(request.keyspace);
-            out.writeInt(request.replicas.size());
-            for (Replica replica : request.replicas)
+            out.writeInt(request.columnFamilies.size());
+            serializeReplicas(request.fullReplicas, out, version);
+            serializeReplicas(request.transientReplicas, out, version);
+            for (String cf : request.columnFamilies)
+                out.writeUTF(cf);
+        }
+
+        private void serializeReplicas(Replicas replicas, DataOutputPlus out, int version) throws IOException
+        {
+            out.writeInt(replicas.size());
+            for (Replica replica : replicas)
             {
                 MessagingService.validatePartitioner(replica.getRange());
                 CompactEndpointSerializationHelper.streamingInstance.serialize(replica.getEndpoint(), out, version);
@@ -64,14 +80,22 @@ public class StreamRequest
                 Token.serializer.serialize(replica.getRange().right, out, version);
                 out.writeBoolean(replica.isFull());
             }
-            out.writeInt(request.columnFamilies.size());
-            for (String cf : request.columnFamilies)
-                out.writeUTF(cf);
         }
 
         public StreamRequest deserialize(DataInputPlus in, int version) throws IOException
         {
             String keyspace = in.readUTF();
+            int cfCount = in.readInt();
+            Replicas fullReplicas = deserializeReplicas(in, version);
+            Replicas transientReplicas = deserializeReplicas(in, version);
+            List<String> columnFamilies = new ArrayList<>(cfCount);
+            for (int i = 0; i < cfCount; i++)
+                columnFamilies.add(in.readUTF());
+            return new StreamRequest(keyspace, fullReplicas, transientReplicas, columnFamilies);
+        }
+
+        Replicas deserializeReplicas(DataInputPlus in, int version) throws IOException
+        {
             int replicaCount = in.readInt();
             Replicas replicas = new ReplicaList(replicaCount);
             for (int i = 0; i < replicaCount; i++)
@@ -85,28 +109,33 @@ public class StreamRequest
                 boolean full = in.readBoolean();
                 replicas.add(new Replica(endpoint, new Range(left, right), full));
             }
-            int cfCount = in.readInt();
-            List<String> columnFamilies = new ArrayList<>(cfCount);
-            for (int i = 0; i < cfCount; i++)
-                columnFamilies.add(in.readUTF());
-            return new StreamRequest(keyspace, replicas, columnFamilies);
+            return replicas;
         }
 
         public long serializedSize(StreamRequest request, int version)
         {
             int size = TypeSizes.sizeof(request.keyspace);
-            size += TypeSizes.sizeof(request.replicas.size());
-            for (Replica replica : request.replicas)
+            size += TypeSizes.sizeof(request.columnFamilies.size());
+            size += replicasSerializedSize(request.transientReplicas, version);
+            size += replicasSerializedSize(request.fullReplicas, version);
+            for (String cf : request.columnFamilies)
+                size += TypeSizes.sizeof(cf);
+            return size;
+        }
+
+        private long replicasSerializedSize(Replicas replicas, int version)
+        {
+            long size = 0;
+            size += TypeSizes.sizeof(replicas.size());
+            for (Replica replica : replicas)
             {
                 size += CompactEndpointSerializationHelper.streamingInstance.serializedSize(replica.getEndpoint(), version);
                 size += Token.serializer.serializedSize(replica.getRange().left, version);
                 size += Token.serializer.serializedSize(replica.getRange().right, version);
                 size += TypeSizes.sizeof(replica.isFull());
             }
-            size += TypeSizes.sizeof(request.columnFamilies.size());
-            for (String cf : request.columnFamilies)
-                size += TypeSizes.sizeof(cf);
             return size;
         }
+
     }
 }
