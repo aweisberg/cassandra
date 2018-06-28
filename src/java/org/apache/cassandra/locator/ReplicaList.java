@@ -26,11 +26,19 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Predicate;
+import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.dht.Range;
@@ -41,6 +49,48 @@ public class ReplicaList extends Replicas
     static final ReplicaList EMPTY = new ReplicaList(ImmutableList.of());
 
     private final List<Replica> replicaList;
+
+    private static final Set<Collector.Characteristics> LIST_COLLECTOR_CHARACTERISTICS = ImmutableSet.of(Collector.Characteristics.IDENTITY_FINISH);
+    public static final Collector<Replica, ReplicaList, ReplicaList> COLLECTOR = new Collector<Replica, ReplicaList, ReplicaList>()
+    {
+        private final Supplier<ReplicaList> supplier = ReplicaList::new;
+        private final BiConsumer<ReplicaList, Replica> accumulator = (set, replica) -> set.add(replica);
+        private final BinaryOperator<ReplicaList> combiner = (a, b) -> {
+            if (a.size() > b.size())
+            {
+                a.addAll(b);
+                return a;
+            }
+            b.addAll(a);
+            return b;
+        };
+        private final Function<ReplicaList, ReplicaList> finisher = list -> list;
+
+        public Supplier<ReplicaList> supplier()
+        {
+            return supplier;
+        }
+
+        public BiConsumer<ReplicaList, Replica> accumulator()
+        {
+            return accumulator;
+        }
+
+        public BinaryOperator<ReplicaList> combiner()
+        {
+            return combiner;
+        }
+
+        public Function<ReplicaList, ReplicaList> finisher()
+        {
+            return finisher;
+        }
+
+        public Set<Characteristics> characteristics()
+        {
+            return LIST_COLLECTOR_CHARACTERISTICS;
+        }
+    };
 
     public ReplicaList()
     {
@@ -226,9 +276,20 @@ public class ReplicaList extends Replicas
         }
     }
 
+    @Override
+    public Stream<Replica> stream()
+    {
+        return replicaList.stream();
+    }
+
     public static ReplicaList immutableCopyOf(Replicas replicas)
     {
         return new ReplicaList(ImmutableList.<Replica>builder().addAll(replicas).build());
+    }
+
+    public static ReplicaList immutableCopyOf(List<Replica> replicas)
+    {
+        return new ReplicaList(ImmutableList.copyOf(replicas));
     }
 
     public static ReplicaList immutableCopyOf(ReplicaList replicas)

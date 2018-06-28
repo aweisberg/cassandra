@@ -27,8 +27,6 @@ import java.util.Map.Entry;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -2720,7 +2718,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * Finds living endpoints responsible for the given ranges
      *
      * @param keyspaceName the keyspace ranges belong to
-     * @param ranges the ranges to find sources for
+     * @param newReplicas the ranges to find sources for
      * @return multimap of addresses to ranges the address is responsible for
      */
     private Multimap<InetAddressAndPort, Pair<Replica, Replica>> getNewSourceReplicas(String keyspaceName, ReplicaSet newReplicas)
@@ -2733,7 +2731,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // find alive sources for our new ranges
         for (Replica newReplica : newReplicas)
         {
-            //Only consider full replicas if we need all the data
+            //If we are going to be a full replica only consider full replicas
             Predicate<Replica> replicaFilter = newReplica.isFull() ? Replica::isFull : Predicates.alwaysTrue();
             Replicas possibleReplicas = rangeReplicas.get(newReplica.getRange());
             IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
@@ -2743,7 +2741,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
             //Originally this didn't even log if it couldn't restore replication and that seems wrong
             boolean foundLiveReplica = false;
-            for (Replica possibleReplica : sortedPossibleReplicas.filter(replicaFilter))
+            for (Replica possibleReplica : (Iterable<Replica>)sortedPossibleReplicas.stream().filter(replicaFilter))
             {
                 if (failureDetector.isAlive(possibleReplica.getEndpoint()))
                 {
@@ -2752,7 +2750,10 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     break;
                 }
             }
-            logger.warn("Didn't find live replica to restore replication for " + newReplica);
+            if (!foundLiveReplica)
+            {
+                logger.warn("Didn't find live replica to restore replication for " + newReplica);
+            }
         }
         return sourceRanges;
     }

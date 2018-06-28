@@ -23,19 +23,18 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collector;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Sets;
-import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -48,11 +47,14 @@ import org.apache.cassandra.utils.FBUtilities;
  */
 public abstract class Replicas implements Iterable<Replica>
 {
+
+
     public abstract boolean add(Replica replica);
     public abstract void addAll(Iterable<Replica> replicas);
     public abstract void removeEndpoint(InetAddressAndPort endpoint);
     public abstract void removeReplica(Replica replica);
     public abstract int size();
+    public abstract Stream<Replica> stream();
 
     protected abstract Collection<Replica> getUnmodifiableCollection();
 
@@ -213,6 +215,12 @@ public abstract class Replicas implements Iterable<Replica>
             {
                 return Collections.unmodifiableCollection(source.getUnmodifiableCollection());
             }
+
+            @Override
+            public Stream<Replica> stream()
+            {
+                return StreamSupport.stream(iterable.spliterator(), false);
+            }
         };
     }
 
@@ -235,6 +243,12 @@ public abstract class Replicas implements Iterable<Replica>
             protected Collection<Replica> getUnmodifiableCollection()
             {
                 return Collections.unmodifiableCollection(source.getUnmodifiableCollection());
+            }
+
+            @Override
+            public Stream<Replica> stream()
+            {
+                return StreamSupport.stream(iterable.spliterator(), false);
             }
         };
     }
@@ -275,6 +289,12 @@ public abstract class Replicas implements Iterable<Replica>
             {
                 throw new UnsupportedOperationException();
             }
+
+            @Override
+            public Stream<Replica> stream()
+            {
+                return StreamSupport.stream(iterable.spliterator(), false);
+            }
         };
     }
 
@@ -298,6 +318,12 @@ public abstract class Replicas implements Iterable<Replica>
             {
                 throw new UnsupportedOperationException();
             }
+
+            @Override
+            public Stream<Replica> stream()
+            {
+                return StreamSupport.stream(iterable.spliterator(), false);
+            }
         };
     }
 
@@ -318,6 +344,12 @@ public abstract class Replicas implements Iterable<Replica>
             public Iterator<Replica> iterator()
             {
                 return Iterators.singletonIterator(replica);
+            }
+
+            @Override
+            public Stream<Replica> stream()
+            {
+                return Stream.of(replica);
             }
         };
     }
@@ -340,6 +372,12 @@ public abstract class Replicas implements Iterable<Replica>
             protected Collection<Replica> getUnmodifiableCollection()
             {
                 return Collections.unmodifiableCollection(replicas);
+            }
+
+            @Override
+            public Stream<Replica> stream()
+            {
+                return StreamSupport.stream(replicas.spliterator(), false);
             }
         };
     }
@@ -371,6 +409,55 @@ public abstract class Replicas implements Iterable<Replica>
         return true;
     }
 
+    public <T extends Replicas> T filter(java.util.function.Predicate<Replica> predicates[], Supplier<T> collectorSupplier)
+    {
+        T newReplicas = collectorSupplier.get();
+        for (Replica replica : this)
+        {
+            boolean success = true;
+            for (java.util.function.Predicate<Replica> predicate : predicates)
+            {
+                if (!predicate.test(replica))
+                {
+                    success = false;
+                    break;
+                }
+            }
+
+            if (success)
+            {
+                newReplicas.add(replica);
+            }
+        }
+        return newReplicas;
+    }
+
+    public long count(Predicate<Replica> predicate)
+    {
+        long count = 0;
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+            {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public Optional<Replica> findFirst(Predicate<Replica> predicate)
+    {
+        for (Replica replica : this)
+        {
+            if (predicate.apply(replica))
+            {
+                return Optional.of(replica);
+            }
+        }
+
+        return Optional.empty();
+    }
+
     private static Replicas EMPTY = new ImmutableReplicaContainer()
     {
         public int size()
@@ -387,6 +474,12 @@ public abstract class Replicas implements Iterable<Replica>
         {
             return Collections.emptyIterator();
         }
+
+        @Override
+        public Stream<Replica> stream()
+        {
+            return Stream.empty();
+        }
     };
 
     public static Replicas empty()
@@ -397,57 +490,6 @@ public abstract class Replicas implements Iterable<Replica>
     public static Replicas singleton(Replica replica)
     {
         return of(replica);
-    }
-
-    public ReplicaSet filterToSet(java.util.function.Predicate<Replica>... predicates)
-    {
-        return filter(predicates, ReplicaSet::new);
-    }
-
-    public <T extends Replicas> T filter(java.util.function.Predicate<Replica> predicates[],
-                                         Supplier<T> collectorSupplier)
-    {
-        T newReplicas = collectorSupplier.get();
-        for (Replica replica: this)
-        {
-            boolean success = true;
-            for (java.util.function.Predicate<Replica> predicate : predicates)
-            {
-                if (!predicate.test(replica))
-                {
-                    success = false;
-                    break;
-                }
-            }
-            if (success)
-            {
-                newReplicas.add(replica);
-            }
-        }
-        return newReplicas;
-    }
-
-    public long count(Predicate<Replica> predicate)
-    {
-        long count = 0;
-        for (Replica replica : this)
-        {
-            if (predicate.apply(replica))
-                count++;
-        }
-
-        return count;
-    }
-
-    public Optional<Replica> findFirst(Predicate<Replica> predicate)
-    {
-        for (Replica replica : this)
-        {
-            if (predicate.apply(replica))
-                return Optional.of(replica);
-        }
-
-        return Optional.empty();
     }
 
     public static void removeAllIgnoreTransientStatus(Collection<Replica> replica, Collection<Replica> toRemove)

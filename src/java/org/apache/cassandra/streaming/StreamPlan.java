@@ -19,8 +19,6 @@ package org.apache.cassandra.streaming;
 
 import java.util.*;
 
-import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.Replicas;

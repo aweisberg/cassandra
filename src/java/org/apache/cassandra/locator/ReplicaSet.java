@@ -25,7 +25,14 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Predicate;
+import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
+import java.util.stream.Stream;
+
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -38,6 +45,48 @@ public class ReplicaSet extends Replicas
     {
         return EMPTY;
     }
+
+    private static final Set<Collector.Characteristics> SET_COLLECTOR_CHARACTERISTICS = ImmutableSet.of(Collector.Characteristics.UNORDERED, Collector.Characteristics.IDENTITY_FINISH);
+    public static final Collector<Replica, ReplicaSet, ReplicaSet> COLLECTOR = new Collector<Replica, ReplicaSet, ReplicaSet>()
+    {
+        private final Supplier<ReplicaSet> supplier = ReplicaSet::new;
+        private final BiConsumer<ReplicaSet, Replica> accumulator = (set, replica) -> set.add(replica);
+        private final BinaryOperator<ReplicaSet> combiner = (a, b) -> {
+            if (a.size() > b.size())
+            {
+                a.addAll(b);
+                return a;
+            }
+            b.addAll(a);
+            return b;
+        };
+        private final Function<ReplicaSet, ReplicaSet> finisher = set -> set;
+
+        public Supplier<ReplicaSet> supplier()
+        {
+            return supplier;
+        }
+
+        public BiConsumer<ReplicaSet, Replica> accumulator()
+        {
+            return accumulator;
+        }
+
+        public BinaryOperator<ReplicaSet> combiner()
+        {
+            return combiner;
+        }
+
+        public Function<ReplicaSet, ReplicaSet> finisher()
+        {
+            return finisher;
+        }
+
+        public Set<Characteristics> characteristics()
+        {
+            return SET_COLLECTOR_CHARACTERISTICS;
+        }
+    };
 
     private final Set<Replica> replicaSet;
 
@@ -144,21 +193,10 @@ public class ReplicaSet extends Replicas
         return filter(predicates, ReplicaSet::new);
     }
 
-    public ReplicaSet limit(int limit)
+    @Override
+    public Stream<Replica> stream()
     {
-        if (size() < limit)
-            return this;
-        ReplicaSet replacement = new ReplicaSet(limit);
-        int count = 0;
-        for (Replica replica : this)
-        {
-            if (count < limit)
-                count++;
-            else
-                break;
-            replacement.add(replica);
-        }
-        return replacement;
+        return replicaSet.stream();
     }
 
     public static ReplicaSet immutableCopyOf(ReplicaSet from)

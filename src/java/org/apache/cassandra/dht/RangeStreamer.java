@@ -319,7 +319,7 @@ public class RangeStreamer
                     //It could be multiple endpoints and we must fetch from all of them if they are there
                     //With transient replication and strict consistency this is to get the full data from a full replica and
                     //transient data from the transient replica losing data
-                    Replicas endpoints;
+                    ReplicaSet endpoints;
                     Predicate<Replica> notSelf = replica -> !replica.getEndpoint().equals(localAddress);
                     if (useStrictConsistency)
                     {
@@ -358,11 +358,8 @@ public class RangeStreamer
                             if (toFetch.isFull() && oldEndpoints.noneMatch(Replica::isFull))
                             {
                                 Optional<Replica> fullReplica = rangeAddresses.get(range).findFirst(Predicates.and(Replica::isFull, notSelf, isAlive, sourceFiltersPredicate));
-                                if (!fullReplica.isPresent())
-                                {
-                                    throw new IllegalStateException("Couldn't find an alive full replica");
-                                }
-                                oldEndpoints.add(fullReplica.get());
+                                fullReplica.ifPresent(oldEndpoints::add);
+                                fullReplica.orElseThrow(() -> new IllegalStateException("Couldn't find an alive full replica"));
                             }
                         }
                         else
@@ -376,7 +373,7 @@ public class RangeStreamer
                         //required for strict consistency
                         if (endpoints.anyMatch(Predicates.not(sourceFiltersPredicate)))
                         {
-                            throw new IllegalStateException("Necessary replicas for strict consistency were removed by source filters: " + endpoints.filterToSet(Predicates.not(sourceFiltersPredicate)));
+                            throw new IllegalStateException("Necessary replicas for strict consistency were removed by source filters: " + endpoints.filter(Predicates.not(sourceFiltersPredicate)));
                         }
                     }
                     else
@@ -384,11 +381,13 @@ public class RangeStreamer
                         //Without strict consistency we have given up on correctness so no point in fetching from
                         //a random full + transient replica since it's also likely to lose data
                         endpoints = snitchGetSortedListByProximity.apply(localAddress, rangeAddresses.get(range))
-                                                                  .filter(replicaIsSufficientFilter, notSelf, isAlive);
+                                                                  .stream()
+                                                                  .filter(Predicates.and(replicaIsSufficientFilter, notSelf, isAlive))
+                                                                  .collect(ReplicaSet.COLLECTOR);
                     }
 
                     //Apply additional policy filters that were given to us, and establish everything remaining is alive for the strict case
-                    endpoints = endpoints.filterToSet(sourceFiltersPredicate).filterToSet(isAlive);
+                    endpoints = endpoints.filter(sourceFiltersPredicate);
 
                     // storing range and preferred endpoint set
                     rangesToFetchWithPreferredEndpoints.putAll(toFetch, endpoints);
@@ -460,11 +459,10 @@ public class RangeStreamer
     private static Multimap<InetAddressAndPort, Pair<Replica, Replica>> getOptimizedRangeFetchMap(ReplicaMultimap<Replica, ReplicaList> rangesWithSources,
                                                                                              Collection<Predicate<Replica>> sourceFilters, String keyspace)
     {
-        //The range fetch map calculator shouldn't really need to know anything about transient replication.
-        //It just needs to know who the players are.
-        //I think what we will end up doing is running the algorithm twice once for full ranges with only full replicas
-        //and again with transient ranges with only transient replicas.
-        //Or possibly punt and just do the other version with transient replicas for now.
+        //For now we just aren't going to use the optimized range fetch map with transient replication to shrink
+        //the surface area to test and introduce bugs.
+        //In the future it's possible we could run it twice once for full ranges with only full replicas
+        //and once with transient ranges and all replicas. Then merge the result.
         ReplicaMultimap<Range<Token>, ReplicaList> unwrapped = ReplicaMultimap.list();
         for (Map.Entry<Replica, Replica> entry : rangesWithSources.entries())
         {
@@ -477,6 +475,7 @@ public class RangeStreamer
         logger.info("Output from RangeFetchMapCalculator for keyspace {}", keyspace);
         validateRangeFetchMap(unwrapped, rangeFetchMapMap, keyspace);
 
+        //Need to rewrap as Replicas
         Multimap<InetAddressAndPort, Pair<Replica, Replica>> wrapped = HashMultimap.create();
         for (Map.Entry<InetAddressAndPort, Range<Token>> entry : rangeFetchMapMap.entries())
         {
@@ -545,10 +544,9 @@ public class RangeStreamer
 
                 //It's a bit unpredictable as to whether we need to fetch a replica or not
                 //because some of the time we will need it both fully and transiently and we only store what we already
-                //have not what we need. However if there is a candidate here it's because we do absolutely need it
-                //and we should only ever have at most one full and at most one transient so if we have a full replica
-                //then we should have range available fully and if we have one transient replica we should have received
-                //the range transiently as well.
+                //have not what we need.
+                //However at this point we have already calculated what we need so it doesn't matter it's not stored
+                //we just need to check if we already fetched the data once the way we need it.
                 Predicate<Pair<Replica, Replica>> isAvailable = sourceAndOurReplica -> {
                     Replica sourceReplica = sourceAndOurReplica.left;
                     Replica ourReplica = sourceAndOurReplica.right;
@@ -566,7 +564,7 @@ public class RangeStreamer
                     }
                     else
                     {
-                        throw new AssertionError("Don't really think this should happen");
+                        throw new AssertionError("Unreachable");
                     }
                 };
                 List<Pair<Replica, Replica>> remaining = sourceAndOurReplicas.stream().filter(Predicates.not(isAvailable)).collect(Collectors.toList());
@@ -580,11 +578,13 @@ public class RangeStreamer
                     logger.trace("{}ing from {} ranges {}", description, source, StringUtils.join(remaining, ", "));
 
                 Replicas fullReplicas = new ReplicaList(sourceAndOurReplicas.stream()
-                                                                            .filter(pair -> pair.left.isFull()).map(pair -> pair.right)
+                                                                            .filter(pair -> pair.left.isFull())
+                                                                            .map(pair -> pair.right)
                                                                             .collect(toList()));
                 Replicas transientReplicas = new ReplicaList(sourceAndOurReplicas.stream()
                                                                                  .filter(pair -> pair.left.isTransient())
-                                                                                 .map(pair -> pair.right).collect(toList()));
+                                                                                 .map(pair -> pair.right)
+                                                                                 .collect(toList()));
 
                 /* Send messages to respective folks to stream data over to me */
                 streamPlan.requestRanges(source, keyspace,fullReplicas, transientReplicas);

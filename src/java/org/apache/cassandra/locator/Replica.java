@@ -35,7 +35,7 @@ import org.apache.cassandra.utils.FBUtilities;
 /**
  * A Replica is an endpoint, a token range that endpoint replicates (or used to replicate) and whether it replicates
  * that range fully or transiently. Generally it's a bad idea to pass around ranges when code depends on the transientness
- * of the replication. That means you should avoid unwrapping and rewrapping these things and thing hard about subtraction
+ * of the replication. That means you should avoid unwrapping and rewrapping these things and think hard about subtraction
  * and such and what the result is WRT to transientness.
  *
  * Definitely avoid creating fake Replicas with misinformation about endpoints, ranges, or transientness.

@@ -146,8 +146,14 @@ public class CassandraStreamManager implements TableStreamManager
 
 
             List<OutgoingStream> streams = new ArrayList<>(refs.size());
-            Set<Range<Token>> fullRanges = replicas.filter(Replica::isFull).asRangeSet();
-            Set<Range<Token>> transientRanges = replicas.filter(Replica::isTransient).asRangeSet();
+            Set<Range<Token>> fullRanges = replicas.stream()
+                                                   .filter(Replica::isFull)
+                                                   .map(Replica::getRange)
+                                                   .collect(Collectors.toSet());
+            Set<Range<Token>> transientRanges = replicas.stream()
+                                                        .filter(Replica::isTransient)
+                                                        .map(Replica::getRange)
+                                                        .collect(Collectors.toSet());
 
             //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables
             for (SSTableReader sstable : refs)
