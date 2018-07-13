@@ -284,7 +284,7 @@ public abstract class AbstractReplicationStrategy
     {
         TokenMetadata temp = metadata.cloneOnlyTokenMap();
         temp.updateNormalTokens(pendingTokens, pendingAddress);
-        return getAddressReplicas(temp).get(pendingAddress);
+        return getAddressReplicas(temp, pendingAddress);
     }
 
     public abstract void validateOptions() throws ConfigurationException;
