@@ -186,8 +186,8 @@ public final class HintsService implements HintsServiceMBean
 
         ReplicaCollection replicas = StorageService.instance.getNaturalAndPendingReplicas(keyspaceName, token);
         Replicas.checkFull(replicas);
-        Iterable<InetAddressAndPort> endpoints = Replicas.filter(replicas, StorageProxy::shouldHint).asEndpoints();
-        Iterable<UUID> hostIds = transform(endpoints, StorageService.instance::getHostIdForEndpoint);
+        Iterable<UUID> hostIds = transform(Replicas.filter(replicas, StorageProxy::shouldHint),
+                                           (replica) -> StorageService.instance.getHostIdForEndpoint(replica.getEndpoint()));
 
         write(hostIds, hint);
     }

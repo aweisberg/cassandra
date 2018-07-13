@@ -50,6 +50,7 @@ public abstract class ReplicaCollection implements Iterable<Replica>
     public abstract void removeReplica(Replica replica);
     public abstract int size();
     public abstract Stream<Replica> stream();
+
     protected abstract Collection<Replica> getUnmodifiableCollection();
 
     public Iterable<InetAddressAndPort> asEndpoints()

@@ -4244,13 +4244,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             {
                 // replication strategy of the current keyspace
                 AbstractReplicationStrategy strategy = Keyspace.open(keyspace).getReplicationStrategy();
-                ReplicaMultimap<InetAddressAndPort, ReplicaSet> endpointToRanges = strategy.getAddressReplicas();
+                // getting collection of the currently used ranges by this keyspace
+                ReplicaSet currentReplicas = strategy.getAddressReplicas(localAddress);
 
                 logger.debug("Calculating ranges to stream and request for keyspace {}", keyspace);
                 for (Token newToken : newTokens)
                 {
-                    // getting collection of the currently used ranges by this keyspace
-                    ReplicaSet currentReplicas = endpointToRanges.get(localAddress);
                     // collection of ranges which this node will serve after move to the new token
                     ReplicaSet updatedReplicas = strategy.getPendingAddressRanges(tokenMetaClone, newToken, localAddress);
 

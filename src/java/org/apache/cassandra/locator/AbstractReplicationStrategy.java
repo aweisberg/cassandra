@@ -227,6 +227,26 @@ public abstract class AbstractReplicationStrategy
         return map;
     }
 
+    public ReplicaSet getAddressReplicas(TokenMetadata metadata, InetAddressAndPort endpoint)
+    {
+        ReplicaSet replicaSet = new ReplicaSet();
+        for (Token token : metadata.sortedTokens())
+        {
+            Range<Token> range = metadata.getPrimaryRangeFor(token);
+            for (Replica replica : calculateNaturalReplicas(token, metadata))
+            {
+                if (!replica.getEndpoint().equals(endpoint))
+                    continue;
+                // LocalStrategy always returns (min, min] ranges for it's replicas, so we skip the check here
+                Preconditions.checkState(range.equals(replica.getRange()) || this instanceof LocalStrategy);
+                replicaSet.add(replica);
+            }
+        }
+
+        return replicaSet;
+    }
+
+
     public ReplicaMultimap<Range<Token>, ReplicaSet> getRangeAddresses(TokenMetadata metadata)
     {
         ReplicaMultimap<Range<Token>, ReplicaSet> map = ReplicaMultimap.set();
@@ -248,6 +268,11 @@ public abstract class AbstractReplicationStrategy
     public ReplicaMultimap<InetAddressAndPort, ReplicaSet> getAddressReplicas()
     {
         return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap());
+    }
+
+    public ReplicaSet getAddressReplicas(InetAddressAndPort endpoint)
+    {
+        return getAddressReplicas(tokenMetadata.cloneOnlyTokenMap(), endpoint);
     }
 
     public ReplicaSet getPendingAddressRanges(TokenMetadata metadata, Token pendingToken, InetAddressAndPort pendingAddress)
@@ -287,6 +312,7 @@ public abstract class AbstractReplicationStrategy
         try
         {
             Constructor<? extends AbstractReplicationStrategy> constructor = strategyClass.getConstructor(parameterTypes);
+            System.out.println("strategy = " + strategyOptions);
             strategy = constructor.newInstance(keyspaceName, tokenMetadata, snitch, strategyOptions);
         }
         catch (InvocationTargetException e)

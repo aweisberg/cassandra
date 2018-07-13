@@ -742,11 +742,7 @@ public class TokenMetadata
         {
             for (Map.Entry<Range<Token>, ReplicaList> entry : pendingRangeMaps)
             {
-                Range<Token> range = entry.getKey();
-                for (Replica replica : entry.getValue())
-                {
-                    map.put(range, replica);
-                }
+                map.putAll(entry.getKey(), entry.getValue());
             }
         }
 
