@@ -65,6 +65,9 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.concurrent.StageManager;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.cql3.ColumnSpecification;
+import org.apache.cassandra.cql3.QueryProcessor;
+import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.commitlog.CommitLog;
 import org.apache.cassandra.db.compaction.CompactionManager;
@@ -3823,7 +3826,20 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         if (metadata == null)
             throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
 
-        return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key))), true);
+        return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key))), true, false);
+    }
+
+    public List<String> getReplicasForKey(String keyspaceName, String cf, String key)
+    {
+        KeyspaceMetadata ksMetaData = Schema.instance.getKeyspaceMetadata(keyspaceName);
+        if (ksMetaData == null)
+            throw new IllegalArgumentException("Unknown keyspace '" + keyspaceName + "'");
+
+        TableMetadata metadata = ksMetaData.getTableOrViewNullable(cf);
+        if (metadata == null)
+            throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
+
+        return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key))), false, true);
     }
 
 
@@ -3838,7 +3854,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public List<String> getNaturalEndpointsWithPort(String keyspaceName, ByteBuffer key)
     {
-        return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(key)), true);
+        return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(key)), true, false);
     }
 
     /**
@@ -5480,5 +5496,26 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     {
         DatabaseDescriptor.setCorruptedTombstoneStrategy(Config.CorruptedTombstoneStrategy.valueOf(strategy));
         logger.info("Setting corrupted tombstone strategy to {}", strategy);
+    }
+
+    // For testing and debug purposes only
+    @Override
+    public String executeInternal(String query)
+    {
+        UntypedResultSet resultSet = QueryProcessor.executeInternal(query);
+        List<String> results = new ArrayList<>();
+        for (UntypedResultSet.Row row : resultSet)
+        {
+            List<String> kvps = new ArrayList<>();
+            for (ColumnSpecification cdef : row.getColumns())
+            {
+                String columnName = cdef.name.toString();
+                String value = cdef.type.compose(row.getBytes(columnName)).toString();
+                kvps.add(columnName + " = " + value);
+            }
+            results.add(String.join(", ", kvps));
+        }
+
+        return String.join(",\n", results);
     }
 }

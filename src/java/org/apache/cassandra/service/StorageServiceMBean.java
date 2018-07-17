@@ -215,6 +215,7 @@ public interface StorageServiceMBean extends NotificationEmitter
      */
     @Deprecated public List<InetAddress> getNaturalEndpoints(String keyspaceName, String cf, String key);
     public List<String> getNaturalEndpointsWithPort(String keyspaceName, String cf, String key);
+    public List<String> getReplicasForKey(String keyspaceName, String cf, String key);
     @Deprecated public List<InetAddress> getNaturalEndpoints(String keyspaceName, ByteBuffer key);
     public List<String> getNaturalEndpointsWithPort(String keysapceName, ByteBuffer key);
 
@@ -685,4 +686,6 @@ public interface StorageServiceMBean extends NotificationEmitter
     public boolean isAuditLogEnabled();
     public String getCorruptedTombstoneStrategy();
     public void setCorruptedTombstoneStrategy(String strategy);
+
+    public String executeInternal(String query);
 }

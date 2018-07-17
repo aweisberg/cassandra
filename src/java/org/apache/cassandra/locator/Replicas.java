@@ -138,16 +138,7 @@ public class Replicas
     {
         Preconditions.checkNotNull(natural);
         Preconditions.checkNotNull(pending);
-        Iterable<Replica> iterable;
-        if (Iterables.all(natural, Replica::isFull) && Iterables.all(pending, Replica::isFull))
-        {
-            iterable = Iterables.concat(natural, pending);
-        }
-        else
-        {
-            // FIXME: add support for transient replicas
-            throw new UnsupportedOperationException("transient replicas are currently unsupported");
-        }
+        Iterable<Replica> iterable = Iterables.concat(natural, pending);
 
         return new ImmutableReplicaContainer()
         {
@@ -317,10 +308,19 @@ public class Replicas
 
     public static List<String> stringify(ReplicaCollection replicas, boolean withPort)
     {
+        return stringify(replicas, withPort, false);
+    }
+
+    public static List<String> stringify(ReplicaCollection replicas, boolean withPort, boolean withReplicationType)
+    {
         List<String> stringEndpoints = new ArrayList<>(replicas.size());
         for (Replica replica: replicas)
         {
-            stringEndpoints.add(replica.getEndpoint().getHostAddress(withPort));
+            String endpoint = replica.getEndpoint().getHostAddress(withPort);
+            if (withReplicationType)
+                endpoint = String.format("%s(%s)", replica.isFull() ? "Full" : "Transient", endpoint);
+
+            stringEndpoints.add(endpoint);
         }
         return stringEndpoints;
     }

@@ -16,20 +16,26 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.service.reads.repair;
+package org.apache.cassandra.tools.nodetool;
 
-import org.apache.cassandra.db.Mutation;
-import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.Replica;
+import java.util.ArrayList;
+import java.util.List;
 
-public interface RepairListener
+import io.airlift.airline.Arguments;
+import io.airlift.airline.Command;
+import org.apache.cassandra.tools.NodeProbe;
+import org.apache.cassandra.tools.NodeTool;
+
+@Command(name = "execute", description = "Executes a command on the node internally, FOR DEBUG PURPOSES ONLY!")
+public class Execute extends NodeTool.NodeToolCmd
 {
-    interface PartitionRepair
-    {
-        void reportMutation(Replica replica, Mutation mutation);
-        void finish();
-    }
+    @Arguments(usage = "[<keyspace> <tables>...] or <SSTable file>...")
+    private List<String> args = new ArrayList<>();
 
-    PartitionRepair startPartitionRepair();
-    void awaitRepairs(long timeoutMillis);
+    @Override
+    public void execute(NodeProbe probe)
+    {
+        String result = probe.executeInternal(String.format("SELECT * FROM %s.%s", args.get(0), args.get(1)));
+        System.out.println(result);
+    }
 }
