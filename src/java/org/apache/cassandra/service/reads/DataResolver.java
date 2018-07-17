@@ -22,12 +22,9 @@ import java.util.*;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Iterables;
 
-import com.google.common.collect.Maps;
-
-import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaCollection;
 import org.apache.cassandra.locator.ReplicaList;
+import org.apache.cassandra.service.ReplicaPlan;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.*;
@@ -42,21 +39,12 @@ import org.apache.cassandra.schema.TableMetadata;
 
 public class DataResolver extends ResponseResolver
 {
-    private final long queryStartNanoTime;
     private final boolean enforceStrictLiveness;
-    private final Map<InetAddressAndPort, Replica> replicaMap;
 
-    public DataResolver(Keyspace keyspace, ReadCommand command, ConsistencyLevel consistency, ReplicaCollection replicas, int maxResponseCount, long queryStartNanoTime, ReadRepair readRepair)
+    public DataResolver(ReadCommand command, ReplicaPlan replicaPlan, ReadRepair readRepair, long queryStartNanoTime)
     {
-        super(keyspace, command, consistency, readRepair, maxResponseCount);
-        this.queryStartNanoTime = queryStartNanoTime;
+        super(command, replicaPlan, readRepair, queryStartNanoTime);
         this.enforceStrictLiveness = command.metadata().enforceStrictLiveness();
-
-        replicaMap = Maps.newHashMapWithExpectedSize(replicas.size());
-        for (Replica replica: replicas)
-        {
-            replicaMap.put(replica.getEndpoint(), replica);
-        }
     }
 
     public PartitionIterator getData()
@@ -80,9 +68,10 @@ public class DataResolver extends ResponseResolver
         for (int i = 0; i < count; i++)
         {
             MessageIn<ReadResponse> msg = responses.get(i);
-            iters.add(msg.payload.makeIterator(command));
+            assert !msg.payload.isDigestResponse();
 
-            Replica replica = replicaMap.get(msg.from);
+            iters.add(msg.payload.makeIterator(command));
+            Replica replica = replicaPlan.getReplicaFor(msg.from);
 
             if (replica == null)
                 throw new AssertionError("Should never be missing a replica: " + msg.from);
@@ -103,7 +92,6 @@ public class DataResolver extends ResponseResolver
          *
          * See CASSANDRA-13747 for more details.
          */
-
         DataLimits.Counter mergedResultCounter =
             command.limits().newCounter(command.nowInSec(), true, command.selectsFullPartition(), enforceStrictLiveness);
 
