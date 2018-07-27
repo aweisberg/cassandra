@@ -246,7 +246,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
 
     public StreamReceiver getAggregator(TableId tableId)
     {
-        assert receivers.containsKey(tableId);
+        assert receivers.containsKey(tableId) : "Missing tableId " + tableId;
         return receivers.get(tableId).getReceiver();
     }
 
@@ -798,6 +798,7 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     private synchronized void prepareReceiving(StreamSummary summary)
     {
         failIfFinished();
+        logger.info("Preparing to receive " + summary);
         if (summary.files > 0)
             receivers.put(summary.tableId, new StreamReceiveTask(this, summary.tableId, summary.files, summary.totalSize));
     }

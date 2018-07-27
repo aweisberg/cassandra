@@ -195,8 +195,6 @@ public class RangeStreamer
             return;
         }
 
-        Replicas.checkFull(replicas);
-
         boolean useStrictSource = useStrictSourcesForRanges(keyspaceName);
         ReplicaMultimap<Replica, ReplicaList> rangesForKeyspace = calculateRangesToFetchWithPreferredEndpoints(replicas, keyspaceName, useStrictSource);
 
@@ -298,6 +296,7 @@ public class RangeStreamer
 
         Predicate<Replica> isNotAlive = Predicates.not(isAlive);
         InetAddressAndPort localAddress = FBUtilities.getBroadcastAddressAndPort();
+        logger.debug ("Keyspace: {}", keyspace);
         logger.debug("To fetch RN: {}", fetchRanges);
         logger.debug("Fetch ranges: {}", rangeAddresses);
 
@@ -381,6 +380,7 @@ public class RangeStreamer
                     {
                         //Without strict consistency we have given up on correctness so no point in fetching from
                         //a random full + transient replica since it's also likely to lose data
+                        //TODO this is returning multiple replicas and we need to reduce it to just one
                         endpoints = snitchGetSortedListByProximity.apply(localAddress, rangeAddresses.get(range))
                                                                   .stream()
                                                                   .filter(Predicates.and(replicaIsSufficientFilter, notSelf, isAlive))
@@ -392,6 +392,7 @@ public class RangeStreamer
 
                     // storing range and preferred endpoint set
                     rangesToFetchWithPreferredEndpoints.putAll(toFetch, endpoints);
+                    logger.debug("Endpoints to fetch for {} are {}", toFetch, endpoints);
                 }
             }
 
@@ -454,6 +455,7 @@ public class RangeStreamer
                 workMap.put(source.getEndpoint(), Pair.create(source, toFetch));
             }
         }
+        logger.debug("Work map {}", workMap);
         return workMap;
     }
 
@@ -536,6 +538,7 @@ public class RangeStreamer
     public StreamResultFuture fetchAsync()
     {
         toFetch.forEach((keyspace, sources) -> {
+            logger.debug("Keyspace {} Sources {}", keyspace, sources);
             sources.asMap().forEach((source, sourceAndOurReplicas) -> {
 
                 // filter out already streamed ranges
@@ -586,6 +589,9 @@ public class RangeStreamer
                                                                                  .filter(pair -> pair.left.isTransient())
                                                                                  .map(pair -> pair.right)
                                                                                  .collect(toList()));
+
+                logger.debug("Source and our replicas {}", sourceAndOurReplicas);
+                logger.debug("Source {} Keyspace {}  streaming full {} transient {}", source, keyspace, fullReplicas, transientReplicas);
 
                 /* Send messages to respective folks to stream data over to me */
                 streamPlan.requestRanges(source, keyspace,fullReplicas, transientReplicas);

@@ -1279,6 +1279,7 @@ public class CompactionManager implements CompactionManagerMBean
                 {
                     rangesToScan = Collections2.filter(ranges, range -> !transientRanges.contains(range));
                 }
+                logger.info("Cleaning up sstable scanning ranges {} to scan {}", ranges, rangesToScan);
                 return sstable.getScanner(rangesToScan);
             }
 

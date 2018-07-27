@@ -242,16 +242,20 @@ public class RepairJob extends AbstractFuture<RepairResult> implements Runnable
                                                   List<Range<Token>> diff, UUID pendingRepair, RepairJobDesc desc,
                                                   boolean pullRepair, PreviewKind previewKind)
     {
+        logger.info("Creating sync task endpoint1 {}, endpoint2 {}, isTrans1 {}, isTrans2 {}, diff {}", endpoint1, endpoint2, isTrans1, isTrans2, diff);
+
+        assert !(FBUtilities.isLocal(endpoint1) && FBUtilities.isLocal(endpoint2));
+
         if (FBUtilities.isLocal(endpoint1) || FBUtilities.isLocal(endpoint2))
         {
             if (isTrans1 && isTrans2)
                 return null;
 
             if (isTrans1)
-                return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
+                return FBUtilities.isLocal(endpoint1) ? new AsymmetricRemoteSyncTask(desc, endpoint2, endpoint1, diff, previewKind) : new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
 
             if (isTrans2)
-                return new AsymmetricLocalSyncTask(desc, endpoint1, diff, pendingRepair, previewKind);
+                return FBUtilities.isLocal(endpoint2) ? new AsymmetricRemoteSyncTask(desc, endpoint1, endpoint2, diff, previewKind) : new AsymmetricLocalSyncTask(desc, endpoint2, diff, pendingRepair, previewKind);
 
             return new LocalSyncTask(desc, endpoint1, endpoint2, diff, pendingRepair, pullRepair, previewKind);
         }
