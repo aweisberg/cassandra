@@ -155,7 +155,6 @@ public class CassandraStreamManager implements TableStreamManager
                                                         .filter(Replica::isTransient)
                                                         .map(Replica::getRange)
                                                         .collect(Collectors.toSet());
-            logger.debug("Streaming full ranges {} transient ranges {} transientRanges", fullRanges, transientRanges);
 
             //Create outgoing file streams for ranges possibly skipping repaired ranges in sstables
             for (SSTableReader sstable : refs)
@@ -172,20 +171,12 @@ public class CassandraStreamManager implements TableStreamManager
                     ranges = fullRanges;
                 }
 
-                logger.debug("Ranges before normalization {} after {}", ranges, Range.normalize(ranges));
-                ranges = new HashSet<>(Range.normalize(ranges));
-
                 List<SSTableReader.PartitionPositionBounds> sections = sstable.getPositionsForRanges(ranges);
-                logger.debug("Streaming from sstable {} ranges {} sections {}", ref.get(), ranges, sections);
                 if (sections.isEmpty())
                 {
                     ref.release();
                     continue;
                 }
-                logger.debug("Iterating contents");
-                sstable.getScanner((Collection<Range<Token>>)null).forEachRemaining(partition -> logger.debug(partition.partitionKey().toString()));
-                logger.debug("Iterating range contents");
-                sstable.getScanner(ranges).forEachRemaining(partition -> logger.debug(partition.partitionKey().toString()));
                 streams.add(new CassandraOutgoingFile(session.getStreamOperation(), ref, sections, sstable.estimatedKeysForRanges(ranges)));
             }
 

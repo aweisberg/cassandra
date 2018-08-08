@@ -798,7 +798,6 @@ public class StreamSession implements IEndpointStateChangeSubscriber
     private synchronized void prepareReceiving(StreamSummary summary)
     {
         failIfFinished();
-        logger.info("Preparing to receive " + summary);
         if (summary.files > 0)
             receivers.put(summary.tableId, new StreamReceiveTask(this, summary.tableId, summary.files, summary.totalSize));
     }

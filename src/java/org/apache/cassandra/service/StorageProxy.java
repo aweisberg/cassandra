@@ -1176,12 +1176,6 @@ public class StorageProxy implements StorageProxyMBean
         // exit early if we can't fulfill the CL at this time
         responseHandler.assureSufficientLiveNodes();
 
-        logger.info("Mutation token {}, tokens {}", tk, StorageService.instance.getTokenMetadata().sortedTokens());
-        logger.info("tk class {}, token meta token class {}", tk.getClass().getName(),  StorageService.instance.getTokenMetadata().sortedTokens().get(0).getClass().getName());
-        for (Token t :  StorageService.instance.getTokenMetadata().sortedTokens())
-        {
-            logger.info("Compare {} to {} result {}", tk, t, tk.compareTo(t));
-        }
         performer.apply(mutation, responseHandler.getInitialRecipients(mutation, performer, localDataCenter), responseHandler, localDataCenter, consistency_level);
         return responseHandler;
     }
