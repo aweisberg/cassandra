@@ -2728,38 +2728,53 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      * @param newReplicas the ranges to find sources for
      * @return multimap of addresses to ranges the address is responsible for
      */
-    private Multimap<InetAddressAndPort, Pair<Replica, Replica>> getNewSourceReplicas(String keyspaceName, ReplicaSet newReplicas)
+    private Multimap<InetAddressAndPort, Pair<Replica, Replica>> getNewSourceReplicas(String keyspaceName, Set<Map.Entry<Replica,Replica>> newReplicas)
     {
         InetAddressAndPort myAddress = FBUtilities.getBroadcastAddressAndPort();
         ReplicaMultimap<Range<Token>, ReplicaSet> rangeReplicas = Keyspace.open(keyspaceName).getReplicationStrategy().getRangeAddresses(tokenMetadata.cloneOnlyTokenMap());
         Multimap<InetAddressAndPort, Pair<Replica, Replica>> sourceRanges = HashMultimap.create();
         IFailureDetector failureDetector = FailureDetector.instance;
 
+        logger.debug("Getting new source replicas for {}", newReplicas);
+
         // find alive sources for our new ranges
-        for (Replica newReplica : newReplicas)
+        for (Map.Entry<Replica,Replica> leavingReplicaAndOurReplica : newReplicas)
         {
+            //We need this to find the replicas from before leaving to supply the data
+            Replica leavingReplica = leavingReplicaAndOurReplica.getKey();
+            //We need this to know what to fetch and what the transient status is
+            Replica ourReplica = leavingReplicaAndOurReplica.getValue();
             //If we are going to be a full replica only consider full replicas
-            Predicate<Replica> replicaFilter = newReplica.isFull() ? Replica::isFull : Predicates.alwaysTrue();
-            ReplicaCollection possibleReplicas = rangeReplicas.get(newReplica.getRange());
+            Predicate<Replica> replicaFilter = ourReplica.isFull() ? Replica::isFull : Predicates.alwaysTrue();
+            Predicate<Replica> notSelf = replica -> !replica.getEndpoint().equals(myAddress);
+            ReplicaCollection possibleReplicas = rangeReplicas.get(leavingReplica.getRange());
+            logger.info("Possible replicas for newReplica {} are {}", ourReplica, possibleReplicas);
             IEndpointSnitch snitch = DatabaseDescriptor.getEndpointSnitch();
             ReplicaList sortedPossibleReplicas = snitch.getSortedListByProximity(myAddress, possibleReplicas);
+            logger.info("Sorted possible replicas starts as {}", sortedPossibleReplicas);
+            Optional<Replica> myCurrentReplica = possibleReplicas.findFirst(replica -> replica.getEndpoint().equals(myAddress));
 
-            assert !sortedPossibleReplicas.containsEndpoint(myAddress);
+            boolean transientToFull = myCurrentReplica.isPresent() && myCurrentReplica.get().isTransient() && ourReplica.isFull();
+            assert !sortedPossibleReplicas.containsEndpoint(myAddress) || transientToFull : String.format("My address %s, sortedPossibleReplicas %s, myCurrentReplica %s, myNewReplica %s", myAddress, sortedPossibleReplicas, myCurrentReplica, ourReplica);
 
-            //Originally this didn't even log if it couldn't restore replication and that seems wrong
+            //Originally this didn't log if it couldn't restore replication and that seems wrong
             boolean foundLiveReplica = false;
-            for (Replica possibleReplica : (Iterable<Replica>)sortedPossibleReplicas.stream().filter(replicaFilter))
+            for (Replica possibleReplica : sortedPossibleReplicas.filter(replicaFilter, notSelf))
             {
                 if (failureDetector.isAlive(possibleReplica.getEndpoint()))
                 {
                     foundLiveReplica = true;
-                    sourceRanges.put(possibleReplica.getEndpoint(), Pair.create(possibleReplica, newReplica));
+                    sourceRanges.put(possibleReplica.getEndpoint(), Pair.create(possibleReplica, ourReplica));
                     break;
+                }
+                else
+                {
+                    logger.debug("Skipping down replica {}", possibleReplica);
                 }
             }
             if (!foundLiveReplica)
             {
-                logger.warn("Didn't find live replica to restore replication for " + newReplica);
+                logger.warn("Didn't find live replica to restore replication for " + ourReplica);
             }
         }
         return sourceRanges;
@@ -2810,8 +2825,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
+            logger.debug("Restoring replica count for keyspace {}", keyspaceName);
             ReplicaMultimap<Replica, ReplicaSet> changedReplicas = getChangedReplicasForLeaving(keyspaceName, endpoint, tokenMetadata, Keyspace.open(keyspaceName).getReplicationStrategy());
-            ReplicaSet myNewReplicas = new ReplicaSet();
+            Set<Map.Entry<Replica, Replica>> myNewReplicas = new HashSet<>();
             for (Map.Entry<Replica, Replica> entry : changedReplicas.entries())
             {
                 Replica replica = entry.getValue();
@@ -2820,26 +2836,31 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     //Maybe we don't technically need to fetch transient data from somewhere
                     //but it's probably not a lot and it probably makes things a hair more resilient to people
                     //not running repair when they should.
-                    myNewReplicas.add(entry.getKey());
+                    myNewReplicas.add(entry);
                 }
             }
+            logger.debug("Changed replicas for leaving {}, myNewReplicas {}", changedReplicas, myNewReplicas);
             replicasToFetch.put(keyspaceName, getNewSourceReplicas(keyspaceName, myNewReplicas));
         }
 
         StreamPlan stream = new StreamPlan(StreamOperation.RESTORE_REPLICA_COUNT);
         replicasToFetch.forEach((keyspaceName, sources) -> {
+            logger.debug("Requesting keyspace {} sources", keyspaceName);
             sources.asMap().forEach((sourceAddress, sourceAndOurReplicas) -> {
-                if (logger.isDebugEnabled())
-                    logger.debug("Requesting from {} replicas {}", sourceAddress, StringUtils.join(sourceAndOurReplicas, ", "));
+                logger.debug("Source and our replicas are {}", sourceAndOurReplicas);
                 //Remember whether this node is providing the full or transient replicas for this range. We are going
                 //to pass streaming the local instance of Replica for the range which doesn't tell us anything about the source
                 //By encoding it as two separate sets we retain this information about the source.
                 ReplicaCollection fullReplicas = new ReplicaList(sourceAndOurReplicas.stream()
-                                                                            .filter(pair -> pair.left.isFull()).map(pair -> pair.right)
-                                                                            .collect(toList()));
+                                                                                     .filter(pair -> pair.right.isFull())
+                                                                                     .map(pair -> pair.right)
+                                                                                     .collect(toList()));
                 ReplicaCollection transientReplicas = new ReplicaList(sourceAndOurReplicas.stream()
-                                                                                 .filter(pair -> pair.left.isTransient())
-                                                                                 .map(pair -> pair.right).collect(toList()));
+                                                                                          .filter(pair -> pair.right.isTransient())
+                                                                                          .map(pair -> pair.right).collect(toList()));
+                if (logger.isDebugEnabled())
+                    logger.debug("Requesting from {} full replicas {} transient replicas {}", sourceAddress, StringUtils.join(fullReplicas, ", "), StringUtils.join(transientReplicas, ", "));
+
                 stream.requestRanges(sourceAddress, keyspaceName, fullReplicas, transientReplicas);
             });
         });
@@ -4118,10 +4139,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
             ReplicaMultimap<Replica, ReplicaSet> rangesMM = getChangedReplicasForLeaving(keyspaceName, FBUtilities.getBroadcastAddressAndPort(), tokenMetadata, Keyspace.open(keyspaceName).getReplicationStrategy());
-            //TODO, I want to leave in all the Replicas.checkFulls and then if all the tests pass and some are left
-            //we know we have not tested with transient replication. So I need to add back any that I removed
-            //heck better add more
-            Replicas.checkFull(rangesMM.values());
 
             if (logger.isDebugEnabled())
                 logger.debug("Ranges needing transfer are [{}]", StringUtils.join(rangesMM.keySet(), ","));
@@ -4352,12 +4369,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                             //Nothing to do
                             if (current.equals(updated))
                                 break;
-
-                            //Can't fix this by streaming, don't think it should ever happen
-                            if (updated.isFull() && toStream.isTransient())
-                            {
-                                throw new AssertionError("Should never end up needing to stream a full range while we can only provide a transient range");
-                            }
 
                             //In these two (really three) cases the existing data is sufficient and we should subtract whatever is already replicated
                             if (current.isFull() == updated.isFull() || current.isFull())
@@ -5187,7 +5198,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             String keyspace = entry.getKey();
             ReplicaMultimap<Replica, ReplicaSet> rangesWithEndpoints = entry.getValue();
-            Replicas.checkFull(rangesWithEndpoints.values());
 
             if (rangesWithEndpoints.isEmpty())
                 continue;
