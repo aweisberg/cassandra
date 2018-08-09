@@ -48,7 +48,8 @@ public enum ConsistencyLevel
     EACH_QUORUM (7),
     SERIAL      (8),
     LOCAL_SERIAL(9),
-    LOCAL_ONE   (10, true);
+    LOCAL_ONE   (10, true),
+    NODELOCAL   (11, true);
 
     private static final Logger logger = LoggerFactory.getLogger(ConsistencyLevel.class);
 
@@ -139,12 +140,20 @@ public enum ConsistencyLevel
         }
     }
 
+    /**
+     * Determine if this consistency level meets or exceeds the consistency requirements of the given cl for the given keyspace
+     */
+    public boolean satisfies(ConsistencyLevel other, Keyspace keyspace)
+    {
+        return blockFor(keyspace) >= other.blockFor(keyspace);
+    }
+
     public boolean isDatacenterLocal()
     {
         return isDCLocal;
     }
 
-    public boolean isLocal(InetAddressAndPort endpoint)
+    public static boolean isLocal(InetAddressAndPort endpoint)
     {
         return DatabaseDescriptor.getLocalDataCenter().equals(DatabaseDescriptor.getEndpointSnitch().getDatacenter(endpoint));
     }

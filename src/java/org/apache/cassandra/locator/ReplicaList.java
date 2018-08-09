@@ -35,6 +35,7 @@ import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
@@ -220,8 +221,6 @@ public class ReplicaList extends ReplicaCollection
     {
         Preconditions.checkNotNull(l1);
         Preconditions.checkNotNull(l2);
-        Replicas.checkFull(l1);
-        Replicas.checkFull(l2);
         // Note: we don't use Guava Sets.intersection() for 3 reasons:
         //   1) retainAll would be inefficient if l1 and l2 are large but in practice both are the replicas for a range and
         //   so will be very small (< RF). In that case, retainAll is in fact more efficient.
@@ -289,17 +288,6 @@ public class ReplicaList extends ReplicaCollection
     }
 
     /**
-     * For allocating ReplicaLists where the final size is unknown, but
-     * should be less than the given size. Prevents overallocations in cases
-     * where there are less than the default ArrayList size, and defers to the
-     * ArrayList algorithm where there might be more
-     */
-    public static ReplicaList withMaxSize(int size)
-    {
-        return size < 10 ? new ReplicaList(size) : new ReplicaList();
-    }
-
-    /**
      * Use of this method to synthesize Replicas is almost always wrong. In repair it turns out the concerns of transient
      * vs non-transient are handled at a higher level, but eventually repair needs to ask streaming to actually move
      * the data and at that point it doesn't have a great handle on what the replicas are and it doesn't really matter.
@@ -314,7 +302,8 @@ public class ReplicaList extends ReplicaCollection
      * @param ranges
      * @return
      */
-    public static ReplicaList toDummyList(Collection<Range<Token>> ranges)
+    @VisibleForTesting
+    static ReplicaList toDummyList(Collection<Range<Token>> ranges)
     {
         InetAddressAndPort dummy;
         try

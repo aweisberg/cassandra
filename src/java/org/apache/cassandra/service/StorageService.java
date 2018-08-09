@@ -2823,6 +2823,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 ReplicaSet replicas = entry.getValue();
                 if (logger.isDebugEnabled())
                     logger.debug("Requesting from {} replicas {}", source, StringUtils.join(replicas, ", "));
+                // TODO: test streaming
                 Replicas.checkFull(replicas);
                 stream.requestRanges(source, keyspaceName, replicas.asRangeSet());
             }
@@ -3799,15 +3800,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     @Deprecated
     public List<InetAddress> getNaturalEndpoints(String keyspaceName, String cf, String key)
     {
-        KeyspaceMetadata ksMetaData = Schema.instance.getKeyspaceMetadata(keyspaceName);
-        if (ksMetaData == null)
-            throw new IllegalArgumentException("Unknown keyspace '" + keyspaceName + "'");
-
-        TableMetadata metadata = ksMetaData.getTableOrViewNullable(cf);
-        if (metadata == null)
-            throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
-
-        ReplicaList replicas = getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key)));
+        ReplicaList replicas = getNaturalReplicas(keyspaceName, cf, key);
         List<InetAddress> inetList = new ArrayList<>(replicas.size());
         replicas.forEach(r -> inetList.add(r.getEndpoint().address));
         return inetList;
@@ -3815,15 +3808,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public List<String> getNaturalEndpointsWithPort(String keyspaceName, String cf, String key)
     {
-        KeyspaceMetadata ksMetaData = Schema.instance.getKeyspaceMetadata(keyspaceName);
-        if (ksMetaData == null)
-            throw new IllegalArgumentException("Unknown keyspace '" + keyspaceName + "'");
-
-        TableMetadata metadata = ksMetaData.getTableOrViewNullable(cf);
-        if (metadata == null)
-            throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
-
-        return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key))), true);
+        return Replicas.stringify(getNaturalReplicas(keyspaceName, cf, key), true);
     }
 
 
@@ -3839,6 +3824,29 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public List<String> getNaturalEndpointsWithPort(String keyspaceName, ByteBuffer key)
     {
         return Replicas.stringify(getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(key)), true);
+    }
+
+    public List<String> getReplicas(String keyspaceName, String cf, String key)
+    {
+        List<String> res = new ArrayList<>();
+        for (Replica replica : getNaturalReplicas(keyspaceName, cf, key))
+        {
+            res.add(replica.toString());
+        }
+        return res;
+    }
+
+    public ReplicaList getNaturalReplicas(String keyspaceName, String cf, String key)
+    {
+        KeyspaceMetadata ksMetaData = Schema.instance.getKeyspaceMetadata(keyspaceName);
+        if (ksMetaData == null)
+            throw new IllegalArgumentException("Unknown keyspace '" + keyspaceName + "'");
+
+        TableMetadata metadata = ksMetaData.getTableOrViewNullable(cf);
+        if (metadata == null)
+            throw new IllegalArgumentException("Unknown table '" + cf + "' in keyspace '" + keyspaceName + "'");
+
+        return getNaturalReplicas(keyspaceName, tokenMetadata.partitioner.getToken(metadata.partitionKeyType.fromString(key)));
     }
 
     /**
@@ -4074,6 +4082,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         for (String keyspaceName : Schema.instance.getNonLocalStrategyKeyspaces())
         {
             ReplicaMultimap<Range<Token>, ReplicaSet> rangesMM = getChangedRangesForLeaving(keyspaceName, FBUtilities.getBroadcastAddressAndPort());
+            // TODO: test
             Replicas.checkFull(rangesMM.values());
 
             if (logger.isDebugEnabled())
@@ -4328,6 +4337,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                         Set<Replica> currentEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalReplicas(toStream.right, tokenMetaClone));
                         Set<Replica> newEndpoints = ImmutableSet.copyOf(strategy.calculateNaturalReplicas(toStream.right, tokenMetaCloneAllSettled));
 
+                        // TODO: test schema movements
                         Replicas.checkFull(currentEndpoints);
                         Replicas.checkFull(newEndpoints);
 
@@ -4344,6 +4354,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         logger.debug("Will stream range {} of keyspace {} to endpoint {}", endpointRanges.get(address), keyspace, address);
                         ReplicaSet ranges = endpointRanges.get(address);
+                        // TODO: test streaming
                         Replicas.checkFull(ranges);
                         streamPlan.transferRanges(address, keyspace, endpointRanges.get(address).asRangeSet());
                     }
@@ -5077,6 +5088,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
             String keyspace = entry.getKey();
             ReplicaMultimap<Range<Token>, ReplicaSet> rangesWithEndpoints = entry.getValue();
+            // TODO: test streaming
             Replicas.checkFull(rangesWithEndpoints.values());
 
             if (rangesWithEndpoints.isEmpty())
@@ -5224,6 +5236,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                     {
                         Range<Token> range = entry.getKey();
                         ReplicaList replicas = entry.getValue();
+                        // TODO: test bulk load
                         Replicas.checkFull(replicas);
                         for (InetAddressAndPort endpoint : replicas.asEndpoints())
                             addRangeForEndpoint(range, endpoint);
