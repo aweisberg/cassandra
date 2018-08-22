@@ -99,23 +99,21 @@ public class BootstrapTransientTest
     Range<Token> bRange = new Range(tenToken, twentyToken);
     Range<Token> cRange = new Range(twentyToken, thirtyToken);
     Range<Token> dRange = new Range(thirtyToken, fourtyToken);
-    Range<Token> aPrimeRange = new Range(fourtyToken, tenToken);
-
-
-    ReplicaSet current = ReplicaSet.of(new Replica(aAddress, aRange, true),
-                                       new Replica(aAddress, cRange, true),
-                                       new Replica(aAddress, bRange, false));
-
     ReplicaSet toFetch = ReplicaSet.of(new Replica(dAddress, dRange, true),
-                                       new Replica(cAddress, cRange, true),
-                                       new Replica(bAddress, bRange, false));
+                                       new Replica(dAddress, cRange, true),
+                                       new Replica(dAddress, bRange, false));
 
 
 
     @Test
     public void testRangeStreamerRangesToFetch() throws Exception
     {
-        invokeCalculateRangesToFetchWithPreferredEndpoints(toFetch, constructTMDs(), null);
+        ReplicaMultimap<Replica, ReplicaList> expectedResult = ReplicaMultimap.list();
+        expectedResult.putAll(Replica.full(dAddress, dRange), ReplicaList.of(Replica.full(bAddress, aRange), Replica.trans(cAddress, aRange)));
+        expectedResult.putAll(Replica.full(dAddress, cRange), ReplicaList.of(Replica.full(cAddress, cRange), Replica.trans(bAddress, cRange)));
+        expectedResult.putAll(Replica.trans(dAddress, bRange), ReplicaList.of(Replica.trans(aAddress, bRange)));
+
+        invokeCalculateRangesToFetchWithPreferredEndpoints(toFetch, constructTMDs(), expectedResult);
     }
 
     private Pair<TokenMetadata, TokenMetadata> constructTMDs()
