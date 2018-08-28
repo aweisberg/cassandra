@@ -126,6 +126,12 @@ public class Replica implements Comparable<Replica>
         return result.build();
     }
 
+    /**
+     * Don't use this method and ignore transient status unless you are explicitly handling it outside this method.
+     *
+     * This helper method is used by StorageService.calculateStreamAndFetchRanges to perform subtraction.
+     * It ignores transient status because it's already being handled in calculateStreamAndFetchRanges.
+     */
     public RangesAtEndpoint subtractIgnoreTransientStatus(Range<Token> subtract)
     {
         Set<Range<Token>> ranges = this.range.subtract(subtract);
