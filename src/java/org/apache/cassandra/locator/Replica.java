@@ -112,6 +112,7 @@ public class Replica implements Comparable<Replica>
     public RangesAtEndpoint subtractByRange(RangesAtEndpoint toSubtract)
     {
         // TODO: is it OK to ignore transient status here?
+
         Set<Range<Token>> subtractedRanges = range().subtractAll(toSubtract.ranges());
         RangesAtEndpoint.Builder result = RangesAtEndpoint.builder(subtractedRanges.size());
         for (Range<Token> range : subtractedRanges)
@@ -119,12 +120,6 @@ public class Replica implements Comparable<Replica>
             result.add(decorateSubrange(range));
         }
         return result.build();
-    }
-
-    public RangesAtEndpoint subtract(Replica that)
-    {
-        assert isFull() && that.isFull();  // FIXME: this
-        return subtractIgnoreTransientStatus(that.range);
     }
 
     public RangesAtEndpoint subtractIgnoreTransientStatus(Range<Token> subtract)
