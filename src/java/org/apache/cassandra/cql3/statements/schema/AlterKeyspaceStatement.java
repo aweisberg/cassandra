@@ -167,7 +167,7 @@ public final class AlterKeyspaceStatement extends AlterSchemaStatement
         //Just like with changing full replicas it's not safe to do this as you could read from too many replicas
         //that don't have the necessary data. W/O transient replication this alteration was allowed and it's not clear
         //if it should be.
-        //This is structured so you can convert as mnay full replicas to transient replicas as you want.
+        //This is structured so you can convert as many full replicas to transient replicas as you want.
         boolean numReplicasChanged = oldTrans + oldFull != newTrans + newFull;
         if (numReplicasChanged && (newTrans > oldTrans && newTrans != oldTrans + 1))
             throw new ConfigurationException("Can only safely increase number of transients one at a time with incremental repair run in between each time");
