@@ -109,22 +109,15 @@ public class Replica implements Comparable<Replica>
      * returning a set of replicas with the endpoint and transient information of
      * this replica, and the ranges resulting from the subtraction.
      */
-    public RangesAtEndpoint subtractByRange(RangesAtEndpoint toSubtract)
+    public RangesAtEndpoint subtractSameReplication(RangesAtEndpoint toSubtract)
     {
-        // TODO: is it OK to ignore transient status here?
-        Set<Range<Token>> subtractedRanges = range().subtractAll(toSubtract.ranges());
+        Set<Range<Token>> subtractedRanges = range().subtractAll(toSubtract.filter(r -> r.isFull() == isFull()).ranges());
         RangesAtEndpoint.Builder result = RangesAtEndpoint.builder(endpoint, subtractedRanges.size());
         for (Range<Token> range : subtractedRanges)
         {
             result.add(decorateSubrange(range));
         }
         return result.build();
-    }
-
-    public RangesAtEndpoint subtract(Replica that)
-    {
-        assert isFull() && that.isFull();  // FIXME: this
-        return subtractIgnoreTransientStatus(that.range);
     }
 
     public RangesAtEndpoint subtractIgnoreTransientStatus(Range<Token> subtract)
