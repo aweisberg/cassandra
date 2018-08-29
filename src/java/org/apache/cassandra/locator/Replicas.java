@@ -37,12 +37,11 @@ public class Replicas
         return source.filter(r -> predicate.apply(r.endpoint()));
     }
 
-    public static <C extends ReplicaCollection<? extends C>> C filterOutLocalEndpoint(C replicas)
+    public static <C extends ReplicaCollection<? extends C>> C withoutSelf(C replicas)
     {
         InetAddressAndPort local = FBUtilities.getBroadcastAddressAndPort();
         return filterOnEndpoints(replicas, e -> !e.equals(local));
     }
-
 
     public static <C extends ReplicaCollection<? extends C>> C subtractEndpoints(C subtractFrom, Set<InetAddressAndPort> subtract)
     {

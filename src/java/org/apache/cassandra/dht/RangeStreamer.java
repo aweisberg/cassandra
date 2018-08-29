@@ -415,7 +415,7 @@ public class RangeStreamer
                                 // include all our filters, to ensure we include a matching node
                                 Optional<Replica> fullReplica = Iterables.<Replica>tryFind(endpointsForRange, and(accept, testSourceFilters)).toJavaUtil();
                                 if (fullReplica.isPresent())
-                                    oldEndpoints = Endpoints.concat(oldEndpoints, EndpointsForRange.of(fullReplica.get()), Conflict.NONE);
+                                    oldEndpoints = Endpoints.concat(oldEndpoints, EndpointsForRange.of(fullReplica.get()));
                                 else
                                     throw new IllegalStateException("Couldn't find any matching sufficient replica out of " + endpointsForRange);
                             }
@@ -641,14 +641,15 @@ public class RangeStreamer
                 //what has already been streamed. At that point since we only have the local Replica instances so we don't
                 //know what we got from the remote. We preserve that here by splitting based on the remotes transient
                 //status.
+                InetAddressAndPort self = FBUtilities.getBroadcastAddressAndPort();
                 RangesAtEndpoint fullReplicas = remaining.stream()
                         .filter(pair -> pair.remote.isFull())
                         .map(pair -> pair.local)
-                        .collect(RangesAtEndpoint.collector());
+                        .collect(RangesAtEndpoint.collector(self));
                 RangesAtEndpoint transientReplicas = remaining.stream()
                         .filter(pair -> pair.remote.isTransient())
                         .map(pair -> pair.local)
-                        .collect(RangesAtEndpoint.collector());
+                        .collect(RangesAtEndpoint.collector(self));
 
                 logger.debug("Source and our replicas {}", fetchReplicas);
                 logger.debug("Source {} Keyspace {}  streaming full {} transient {}", source, keyspace, fullReplicas, transientReplicas);
