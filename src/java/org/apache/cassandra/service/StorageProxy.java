@@ -1000,8 +1000,8 @@ public class StorageProxy implements StorageProxyMBean
     private static void syncWriteToBatchlog(Collection<Mutation> mutations, Collection<InetAddressAndPort> endpoints, UUID uuid, long queryStartNanoTime)
     throws WriteTimeoutException, WriteFailureException
     {
-        Keyspace systemKeypsace = Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME);
-        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forBatchlogWrite(systemKeypsace, endpoints);
+        Keyspace systemKeyspace = Keyspace.open(SchemaConstants.SYSTEM_KEYSPACE_NAME);
+        ReplicaLayout.ForToken replicaLayout = ReplicaLayout.forBatchlogWrite(systemKeyspace, endpoints);
         WriteResponseHandler<?> handler = new WriteResponseHandler(replicaLayout,
                                                                    WriteType.BATCH_LOG,
                                                                    queryStartNanoTime);
