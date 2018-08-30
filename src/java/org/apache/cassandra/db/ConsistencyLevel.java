@@ -152,8 +152,9 @@ public enum ConsistencyLevel
             case ANY:
                 break;
             case LOCAL_ONE: case LOCAL_QUORUM: case LOCAL_SERIAL:
-            blockFor += countLocalEndpoints(pending);
-            break;
+                // we will only count local replicas towards our response count, as these queries only care about local guarantees
+                blockFor += countLocalEndpoints(pending);
+                break;
             case ONE: case TWO: case THREE:
             case QUORUM: case EACH_QUORUM:
             case SERIAL:
