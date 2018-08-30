@@ -50,6 +50,8 @@ import org.apache.cassandra.service.StorageProxy.LocalReadRunnable;
 import org.apache.cassandra.tracing.TraceState;
 import org.apache.cassandra.tracing.Tracing;
 
+import static com.google.common.collect.Iterables.any;
+
 /**
  * Sends a read request to the replicas needed to satisfy a given ConsistencyLevel.
  *
@@ -108,15 +110,16 @@ public abstract class AbstractReadExecutor
 
     protected void makeDataRequests(ReplicaCollection<?> replicas)
     {
-        makeRequests(command, replicas);
-
+        // TODO: would be better to ensure we only ever supply isFull replicas here
+        makeRequests(command, replicas.filter(Replica::isFull));
+        makeRequests(command.copyAsTransientQuery(), replicas.filter(Replica::isTransient));
     }
 
     protected void makeDigestRequests(ReplicaCollection<?> replicas)
     {
         // only send digest requests to full replicas, send data requests instead to the transient replicas
         makeRequests(command.copyAsDigestQuery(), replicas.filter(Replica::isFull));
-        makeRequests(command, replicas.filter(Replica::isTransient));
+        makeRequests(command.copyAsTransientQuery(), replicas.filter(Replica::isTransient));
     }
 
     private void makeRequests(ReadCommand readCommand, ReplicaCollection<?> replicas)
