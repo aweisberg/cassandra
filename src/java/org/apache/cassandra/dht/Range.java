@@ -497,19 +497,15 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         return new Range<T>(left, newRight);
     }
 
+    public static Comparator<Range<?>> leftComparator = Comparator.comparing(b -> b.left);
+
     public static <T extends RingPosition<T>> List<Range<T>> sort(Collection<Range<T>> ranges)
     {
         List<Range<T>> output = new ArrayList<>(ranges.size());
         for (Range<T> r : ranges)
             output.addAll(r.unwrap());
         // sort by left
-        Collections.sort(output, new Comparator<Range<T>>()
-        {
-            public int compare(Range<T> b1, Range<T> b2)
-            {
-                return b1.left.compareTo(b2.left);
-            }
-        });
+        output.sort(leftComparator);
         return output;
     }
 

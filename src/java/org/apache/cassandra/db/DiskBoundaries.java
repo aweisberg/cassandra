@@ -20,6 +20,7 @@ package org.apache.cassandra.db;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
@@ -32,8 +33,9 @@ public class DiskBoundaries
 {
     public final List<Directories.DataDirectory> directories;
     public final ImmutableList<PartitionPosition> positions;
-    final long ringVersion;
-    final int directoriesVersion;
+
+    private final long ringVersion;
+    private final int directoriesVersion;
     private volatile boolean isInvalid = false;
 
     public DiskBoundaries(Directories.DataDirectory[] directories, int diskVersion)
@@ -53,23 +55,18 @@ public class DiskBoundaries
     public boolean equals(Object o)
     {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-
+        if (!(o instanceof DiskBoundaries)) return false;
         DiskBoundaries that = (DiskBoundaries) o;
-
-        if (ringVersion != that.ringVersion) return false;
-        if (directoriesVersion != that.directoriesVersion) return false;
-        if (!directories.equals(that.directories)) return false;
-        return positions != null ? positions.equals(that.positions) : that.positions == null;
+        return ringVersion == that.ringVersion &&
+               directoriesVersion == that.directoriesVersion &&
+               isInvalid == that.isInvalid &&
+               Objects.equals(directories, that.directories) &&
+               Objects.equals(positions, that.positions);
     }
 
     public int hashCode()
     {
-        int result = directories != null ? directories.hashCode() : 0;
-        result = 31 * result + (positions != null ? positions.hashCode() : 0);
-        result = 31 * result + (int) (ringVersion ^ (ringVersion >>> 32));
-        result = 31 * result + directoriesVersion;
-        return result;
+        return Objects.hash(directories, positions, ringVersion, directoriesVersion, isInvalid);
     }
 
     public String toString()
