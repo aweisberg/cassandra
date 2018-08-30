@@ -4147,7 +4147,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                                                     + keyspaceName + " (RF = " + rf + ", N = " + numNodes + ")."
                                                                     + " Perform a forceful decommission to ignore.");
                     }
-                    // TODO: do we care about fixing transient/full self-movements here? probably
                     if (tokenMetadata.getPendingRanges(keyspaceName, FBUtilities.getBroadcastAddressAndPort()).size() > 0)
                         throw new UnsupportedOperationException("data is currently moving to this node; unable to leave the ring");
                 }
@@ -4324,7 +4323,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         // checking if data is moving to this node
         for (String keyspaceName : keyspacesToProcess)
         {
-            // TODO: do we care about fixing transient/full self-movements here?
             if (tokenMetadata.getPendingRanges(keyspaceName, localAddress).size() > 0)
                 throw new UnsupportedOperationException("data is currently moving to this node; unable to leave the ring");
         }
@@ -5340,7 +5338,6 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public static Pair<RangesAtEndpoint, RangesAtEndpoint> calculateStreamAndFetchRanges(RangesAtEndpoint current, RangesAtEndpoint updated)
     {
-        // FIXME: transient replication
         // this should always be the local node, except for tests TODO: assert this
         RangesAtEndpoint.Builder toStream = RangesAtEndpoint.builder(current.endpoint());
         RangesAtEndpoint.Builder toFetch  = RangesAtEndpoint.builder(current.endpoint());
