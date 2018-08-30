@@ -174,7 +174,6 @@ public abstract class AbstractReadExecutor
         // Speculative retry is disabled *OR*
         // 11980: Disable speculative retry if using EACH_QUORUM in order to prevent miscounting DC responses
         if (retry.equals(NeverSpeculativeRetryPolicy.INSTANCE) || consistencyLevel == ConsistencyLevel.EACH_QUORUM)
-            // TODO Looks like we might want to move speculation into the replica layout, but that might be a story for post-4.0
             return new NeverSpeculatingReadExecutor(cfs, command, replicaLayout, queryStartNanoTime, false);
 
         // There are simply no extra replicas to speculate.
