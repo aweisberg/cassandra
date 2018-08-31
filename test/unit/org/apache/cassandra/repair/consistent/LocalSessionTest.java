@@ -40,10 +40,9 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.dht.Range;
-import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.statements.schema.CreateTableStatement;
+import org.apache.cassandra.locator.RangesAtEndpoint;
 import org.apache.cassandra.repair.AbstractRepairTest;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.repair.KeyspaceRepairManager;
@@ -139,8 +138,7 @@ public class LocalSessionTest extends AbstractRepairTest
         ListenableFuture prepareSession(KeyspaceRepairManager repairManager,
                                         UUID sessionID,
                                         Collection<ColumnFamilyStore> tables,
-                                        Collection<Range<Token>> fullRanges,
-                                        Collection<Range<Token>> transRanges,
+                                        RangesAtEndpoint ranges,
                                         ExecutorService executor)
         {
             prepareSessionCalled = true;
@@ -150,7 +148,7 @@ public class LocalSessionTest extends AbstractRepairTest
             }
             else
             {
-                return super.prepareSession(repairManager, sessionID, tables, fullRanges, transRanges, executor);
+                return super.prepareSession(repairManager, sessionID, tables, ranges, executor);
             }
         }
 
