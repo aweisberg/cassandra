@@ -28,6 +28,7 @@ import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.config.ColumnDefinition;
+import org.apache.cassandra.config.Config;
 import org.apache.cassandra.db.*;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
@@ -45,6 +46,21 @@ import org.apache.cassandra.utils.btree.UpdateFunction;
 public class BTreeRow extends AbstractRow
 {
     private static final long EMPTY_SIZE = ObjectSizes.measure(emptyRow(Clustering.EMPTY));
+
+    //Just in case we find out we need to do resolution so we don't have to do a new build
+    private static final boolean ALLOW_FORBIDDEN_RESOLUTION = Boolean.getBoolean(Config.PROPERTY_PREFIX + "btree_row_builder_allow_forbiddden_resolution");
+
+    private static final BTree.Builder.Resolver ZERO_NOW_IN_SEC_RESOLVER = new Builder.CellResolver(0);
+
+    private static final BTree.Builder.Resolver RESOLUTION_FORBIDDING_RESOLVER = new BTree.Builder.Resolver()
+    {
+        public Object resolve(Object[] array, int lb, int ub)
+        {
+            if (ALLOW_FORBIDDEN_RESOLUTION)
+                return ZERO_NOW_IN_SEC_RESOLVER.resolve(array, lb, ub);
+            throw new IllegalStateException("Resolution is forbidden and shouldn't be required in this context.");
+        }
+    };
 
     private final Clustering clustering;
     private final LivenessInfo primaryKeyLivenessInfo;
@@ -395,6 +411,15 @@ public class BTreeRow extends AbstractRow
         return new Builder(false, nowInSec);
     }
 
+    /*
+     * Not expecting resolution to be necessary and a correct nowInSec is not being supplied
+     * If resolution is required it's an error so throw an exception
+     */
+    public static Row.Builder unsortedResolutionForbiddingBuilder()
+    {
+        return new Builder(false, RESOLUTION_FORBIDDING_RESOLVER);
+    }
+
     // This is only used by PartitionUpdate.CounterMark but other uses should be avoided as much as possible as it breaks our general
     // assumption that Row objects are immutable. This method should go away post-#6506 in particular.
     // This method is in particular not exposed by the Row API on purpose.
@@ -613,20 +638,25 @@ public class BTreeRow extends AbstractRow
 
         private final boolean isSorted;
         private final BTree.Builder<Cell> cells;
-        private final CellResolver resolver;
+        private final BTree.Builder.Resolver resolver;
         private boolean hasComplex = false;
 
         // For complex column at index i of 'columns', we store at complexDeletions[i] its complex deletion.
 
         protected Builder(boolean isSorted)
         {
-            this(isSorted, Integer.MIN_VALUE);
+            this(isSorted, new CellResolver(Integer.MIN_VALUE));
         }
 
         protected Builder(boolean isSorted, int nowInSecs)
         {
+            this(isSorted, new CellResolver(nowInSecs));
+        }
+
+        protected Builder(boolean isSorted, BTree.Builder.Resolver resolver)
+        {
             this.cells = BTree.builder(ColumnData.comparator);
-            resolver = new CellResolver(nowInSecs);
+            this.resolver = resolver;
             this.isSorted = isSorted;
             this.cells.auto(false);
         }
