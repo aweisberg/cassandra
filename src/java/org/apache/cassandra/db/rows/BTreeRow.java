@@ -50,15 +50,14 @@ public class BTreeRow extends AbstractRow
     //Just in case we find out we need to do resolution so we don't have to do a new build
     private static final boolean ALLOW_FORBIDDEN_RESOLUTION = Boolean.getBoolean(Config.PROPERTY_PREFIX + "btree_row_builder_allow_forbiddden_resolution");
 
-    private static final BTree.Builder.Resolver ZERO_NOW_IN_SEC_RESOLVER = new Builder.CellResolver(0);
-
-    private static final BTree.Builder.Resolver RESOLUTION_FORBIDDING_RESOLVER = new BTree.Builder.Resolver()
+    private static final BTree.Builder.Resolver RESOLUTION_FORBIDDING_RESOLVER = new Builder.CellResolver(0)
     {
-        public Object resolve(Object[] array, int lb, int ub)
+        @Override
+        protected CellReconciler cellReconciler()
         {
             if (ALLOW_FORBIDDEN_RESOLUTION)
-                return ZERO_NOW_IN_SEC_RESOLVER.resolve(array, lb, ub);
-            throw new IllegalStateException("Resolution is forbidden and shouldn't be required in this context.");
+                return super.cellReconciler();
+            throw new IllegalStateException("Reconciliation is forbidden and shouldn't be required in this context.");
         }
     };
 
@@ -555,6 +554,11 @@ public class BTreeRow extends AbstractRow
         }
     }
 
+    private interface CellReconciler
+    {
+        Cell reconcile(Cell c1, Cell c2, int nowInSec);
+    }
+
     public static class Builder implements Row.Builder
     {
         // a simple marker class that will sort to the beginning of a run of complex cells to store the deletion time
@@ -583,7 +587,7 @@ public class BTreeRow extends AbstractRow
                 {
                     assert lb + 1 == ub || nowInSec != Integer.MIN_VALUE;
                     while (++lb < ub)
-                        cell = Cells.reconcile(cell, (Cell) cells[lb], nowInSec);
+                        cell = cellReconciler().reconcile(cell, (Cell) cells[lb], nowInSec);
                     return cell;
                 }
 
@@ -616,7 +620,7 @@ public class BTreeRow extends AbstractRow
                     {
                         if (previous != null && column.cellComparator().compare(previous, c) == 0)
                         {
-                            c = Cells.reconcile(previous, c, nowInSec);
+                            c = cellReconciler().reconcile(previous, c, nowInSec);
                             buildFrom.set(buildFrom.size() - 1, c);
                         }
                         else
@@ -629,6 +633,10 @@ public class BTreeRow extends AbstractRow
 
                 Object[] btree = BTree.build(buildFrom, UpdateFunction.noOp());
                 return new ComplexColumnData(column, btree, deletion);
+            }
+
+            protected CellReconciler cellReconciler() {
+                    return (c1, c2, nowInSec) -> Cells.reconcile(c1, c2, nowInSec);
             }
 
         };
