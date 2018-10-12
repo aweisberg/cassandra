@@ -994,7 +994,9 @@ public final class SchemaKeyspace
                           .minIndexInterval(row.getInt("min_index_interval"))
                           .crcCheckChance(row.getDouble("crc_check_chance"))
                           .speculativeRetry(SpeculativeRetryPolicy.fromString(row.getString("speculative_retry")))
-                          .speculativeWriteThreshold(SpeculativeRetryPolicy.fromString(row.getString("speculative_write_threshold")))
+                          .speculativeWriteThreshold(row.has("speculative_write_threshold") ?
+                                                     SpeculativeRetryPolicy.fromString(row.getString("speculative_write_threshold")) :
+                                                     SpeculativeRetryPolicy.fromString("99PERCENTILE"))
                           .cdc(row.has("cdc") && row.getBoolean("cdc"))
                           .readRepair(getReadRepairStrategy(row))
                           .build();
