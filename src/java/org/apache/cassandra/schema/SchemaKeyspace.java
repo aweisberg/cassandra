@@ -204,7 +204,7 @@ public final class SchemaKeyspace
               + "min_index_interval int,"
               + "read_repair_chance double," // no longer used, left for drivers' sake
               + "speculative_retry text,"
-              + "speculative_write_threshold text,"
+              + "additional_write_policy text,"
               + "cdc boolean,"
               + "read_repair text,"
               + "PRIMARY KEY ((keyspace_name), view_name))");
