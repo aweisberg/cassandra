@@ -463,7 +463,7 @@ A table supports the following options:
 | ``speculative_retry``          | *simple* | 99PERCENTILE| :ref:`Speculative retry options                           |
 |                                |          |             | <speculative-retry-options>`.                             |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
-| ``additional_write_policy``| *simple* | 99PERCENTILE| :ref:`Speculative retry options                           |
+| ``additional_write_policy``    | *simple* | 99PERCENTILE| :ref:`Speculative retry options                           |
 |                                |          |             | <speculative-retry-options>`.                             |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
 | ``gc_grace_seconds``           | *simple* | 864000      | Time to wait before garbage collecting tombstones         |
