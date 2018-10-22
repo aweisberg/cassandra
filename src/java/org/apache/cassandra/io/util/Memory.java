@@ -316,6 +316,34 @@ public class Memory implements AutoCloseable
         }
     }
 
+    public short getShort(long offset)
+    {
+        checkBounds(offset, offset + 2);
+        if (Architecture.IS_UNALIGNED)
+        {
+            return unsafe.getShort(peer + offset);
+        }
+        else
+        {
+            return getShortByByte(peer + offset);
+        }
+    }
+
+    private short getShortByByte(long address)
+    {
+        if (bigEndian)
+        {
+            return (short)(((unsafe.getByte(address) << 8) & 0xff) |
+                            (unsafe.getByte(address + 1) & 0xff));
+        }
+        else
+        {
+            return (short)(((unsafe.getByte(address + 1) << 8) & 0xff) |
+                            (unsafe.getByte(address) & 0xff));
+        }
+    }
+
+
     /**
      * Transfers count bytes from Memory starting at memoryOffset to buffer starting at bufferOffset
      *

@@ -26,7 +26,6 @@ import java.io.DataOutput;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -52,12 +51,14 @@ import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.io.util.Memory;
 import org.apache.cassandra.io.util.SafeMemory;
 import org.apache.cassandra.schema.CompressionParams;
 import org.apache.cassandra.utils.SyncUtil;
 import org.apache.cassandra.utils.concurrent.Transactional;
 import org.apache.cassandra.utils.concurrent.Ref;
+import org.apache.cassandra.utils.memory.CompactSummingIntegerSequence;
+import org.apache.cassandra.utils.memory.IntegerSequence;
+import org.apache.cassandra.utils.memory.MemoryIntegerSequence;
 
 /**
  * Holds metadata about compressed file
@@ -69,8 +70,7 @@ public class CompressionMetadata
     // (when early opening, we want to ensure readers cannot read past fully written sections)
     public final long dataLength;
     public final long compressedFileLength;
-    private final Memory chunkOffsets;
-    private final long chunkOffsetsSize;
+    private final IntegerSequence chunkOffsets;
     public final String indexFilePath;
     public final CompressionParams parameters;
 
@@ -142,20 +142,17 @@ public class CompressionMetadata
         {
             throw new CorruptSSTableException(e, indexFilePath);
         }
-
-        this.chunkOffsetsSize = chunkOffsets.size();
     }
 
     // do not call this constructor directly, unless used in testing
     @VisibleForTesting
-    public CompressionMetadata(String filePath, CompressionParams parameters, Memory offsets, long offsetsSize, long dataLength, long compressedLength)
+    public CompressionMetadata(String filePath, CompressionParams parameters, IntegerSequence offsets, long dataLength, long compressedLength)
     {
         this.indexFilePath = filePath;
         this.parameters = parameters;
         this.dataLength = dataLength;
         this.compressedFileLength = compressedLength;
         this.chunkOffsets = offsets;
-        this.chunkOffsetsSize = offsetsSize;
     }
 
     public ICompressor compressor()
@@ -184,7 +181,7 @@ public class CompressionMetadata
 
     public void addTo(Ref.IdentityCollection identities)
     {
-        identities.add(chunkOffsets);
+        identities.add(chunkOffsets.memory());
     }
 
     /**
@@ -194,7 +191,7 @@ public class CompressionMetadata
      *
      * @return collection of the chunk offsets.
      */
-    private Memory readChunkOffsets(DataInput input)
+    private IntegerSequence readChunkOffsets(DataInput input)
     {
         final int chunkCount;
         try
@@ -208,24 +205,19 @@ public class CompressionMetadata
             throw new FSReadError(e, indexFilePath);
         }
 
-        @SuppressWarnings("resource")
-        Memory offsets = Memory.allocate(chunkCount * 8L);
         int i = 0;
-        try
+        try (IntegerSequence.Builder builder = builderFor(parameters.maxCompressedLength(), chunkCount))
         {
 
             for (i = 0; i < chunkCount; i++)
             {
-                offsets.setLong(i * 8L, input.readLong());
+                builder.add(input.readLong());
             }
 
-            return offsets;
+            return builder.build();
         }
         catch (IOException e)
         {
-            if (offsets != null)
-                offsets.close();
-
             if (e instanceof EOFException)
             {
                 String msg = String.format("Corrupted Index File %s: read %d but expected %d chunks.",
@@ -245,15 +237,15 @@ public class CompressionMetadata
     public Chunk chunkFor(long position)
     {
         // position of the chunk
-        int idx = 8 * (int) (position / parameters.chunkLength());
+        int idx = (int) (position / parameters.chunkLength());
 
-        if (idx >= chunkOffsetsSize)
+        long chunkOffset = chunkOffsets.get(idx);
+        if (chunkOffset == -1)
             throw new CorruptSSTableException(new EOFException(), indexFilePath);
 
-        long chunkOffset = chunkOffsets.getLong(idx);
-        long nextChunkOffset = (idx + 8 == chunkOffsetsSize)
+        long nextChunkOffset = (idx + 1 == chunkOffsets.count())
                                 ? compressedFileLength
-                                : chunkOffsets.getLong(idx + 8);
+                                : chunkOffsets.getMemoized(idx + 1, idx, chunkOffset);
 
         return new Chunk(chunkOffset, (int) (nextChunkOffset - chunkOffset - 4)); // "4" bytes reserved for checksum
     }
@@ -273,14 +265,13 @@ public class CompressionMetadata
             endIndex = section.upperPosition % parameters.chunkLength() == 0 ? endIndex - 1 : endIndex;
             for (int i = startIndex; i <= endIndex; i++)
             {
-                long offset = i * 8L;
-                long chunkOffset = chunkOffsets.getLong(offset);
+                long chunkOffset = chunkOffsets.get(i);
                 if (chunkOffset > lastOffset)
                 {
                     lastOffset = chunkOffset;
-                    long nextChunkOffset = offset + 8 == chunkOffsetsSize
+                    long nextChunkOffset = i  + 1 == chunkOffsets.count()
                                                    ? compressedFileLength
-                                                   : chunkOffsets.getLong(offset + 8);
+                                                   : chunkOffsets.get(i + 1);
                     size += (nextChunkOffset - chunkOffset);
                 }
             }
@@ -309,11 +300,10 @@ public class CompressionMetadata
             endIndex = section.upperPosition % parameters.chunkLength() == 0 ? endIndex - 1 : endIndex;
             for (int i = startIndex; i <= endIndex; i++)
             {
-                long offset = i * 8L;
-                long chunkOffset = chunkOffsets.getLong(offset);
-                long nextChunkOffset = offset + 8 == chunkOffsetsSize
+                long chunkOffset = chunkOffsets.get(i);
+                long nextChunkOffset = i + 1 == chunkOffsets.count()
                                      ? compressedFileLength
-                                     : chunkOffsets.getLong(offset + 8);
+                                     : chunkOffsets.get(i + 1);
                 offsets.add(new Chunk(chunkOffset, (int) (nextChunkOffset - chunkOffset - 4))); // "4" bytes reserved for checksum
             }
         }
@@ -437,7 +427,7 @@ public class CompressionMetadata
             if (tCount < this.count)
                 compressedLength = tOffsets.getLong(tCount * 8L);
 
-            return new CompressionMetadata(filePath, parameters, tOffsets, tCount * 8L, dataLength, compressedLength);
+            return new CompressionMetadata(filePath, parameters, new MemoryIntegerSequence(tOffsets, tCount), dataLength, compressedLength);
         }
 
         /**
@@ -538,5 +528,12 @@ public class CompressionMetadata
             size += TypeSizes.sizeof(chunk.length);
             return size;
         }
+    }
+
+    private static IntegerSequence.Builder builderFor(int maxCompressedSize, long count)
+    {
+        if (maxCompressedSize > 0 && maxCompressedSize <= CompactSummingIntegerSequence.MAX_SAFE_SPAN)
+            return CompactSummingIntegerSequence.builder(count);
+        return MemoryIntegerSequence.builder(count);
     }
 }
