@@ -101,6 +101,9 @@ New features
 
 Upgrading
 ---------
+    - CASSANDRA-13241 lowered the default chunk_lengh_in_kb for compresesd tables from
+      64kb to 16kb. For highly compressible data this can have a noticeable impact
+      on space utilization. You may want to consider manually specifying this value.
     - Timestamp ties between values resolve differently: if either value has a TTL,
       this value always wins. This is to provide consistent reconciliation before
       and after the value expires into a tombstone.
