@@ -18,6 +18,7 @@
 package org.apache.cassandra.cql3.statements.schema;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import com.google.common.collect.ImmutableSet;
@@ -125,8 +126,24 @@ public final class TableAttributes extends PropertyDefinitions
         if (hasOption(Option.MIN_INDEX_INTERVAL))
             builder.minIndexInterval(getInt(Option.MIN_INDEX_INTERVAL));
 
+        String speculativeRetry = null;
         if (hasOption(Option.SPECULATIVE_RETRY))
-            builder.speculativeRetry(SpeculativeRetryPolicy.fromString(getString(Option.SPECULATIVE_RETRY)));
+            speculativeRetry = getString(Option.SPECULATIVE_RETRY);
+
+        String additionReadPolicy = null;
+        if (hasOption(Option.ADDITIONAL_READ_POLICY))
+            additionReadPolicy = getString(Option.ADDITIONAL_READ_POLICY);
+
+        if (!Objects.equals(speculativeRetry, additionReadPolicy))
+            throw new ConfigurationException(String.format("If specifying both \"additional_read_policy\" (%s) and \"speculative_retry\" (%s) they must be equal as they are synonyms",
+                                                           speculativeRetry,
+                                                           additionReadPolicy));
+
+        if (speculativeRetry != null)
+            builder.additionalReadPolicy(SpeculativeRetryPolicy.fromString(speculativeRetry));
+
+        if (additionReadPolicy != null)
+            builder.additionalReadPolicy(SpeculativeRetryPolicy.fromString(additionReadPolicy));
 
         if (hasOption(Option.ADDITIONAL_WRITE_POLICY))
             builder.additionalWritePolicy(SpeculativeRetryPolicy.fromString(getString(Option.ADDITIONAL_WRITE_POLICY)));

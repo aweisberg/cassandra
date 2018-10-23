@@ -101,6 +101,9 @@ New features
 
 Upgrading
 ---------
+    - The table option 'speculative_retry' has been renamed to 'additional_read_policy'
+      'speculative_retry' will continue to be accepted and reported as a synonym of
+      'additional_read_policy'
     - Timestamp ties between values resolve differently: if either value has a TTL,
       this value always wins. This is to provide consistent reconciliation before
       and after the value expires into a tombstone.

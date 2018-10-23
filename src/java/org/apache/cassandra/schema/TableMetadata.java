@@ -828,9 +828,9 @@ public final class TableMetadata
             return this;
         }
 
-        public Builder speculativeRetry(SpeculativeRetryPolicy val)
+        public Builder additionalReadPolicy(SpeculativeRetryPolicy val)
         {
-            params.speculativeRetry(val);
+            params.additionalReadPolicy(val);
             return this;
         }
 

@@ -97,11 +97,17 @@ public class KeyspaceMetrics
     public final Counter writeFailedIdealCL;
     /** Ideal CL write latency metrics */
     public final LatencyMetrics idealCLWriteLatency;
-    /** Speculative retries **/
+    /** Additional reads **/
+    public final Counter additionalReads;
+    /** Additional read occured but still timed out **/
+    public final Counter additionalReadsFailed;
+    /** Needed to perform additional reads, but didn't have enough replicas **/
+    public final Counter additionalReadsInsufficientReplicas;
+    /** Synonym for additionalReads retries **/
     public final Counter speculativeRetries;
-    /** Speculative retry occured but still timed out **/
+    /** Synonym for additionalReadsFailed **/
     public final Counter speculativeFailedRetries;
-    /** Needed to speculate, but didn't have enough replicas **/
+    /** Synonym for additionalReadsInsufficientReplicas **/
     public final Counter speculativeInsufficientReplicas;
     /** Needed to write to a transient replica to satisfy quorum **/
     public final Counter additionalWrites;
@@ -289,9 +295,12 @@ public class KeyspaceMetrics
         writeFailedIdealCL = Metrics.counter(factory.createMetricName("WriteFailedIdealCL"));
         idealCLWriteLatency = new LatencyMetrics(factory, "IdealCLWrite");
 
-        speculativeRetries = createKeyspaceCounter("SpeculativeRetries", metric -> metric.speculativeRetries.getCount());
-        speculativeFailedRetries = createKeyspaceCounter("SpeculativeFailedRetries", metric -> metric.speculativeFailedRetries.getCount());
-        speculativeInsufficientReplicas = createKeyspaceCounter("SpeculativeInsufficientReplicas", metric -> metric.speculativeInsufficientReplicas.getCount());
+        additionalReads = createKeyspaceCounter("AdditionalReads", metric -> metric.additionalReads.getCount());
+        additionalReadsFailed = createKeyspaceCounter("AdditionalReadsFailed", metric -> metric.additionalReadsFailed.getCount());
+        additionalReadsInsufficientReplicas = createKeyspaceCounter("AdditionalReadsInsufficientReplicas", metric -> metric.additionalReadsInsufficientReplicas.getCount());
+        speculativeRetries = createKeyspaceCounter("SpeculativeRetries", metric -> metric.additionalReads.getCount());
+        speculativeFailedRetries = createKeyspaceCounter("SpeculativeFailedRetries", metric -> metric.additionalReadsFailed.getCount());
+        speculativeInsufficientReplicas = createKeyspaceCounter("SpeculativeInsufficientReplicas", metric -> metric.additionalReadsInsufficientReplicas.getCount());
         additionalWrites = createKeyspaceCounter("AdditionalWrites", metric -> metric.additionalWrites.getCount());
         repairsStarted = createKeyspaceCounter("RepairJobsStarted", metric -> metric.repairsStarted.getCount());
         repairsCompleted = createKeyspaceCounter("RepairJobsCompleted", metric -> metric.repairsCompleted.getCount());

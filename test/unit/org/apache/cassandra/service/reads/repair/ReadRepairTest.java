@@ -49,8 +49,6 @@ import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaLayout;
-import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.KeyspaceParams;
@@ -124,7 +122,7 @@ public class ReadRepairTest
         ks = Keyspace.open(ksName);
         cfs = ks.getColumnFamilyStore("tbl");
 
-        cfs.sampleReadLatencyNanos = 0;
+        cfs.additionalReadLatencyNanos = 0;
 
         target1 = full(InetAddressAndPort.getByName("127.0.0.255"));
         target2 = full(InetAddressAndPort.getByName("127.0.0.254"));

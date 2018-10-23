@@ -255,7 +255,7 @@ public class TableCQLHelperTest extends CQLTester
                .minIndexInterval(6)
                .maxIndexInterval(7)
                .memtableFlushPeriod(8)
-               .speculativeRetry(AlwaysSpeculativeRetryPolicy.INSTANCE)
+               .additionalReadPolicy(AlwaysSpeculativeRetryPolicy.INSTANCE)
                .additionalWritePolicy(NeverSpeculativeRetryPolicy.INSTANCE)
                .extensions(ImmutableMap.of("ext1", ByteBuffer.wrap("val1".getBytes())))
                .recordColumnDrop(ColumnMetadata.regularColumn(keyspace, table, "reg1", AsciiType.instance),
@@ -273,7 +273,7 @@ public class TableCQLHelperTest extends CQLTester
         "\tAND min_index_interval = 6\n" +
         "\tAND max_index_interval = 7\n" +
         "\tAND memtable_flush_period_in_ms = 8\n" +
-        "\tAND speculative_retry = 'ALWAYS'\n" +
+        "\tAND additional_read_policy = 'ALWAYS'\n" +
         "\tAND additional_write_policy = 'NEVER'\n" +
         "\tAND comment = 'comment'\n" +
         "\tAND caching = { 'keys': 'ALL', 'rows_per_partition': 'NONE' }\n" +

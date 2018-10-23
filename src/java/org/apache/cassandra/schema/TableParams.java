@@ -51,6 +51,7 @@ public final class TableParams
         MEMTABLE_FLUSH_PERIOD_IN_MS,
         MIN_INDEX_INTERVAL,
         SPECULATIVE_RETRY,
+        ADDITIONAL_READ_POLICY,
         ADDITIONAL_WRITE_POLICY,
         CRC_CHECK_CHANCE,
         CDC,
@@ -71,7 +72,7 @@ public final class TableParams
     public final int memtableFlushPeriodInMs;
     public final int minIndexInterval;
     public final int maxIndexInterval;
-    public final SpeculativeRetryPolicy speculativeRetry;
+    public final SpeculativeRetryPolicy additionalReadPolicy;
     public final SpeculativeRetryPolicy additionalWritePolicy;
     public final CachingParams caching;
     public final CompactionParams compaction;
@@ -92,7 +93,7 @@ public final class TableParams
         memtableFlushPeriodInMs = builder.memtableFlushPeriodInMs;
         minIndexInterval = builder.minIndexInterval;
         maxIndexInterval = builder.maxIndexInterval;
-        speculativeRetry = builder.speculativeRetry;
+        additionalReadPolicy = builder.additionalReadPolicy;
         additionalWritePolicy = builder.additionalWritePolicy;
         caching = builder.caching;
         compaction = builder.compaction;
@@ -120,7 +121,7 @@ public final class TableParams
                             .maxIndexInterval(params.maxIndexInterval)
                             .memtableFlushPeriodInMs(params.memtableFlushPeriodInMs)
                             .minIndexInterval(params.minIndexInterval)
-                            .speculativeRetry(params.speculativeRetry)
+                            .additionalReadPolicy(params.additionalReadPolicy)
                             .additionalWritePolicy(params.additionalWritePolicy)
                             .extensions(params.extensions)
                             .cdc(params.cdc)
@@ -202,7 +203,7 @@ public final class TableParams
             && memtableFlushPeriodInMs == p.memtableFlushPeriodInMs
             && minIndexInterval == p.minIndexInterval
             && maxIndexInterval == p.maxIndexInterval
-            && speculativeRetry.equals(p.speculativeRetry)
+            && additionalReadPolicy.equals(p.additionalReadPolicy)
             && caching.equals(p.caching)
             && compaction.equals(p.compaction)
             && compression.equals(p.compression)
@@ -222,7 +223,8 @@ public final class TableParams
                                 memtableFlushPeriodInMs,
                                 minIndexInterval,
                                 maxIndexInterval,
-                                speculativeRetry,
+                                additionalReadPolicy,
+                                additionalWritePolicy,
                                 caching,
                                 compaction,
                                 compression,
@@ -243,7 +245,9 @@ public final class TableParams
                           .add(Option.MEMTABLE_FLUSH_PERIOD_IN_MS.toString(), memtableFlushPeriodInMs)
                           .add(Option.MIN_INDEX_INTERVAL.toString(), minIndexInterval)
                           .add(Option.MAX_INDEX_INTERVAL.toString(), maxIndexInterval)
-                          .add(Option.SPECULATIVE_RETRY.toString(), speculativeRetry)
+                          .add(Option.SPECULATIVE_RETRY.toString(), additionalReadPolicy)
+                          .add(Option.ADDITIONAL_READ_POLICY.toString(), additionalReadPolicy)
+                          .add(Option.ADDITIONAL_WRITE_POLICY.toString(), additionalWritePolicy)
                           .add(Option.CACHING.toString(), caching)
                           .add(Option.COMPACTION.toString(), compaction)
                           .add(Option.COMPRESSION.toString(), compression)
@@ -263,7 +267,7 @@ public final class TableParams
         private int memtableFlushPeriodInMs = 0;
         private int minIndexInterval = 128;
         private int maxIndexInterval = 2048;
-        private SpeculativeRetryPolicy speculativeRetry = PercentileSpeculativeRetryPolicy.NINETY_NINE_P;
+        private SpeculativeRetryPolicy additionalReadPolicy = PercentileSpeculativeRetryPolicy.NINETY_NINE_P;
         private SpeculativeRetryPolicy additionalWritePolicy = PercentileSpeculativeRetryPolicy.NINETY_NINE_P;
         private CachingParams caching = CachingParams.DEFAULT;
         private CompactionParams compaction = CompactionParams.DEFAULT;
@@ -329,9 +333,9 @@ public final class TableParams
             return this;
         }
 
-        public Builder speculativeRetry(SpeculativeRetryPolicy val)
+        public Builder additionalReadPolicy(SpeculativeRetryPolicy val)
         {
-            speculativeRetry = val;
+            additionalReadPolicy = val;
             return this;
         }
 

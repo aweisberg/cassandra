@@ -20,10 +20,8 @@ package org.apache.cassandra.service.reads;
 
 import java.util.concurrent.TimeUnit;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Token;
-import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.ReplicaPlan;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -40,8 +38,6 @@ import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.InetAddressAndPort;
-import org.apache.cassandra.locator.ReplicaLayout;
-import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.net.MessageOut;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.KeyspaceParams;
@@ -70,15 +66,15 @@ public class ReadExecutorTest
                 full(InetAddressAndPort.getByName("127.0.0.254")),
                 full(InetAddressAndPort.getByName("127.0.0.253"))
         );
-        cfs.sampleReadLatencyNanos = 0;
+        cfs.additionalReadLatencyNanos = 0;
     }
 
     @Before
     public void resetCounters() throws Throwable
     {
-        cfs.metric.speculativeInsufficientReplicas.dec(cfs.metric.speculativeInsufficientReplicas.getCount());
-        cfs.metric.speculativeRetries.dec(cfs.metric.speculativeRetries.getCount());
-        cfs.metric.speculativeFailedRetries.dec(cfs.metric.speculativeFailedRetries.getCount());
+        cfs.metric.additionalReadsInsufficientReplicas.dec(cfs.metric.additionalReadsInsufficientReplicas.getCount());
+        cfs.metric.additionalReads.dec(cfs.metric.additionalReads.getCount());
+        cfs.metric.additionalReadsFailed.dec(cfs.metric.additionalReadsFailed.getCount());
     }
 
     /**
@@ -88,7 +84,7 @@ public class ReadExecutorTest
     @Test
     public void testUnableToSpeculate() throws Throwable
     {
-        assertEquals(0, cfs.metric.speculativeInsufficientReplicas.getCount());
+        assertEquals(0, cfs.metric.additionalReadsInsufficientReplicas.getCount());
         assertEquals(0, ks.metric.speculativeInsufficientReplicas.getCount());
         AbstractReadExecutor executor = new AbstractReadExecutor.NeverSpeculatingReadExecutor(cfs, new MockSinglePartitionReadCommand(), plan(targets, ConsistencyLevel.LOCAL_QUORUM), System.nanoTime(), true);
         executor.maybeTryAdditionalReplicas();
@@ -101,7 +97,7 @@ public class ReadExecutorTest
         {
             //expected
         }
-        assertEquals(1, cfs.metric.speculativeInsufficientReplicas.getCount());
+        assertEquals(1, cfs.metric.additionalReadsInsufficientReplicas.getCount());
         assertEquals(1, ks.metric.speculativeInsufficientReplicas.getCount());
 
         //Shouldn't increment
@@ -116,7 +112,7 @@ public class ReadExecutorTest
         {
             //expected
         }
-        assertEquals(1, cfs.metric.speculativeInsufficientReplicas.getCount());
+        assertEquals(1, cfs.metric.additionalReadsInsufficientReplicas.getCount());
         assertEquals(1, ks.metric.speculativeInsufficientReplicas.getCount());
     }
 
@@ -127,8 +123,8 @@ public class ReadExecutorTest
     @Test
     public void testSpeculateSucceeded() throws Throwable
     {
-        assertEquals(0, cfs.metric.speculativeRetries.getCount());
-        assertEquals(0, cfs.metric.speculativeFailedRetries.getCount());
+        assertEquals(0, cfs.metric.additionalReads.getCount());
+        assertEquals(0, cfs.metric.additionalReadsFailed.getCount());
         assertEquals(0, ks.metric.speculativeRetries.getCount());
         assertEquals(0, ks.metric.speculativeFailedRetries.getCount());
         AbstractReadExecutor executor = new AbstractReadExecutor.SpeculatingReadExecutor(cfs, new MockSinglePartitionReadCommand(TimeUnit.DAYS.toMillis(365)), plan(ConsistencyLevel.LOCAL_QUORUM, targets, targets.subList(0, 2)), System.nanoTime());
@@ -154,8 +150,8 @@ public class ReadExecutorTest
         {
             //expected
         }
-        assertEquals(1, cfs.metric.speculativeRetries.getCount());
-        assertEquals(0, cfs.metric.speculativeFailedRetries.getCount());
+        assertEquals(1, cfs.metric.additionalReads.getCount());
+        assertEquals(0, cfs.metric.additionalReadsFailed.getCount());
         assertEquals(1, ks.metric.speculativeRetries.getCount());
         assertEquals(0, ks.metric.speculativeFailedRetries.getCount());
 
@@ -168,8 +164,8 @@ public class ReadExecutorTest
     @Test
     public void testSpeculateFailed() throws Throwable
     {
-        assertEquals(0, cfs.metric.speculativeRetries.getCount());
-        assertEquals(0, cfs.metric.speculativeFailedRetries.getCount());
+        assertEquals(0, cfs.metric.additionalReads.getCount());
+        assertEquals(0, cfs.metric.additionalReadsFailed.getCount());
         assertEquals(0, ks.metric.speculativeRetries.getCount());
         assertEquals(0, ks.metric.speculativeFailedRetries.getCount());
         AbstractReadExecutor executor = new AbstractReadExecutor.SpeculatingReadExecutor(cfs, new MockSinglePartitionReadCommand(), plan(ConsistencyLevel.LOCAL_QUORUM, targets, targets.subList(0, 2)), System.nanoTime());
@@ -183,8 +179,8 @@ public class ReadExecutorTest
         {
             //expected
         }
-        assertEquals(1, cfs.metric.speculativeRetries.getCount());
-        assertEquals(1, cfs.metric.speculativeFailedRetries.getCount());
+        assertEquals(1, cfs.metric.additionalReads.getCount());
+        assertEquals(1, cfs.metric.additionalReadsFailed.getCount());
         assertEquals(1, ks.metric.speculativeRetries.getCount());
         assertEquals(1, ks.metric.speculativeFailedRetries.getCount());
     }

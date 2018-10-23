@@ -183,7 +183,7 @@ public abstract class AbstractReadExecutor
     {
         Keyspace keyspace = Keyspace.open(command.metadata().keyspace);
         ColumnFamilyStore cfs = keyspace.getColumnFamilyStore(command.metadata().id);
-        SpeculativeRetryPolicy retry = cfs.metadata().params.speculativeRetry;
+        SpeculativeRetryPolicy retry = cfs.metadata().params.additionalReadPolicy;
 
         ReplicaPlan.ForTokenRead replicaPlan = ReplicaPlans.forRead(keyspace, command.partitionKey().getToken(), consistencyLevel, retry);
 
@@ -213,10 +213,10 @@ public abstract class AbstractReadExecutor
     boolean shouldSpeculateAndMaybeWait()
     {
         // no latency information, or we're overloaded
-        if (cfs.sampleReadLatencyNanos > TimeUnit.MILLISECONDS.toNanos(command.getTimeout()))
+        if (cfs.additionalReadLatencyNanos > TimeUnit.MILLISECONDS.toNanos(command.getTimeout()))
             return false;
 
-        return !handler.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS);
+        return !handler.await(cfs.additionalReadLatencyNanos, TimeUnit.NANOSECONDS);
     }
 
     ReplicaPlan.ForTokenRead replicaPlan()
@@ -245,7 +245,7 @@ public abstract class AbstractReadExecutor
         {
             if (shouldSpeculateAndMaybeWait() && logFailedSpeculation)
             {
-                cfs.metric.speculativeInsufficientReplicas.inc();
+                cfs.metric.additionalReadsInsufficientReplicas.inc();
             }
         }
     }
@@ -270,7 +270,7 @@ public abstract class AbstractReadExecutor
             if (shouldSpeculateAndMaybeWait())
             {
                 //Handle speculation stats first in case the callback fires immediately
-                cfs.metric.speculativeRetries.inc();
+                cfs.metric.additionalReads.inc();
                 speculated = true;
 
                 ReplicaPlan.ForTokenRead replicaPlan = replicaPlan();
@@ -293,7 +293,7 @@ public abstract class AbstractReadExecutor
                     retryCommand = command;
                     if (extraReplica == null)
                     {
-                        cfs.metric.speculativeInsufficientReplicas.inc();
+                        cfs.metric.additionalReadsInsufficientReplicas.inc();
                         // cannot safely speculate a new data request, without more work - requests assumed to be
                         // unique per endpoint, and we have no full nodes left to speculate against
                         return;
@@ -318,7 +318,7 @@ public abstract class AbstractReadExecutor
             //Shouldn't be possible to get here without first attempting to speculate even if the
             //timing is bad
             assert speculated;
-            cfs.metric.speculativeFailedRetries.inc();
+            cfs.metric.additionalReadsFailed.inc();
         }
     }
 
@@ -343,13 +343,13 @@ public abstract class AbstractReadExecutor
         public void executeAsync()
         {
             super.executeAsync();
-            cfs.metric.speculativeRetries.inc();
+            cfs.metric.additionalReads.inc();
         }
 
         @Override
         void onReadTimeout()
         {
-            cfs.metric.speculativeFailedRetries.inc();
+            cfs.metric.additionalReadsFailed.inc();
         }
     }
 

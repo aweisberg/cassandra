@@ -136,7 +136,7 @@ public final class SchemaKeyspace
               + "memtable_flush_period_in_ms int,"
               + "min_index_interval int,"
               + "read_repair_chance double," // no longer used, left for drivers' sake
-              + "speculative_retry text,"
+              + "speculative_retry text," //Called additional_read_policy now, but column name left the same
               + "additional_write_policy text,"
               + "cdc boolean,"
               + "read_repair text,"
@@ -203,7 +203,7 @@ public final class SchemaKeyspace
               + "memtable_flush_period_in_ms int,"
               + "min_index_interval int,"
               + "read_repair_chance double," // no longer used, left for drivers' sake
-              + "speculative_retry text,"
+              + "speculative_retry text," //Called additional_read_policy now, but column name left the same
               + "additional_write_policy text,"
               + "cdc boolean,"
               + "read_repair text,"
@@ -564,7 +564,7 @@ public final class SchemaKeyspace
                .add("memtable_flush_period_in_ms", params.memtableFlushPeriodInMs)
                .add("min_index_interval", params.minIndexInterval)
                .add("read_repair_chance", 0.0) // no longer used, left for drivers' sake
-               .add("speculative_retry", params.speculativeRetry.toString())
+               .add("speculative_retry", params.additionalReadPolicy.toString())
                .add("additional_write_policy", params.additionalWritePolicy.toString())
                .add("crc_check_chance", params.crcCheckChance)
                .add("caching", params.caching.asMap())
@@ -993,7 +993,7 @@ public final class SchemaKeyspace
                           .memtableFlushPeriodInMs(row.getInt("memtable_flush_period_in_ms"))
                           .minIndexInterval(row.getInt("min_index_interval"))
                           .crcCheckChance(row.getDouble("crc_check_chance"))
-                          .speculativeRetry(SpeculativeRetryPolicy.fromString(row.getString("speculative_retry")))
+                          .additionalReadPolicy(SpeculativeRetryPolicy.fromString(row.getString("speculative_retry")))
                           .additionalWritePolicy(row.has("additional_write_policy") ?
                                                      SpeculativeRetryPolicy.fromString(row.getString("additional_write_policy")) :
                                                      SpeculativeRetryPolicy.fromString("99PERCENTILE"))

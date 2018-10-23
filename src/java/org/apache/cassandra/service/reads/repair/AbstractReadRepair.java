@@ -160,7 +160,7 @@ public abstract class AbstractReadRepair<E extends Endpoints<E>, P extends Repli
         ConsistencyLevel speculativeCL = consistency.isDatacenterLocal() ? ConsistencyLevel.LOCAL_QUORUM : ConsistencyLevel.QUORUM;
         return  consistency != ConsistencyLevel.EACH_QUORUM
                 && consistency.satisfies(speculativeCL, cfs.keyspace)
-                && cfs.sampleReadLatencyNanos <= TimeUnit.MILLISECONDS.toNanos(command.getTimeout());
+                && cfs.additionalReadLatencyNanos <= TimeUnit.MILLISECONDS.toNanos(command.getTimeout());
     }
 
     public void maybeSendAdditionalReads()
@@ -171,7 +171,7 @@ public abstract class AbstractReadRepair<E extends Endpoints<E>, P extends Repli
         if (repair == null)
             return;
 
-        if (shouldSpeculate() && !repair.readCallback.await(cfs.sampleReadLatencyNanos, TimeUnit.NANOSECONDS))
+        if (shouldSpeculate() && !repair.readCallback.await(cfs.additionalReadLatencyNanos, TimeUnit.NANOSECONDS))
         {
             Replica uncontacted = replicaPlan().firstUncontactedCandidate(Predicates.alwaysTrue());
             if (uncontacted == null)

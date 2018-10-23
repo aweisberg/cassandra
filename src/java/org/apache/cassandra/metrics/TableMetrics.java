@@ -209,10 +209,10 @@ public class TableMetrics
     private static final MetricNameFactory globalFactory = new AllTableMetricNameFactory("Table");
     private static final MetricNameFactory globalAliasFactory = new AllTableMetricNameFactory("ColumnFamily");
 
-    public final Counter speculativeRetries;
-    public final Counter speculativeFailedRetries;
-    public final Counter speculativeInsufficientReplicas;
-    public final Gauge<Long> speculativeSampleLatencyNanos;
+    public final Counter additionalReads;
+    public final Counter additionalReadsFailed;
+    public final Counter additionalReadsInsufficientReplicas;
+    public final Gauge<Long> additionalReadsLatencyNanos;
 
     public final Counter additionalWrites;
     public final Gauge<Long> additionalWriteLatencyNanos;
@@ -838,10 +838,14 @@ public class TableMetrics
                 return total;
             }
         });
-        speculativeRetries = createTableCounter("SpeculativeRetries");
-        speculativeFailedRetries = createTableCounter("SpeculativeFailedRetries");
-        speculativeInsufficientReplicas = createTableCounter("SpeculativeInsufficientReplicas");
-        speculativeSampleLatencyNanos = createTableGauge("SpeculativeSampleLatencyNanos", () -> cfs.sampleReadLatencyNanos);
+        additionalReads = createTableCounter("AdditionalReads");
+        reregisterTableCounter("SpeculativeRetries", additionalReads);
+        additionalReadsFailed = createTableCounter("SpeculativeFailedRetries");
+        reregisterTableCounter("AdditionalReadsFailed", additionalReadsFailed);
+        additionalReadsInsufficientReplicas = createTableCounter("AdditionalReadsInsufficientReplicas");
+        reregisterTableCounter("SpeculativeInsufficientRetries", additionalReadsInsufficientReplicas);
+        additionalReadsLatencyNanos = createTableGauge("SpeculativeSampleLatencyNanos", () -> cfs.additionalReadLatencyNanos);
+        createTableGauge("SpeculativeSampleLatencyNanos", () -> cfs.additionalReadLatencyNanos);
 
         additionalWrites = createTableCounter("AdditionalWrites");
         additionalWriteLatencyNanos = createTableGauge("AdditionalWriteLatencyNanos", () -> cfs.additionalWriteLatencyNanos);
@@ -964,6 +968,9 @@ public class TableMetrics
         readLatency.release();
         writeLatency.release();
         rangeLatency.release();
+        casCommit.release();
+        casPrepare.release();
+        casPropose.release();
         Metrics.remove(factory.createMetricName("EstimatedPartitionSizeHistogram"), aliasFactory.createMetricName("EstimatedRowSizeHistogram"));
         Metrics.remove(factory.createMetricName("EstimatedPartitionCount"), aliasFactory.createMetricName("EstimatedRowCount"));
         Metrics.remove(factory.createMetricName("EstimatedColumnCountHistogram"), aliasFactory.createMetricName("EstimatedColumnCountHistogram"));
@@ -1044,6 +1051,29 @@ public class TableMetrics
             });
         }
         return cfCounter;
+    }
+
+    protected void reregisterTableCounter(final String name, Counter cfCounter)
+    {
+        Metrics.register(factory.createMetricName(name), cfCounter);
+        Metrics.register(aliasFactory.createMetricName(name), cfCounter);
+        if (register(name, name, cfCounter))
+        {
+            Metrics.register(globalFactory.createMetricName(name),
+                             globalAliasFactory.createMetricName(name),
+                             new Gauge<Long>()
+                             {
+                                 public Long getValue()
+                                 {
+                                     long total = 0;
+                                     for (Metric cfGauge : allTableMetrics.get(name))
+                                     {
+                                         total += ((Counter) cfGauge).getCount();
+                                     }
+                                     return total;
+                                 }
+                             });
+        }
     }
 
     /**

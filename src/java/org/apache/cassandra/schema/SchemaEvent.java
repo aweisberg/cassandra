@@ -225,7 +225,9 @@ final class SchemaEvent extends DiagnosticEvent
         ret.put("caching", repr(params.caching));
         ret.put("compaction", repr(params.compaction));
         ret.put("compression", repr(params.compression));
-        if (params.speculativeRetry != null) ret.put("speculativeRetry", params.speculativeRetry.kind().name());
+        if (params.additionalReadPolicy != null)
+            ret.put("additionalReadPolicy", params.additionalReadPolicy.kind().name());
+
         return ret;
     }
 

@@ -460,11 +460,11 @@ A table supports the following options:
 +================================+==========+=============+===========================================================+
 | ``comment``                    | *simple* | none        | A free-form, human-readable comment.                      |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
-| ``speculative_retry``          | *simple* | 99PERCENTILE| :ref:`Speculative retry options                           |
-|                                |          |             | <speculative-retry-options>`.                             |
+| ``additional_write_policy``    | *simple* | 99PERCENTILE| :ref:`Additional request options                           |
+|                                |          |             | <additional-request-options>`.                             |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
-| ``additional_write_policy``    | *simple* | 99PERCENTILE| :ref:`Speculative retry options                           |
-|                                |          |             | <speculative-retry-options>`.                             |
+| ``speculative_write_threshold``| *simple* | 99PERCENTILE| :ref:`Additional request options                           |
+|                                |          |             | <additional-request-options>`.                             |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
 | ``gc_grace_seconds``           | *simple* | 864000      | Time to wait before garbage collecting tombstones         |
 |                                |          |             | (deletion markers).                                       |
@@ -488,14 +488,14 @@ A table supports the following options:
 | ``read_repair``                | *simple* | BLOCKING    | Sets read repair behavior (see below)                     |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
 
-.. _speculative-retry-options:
+.. _additional-request-options:
 
-Speculative retry options
+Additional request options
 #########################
 
 By default, Cassandra read coordinators only query as many replicas as necessary to satisfy
 consistency levels: one for consistency level ``ONE``, a quorum for ``QUORUM``, and so on.
-``speculative_retry`` determines when coordinators may query additional replicas, which is useful
+``additional_read_policy`` determines when coordinators may query additional replicas, which is useful
 when replicas are slow or unresponsive.  ``additional_write_policy`` specifies the threshold at which
 a cheap quorum write will be upgraded to include transient replicas.  The following are legal values (case-insensitive):
 

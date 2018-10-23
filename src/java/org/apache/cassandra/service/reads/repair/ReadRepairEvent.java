@@ -22,7 +22,6 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -47,7 +46,7 @@ final class ReadRepairEvent extends DiagnosticEvent
     private final String tableName;
     private final String cqlCommand;
     private final ConsistencyLevel consistency;
-    private final SpeculativeRetryPolicy.Kind speculativeRetry;
+    private final SpeculativeRetryPolicy.Kind additional_read_policy;
     @VisibleForTesting
     final Collection<InetAddressAndPort> destinations;
     @VisibleForTesting
@@ -68,7 +67,7 @@ final class ReadRepairEvent extends DiagnosticEvent
         this.tableName = readRepair.cfs.getTableName();
         this.cqlCommand = readRepair.command.toCQLString();
         this.consistency = readRepair.replicaPlan().consistencyLevel();
-        this.speculativeRetry = readRepair.cfs.metadata().params.speculativeRetry.kind();
+        this.additional_read_policy = readRepair.cfs.metadata().params.additionalReadPolicy.kind();
         this.destinations = destinations;
         this.allEndpoints = allEndpoints;
         this.digestsByEndpoint = digestResolver != null ? digestResolver.getDigestsByEndpoint() : null;
@@ -88,7 +87,7 @@ final class ReadRepairEvent extends DiagnosticEvent
         ret.put("table", tableName);
         ret.put("command", cqlCommand);
         ret.put("consistency", consistency.name());
-        ret.put("speculativeRetry", speculativeRetry.name());
+        ret.put("additional_read_policy", additional_read_policy.name());
 
         Set<String> eps = destinations.stream().map(InetAddressAndPort::toString).collect(Collectors.toSet());
         ret.put("endpointDestinations", new HashSet<>(eps));

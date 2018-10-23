@@ -42,7 +42,6 @@ import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
-import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.ReplicaUtils;
 import org.apache.cassandra.net.MessageIn;
 import org.apache.cassandra.net.MessagingService;
@@ -204,7 +203,7 @@ public abstract  class AbstractReadRepairTest
         ks = Keyspace.open(ksName);
         cfs = ks.getColumnFamilyStore("tbl");
 
-        cfs.sampleReadLatencyNanos = 0;
+        cfs.additionalReadLatencyNanos = 0;
         cfs.additionalWriteLatencyNanos = 0;
 
         target1 = InetAddressAndPort.getByName("127.0.0.255");
@@ -242,7 +241,7 @@ public abstract  class AbstractReadRepairTest
     {
         assert configured : "configureClass must be called in a @BeforeClass method";
 
-        cfs.sampleReadLatencyNanos = 0;
+        cfs.additionalReadLatencyNanos = 0;
         cfs.additionalWriteLatencyNanos = 0;
     }
 
