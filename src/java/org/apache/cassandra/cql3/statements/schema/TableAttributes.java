@@ -126,15 +126,18 @@ public final class TableAttributes extends PropertyDefinitions
         if (hasOption(Option.MIN_INDEX_INTERVAL))
             builder.minIndexInterval(getInt(Option.MIN_INDEX_INTERVAL));
 
+        boolean hasSpeculativeRetry = hasOption(Option.SPECULATIVE_RETRY);
         String speculativeRetry = null;
-        if (hasOption(Option.SPECULATIVE_RETRY))
+        if (hasSpeculativeRetry)
             speculativeRetry = getString(Option.SPECULATIVE_RETRY);
 
+        boolean hasAdditionalReadPolicy = hasOption(Option.ADDITIONAL_READ_POLICY);
         String additionReadPolicy = null;
-        if (hasOption(Option.ADDITIONAL_READ_POLICY))
+        if (hasAdditionalReadPolicy)
             additionReadPolicy = getString(Option.ADDITIONAL_READ_POLICY);
 
-        if (!Objects.equals(speculativeRetry, additionReadPolicy))
+        boolean hasBoth = hasSpeculativeRetry && hasAdditionalReadPolicy;
+        if (hasBoth && !Objects.equals(speculativeRetry, additionReadPolicy))
             throw new ConfigurationException(String.format("If specifying both \"additional_read_policy\" (%s) and \"speculative_retry\" (%s) they must be equal as they are synonyms",
                                                            speculativeRetry,
                                                            additionReadPolicy));
