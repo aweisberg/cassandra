@@ -460,10 +460,10 @@ A table supports the following options:
 +================================+==========+=============+===========================================================+
 | ``comment``                    | *simple* | none        | A free-form, human-readable comment.                      |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
-| ``additional_write_policy``    | *simple* | 99PERCENTILE| :ref:`Additional request options                           |
+| ``additional_read_policy``     | *simple* | 99PERCENTILE| :ref:`Additional request options                           |
 |                                |          |             | <additional-request-options>`.                             |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
-| ``speculative_write_threshold``| *simple* | 99PERCENTILE| :ref:`Additional request options                           |
+| ``additional_write_policy``    | *simple* | 99PERCENTILE| :ref:`Additional request options                           |
 |                                |          |             | <additional-request-options>`.                             |
 +--------------------------------+----------+-------------+-----------------------------------------------------------+
 | ``gc_grace_seconds``           | *simple* | 864000      | Time to wait before garbage collecting tombstones         |
@@ -495,9 +495,11 @@ Additional request options
 
 By default, Cassandra read coordinators only query as many replicas as necessary to satisfy
 consistency levels: one for consistency level ``ONE``, a quorum for ``QUORUM``, and so on.
-``additional_read_policy`` determines when coordinators may query additional replicas, which is useful
+``additional_read_policy`` (formerly ``speculative_retry``) determines when coordinators may query additional replicas, which is useful
 when replicas are slow or unresponsive.  ``additional_write_policy`` specifies the threshold at which
-a cheap quorum write will be upgraded to include transient replicas.  The following are legal values (case-insensitive):
+a coordinator for a write to a transiently replicated table will upgrade the write
+to include transient replicas.
+The following are legal values (case-insensitive):
 
 ============================ ======================== =============================================================================
  Format                       Example                  Description

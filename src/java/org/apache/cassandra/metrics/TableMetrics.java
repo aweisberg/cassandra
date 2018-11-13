@@ -212,7 +212,7 @@ public class TableMetrics
     public final Counter additionalReads;
     public final Counter additionalReadsFailed;
     public final Counter additionalReadsInsufficientReplicas;
-    public final Gauge<Long> additionalReadsLatencyNanos;
+    public final Gauge<Long> additionalReadLatencyNanos;
 
     public final Counter additionalWrites;
     public final Gauge<Long> additionalWriteLatencyNanos;
@@ -840,11 +840,11 @@ public class TableMetrics
         });
         additionalReads = createTableCounter("AdditionalReads");
         reregisterTableCounter("SpeculativeRetries", additionalReads);
-        additionalReadsFailed = createTableCounter("SpeculativeFailedRetries");
-        reregisterTableCounter("AdditionalReadsFailed", additionalReadsFailed);
+        additionalReadsFailed = createTableCounter("AdditionalReadsFailed");
+        reregisterTableCounter("SpeculativeFailedRetries", additionalReadsFailed);
         additionalReadsInsufficientReplicas = createTableCounter("AdditionalReadsInsufficientReplicas");
-        reregisterTableCounter("SpeculativeInsufficientRetries", additionalReadsInsufficientReplicas);
-        additionalReadsLatencyNanos = createTableGauge("SpeculativeSampleLatencyNanos", () -> cfs.additionalReadLatencyNanos);
+        reregisterTableCounter("SpeculativeInsufficientReplicas", additionalReadsInsufficientReplicas);
+        additionalReadLatencyNanos = createTableGauge("AdditionalReadLatencyNanos", () -> cfs.additionalReadLatencyNanos);
         createTableGauge("SpeculativeSampleLatencyNanos", () -> cfs.additionalReadLatencyNanos);
 
         additionalWrites = createTableCounter("AdditionalWrites");
