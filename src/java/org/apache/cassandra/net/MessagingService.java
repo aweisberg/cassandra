@@ -743,7 +743,14 @@ public final class MessagingService implements MessagingServiceMBean
         }
         catch (IOException e)
         {
-            throw new IOError(e);
+            try
+            {
+                handleIOException(e);
+            }
+            catch (IOException e)
+            {
+                throw new IOError(e);
+            }
         }
     }
 
@@ -1004,10 +1011,17 @@ public final class MessagingService implements MessagingServiceMBean
         void close() throws IOException
         {
             logger.debug("Closing accept() thread");
-            server.close();
-            for (Closeable connection : connections) 
+            try
             {
-                connection.close();
+                server.close();
+                for (Closeable connection : connections)
+                {
+                    connection.close();
+                }
+            }
+            catch (IOException e)
+            {
+                handleIOException(e);
             }
         }
 
@@ -1015,6 +1029,14 @@ public final class MessagingService implements MessagingServiceMBean
         {
             return DatabaseDescriptor.getInternodeAuthenticator().authenticate(socket.getInetAddress(), socket.getPort());
         }
+    }
+
+    private static void handleIOException(IOException e) throws IOException
+    {
+        // dirty hack for clean shutdown on OSX w/ Java >= 1.8.0_20
+        // see https://bugs.openjdk.java.net/browse/JDK-8050499
+        if (!"Unknown error: 316".equals(e.getMessage()) || !"Mac OS X".equals(System.getProperty("os.name")))
+            throw e;
     }
 
     public Map<String, Integer> getCommandPendingTasks()
