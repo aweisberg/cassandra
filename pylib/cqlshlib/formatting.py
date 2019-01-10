@@ -205,11 +205,12 @@ class CqlType(object):
         return [CqlType(r, ksmeta) for r in ret]
 
 
-def format_value_default(val, colormap, **_):
+def format_value_default(val, colormap, no_color_map=False, **_):
     val = str(val)
     escapedval = val.replace('\\', '\\\\')
     bval = controlchars_re.sub(_show_control_chars, escapedval)
-    return bval if colormap is NO_COLOR_MAP else color_text(bval, colormap)
+    # Identity is failing with NO_COLOR_MAP from the python 3 dtests
+    return bval if (colormap is NO_COLOR_MAP or no_color_map) else color_text(bval, colormap)
 
 
 # Mapping cql type base names ("int", "map", etc) to formatter functions,
