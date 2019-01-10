@@ -85,7 +85,7 @@ def format_by_type(val, cqltype, encoding, colormap=None, addcolor=False,
                         boolean_styles=boolean_styles)
 
 
-def color_text(bval, colormap, displaywidth=None):
+def color_text(bval, colormap, displaywidth=None, encoding='utf-8'):
     # note that here, we render natural backslashes as just backslashes,
     # in the same color as surrounding text, when using color. When not
     # using color, we need to double up the backslashes so it's not
@@ -97,6 +97,8 @@ def color_text(bval, colormap, displaywidth=None):
     if displaywidth is None:
         displaywidth = len(bval)
     tbr = _make_turn_bits_red_f(colormap['blob'], colormap['text'])
+    if hasattr(bval, "decode"):
+        bval = bval.decode(encoding)
     coloredval = colormap['text'] + bits_to_turn_red_re.sub(tbr, bval) + colormap['reset']
     if colormap['text']:
         displaywidth -= bval.count(r'\\')
@@ -203,11 +205,12 @@ class CqlType(object):
         return [CqlType(r, ksmeta) for r in ret]
 
 
-def format_value_default(val, colormap, **_):
+def format_value_default(val, colormap, no_color_map=False, **_):
     val = str(val)
     escapedval = val.replace('\\', '\\\\')
     bval = controlchars_re.sub(_show_control_chars, escapedval)
-    return bval if colormap is NO_COLOR_MAP else color_text(bval, colormap)
+    # Identity is failing with NO_COLOR_MAP from the python 3 dtests
+    return bval if (colormap is NO_COLOR_MAP or no_color_map) else color_text(bval, colormap)
 
 
 # Mapping cql type base names ("int", "map", etc) to formatter functions,
@@ -239,7 +242,7 @@ def formatter_for(typname):
 
 @formatter_for('bytearray')
 def format_value_blob(val, colormap, **_):
-    bval = '0x' + binascii.hexlify(val)
+    bval = b'0x' + binascii.hexlify(val)
     return colorme(bval, colormap, 'blob')
 
 
@@ -483,9 +486,12 @@ def format_value_text(val, encoding, colormap, quote=False, **_):
     escapedval = unicode_controlchars_re.sub(_show_control_chars, escapedval)
     bval = escapedval.encode(encoding, 'backslashreplace')
     if quote:
-        bval = "'%s'" % bval
+        bval = b'\'' + bval + b'\''
 
-    return bval if colormap is NO_COLOR_MAP else color_text(bval, colormap, wcwidth.wcswidth(bval.decode(encoding)))
+    retval = bval if colormap is NO_COLOR_MAP else color_text(bval, colormap, wcwidth.wcswidth(bval.decode(encoding) if hasattr(bval, "decode") else bval), encoding=encoding)
+    if hasattr(retval, "decode"):
+        retval.decode(encoding)
+    return retval
 
 
 # name alias
