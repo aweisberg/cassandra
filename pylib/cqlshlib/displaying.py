@@ -32,6 +32,8 @@ def colorme(bval, colormap, colorkey):
         return bval
     if colormap is None:
         colormap = DEFAULT_VALUE_COLORS
+    if hasattr(bval, "decode"):
+        bval = bval.decode()
     return FormattedValue(bval, colormap[colorkey] + bval + colormap['reset'])
 
 

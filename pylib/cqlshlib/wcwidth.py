@@ -85,7 +85,7 @@ def bisearch(ucs, table):
     if ucs < table[0][0] or ucs > table[max][1]:
         return 0
     while max >= min:
-        mid = (min + max) / 2
+        mid = (min + max) // 2
         if ucs > table[mid][1]:
             min = mid + 1
         elif ucs < table[mid][0]:
@@ -375,4 +375,4 @@ if __name__ == "__main__":
 
     assert wcswidth(u'foobar\u200b\a') < 0
 
-    print 'tests pass.'
+    print('tests pass.')

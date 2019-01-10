@@ -85,7 +85,7 @@ def format_by_type(val, cqltype, encoding, colormap=None, addcolor=False,
                         boolean_styles=boolean_styles)
 
 
-def color_text(bval, colormap, displaywidth=None):
+def color_text(bval, colormap, displaywidth=None, encoding='utf-8'):
     # note that here, we render natural backslashes as just backslashes,
     # in the same color as surrounding text, when using color. When not
     # using color, we need to double up the backslashes so it's not
@@ -97,6 +97,8 @@ def color_text(bval, colormap, displaywidth=None):
     if displaywidth is None:
         displaywidth = len(bval)
     tbr = _make_turn_bits_red_f(colormap['blob'], colormap['text'])
+    if hasattr(bval, "decode"):
+        bval = bval.decode(encoding)
     coloredval = colormap['text'] + bits_to_turn_red_re.sub(tbr, bval) + colormap['reset']
     if colormap['text']:
         displaywidth -= bval.count(r'\\')
@@ -239,7 +241,7 @@ def formatter_for(typname):
 
 @formatter_for('bytearray')
 def format_value_blob(val, colormap, **_):
-    bval = '0x' + binascii.hexlify(val)
+    bval = b'0x' + binascii.hexlify(val)
     return colorme(bval, colormap, 'blob')
 
 
@@ -483,9 +485,12 @@ def format_value_text(val, encoding, colormap, quote=False, **_):
     escapedval = unicode_controlchars_re.sub(_show_control_chars, escapedval)
     bval = escapedval.encode(encoding, 'backslashreplace')
     if quote:
-        bval = "'%s'" % bval
+        bval = b'\'' + bval + b'\''
 
-    return bval if colormap is NO_COLOR_MAP else color_text(bval, colormap, wcwidth.wcswidth(bval.decode(encoding)))
+    retval = bval if colormap is NO_COLOR_MAP else color_text(bval, colormap, wcwidth.wcswidth(bval.decode(encoding) if hasattr(bval, "decode") else bval), encoding=encoding)
+    if hasattr(retval, "decode"):
+        retval.decode(encoding)
+    return retval
 
 
 # name alias
