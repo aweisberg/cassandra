@@ -239,6 +239,7 @@ jobs:
             export CASS_DRIVER_NO_EXTENSIONS=true
             export CASS_DRIVER_NO_CYTHON=true
             pip3 install --upgrade -r ~/cassandra-dtest/requirements.txt
+            pip3 uninstall -y cqlsh
             pip3 freeze
       - run:
           name: Determine Tests to Run
@@ -317,6 +318,7 @@ jobs:
             export CASS_DRIVER_NO_EXTENSIONS=true
             export CASS_DRIVER_NO_CYTHON=true
             pip3 install --upgrade -r ~/cassandra-dtest/requirements.txt
+            pip3 uninstall -y cqlsh
             pip3 freeze
       - run:
           name: Determine Tests to Run
@@ -393,6 +395,7 @@ jobs:
             export CASS_DRIVER_NO_EXTENSIONS=true
             export CASS_DRIVER_NO_CYTHON=true
             pip3 install --upgrade -r ~/cassandra-dtest/requirements.txt
+            pip3 uninstall -y cqlsh
             pip3 freeze
       - run:
           name: Determine Tests to Run
