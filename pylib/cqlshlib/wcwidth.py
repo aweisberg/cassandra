@@ -75,6 +75,7 @@
 # disclaims all warranties with regard to this software.
 #
 # Latest C version: http://www.cl.cam.ac.uk/~mgk25/ucs/wcwidth.c
+from __future__ import print_function
 
 # auxiliary function for binary search in interval table
 
