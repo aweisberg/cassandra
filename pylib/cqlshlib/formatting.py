@@ -21,7 +21,6 @@ import math
 import os
 import re
 import sys
-import six
 import platform
 import wcwidth
 
