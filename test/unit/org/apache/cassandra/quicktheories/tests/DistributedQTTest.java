@@ -71,7 +71,7 @@ public class DistributedQTTest extends DistributedTestBase
                                  .build());
                     addSetupStep(builder("generatePartitionKeys",
                                          this::insertRows,
-                                         () -> operations().writes().writes(schemaSpec, 100, 10, 100),
+                                         () -> operations().writes().writes(schemaSpec).partitionCountBetween(1, 100).rowCountBetween(10, 100).withCurrentTimestamp(),
                                          () -> nodeSelector)
                                  .build());
                     addStep(builder("generateRead",

@@ -172,7 +172,7 @@ public class CompactionQTTest extends DistributedTestBase
                     }
 
                     public Gen<Pair<FullKey, Insert>> writes() {
-                        return operations().writes().write(schemaSpec, newOrExistingPartitionKeys());
+                        return operations().writes().write(schemaSpec, newOrExistingPartitionKeys()).withCurrentTimestamp();
                     }
 
                     public Gen<Object[]> newOrExistingPartitionKeys()

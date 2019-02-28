@@ -25,131 +25,278 @@ import java.util.function.Supplier;
 import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
-import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.Generate;
-import org.quicktheories.generators.SourceDSL;
 
 import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
-import static java.util.stream.Collectors.toList;
 import static org.quicktheories.generators.SourceDSL.*;
 
 
 public class WritesDSL
 {
-    /**
-     * Generate single row write
-     */
-    public static Gen<Pair<FullKey, Insert>> write(SchemaSpec schema, Object[] partitionKey)
-    {
-        return rowGenerator(schema,
-                            Generate.constant(partitionKey),
-                            schema.clusteringKeyGenerator)
-               .map(DataRow::toInsert);
-    }
 
-    public static Gen<Pair<FullKey, Insert>> write(SchemaSpec schema, Gen<Object[]> pkGen)
+    /**
+     * Generate a write to the given partition (randomly generated row and values)
+     * @param schema the schema to generate writes for
+     * @param partitionKey the partition key to write to
+     * @return a {@link WritesBuilder} used to customize and create the generator
+     */
+    public static WriteBuilder write(SchemaSpec schema, Object[] partitionKey)
     {
-        return rowGenerator(schema,
-                            pkGen,
-                            schema.clusteringKeyGenerator)
-               .map(DataRow::toInsert);
+        return write(schema, Generate.constant(partitionKey));
     }
 
     /**
-     * Generate writes to multiple partitions
+     * Generate a random write
+     * @param schema the schema to generate writes for
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public Gen<List<Pair<FullKey, Insert>>> writes(SchemaSpec schemaSpec,
-                                                   int maxPartitions,
-                                                   int minPartitionSize,
-                                                   int maxPartitionSize)
+    public static WriteBuilder write(SchemaSpec schema)
     {
-        return SourceDSL.lists()
-                        .of(WritesDSL.writes(schemaSpec, minPartitionSize, maxPartitionSize))
-                        .ofSizeBetween(1, maxPartitions)
-                        .map((List<List<Pair<FullKey, Insert>>> lists) -> {
-                            List<Pair<FullKey, Insert>> rows = new ArrayList<>();
-                            for (List<Pair<FullKey, Insert>> list : lists)
-                            {
-                                rows.addAll(list);
-                            }
-                            return rows;
-                        });
+        return write(schema, schema.partitionKeyGenerator);
+    }
+
+
+    /**
+     * Generate a random write
+     * @param schema the schema to generate writes for
+     * @param partitionKeys the generator to use when generating partition keys
+     * @return a {@link WritesBuilder} used to customize and create the generator
+     */
+    public static WriteBuilder write(SchemaSpec schema, Gen<Object[]> partitionKeys)
+    {
+        return new WriteBuilder(schema, partitionKeys);
     }
 
     /**
-     * Generate writes to single partition
+     * Generate multiple writes to a single partition
+     * @param schemaSpec the schema to generate writes for
+     * @param partitionKey the partition to generates writes to
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public static Gen<List<Pair<FullKey, Insert>>> writes(SchemaSpec schemaSpec,
-                                                          int minPartitionSize,
-                                                          int maxPartitionSize)
+    public WritesBuilder writes(SchemaSpec schemaSpec, Object[] partitionKey)
     {
-        return rowsGenerator(schemaSpec,
-                             schemaSpec.partitionKeyGenerator,
-                             schemaSpec.clusteringKeyGenerator,
-                             minPartitionSize,
-                             maxPartitionSize)
-               .map((rows) -> rows.stream().map(DataRow::toInsert).collect(toList()));
+        return new WritesBuilder(schemaSpec, Generate.constant(partitionKey));
     }
 
     /**
-     * Generate writes to single partition with predetermined partition key
+     * Generate writes to one or more partitions
+     * @param schemaSpec the schema to generate writes for
+     * @param partitionKeys the generator to use when generating partition keys
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public static Gen<List<Pair<FullKey, Insert>>> writes(SchemaSpec schemaSpec,
-                                                          Object[] pk,
-                                                          int minPartitionSize,
-                                                          int maxPartitionSize)
+    public WritesBuilder writes(SchemaSpec schemaSpec, Gen<Object[]> partitionKeys)
     {
-        return rowsGenerator(schemaSpec,
-                             Generate.constant(() -> pk),
-                             schemaSpec.clusteringKeyGenerator,
-                             minPartitionSize,
-                             maxPartitionSize)
-               .map((rows) -> rows.stream().map(DataRow::toInsert).collect(toList()));
-    }
-
-    private static Gen<List<DataRow>> rowsGenerator(SchemaSpec schemaSpec,
-                                                    Gen<Object[]> partitionKeyGenerator,
-                                                    Gen<Object[]> clusteringKeyGenerator,
-                                                    int minPartitionSize, int maxPartitionSize)
-    {
-        assert minPartitionSize > 0 : "Minimum partition size should be non-negative but was " + minPartitionSize;
-        assert minPartitionSize <= maxPartitionSize : "Minimum partition should not exceed maximum partition size";
-
-        return Extensions.combine(SourceDSL.integers().between(minPartitionSize, maxPartitionSize),
-                                  rowGenerator(schemaSpec,
-                                               partitionKeyGenerator,
-                                               clusteringKeyGenerator),
-                                  (prng, sizeGen, dataGen) -> {
-                                      int size = sizeGen.generate(prng);
-
-                                      List<DataRow> rows = new ArrayList<>(size);
-                                      for (int i = 0; i < size; i++)
-                                          rows.add(dataGen.generate(prng));
-
-                                      return rows;
-                                  });
+        return new WritesBuilder(schemaSpec, partitionKeys);
     }
 
     /**
-     * Provides a generator for data for a single partition
+     * Generate writes to one or more partitions
+     * @param schemaSpec the schema to generate writes for
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    private static Gen<DataRow> rowGenerator(SchemaSpec schemaSpec,
-                                            Gen<Object[]> partitionKeyGenerator,
-                                            Gen<Object[]> clusteringKeyGenerator)
+    public WritesBuilder writes(SchemaSpec schemaSpec)
     {
-        return Extensions.combine(partitionKeyGenerator,
-                                  clusteringKeyGenerator,
-                                  schemaSpec.rowDataGenerator,
-                                  (prng, pkGen, ckGen, rowDataGen) -> {
-                                      Object[] pk = pkGen.generate(prng);
+        return new WritesBuilder(schemaSpec);
+    }
 
-                                      return new DataRow(schemaSpec,
-                                                         new FullKey(pk, ckGen.generate(prng)),
-                                                         rowDataGen.generate(prng));
-                                  });
+
+    /**
+     * Generate a single partition delete
+     *
+     * @param schema the schema to generate the delete for
+     * @param partitionKeys a generator used when generating which partition to delete
+     * @return a {@link DeletesBuilder} used to customize and create the generator
+     */
+    public DeletesBuilder deletePartition(SchemaSpec schema,
+                                          Gen<Object[]> partitionKeys)
+    {
+        return deletePartition(schema, () -> partitionKeys);
+    }
+
+    /**
+     * Generate a single partition delete
+     *
+     * @param schema the schema to generate the delete for
+     * @param partitionKeys a generator supplier used when generating which partition to delete
+     * @return a {@link DeletesBuilder} used to customize and create the generator
+     */
+    public DeletesBuilder deletePartition(SchemaSpec schema,
+                                          Supplier<Gen<Object[]>> partitionKeys)
+    {
+        return delete(schema, partitionKeys, () -> arbitrary().constant(new Object[]{})).partitionDeletesOnly();
+    }
+
+
+    /**
+     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
+     *
+     * @param schema the schema to generate the delete for
+     * @param partitionKeys a generator used when generating which partition to delete
+     * @param clusterings a generator used when generating which rows/ranges within a partition to delete
+     * @return a {@link DeletesBuilder} used to customize and create the generator
+     */
+    public DeletesBuilder delete(SchemaSpec schema,
+                                 Gen<Object[]> partitionKeys,
+                                 Gen<Object[]> clusterings)
+    {
+        return delete(schema, () -> partitionKeys, () -> clusterings);
+    }
+
+    /**
+     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
+     *
+     * @param schema the schema to generate the delete for
+     * @param partitionKeys a generator supplier used when generating which partition to delete
+     * @param clusterings a generator used when generating which rows/ranges within a partition to delete
+     * @return a {@link DeletesBuilder} used to customize and create the generator
+     */
+    public DeletesBuilder delete(SchemaSpec schema,
+                                 Supplier<Gen<Object[]>> partitionKeys,
+                                 Gen<Object[]> clusterings)
+    {
+        return delete(schema, partitionKeys, () -> clusterings);
+    }
+
+    /**
+     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
+     *
+     * @param schema the schema to generate the delete for
+     * @param partitionKeys a generator used when generating which partition to delete
+     * @param clusterings a generator supplier used when generating which rows/ranges within a partition to delete
+     * @return a {@link DeletesBuilder} used to customize and create the generator
+     */
+    public DeletesBuilder delete(SchemaSpec schema,
+                                 Gen<Object[]> partitionKeys,
+                                 Supplier<Gen<Object[]>> clusterings)
+    {
+        return delete(schema, () -> partitionKeys, clusterings);
+    }
+
+    /**
+     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
+     *
+     * @param schema the schema to generate the delete for
+     * @param partitionKeys a generator supplier used when generating which partition to delete
+     * @param clusterings a generator supplier used when generating which rows/ranges within a partition to delete
+     * @return a {@link DeletesBuilder} used to customize and create the generator
+     */
+    public DeletesBuilder delete(SchemaSpec schema,
+                                 Supplier<Gen<Object[]>> partitionKeys,
+                                 Supplier<Gen<Object[]>> clusterings)
+    {
+        return new DeletesBuilder(schema, partitionKeys, clusterings);
+    }
+
+
+    public static class WriteBuilder {
+        private final Gen<DataRow> rows;
+
+        private WriteBuilder(SchemaSpec schema, Gen<Object[]> partitionKeys)
+        {
+            this(rowGenerator(schema, partitionKeys));
+        }
+
+
+        private WriteBuilder(Gen<DataRow> rows)
+        {
+            this.rows = rows;
+        }
+
+        public Gen<Pair<FullKey, Insert>> withTimestamp(Gen<Long> timestamps)
+        {
+            return this.rows.zip(timestamps, (r, ts) -> r.toInsert(ts));
+        }
+
+        public Gen<Pair<FullKey, Insert>> withTimestamp(long ts)
+        {
+            return withTimestamp(arbitrary().constant(ts));
+        }
+
+
+        public Gen<Pair<FullKey, Insert>> withCurrentTimestamp()
+        {
+            return withTimestamp(FBUtilities.timestampMicros());
+        }
+    }
+
+    public static class WritesBuilder {
+        private final SchemaSpec schema;
+        private final Gen<Object[]> partitionKeys;
+
+        private int minPartitions = 1;
+        private int maxPartitions = 1;
+        private int minRows = 1;
+        private int maxRows = 1;
+
+        private WritesBuilder(SchemaSpec schema)
+        {
+            this(schema, schema.partitionKeyGenerator);
+        }
+
+
+        private WritesBuilder(SchemaSpec schema, Gen<Object[]> partitionKeys)
+        {
+            this.schema = schema;
+            this.partitionKeys = partitionKeys;
+        }
+
+        public WritesBuilder partitionCount(int count)
+        {
+            return partitionCountBetween(count, count);
+        }
+
+        public WritesBuilder partitionCountBetween(int min, int max)
+        {
+            assert min > 0 : "Minimum partition count should be non-negative but was " + min;
+            assert min <= max : "Minimum partition count not exceed maximum partition count";
+
+            minPartitions = min;
+            maxPartitions = max;
+            return this;
+        }
+
+        public WritesBuilder rowCount(int count)
+        {
+            return rowCountBetween(count, count);
+        }
+
+        public WritesBuilder rowCountBetween(int min, int max)
+        {
+            assert min > 0 : "Minimum row count should be non-negative but was " + min;
+            assert min <= max : "Minimum row count not exceed maximum partition count";
+
+            minRows = min;
+            maxRows = max;
+            return this;
+        }
+
+        public Gen<List<Pair<FullKey, Insert>>> withTimestamp(Gen<Long> timestamps)
+        {
+
+            Gen<List<Pair<FullKey, Insert>>> singlePartitionManyRows = partitionKeys.flatMap(pk ->
+                                                                                lists().of(rowGenerator(schema, pk).zip(timestamps, (r, ts) -> r.toInsert(ts)))
+                                                                                       .ofSizeBetween(minRows, maxRows));
+
+            return lists().of(singlePartitionManyRows)
+                          .ofSizeBetween(minPartitions, maxPartitions)
+                          .map(writes -> writes.stream().reduce(new ArrayList<>(), (a, b) -> { a.addAll(b); return a; } ));
+
+        }
+
+        public Gen<List<Pair<FullKey, Insert>>> withTimestamp(long ts)
+        {
+            return withTimestamp(arbitrary().constant(ts));
+        }
+
+
+        public Gen<List<Pair<FullKey, Insert>>> withCurrentTimestamp()
+        {
+            return withTimestamp(in -> FBUtilities.timestampMicros());
+        }
+
     }
 
     /**
@@ -170,7 +317,7 @@ public class WritesDSL
             this.rowData = rowData;
         }
 
-        public Pair<FullKey, Insert> toInsert()
+        public Pair<FullKey, Insert> toInsert(long ts)
         {
             Insert insert = QueryBuilder.insertInto(schemaSpec.ksName, schemaSpec.tableName);
 
@@ -193,54 +340,10 @@ public class WritesDSL
                              row.right);
             }
 
-            // TODO (alexp): make it possible to supply timestamp
-            insert.using(timestamp(FBUtilities.timestampMicros()));
+            insert.using(timestamp(ts));
             return Pair.create(fullKey, insert);
         }
 
-    }
-
-
-
-    public DeletesBuilder deletePartition(SchemaSpec schema,
-                                          Gen<Object[]> partitionKeys)
-    {
-        return deletePartition(schema, () -> partitionKeys);
-    }
-
-    public DeletesBuilder deletePartition(SchemaSpec schema,
-                                          Supplier<Gen<Object[]>> partitionKeys)
-    {
-        return delete(schema, partitionKeys, () -> arbitrary().constant(new Object[]{})).partitionDeletesOnly();
-    }
-
-
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Gen<Object[]> partitionKeys,
-                                 Gen<Object[]> clusterings)
-    {
-        return delete(schema, () -> partitionKeys, () -> clusterings);
-    }
-
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Supplier<Gen<Object[]>> partitionKeys,
-                                 Gen<Object[]> clusterings)
-    {
-        return delete(schema, partitionKeys, () -> clusterings);
-    }
-
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Gen<Object[]> partitionKeys,
-                                 Supplier<Gen<Object[]>> clusterings)
-    {
-        return delete(schema, () -> partitionKeys, clusterings);
-    }
-
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Supplier<Gen<Object[]>> partitionKeys,
-                                 Supplier<Gen<Object[]>> clusterings)
-    {
-        return new DeletesBuilder(schema, partitionKeys, clusterings);
     }
 
     public static class DeletesBuilder
@@ -355,6 +458,17 @@ public class WritesDSL
             };
         }
 
+    }
+
+    private static Gen<DataRow> rowGenerator(SchemaSpec schema, Gen<Object[]> partitionKeys) {
+        return partitionKeys.zip(schema.clusteringKeyGenerator, schema.rowDataGenerator,
+                                 (pk, ck, data) -> new DataRow(schema, new FullKey(pk, ck), data));
+    }
+
+
+    private static Gen<DataRow> rowGenerator(SchemaSpec schema, Object[] pk) {
+        return schema.clusteringKeyGenerator.zip(schema.rowDataGenerator,
+                                                 (ck, data) -> new DataRow(schema, new FullKey(pk, ck), data));
     }
 
 }

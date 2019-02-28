@@ -25,6 +25,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import com.datastax.driver.core.querybuilder.Delete;
+import com.datastax.driver.core.querybuilder.Insert;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 
@@ -34,16 +35,16 @@ import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.*;
 
 public class GeneratorsTest
 {
-    private final Gen<SchemaSpec> schemasForDeletion = schemas().keyspace("test")
-                                                                .partitionKeyColumnCountBetween(1, 4)
-                                                                .clusteringColumnCountBetween(0, 4)
-                                                                .staticColumnCount(0)
-                                                                .regularColumnCount(1);
+    private final Gen<SchemaSpec> testSchemas = schemas().keyspace("test")
+                                                         .partitionKeyColumnCountBetween(1, 4)
+                                                         .clusteringColumnCountBetween(0, 4)
+                                                         .staticColumnCount(0)
+                                                         .regularColumnCount(1);
 
 
     private Gen<Pair<SchemaSpec, Delete>> pairWithSchema(Function<SchemaSpec, Gen<Delete>> fn)
     {
-        return schemasForDeletion.flatMap(schema -> fn.apply(schema).map(delete -> Pair.create(schema, delete)));
+        return testSchemas.flatMap(schema -> fn.apply(schema).map(delete -> Pair.create(schema, delete)));
     }
 
 
@@ -208,7 +209,8 @@ public class GeneratorsTest
                 int clauseCount = 0;
                 boolean sawClustering = false;
                 boolean sawBound = false;
-                for (String clause : extractClauses(deleteAndSchema.right)) {
+                for (String clause : extractClauses(deleteAndSchema.right))
+                {
                     clauseCount++;
                     if (clause.matches("ck.*(<|>).*"))
                     {
@@ -243,9 +245,30 @@ public class GeneratorsTest
         Assert.assertTrue("no partition deletes", partitionOnly.get() > 0);
         Assert.assertTrue("no row deletes", rowDelete.get() > 0);
         Assert.assertTrue("no range deletes", rangeDelete.get() > 0);
-
     }
 
+    @Test
+    public void manyWritesToSinglePartition()
+    {
+        qt().forAll(testSchemas.flatMap(schema -> operations().writes().writes(schema).partitionCount(1).rowCountBetween(1, 10).withCurrentTimestamp()))
+            .check(writes -> {
+                FullKey last = null;
+                for (Pair<FullKey, Insert> write : writes)
+                {
+                    if (last == null)
+                    {
+                        last = write.left;
+                        continue;
+                    }
+
+                    if (!last.partition.equals(write.left.partition))
+                        return false;
+                }
+
+                return true;
+            });
+
+    }
 
     private String[] extractClauses(Delete delete)
     {
