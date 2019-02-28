@@ -145,6 +145,20 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
             isShutdown = false;
         }
 
+        public void compact(String keyspace, String table)
+        {
+            if (isShutdown)
+                throw new IllegalStateException();
+            delegate.compact(keyspace, table);
+        }
+
+        public void flush(String keyspace, String table)
+        {
+            if (isShutdown)
+                throw new IllegalStateException();
+            delegate.flush(keyspace, table);
+        }
+
         @Override
         public synchronized Future<Void> shutdown()
         {

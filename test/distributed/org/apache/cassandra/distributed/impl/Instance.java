@@ -148,6 +148,18 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         throw new UnsupportedOperationException();
     }
 
+    public void compact(String keyspace, String table)
+    {
+        sync(ThrowingRunnable.toRunnable(() -> {
+            Keyspace.open(keyspace).getColumnFamilyStore(table).forceMajorCompaction();
+        }));
+    }
+
+    public void flush(String keyspace, String table)
+    {
+        sync(() -> Keyspace.open(keyspace).getColumnFamilyStore(table).forceBlockingFlush());
+    }
+
     @Override
     public void schemaChangeInternal(String query)
     {

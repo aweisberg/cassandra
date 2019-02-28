@@ -37,6 +37,8 @@ public interface IInstance extends IIsolatedExecutor
     UUID schemaVersion();
 
     void startup();
+    void compact(String keyspace, String table);
+    void flush(String keyspace, String table);
     Future<Void> shutdown();
 
     // these methods are not for external use, but for simplicity we leave them public and on the normal IInstance interface
