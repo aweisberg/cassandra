@@ -37,7 +37,6 @@ import static com.datastax.driver.core.querybuilder.QueryBuilder.eq;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.timestamp;
 import static org.apache.cassandra.quicktheories.generators.Extensions.combine;
 import static org.apache.cassandra.quicktheories.generators.Extensions.subsetGenerator;
-import static org.quicktheories.generators.SourceDSL.integers;
 
 public class QueryGen
 {
@@ -120,38 +119,34 @@ public class QueryGen
                        });
     }
 
-    public Insert toInsert(List<Pair<ColumnSpec<?>, Object>> rowSpec) {
-
-    }
-
-    public static Gen<Pair<FullKey, Insert>> writeGen(SchemaSpec schemaSpec, Object[] partitionKey)
-    {
-        return combine(schemaSpec.rowGenerator,
-                       (prng, rowGen) -> {
-                           Insert insert = QueryBuilder.insertInto(schemaSpec.ksName, schemaSpec.tableName);
-
-                           List<Pair<ColumnSpec<?>, Object>> row = rowGen.generate(prng);
-
-                           for (int i = 0; i < schemaSpec.partitionKeys.size(); i++)
-                           {
-                               insert.value(schemaSpec.partitionKeys.get(i).name,
-                                            partitionKey[i]);
-                           }
-
-                           Object[] clustering = new Object[schemaSpec.clusteringKeys.size()];
-                           for (int i = 0; i < row.size(); i++)
-                           {
-                               Pair<ColumnSpec<?>, Object> pair = row.get(i);
-                               if (pair.left.kind == ColumnMetadata.Kind.CLUSTERING)
-                                   clustering[i] = pair.right;
-                               insert.value(pair.left.name,
-                                            pair.right);
-                           }
-
-                           insert.using(timestamp(FBUtilities.timestampMicros()));
-                           return Pair.create(new FullKey(partitionKey, clustering), insert);
-                       });
-    }
+//    public static Gen<Pair<FullKey, Insert>> writeGen(SchemaSpec schemaSpec, Object[] partitionKey)
+//    {
+//        return combine(schemaSpec.clusteringKeyGenerator,
+//                       (prng, rowGen) -> {
+//                           Insert insert = QueryBuilder.insertInto(schemaSpec.ksName, schemaSpec.tableName);
+//
+//                           List<Pair<ColumnSpec<?>, Object>> row = rowGen.generate(prng);
+//
+//                           for (int i = 0; i < schemaSpec.partitionKeys.size(); i++)
+//                           {
+//                               insert.value(schemaSpec.partitionKeys.get(i).name,
+//                                            partitionKey[i]);
+//                           }
+//
+//                           Object[] clustering = new Object[schemaSpec.clusteringKeys.size()];
+//                           for (int i = 0; i < row.size(); i++)
+//                           {
+//                               Pair<ColumnSpec<?>, Object> pair = row.get(i);
+//                               if (pair.left.kind == ColumnMetadata.Kind.CLUSTERING)
+//                                   clustering[i] = pair.right;
+//                               insert.value(pair.left.name,
+//                                            pair.right);
+//                           }
+//
+//                           insert.using(timestamp(FBUtilities.timestampMicros()));
+//                           return Pair.create(new FullKey(partitionKey, clustering), insert);
+//                       });
+//    }
 
     public static Gen<Delete> deleteGen(SchemaSpec schema, Object[] pk, Object[] ck1, Object[] ck2)
     {

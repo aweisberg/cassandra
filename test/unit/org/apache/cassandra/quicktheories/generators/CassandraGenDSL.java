@@ -18,40 +18,31 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
-import java.util.Arrays;
-
-public class FullKey
+public class CassandraGenDSL
 {
-    public final Object[] partition;
-    public final Object[] clustering;
-
-    public FullKey(Object[] partition, Object[] clustering)
+    public static SchemaGenDSL schemas()
     {
-        this.partition = partition;
-        this.clustering = clustering;
+        return new SchemaGenDSL();
     }
 
-    public String toString()
+    public static OperationsDSL operations()
     {
-        return "FullKey{" +
-               "partition=" + Arrays.toString(partition) +
-               ", clustering=" + Arrays.toString(clustering) +
-               '}';
+        return new OperationsDSL();
     }
 
-    public boolean equals(Object o)
+    public static DataDSL data()
     {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        FullKey key = (FullKey) o;
-        return Arrays.equals(partition, key.partition) &&
-               Arrays.equals(clustering, key.clustering);
+        return new DataDSL();
     }
 
-    public int hashCode()
+    public static class OperationsDSL
     {
-        int result = Arrays.hashCode(partition);
-        result = 31 * result + Arrays.hashCode(clustering);
-        return result;
+        public WritesDSL writes()
+        {
+            return new WritesDSL();
+        }
+
     }
+
 }
+

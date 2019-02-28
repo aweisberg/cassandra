@@ -18,26 +18,18 @@
 
 package org.apache.cassandra.distributed;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import org.junit.Assert;
 import org.junit.Test;
 
-import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.impl.Versions;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
-import org.apache.cassandra.quicktheories.generators.FullKey;
 import org.apache.cassandra.quicktheories.generators.SchemaGen;
-import org.apache.cassandra.quicktheories.generators.SchemaSpec;
 import org.quicktheories.core.Gen;
-import org.quicktheories.core.RandomnessSource;
 import org.quicktheories.generators.SourceDSL;
 import org.quicktheories.impl.stateful.StatefulTheory;
 
@@ -56,21 +48,21 @@ public class DistributedQTTest extends DistributedTestBase
             .stateful(supplier::get);
     }
 
-    public static class PartitionGenerator implements Gen<Map<Object[], FullKey>>
-    {
-        public PartitionGenerator(SchemaSpec schemaSpec,
-                                  List<Object[]> partitionKeys,
-                                  int minPartitionSize,
-                                  int maxPartitionSize) {
-            schemaSpec.partitionGenerator
-        }
-        public Map<Object[], FullKey> generate(RandomnessSource randomnessSource)
-        {
-            Map<Object[], FullKey> res = new HashMap<>();
-
-            return res;
-        }
-    }
+//    public static class PartitionGenerator implements Gen<Map<Object[], FullKey>>
+//    {
+//        public PartitionGenerator(SchemaSpec schemaSpec,
+//                                  List<Object[]> partitionKeys,
+//                                  int minPartitionSize,
+//                                  int maxPartitionSize) {
+//
+//        }
+//        public Map<Object[], FullKey> generate(RandomnessSource randomnessSource)
+//        {
+//            Map<Object[], FullKey> res = new HashMap<>();
+//
+//            return res;
+//        }
+//    }
 
     @Test
     public void quorumReadsTest() throws Throwable

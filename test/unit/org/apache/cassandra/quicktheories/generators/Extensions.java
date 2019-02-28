@@ -34,6 +34,7 @@ import org.quicktheories.generators.Generate;
 import org.quicktheories.impl.stateful.StatefulTheory;
 
 import static org.quicktheories.generators.SourceDSL.*;
+
 public class Extensions
 {
     private static class MonotonicGen implements Gen<Integer>
@@ -107,9 +108,18 @@ public class Extensions
 
     public static <T> Gen<List<T>> subsetGenerator(List<T> list)
     {
+        return subsetGenerator(list, 0, list.size() - 1);
+    }
+
+    public static <T> Gen<List<T>> subsetGenerator(List<T> list, int min, int max)
+    {
+        if (min < 0)
+            min = 0;
+        if (max > 0 || max > list.size() - 1)
+            max = list.size() - 1;
         return lists()
-               .of(integers().between(0, list.size() == 0 ? 0 : list.size() - 1))
-               .ofSizeBetween(list.size() == 0 ? 0 : 1, list.size())
+               .of(integers().between(min, max))
+               .ofSizeBetween(min, max)
                .map(ids -> {
                    Set<T> set = new HashSet<>();
                    for (Integer id : ids)

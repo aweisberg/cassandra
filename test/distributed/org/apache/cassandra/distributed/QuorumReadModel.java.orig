@@ -19,7 +19,10 @@
 package org.apache.cassandra.distributed;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +34,7 @@ import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.Select;
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.apache.cassandra.quicktheories.generators.ColumnSpec;
@@ -47,6 +51,7 @@ import static com.datastax.driver.core.querybuilder.QueryBuilder.asc;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.desc;
 import static org.apache.cassandra.distributed.test.DistributedTestBase.assertRows;
 import static org.apache.cassandra.distributed.test.DistributedTestBase.rowsToString;
+import static org.apache.cassandra.distributed.test.DistributedTestBase.toObjectArray;
 import static org.apache.cassandra.quicktheories.generators.Extensions.combine;
 
 abstract class QuorumReadModel extends StatefulTheory.StepBased
@@ -147,7 +152,15 @@ abstract class QuorumReadModel extends StatefulTheory.StepBased
 
     protected Gen<Object[]> pkGen()
     {
-        return schema.partitionKeyGenerator;
+        return schema.partitionGenerator
+               .map(pairs -> {
+                   Object[] pk = new Object[pairs.size()];
+                   for (int i = 0; i < pairs.size(); i++)
+                   {
+                       pk[i] = pairs.get(i).right;
+                   }
+                   return pk;
+               });
     }
 
     protected Gen<Delete> delGen(Object[] pk)
@@ -171,20 +184,20 @@ abstract class QuorumReadModel extends StatefulTheory.StepBased
         });
     }
 
-//    protected Gen<Pair<FullKey, Insert>> writeGen()
-//    {
-//        return writeGen(SourceDSL.arbitrary().pick(pks));
-//    }
+    protected Gen<Pair<FullKey, Insert>> writeGen()
+    {
+        return writeGen(SourceDSL.arbitrary().pick(pks));
+    }
 
-//    protected Gen<Pair<FullKey, Insert>> writeGen(Object[] fullKey)
-//    {
-//        return QueryGen.writeGen(schema, fullKey);
-//    }
+    protected Gen<Pair<FullKey, Insert>> writeGen(Object[] fullKey)
+    {
+        return QueryGen.writeGen(schema, fullKey);
+    }
 
-//    protected Gen<Pair<FullKey, Insert>> writeGen(Gen<Object[]> fullKeyPicker)
-//    {
-//        return fullKeyPicker.flatMap(key -> QueryGen.writeGen(schema, key));
-//    }
+    protected Gen<Pair<FullKey, Insert>> writeGen(Gen<Object[]> fullKeyPicker)
+    {
+        return fullKeyPicker.flatMap(key -> QueryGen.writeGen(schema, key));
+    }
 
     protected Gen<Select> readGen()
     {
@@ -372,6 +385,7 @@ abstract class QuorumReadModel extends StatefulTheory.StepBased
 
     public void run(Pair<FullKey, Insert> write, int i)
     {
+<<<<<<< HEAD
         try
         {
             String query = write.right.toString();
@@ -391,6 +405,19 @@ abstract class QuorumReadModel extends StatefulTheory.StepBased
         {
             e.printStackTrace();
         }
+=======
+        String query = write.right.toString();
+        commands.add(Pair.create(query, i).toString());
+        rowKeys.computeIfAbsent(write.left.partition, (pk) -> {
+            writtenPks.add(write.left.partition);
+            return new ArrayList<>();
+        }).add(write.left);
+
+        model.get(1).executeInternal(query);
+
+        testCluster.coordinator(i).execute(query,
+                                           ConsistencyLevel.QUORUM);
+>>>>>>> 5ac9b7e787... jordan WIP
     }
 }
 

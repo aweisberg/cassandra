@@ -20,6 +20,7 @@ package org.apache.cassandra.quicktheories.generators;
 
 import java.nio.ByteBuffer;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 
 import com.google.common.collect.ImmutableMap;
@@ -122,7 +123,7 @@ public class SchemaGen
     }
 
     @SuppressWarnings("unchecked")
-    private static Gen<ColumnSpec<?>> pkColumnGenerator()
+    public static Gen<ColumnSpec<?>> pkColumnGenerator()
     {
         return pkNameGenerator().zip(nativeTypeGenerator,
                                      (name, type) -> new ColumnSpec(name,
@@ -135,12 +136,12 @@ public class SchemaGen
         return monotonicGen().map(i -> String.format("ck" + i));
     }
 
-    private static Gen<String> tableNameGenerator = monotonicGen()
+    public static Gen<String> tableNameGenerator = monotonicGen()
                                                     .map(i -> String.format("table" + i));
 
 
     @SuppressWarnings("unchecked")
-    private static Gen<ColumnSpec<?>> ckColumnGenerator()
+    public static Gen<ColumnSpec<?>> ckColumnGenerator()
     {
         return ckNameGenerator().zip(nativeTypeGenerator.assuming(type -> type != DurationType.instance),
                                      clusteringOrderGenerator,
@@ -155,7 +156,7 @@ public class SchemaGen
                .map(i -> String.format("s" + i));
     }
 
-    private static Gen<ColumnSpec<?>> staticColumnGenerator()
+    public static Gen<ColumnSpec<?>> staticColumnGenerator()
     {
         return staticNameGenerator().zip(nativeTypeGenerator,
                                          (name, type) -> new ColumnSpec<>(name,
@@ -168,7 +169,7 @@ public class SchemaGen
         return monotonicGen().map(i -> String.format("regular" + i));
     }
 
-    private static Gen<ColumnSpec<?>> regularColumnGenerator()
+    public static Gen<ColumnSpec<?>> regularColumnGenerator()
     {
         return regularNameGenerator().zip(nativeTypeGenerator,
                                           (name, type) -> new ColumnSpec<>(name,

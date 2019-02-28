@@ -28,7 +28,7 @@ import static com.datastax.driver.core.querybuilder.QueryBuilder.gte;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.lt;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.lte;
 
-enum Sign
+public enum Sign
 {
     LT
     {
@@ -38,17 +38,17 @@ enum Sign
             return lt(name, obj);
         }
 
-        Clause getClause(List<String> name, List<Object> obj)
+        public Clause getClause(List<String> name, List<Object> obj)
         {
             return lt(name, obj);
         }
 
-        boolean isNegatable()
+        public boolean isNegatable()
         {
             return true;
         }
 
-        Sign negate()
+        public Sign negate()
         {
             return GT;
         }
@@ -61,17 +61,17 @@ enum Sign
             return gt(name, obj);
         }
 
-        Clause getClause(List<String> name, List<Object> obj)
+        public Clause getClause(List<String> name, List<Object> obj)
         {
             return gt(name, obj);
         }
 
-        boolean isNegatable()
+        public boolean isNegatable()
         {
             return true;
         }
 
-        Sign negate()
+        public Sign negate()
         {
             return LT;
         }
@@ -84,17 +84,17 @@ enum Sign
             return lte(name, obj);
         }
 
-        Clause getClause(List<String> name, List<Object> obj)
+        public Clause getClause(List<String> name, List<Object> obj)
         {
             return lt(name, obj);
         }
 
-        boolean isNegatable()
+        public boolean isNegatable()
         {
             return true;
         }
 
-        Sign negate()
+        public Sign negate()
         {
             return GTE;
         }
@@ -107,17 +107,17 @@ enum Sign
             return gte(name, obj);
         }
 
-        Clause getClause(List<String> name, List<Object> obj)
+        public Clause getClause(List<String> name, List<Object> obj)
         {
             return gte(name, obj);
         }
 
-        boolean isNegatable()
+        public boolean isNegatable()
         {
             return true;
         }
 
-        Sign negate()
+        public Sign negate()
         {
             return LTE;
         }
@@ -130,24 +130,24 @@ enum Sign
             return eq(name, obj);
         }
 
-        Clause getClause(List<String> name, List<Object> obj)
+        public Clause getClause(List<String> name, List<Object> obj)
         {
             return eq(name, obj);
         }
 
-        boolean isNegatable()
+        public boolean isNegatable()
         {
             return false;
         }
 
-        Sign negate()
+        public Sign negate()
         {
             throw new IllegalArgumentException("Cannot negate EQ");
         }
     };
 
-    abstract Clause getClause(String name, Object obj);
-    abstract Clause getClause(List<String> name, List<Object> obj);
-    abstract boolean isNegatable();
-    abstract Sign negate();
+    public abstract Clause getClause(String name, Object obj);
+    public abstract Clause getClause(List<String> name, List<Object> obj);
+    public abstract boolean isNegatable();
+    public abstract Sign negate();
 }

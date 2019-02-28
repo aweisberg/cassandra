@@ -21,13 +21,22 @@ package org.apache.cassandra.quicktheories.generators;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import com.google.common.collect.Streams;
 
+import com.datastax.driver.core.querybuilder.Insert;
+import com.datastax.driver.core.querybuilder.QueryBuilder;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
+import org.quicktheories.generators.ArbitraryDSL;
+import org.quicktheories.generators.Generate;
+import org.quicktheories.generators.SourceDSL;
 
+import static com.datastax.driver.core.querybuilder.QueryBuilder.asc;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.max;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.timestamp;
 import static java.util.stream.Collectors.toList;
 
 public class SchemaSpec
@@ -38,8 +47,9 @@ public class SchemaSpec
     public final List<ColumnSpec<?>> clusteringKeys;
     public final List<ColumnSpec<?>> staticColumns;
     public final List<ColumnSpec<?>> regularColumns;
-    public final Gen<List<Pair<ColumnSpec<?>, Object>>> partitionGenerator;
-    public final Gen<List<Pair<ColumnSpec<?>, Object>>> rowGenerator;
+    public final Gen<Object[]> partitionKeyGenerator;
+    public final Gen<Object[]> clusteringKeyGenerator;
+    public final Gen<List<Pair<ColumnSpec<?>, Object>>> rowDataGenerator;
     public final List<ColumnSpec<?>> allColumns;
 
     // TODO: improve SchemaSpec builder that would allow configuring amount of columns etc
@@ -57,13 +67,12 @@ public class SchemaSpec
         this.staticColumns = staticColumns;
         this.regularColumns = regularColumns;
 
-        this.partitionGenerator = dataGenerator(Streams.concat(partitionKeys.stream(),
-                                                               staticColumns.stream())
-                                                       .collect(Collectors.toList()));
-        this.rowGenerator = dataGenerator(Streams.concat(clusteringKeys.stream(),
-                                                         staticColumns.stream(),
-                                                         regularColumns.stream())
-                                                 .collect(toList()));
+        this.partitionKeyGenerator = keyGenerator(partitionKeys);
+        this.clusteringKeyGenerator = keyGenerator(clusteringKeys);
+        this.rowDataGenerator = dataGenerator(Streams.concat(regularColumns.stream(),
+                                                             staticColumns.stream())
+                                                     .collect(toList()));
+
         this.allColumns = Streams.concat(partitionKeys.stream(),
                                          clusteringKeys.stream(),
                                          staticColumns.stream(),
@@ -71,20 +80,20 @@ public class SchemaSpec
                                  .collect(toList());
     }
 
-    private static class DataPartition {
-        private SchemaSpec schema;
-
-
+    static Gen<Object[]> keyGenerator(List<ColumnSpec<?>> columns)
+    {
+        return in -> {
+            Object[] keys = new Object[columns.size()];
+            for (int i = 0; i < keys.length; i++)
+            {
+                keys[i] = columns.get(i).generator.generate(in);
+            }
+            return keys;
+        };
     }
 
-    private static class DataRow {
-        private final Object[] partitionKey;
-        private final Object[] clusteringKey;
-        private final Object[] data;
-    }
-    
-    public
-    static Gen<List<Pair<ColumnSpec<?>, Object>>> dataGenerator(List<ColumnSpec> columns)
+
+    static Gen<List<Pair<ColumnSpec<?>, Object>>> dataGenerator(List<ColumnSpec<?>> columns)
     {
         return in -> {
             List<Pair<ColumnSpec<?>, Object>> pairs = new ArrayList<>(columns.size());
