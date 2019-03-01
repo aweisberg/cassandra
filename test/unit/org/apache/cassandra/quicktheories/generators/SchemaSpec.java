@@ -102,7 +102,7 @@ public class SchemaSpec
         sb.append("CREATE TABLE ");
         sb.append(ksName).append(".").append(tableName).append(" (");
 
-        CommaAppender commaAppender = new CommaAppender();
+        SeparatorAppender commaAppender = new SeparatorAppender();
         sb.append("\n\t");
         for (ColumnSpec cd : partitionKeys)
         {
@@ -141,7 +141,7 @@ public class SchemaSpec
         {
             sb.append(" WITH CLUSTERING ORDER BY (");
 
-            CommaAppender commaAppender = new CommaAppender();
+            SeparatorAppender commaAppender = new SeparatorAppender();
             for (ColumnSpec<?> cd : clusteringKeys)
             {
                 commaAppender.accept(sb);
@@ -159,7 +159,7 @@ public class SchemaSpec
         if (partitionKeys.size() > 1)
         {
             sb.append('(');
-            CommaAppender commaAppender = new CommaAppender();
+            SeparatorAppender commaAppender = new SeparatorAppender();
             for (ColumnSpec<?> cd : partitionKeys)
             {
                 commaAppender.accept(sb);
@@ -189,17 +189,33 @@ public class SchemaSpec
                '}';
     }
 
-    public static class CommaAppender implements Consumer<StringBuilder>
+    public static class SeparatorAppender implements Consumer<StringBuilder>
     {
         boolean isFirst = true;
+        private final String separator;
 
+        public SeparatorAppender()
+        {
+            this(",");
+        }
+        public SeparatorAppender(String separator)
+        {
+            this.separator = separator;
+        }
         public void accept(StringBuilder stringBuilder)
         {
             if (isFirst)
                 isFirst = false;
             else
-                stringBuilder.append(',');
+                stringBuilder.append(separator);
         }
+
+        public void accept(StringBuilder stringBuilder, String s)
+        {
+            accept(stringBuilder);
+            stringBuilder.append(s);
+        }
+
 
         public void reset()
         {

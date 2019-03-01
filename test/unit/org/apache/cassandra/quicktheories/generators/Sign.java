@@ -52,6 +52,11 @@ public enum Sign
         {
             return GT;
         }
+
+        public String toString()
+        {
+            return "<";
+        }
     },
     GT
     {
@@ -74,6 +79,11 @@ public enum Sign
         public Sign negate()
         {
             return LT;
+        }
+
+        public String toString()
+        {
+            return ">";
         }
     },
     LTE
@@ -98,6 +108,11 @@ public enum Sign
         {
             return GTE;
         }
+
+        public String toString()
+        {
+            return ">=";
+        }
     },
     GTE
     {
@@ -121,6 +136,11 @@ public enum Sign
         {
             return LTE;
         }
+
+        public String toString()
+        {
+            return "<=";
+        }
     },
     EQ
     {
@@ -143,6 +163,11 @@ public enum Sign
         public Sign negate()
         {
             throw new IllegalArgumentException("Cannot negate EQ");
+        }
+
+        public String toString()
+        {
+            return "=";
         }
     };
 

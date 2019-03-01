@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -26,8 +27,11 @@ import org.junit.Test;
 
 import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.Insert;
+import org.apache.cassandra.distributed.Cluster;
+import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
+import org.quicktheories.generators.SourceDSL;
 
 import static org.quicktheories.QuickTheory.qt;
 import static org.quicktheories.generators.SourceDSL.*;
@@ -35,7 +39,7 @@ import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.*;
 
 public class GeneratorsTest
 {
-    private final Gen<SchemaSpec> testSchemas = schemas().keyspace("test")
+    private static final Gen<SchemaSpec> testSchemas = schemas().keyspace("test")
                                                          .partitionKeyColumnCount(1, 4)
                                                          .clusteringColumnCount(0, 4)
                                                          .staticColumnCount(0)
@@ -43,64 +47,9 @@ public class GeneratorsTest
                                                          .build();
 
 
-    private Gen<Pair<SchemaSpec, Delete>> pairWithSchema(Function<SchemaSpec, Gen<Delete>> fn)
+    private static <T> Gen<Pair<SchemaSpec, T>> pairWithSchema(Function<SchemaSpec, Gen<T>> fn)
     {
-        return testSchemas.flatMap(schema -> fn.apply(schema).map(delete -> Pair.create(schema, delete)));
-    }
-
-
-    private static class SchemaGenerationInputs {
-        private final int minPk;
-        private final int maxPk;
-        private final int minCks;
-        private final int maxCks;
-        private final int minStatics;
-        private final int maxStatics;
-        private final int minRegs;
-        private final int maxRegs;
-
-        public SchemaGenerationInputs(int minPk, int maxPk, int minCks, int maxCks,
-                                      int minStatics, int maxStatics, int minRegs, int maxRegs)
-        {
-            this.minPk = minPk;
-            this.maxPk = maxPk;
-            this.minCks = minCks;
-            this.maxCks = maxCks;
-            this.minStatics = minStatics;
-            this.maxStatics = maxStatics;
-            this.minRegs = minRegs;
-            this.maxRegs = maxRegs;
-        }
-    }
-
-    @Test
-    public void testSchemaGeneration()
-    {
-        Gen<Pair<Integer, Integer>> min0 = integers().between(0, 4).zip(integers().between(0, 6), Pair::create);
-        Gen<Pair<Integer, Integer>> min1 = integers().between(1, 4).zip(integers().between(0, 6), Pair::create);
-        Gen<SchemaGenerationInputs> inputs = min1.zip(min0, min0, min1, (pks, cks, statics, regs) ->
-                                                               new SchemaGenerationInputs(pks.left, pks.left + pks.right,
-                                                                                          cks.left, cks.left + cks.right,
-                                                                                          statics.left, statics.left + statics.right,
-                                                                                          regs.left, regs.left + regs.right));
-
-        Gen<Pair<SchemaGenerationInputs, SchemaSpec>> schemaAndInputs = inputs.flatMap(input -> schemas().keyspace("test")
-                                                                                                         .partitionKeyColumnCount(input.minPk, input.maxPk)
-                                                                                                         .clusteringColumnCount(input.minCks, input.maxCks)
-                                                                                                         .staticColumnCount(input.minStatics, input.maxStatics)
-                                                                                                         .regularColumnCount(input.minRegs, input.maxRegs)
-                                                                                                         .build()
-                                                                                                         .map(schema -> Pair.create(input, schema)));
-        qt().forAll(schemaAndInputs)
-            .check(schemaAndInput -> {
-                SchemaGenerationInputs input = schemaAndInput.left;
-                SchemaSpec schema = schemaAndInput.right;
-
-                return schema.partitionKeys.size() <= input.maxPk && schema.partitionKeys.size() >= input.minPk &&
-                       schema.clusteringKeys.size() <= input.maxCks && schema.clusteringKeys.size() >= input.minCks &&
-                       schema.staticColumns.size() <= input.maxStatics && schema.staticColumns.size() >= input.minStatics &&
-                       schema.regularColumns.size() <= input.maxRegs && schema.regularColumns.size() >= input.minRegs;
-            });
+        return testSchemas.flatMap(schema -> fn.apply(schema).map(item -> Pair.create(schema, item)));
     }
 
     @Test

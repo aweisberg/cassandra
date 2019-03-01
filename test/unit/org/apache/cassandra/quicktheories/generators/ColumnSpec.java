@@ -52,6 +52,7 @@ public class ColumnSpec<T>
     {
         return name;
     }
+
     public String toString()
     {
         return name + '(' + type.asCQL3Type().toString() + ")";
