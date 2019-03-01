@@ -42,7 +42,18 @@ public class CassandraGenDSL
             return new WritesDSL();
         }
 
+        public DeletesDSL deletes()
+        {
+            return new DeletesDSL();
+        }
+
+        public ReadsDSL reads()
+        {
+            return new ReadsDSL();
+        }
+
     }
+
 
 }
 
