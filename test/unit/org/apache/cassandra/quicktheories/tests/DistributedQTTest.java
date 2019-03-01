@@ -26,10 +26,8 @@ import org.junit.Test;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
-import org.apache.cassandra.quicktheories.generators.SchemaGen;
 import org.quicktheories.impl.stateful.StatefulTheory;
 
-import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.data;
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.operations;
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.schemas;
 import static org.quicktheories.QuickTheory.qt;
@@ -67,11 +65,19 @@ public class DistributedQTTest extends DistributedTestBase
                 {
                     addSetupStep(builder("initSchema",
                                          this::initSchema,
-                                         SchemaGen.schemaDefinitionGen(KEYSPACE))
+                                         schemas().keyspace(KEYSPACE)
+                                                  .partitionKeyColumnCount(1, 5)
+                                                  .clusteringColumnCount(0, 5)
+                                                  .staticColumnCount(0, 5)
+                                                  .regularColumnCount(0, 5)
+                                                  .build())
                                  .build());
                     addSetupStep(builder("generatePartitionKeys",
                                          this::insertRows,
-                                         () -> operations().writes().writes(schemaSpec).partitionCountBetween(1, 100).rowCountBetween(10, 100).withCurrentTimestamp(),
+                                         () -> operations().writes().writes(schemaSpec)
+                                                           .partitionCountBetween(1, 100)
+                                                           .rowCountBetween(10, 100)
+                                                           .withCurrentTimestamp(),
                                          () -> nodeSelector)
                                  .build());
                     addStep(builder("generateRead",

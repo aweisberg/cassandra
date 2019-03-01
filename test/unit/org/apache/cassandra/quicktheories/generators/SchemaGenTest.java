@@ -29,6 +29,7 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 
+import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.schemas;
 import static org.quicktheories.QuickTheory.qt;
 
 public class SchemaGenTest extends CQLTester
@@ -36,7 +37,11 @@ public class SchemaGenTest extends CQLTester
     @Test
     public void createTableRoundTrip()
     {
-        qt().withExamples(10).forAll(SchemaGen.schemaDefinitionGen(KEYSPACE))
+        qt().withExamples(10000).forAll(schemas().keyspace(KEYSPACE).partitionKeyColumnCount(1, 10)
+                                              .clusteringColumnCount(0, 10)
+                                              .staticColumnCount(0, 10)
+                                              .regularColumnCount(0, 10)
+                                              .build())
             .check(schemaDefinition -> {
                 String tableDef = schemaDefinition.toCQL();
 

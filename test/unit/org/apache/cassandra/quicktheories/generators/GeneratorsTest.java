@@ -36,10 +36,11 @@ import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.*;
 public class GeneratorsTest
 {
     private final Gen<SchemaSpec> testSchemas = schemas().keyspace("test")
-                                                         .partitionKeyColumnCountBetween(1, 4)
-                                                         .clusteringColumnCountBetween(0, 4)
+                                                         .partitionKeyColumnCount(1, 4)
+                                                         .clusteringColumnCount(0, 4)
                                                          .staticColumnCount(0)
-                                                         .regularColumnCount(1);
+                                                         .regularColumnCount(1)
+                                                         .build();
 
 
     private Gen<Pair<SchemaSpec, Delete>> pairWithSchema(Function<SchemaSpec, Gen<Delete>> fn)
@@ -84,10 +85,12 @@ public class GeneratorsTest
                                                                                           regs.left, regs.left + regs.right));
 
         Gen<Pair<SchemaGenerationInputs, SchemaSpec>> schemaAndInputs = inputs.flatMap(input -> schemas().keyspace("test")
-                                                                                                         .partitionKeyColumnCountBetween(input.minPk, input.maxPk)
-                                                                                                         .clusteringColumnCountBetween(input.minCks, input.maxCks)
-                                                                                                         .staticColumnCountBetween(input.minStatics, input.maxStatics)
-                                                                                                         .regularColumnCountBetween(input.minRegs, input.maxRegs).map(schema -> Pair.create(input, schema)));
+                                                                                                         .partitionKeyColumnCount(input.minPk, input.maxPk)
+                                                                                                         .clusteringColumnCount(input.minCks, input.maxCks)
+                                                                                                         .staticColumnCount(input.minStatics, input.maxStatics)
+                                                                                                         .regularColumnCount(input.minRegs, input.maxRegs)
+                                                                                                         .build()
+                                                                                                         .map(schema -> Pair.create(input, schema)));
         qt().forAll(schemaAndInputs)
             .check(schemaAndInput -> {
                 SchemaGenerationInputs input = schemaAndInput.left;
@@ -103,7 +106,7 @@ public class GeneratorsTest
     @Test
     public void partitionDeleteOnlyGeneration()
     {
-        Function<SchemaSpec, Gen<Delete>>deletes = schema -> operations().writes()
+        Function<SchemaSpec, Gen<Delete>>deletes = schema -> operations().deletes()
                                                                          .deletePartition(schema,
                                                                                           data().partitionKeys(schema))
                                                                          .withCurrentTimestamp();
@@ -125,7 +128,7 @@ public class GeneratorsTest
     @Test
     public void pointDeleteOnlyGeneration()
     {
-        Function<SchemaSpec, Gen<Delete>> deletes = schema -> operations().writes()
+        Function<SchemaSpec, Gen<Delete>> deletes = schema -> operations().deletes()
                                                                           .delete(schema,
                                                                                   data().partitionKeys(schema),
                                                                                   data().clusterings(schema))
@@ -155,7 +158,7 @@ public class GeneratorsTest
     public void rangeDeleteOnlyGeneration()
     {
         Function<SchemaSpec, Gen<Delete>> deletes = schema ->
-                                                    operations().writes()
+                                                    operations().deletes()
                                                                 .delete(schema, data().partitionKeys(schema), data().clusterings(schema))
                                                                 .rangeDeletesOnly()
                                                                 .withCurrentTimestamp();
@@ -196,7 +199,7 @@ public class GeneratorsTest
         AtomicInteger rangeDelete = new AtomicInteger();
 
         Function<SchemaSpec, Gen<Delete>> deletes = schema ->
-                                                    operations().writes()
+                                                    operations().deletes()
                                                                 .delete(schema, data().partitionKeys(schema), data().clusterings(schema))
                                                                 .withCurrentTimestamp();
 

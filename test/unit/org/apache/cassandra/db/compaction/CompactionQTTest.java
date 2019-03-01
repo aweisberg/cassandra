@@ -29,7 +29,6 @@ import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.apache.cassandra.quicktheories.generators.FullKey;
-import org.apache.cassandra.quicktheories.generators.SchemaSpec;
 import org.apache.cassandra.quicktheories.tests.InMemoryModel;
 import org.apache.cassandra.quicktheories.tests.StatefulModel;
 import org.apache.cassandra.utils.Pair;
@@ -190,8 +189,11 @@ public class CompactionQTTest extends DistributedTestBase
                         addSetupStep(builder("initSchema",
                                              this::initSchema,
                                              schemas().keyspace(KEYSPACE)
-                                                      .clusteringColumnCountBetween(1, 4)
-                                                      .regularColumnCountBetween(1, 8))
+                                                      .partitionKeyColumnCount(1, 5)
+                                                      .clusteringColumnCount(1, 4)
+                                                      .staticColumnCount(1, 5)
+                                                      .regularColumnCount(1, 8)
+                                                      .build())
                                      .build());
 
                         addStep(100, builder("write", this::insertRow, this::writes, () -> nodeSelector).build());

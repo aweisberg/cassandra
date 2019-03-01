@@ -24,19 +24,9 @@ import java.util.function.Consumer;
 
 import com.google.common.collect.Streams;
 
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import org.apache.cassandra.schema.Schema;
-import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
-import org.quicktheories.generators.ArbitraryDSL;
-import org.quicktheories.generators.Generate;
-import org.quicktheories.generators.SourceDSL;
 
-import static com.datastax.driver.core.querybuilder.QueryBuilder.asc;
-import static com.datastax.driver.core.querybuilder.QueryBuilder.max;
-import static com.datastax.driver.core.querybuilder.QueryBuilder.timestamp;
 import static java.util.stream.Collectors.toList;
 
 public class SchemaSpec

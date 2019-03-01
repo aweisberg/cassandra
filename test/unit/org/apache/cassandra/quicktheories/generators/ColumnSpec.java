@@ -36,7 +36,7 @@ public class ColumnSpec<T>
     {
         this.name = name;
         this.type = type;
-        this.generator = (Gen<T>) SchemaGen.types.get(type.isReversed() ? ((ReversedType)type).baseType : type);
+        this.generator = (Gen<T>) SchemaGenDSL.types.get(type.isReversed() ? ((ReversedType)type).baseType : type);
         this.kind = kind;
     }
 
