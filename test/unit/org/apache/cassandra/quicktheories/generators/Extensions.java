@@ -113,21 +113,16 @@ public class Extensions
 
     public static <T> Gen<List<T>> subsetGenerator(List<T> list, int min, int max)
     {
-        if (min < 0)
-            min = 0;
-        if (max > 0 || max > list.size() - 1)
-            max = list.size() - 1;
         return lists()
-               .of(integers().between(min, max))
+               .of(integers().between(0, list.size() - 1)) // Random ID generator
                .ofSizeBetween(min, max)
                .map(ids -> {
                    Set<T> set = new HashSet<>();
                    for (Integer id : ids)
-                   {
                        set.add(list.get(id));
-                   }
-                   return new ArrayList<>(set);
+                   return (List<T>) new ArrayList<>(set);
                });
+//               .assuming((l) -> l.size() > min); // Since it's a set
     }
 
 }

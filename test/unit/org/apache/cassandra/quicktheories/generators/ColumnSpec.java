@@ -53,6 +53,10 @@ public class ColumnSpec<T>
         return name;
     }
 
+    public boolean isReversed()
+    {
+        return type.isReversed();
+    }
     public String toString()
     {
         return name + '(' + type.asCQL3Type().toString() + ")";

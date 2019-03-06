@@ -18,22 +18,14 @@
 
 package org.apache.cassandra.quicktheories.tests;
 
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.junit.Test;
 
-import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
-import org.apache.cassandra.quicktheories.generators.ReadsDSL;
-import org.apache.cassandra.quicktheories.generators.SchemaSpec;
-import org.apache.cassandra.utils.Pair;
-import org.quicktheories.core.Gen;
-import org.quicktheories.generators.SourceDSL;
 import org.quicktheories.impl.stateful.StatefulTheory;
 
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.operations;
@@ -43,59 +35,12 @@ import static org.quicktheories.impl.stateful.StatefulTheory.builder;
 
 public class DistributedQTTest extends DistributedTestBase
 {
-    private static AtomicInteger opcount = new AtomicInteger();
-
     private void stateful(Supplier<StatefulTheory<StatefulTheory.Step>> supplier)
     {
         qt().withExamples(500)
             .withMinStatefulSteps(10000)
             .withMaxStatefulSteps(100000)
             .stateful(supplier::get);
-    }
-
-    private static final Gen<SchemaSpec> testSchemas = schemas().keyspace(KEYSPACE)
-                                                                .partitionKeyColumnCount(1, 4)
-                                                                .clusteringColumnCount(0, 4)
-                                                                .staticColumnCount(0, 4)
-                                                                .regularColumnCount(0, 4)
-                                                                .build();
-
-
-    // TODO: this is tmp
-    private static <T> Gen<Pair<SchemaSpec, List<T>>> pairWithSchema(Function<SchemaSpec, Gen<T>> fn)
-    {
-        return testSchemas.flatMap(schema -> {
-            return SourceDSL.lists()
-                            .of(fn.apply(schema)).ofSizeBetween(10, 100)
-                            .map(item -> Pair.create(schema, item));
-        });
-    }
-
-    @Test
-    public void readTest() throws Throwable
-    {
-        Function<SchemaSpec, Gen<ReadsDSL.Select>> reads = schema -> operations()
-                                                                     .reads()
-                                                                     .partitionRead(schema)
-//                                                                     .withColumnSelection()
-                                                                     .withOrder()
-                                                                     .build();
-
-        try (AbstractCluster testCluster = init(Cluster.create(1)))
-        {
-            qt().forAll(pairWithSchema(reads))
-                .check(p -> {
-                    testCluster.schemaChange(p.left.toCQL());
-                    for (ReadsDSL.Select select : p.right)
-                    {
-                        Pair<String, Object[]> compiled = select.compile();
-                        testCluster.coordinator(1).execute(compiled.left,
-                                                           ConsistencyLevel.ALL,
-                                                           compiled.right);
-                    }
-                    return true;
-                });
-        }
     }
 
     @Test
