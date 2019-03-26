@@ -1895,7 +1895,8 @@
           <zipgroupfileset dir="${build.lib}" includes="*.jar" excludes="META-INF/*.SF"/>
           <fileset dir="${build.classes.main}"/>
           <fileset dir="${test.classes}"/>
-          <fileset dir="${test.conf}" />
+          <zipfileset dir="${test.conf}" prefix="test/conf" />
+          <zipfileset dir="${test.resources}" prefix="test/resources" />
       </jar>
   </target>
 

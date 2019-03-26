@@ -1,0 +1,18 @@
+#!/bin/bash
+#
+# Install a Java binaries zip file in current directory and link to /usr/local/bin.
+
+set -eu -o pipefail
+
+BIN=$1
+URL=$2
+ZIP=${URL##*/}
+DIR=${ZIP%-bin.zip}
+BASE_DIR=${DIR%-*}
+
+curl -s -S -f -O -L "$URL"
+unzip -q "$ZIP"
+ln -s "$DIR" "$BASE_DIR"
+ln -s "$PWD/$BASE_DIR/bin/$BIN" /usr/local/bin
+chmod +x /usr/local/bin/$BIN
+rm "$ZIP"

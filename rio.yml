@@ -1,0 +1,21 @@
+schemaVersion: 2.0
+
+builds:
+- branchName: quicktheories-runner-base
+  name: publish-in-jvm-tests
+  build:
+    steps:
+    - ./rio/release.sh
+    template: freestyle:v2:snapshot
+  timeout: 30
+  finally:
+    radar:
+      annotate: false
+    tag:
+      enabled: false
+  publish:
+    reports:
+      junit: false
+  machine:
+    docker:
+      baseImage: docker.apple.com/pie-cassandra/pie-in-jvm-test-base:0.0.1

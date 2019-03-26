@@ -1,0 +1,13 @@
+[isg-java-openjdk]
+name=ISG Java repository
+baseurl=https://artifacts.apple.com/iso-yum-local/EL6/java/openjdk/$basearch/
+enabled=1
+gpgcheck=0
+priority=99
+
+[isg-java-jdk]
+name=isg java repository
+baseurl=https://artifacts.apple.com/iso-yum-local/EL6/java/jdk/$basearch/
+enabled=1
+gpgcheck=0
+priority=99
