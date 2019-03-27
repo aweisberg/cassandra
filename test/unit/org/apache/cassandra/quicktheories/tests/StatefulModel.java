@@ -29,9 +29,11 @@ import com.datastax.driver.core.querybuilder.Select;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.quicktheories.generators.ColumnSpec;
+import org.apache.cassandra.quicktheories.generators.CompiledStatement;
 import org.apache.cassandra.quicktheories.generators.FullKey;
 import org.apache.cassandra.quicktheories.generators.SchemaSpec;
 import org.apache.cassandra.quicktheories.generators.Sign;
+import org.apache.cassandra.quicktheories.generators.WritesDSL;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
@@ -62,53 +64,6 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         this.nodeSelector = SourceDSL.integers().between(1, testCluster.size());
     }
 
-
-
-    // TODO: add SELECt generation rules!
-    public Gen<Select> generateSelect()
-    {
-        return combine(subsetGenerator(schemaSpec.allColumns).map(columnDefinitions -> {
-                           if (columnDefinitions.stream().allMatch((cd) -> {
-                               return cd.kind == ColumnMetadata.Kind.STATIC || cd.kind == ColumnMetadata.Kind.PARTITION_KEY;
-                           }))
-                               return schemaSpec.allColumns;
-                           return columnDefinitions;
-                       }),
-                       Generate.enumValues(Sign.class),
-                       modelState.fullKeysFromSamePartition(2, 2),
-                       (prng, columnsGen, signGen, fullKeyGen) -> {
-                           List<ColumnSpec<?>> columns = columnsGen.generate(prng);
-                           String[] columnNames = new String[columns.size()];
-
-                           int i = 0;
-                           for (ColumnSpec column : columns)
-                               columnNames[i++] = column.name;
-
-                           Select select = QueryBuilder.select(columnNames).from(schemaSpec.ksName, schemaSpec.tableName);
-                           Select.Where where = select.where();
-
-                           FullKey key = modelState.fullKeyGen().generate(prng);
-
-                           i = 0;
-                           for (ColumnSpec<?> partitionKey : schemaSpec.partitionKeys)
-                           {
-                               where.and(eq(partitionKey.name, key.partition[i++]));
-                           }
-
-                           i = 0;
-                           for (ColumnSpec<?> clusteringKey : schemaSpec.clusteringKeys)
-                           {
-                               Sign sign = signGen.generate(prng);
-                               where.and(sign.getClause(clusteringKey.name, key.clustering[i++]));
-                               // continue only while we have EQ
-                               if (sign != Sign.EQ)
-                                   break;
-                           }
-
-                           return select;
-                       });
-    }
-
     public void run(Select query, int node)
     {
         Iterator<Object[]> modelRows;
@@ -137,16 +92,17 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         System.exit(1);
     }
 
-    protected void insertRow(Pair<FullKey, Insert> tuple, int node)
+    protected void insertRow(WritesDSL.DataRow row, int node)
     {
         try
         {
-            modelState.addFullKey(tuple.left);
-            String query = tuple.right.toString();
+            modelState.addFullKey(row.key());
+            CompiledStatement compiledStatement = row.compile();
 
-            modelCluster.get(1).executeInternal(query);
-            testCluster.coordinator(node).execute(query,
-                                                  ConsistencyLevel.QUORUM);
+            modelCluster.get(1).executeInternal(compiledStatement.cql(), compiledStatement.bindings());
+            testCluster.coordinator(node).execute(compiledStatement.cql(),
+                                                  ConsistencyLevel.QUORUM,
+                                                  compiledStatement.bindings());
         }
         catch (Throwable t)
         {
@@ -156,11 +112,11 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         }
     }
 
-    protected void insertRows(List<Pair<FullKey, Insert>> rows, int node)
+    protected void insertRows(List<WritesDSL.Insert> rows, int node)
     {
-        for (Pair<FullKey, Insert> tuple : rows)
+        for (WritesDSL.DataRow row : rows)
         {
-            insertRow(tuple, node);
+            insertRow(row, node);
         }
     }
 

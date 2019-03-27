@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -202,18 +203,18 @@ public class GeneratorsTest
     @Test
     public void manyWritesToSinglePartition()
     {
-        qt().forAll(testSchemas.flatMap(schema -> operations().writes().writes(schema).partitionCount(1).rowCountBetween(1, 10).withCurrentTimestamp()))
+        qt().forAll(testSchemas.flatMap(schema -> operations().writes().writes(schema).partitionCount(1).rowCountBetween(1, 10).withCurrentTimestamp().inserts()))
             .check(writes -> {
                 FullKey last = null;
-                for (Pair<FullKey, Insert> write : writes)
+                for (WritesDSL.Insert write : writes)
                 {
                     if (last == null)
                     {
-                        last = write.left;
+                        last = write.key();
                         continue;
                     }
 
-                    if (!last.partition.equals(write.left.partition))
+                    if (!Arrays.equals(last.partition, write.key().partition))
                         return false;
                 }
 

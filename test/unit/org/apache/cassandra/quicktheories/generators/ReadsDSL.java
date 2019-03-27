@@ -187,6 +187,7 @@ public class ReadsDSL
             return this;
         }
 
+        // TODO: use
         private void validate()
         {
             switch (readType)
@@ -336,13 +337,14 @@ public class ReadsDSL
         public final List<Relation> relations;
         public final Optional<Integer> limit;
         public final List<Pair<String, Boolean>> ordering;
+
         // TODO: filtering
-        public Select(SchemaSpec schemaSpec,
-                      // TODO (alexp): do we need optional here?
-                      Optional<List<String>> selectedColumns,
-                      List<Relation> relations,
-                      Optional<Integer> limit,
-                      List<Pair<String, Boolean>> ordering)
+        Select(SchemaSpec schemaSpec,
+               // TODO (alexp): do we need optional here?
+               Optional<List<String>> selectedColumns,
+               List<Relation> relations,
+               Optional<Integer> limit,
+               List<Pair<String, Boolean>> ordering)
         {
             this.schemaSpec = schemaSpec;
             this.selectedColumns = selectedColumns;
@@ -352,7 +354,7 @@ public class ReadsDSL
         }
 
 
-        public Pair<String, Object[]> compile()
+        public CompiledStatement compile()
         {
             Object[] bindings = new Object[relations.size()];
             int bindingCount = 0;
@@ -400,7 +402,7 @@ public class ReadsDSL
 
             // TODO (alexp): order
             assert bindingCount == bindings.length : bindingCount + " != " + bindings.length;
-            return Pair.create(builder.toString(), bindings);
+            return CompiledStatement.create(builder.toString(), bindings);
         }
 
         public String toString()

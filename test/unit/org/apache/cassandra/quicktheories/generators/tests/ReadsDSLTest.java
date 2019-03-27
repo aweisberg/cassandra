@@ -30,9 +30,9 @@ import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
+import org.apache.cassandra.quicktheories.generators.CompiledStatement;
 import org.apache.cassandra.quicktheories.generators.ReadsDSL;
 import org.apache.cassandra.quicktheories.generators.SchemaSpec;
-import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.SourceDSL;
@@ -86,7 +86,7 @@ public class ReadsDSLTest extends DistributedTestBase
                                 })
                            .flatMap(ReadsDSL.ReadsBuilder::build);
 
-        AtomicInteger a = new AtomicInteger();
+
         try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
             qt().withShrinkCycles(0)
@@ -96,10 +96,10 @@ public class ReadsDSLTest extends DistributedTestBase
 
                     for (ReadsDSL.Select select : p.right)
                     {
-                        Pair<String, Object[]> compiled = select.compile();
-                        testCluster.coordinator(1).execute(compiled.left,
+                        CompiledStatement compiled = select.compile();
+                        testCluster.coordinator(1).execute(compiled.cql(),
                                                            ConsistencyLevel.ALL,
-                                                           compiled.right);
+                                                           compiled.bindings());
                     }
                 });
         }

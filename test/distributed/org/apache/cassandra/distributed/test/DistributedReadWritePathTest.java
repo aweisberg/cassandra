@@ -18,11 +18,14 @@
 
 package org.apache.cassandra.distributed.test;
 
+import java.io.File;
+
 import org.junit.Assert;
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.Cluster;
+import sun.misc.Resource;
 
 import static org.apache.cassandra.net.MessagingService.Verb.READ_REPAIR;
 
@@ -32,6 +35,11 @@ public class DistributedReadWritePathTest extends DistributedTestBase
     @Test
     public void coordinatorReadTest() throws Throwable
     {
+        // TODO: API to turn logging off and on
+        // maybe something like node.silence()
+        System.setProperty("logback.configurationFile",
+                           new File("test/conf/logback-dtest.xml").getAbsolutePath());
+
         try (Cluster cluster = init(Cluster.create(3)))
         {
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");

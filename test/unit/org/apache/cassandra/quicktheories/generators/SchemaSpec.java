@@ -61,6 +61,7 @@ public class SchemaSpec
         this.staticColumns = staticColumns;
         this.regularColumns = regularColumns;
 
+        // TODO: move this to static method; schema should not be able to generate anything
         this.partitionKeyGenerator = keyGenerator(partitionKeys);
         this.clusteringKeyGenerator = keyGenerator(clusteringKeys);
         this.rowDataGenerator = dataGenerator(Streams.concat(regularColumns.stream(),

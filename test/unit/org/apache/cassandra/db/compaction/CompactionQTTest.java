@@ -18,20 +18,20 @@
 
 package org.apache.cassandra.db.compaction;
 
+import java.util.List;
+
 import org.junit.Test;
 
 import com.datastax.driver.core.ConsistencyLevel;
-import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.datastax.driver.core.querybuilder.Select;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
-import org.apache.cassandra.quicktheories.generators.FullKey;
+import org.apache.cassandra.quicktheories.generators.WritesDSL;
 import org.apache.cassandra.quicktheories.tests.InMemoryModel;
 import org.apache.cassandra.quicktheories.tests.StatefulModel;
-import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.data;
@@ -126,9 +126,9 @@ public class CompactionQTTest extends DistributedTestBase
                     private int flushes = 0;
 
                     @Override
-                    public void insertRow(Pair<FullKey, Insert> rows, int node)
+                    protected void insertRow(WritesDSL.DataRow row, int node)
                     {
-                        super.insertRow(rows, node);
+                        super.insertRow(row, node);
                         analytics.write(true);
                     }
 
@@ -170,8 +170,8 @@ public class CompactionQTTest extends DistributedTestBase
                         flushes++;
                     }
 
-                    public Gen<Pair<FullKey, Insert>> writes() {
-                        return operations().writes().write(schemaSpec, newOrExistingPartitionKeys()).withCurrentTimestamp();
+                    public Gen<List<WritesDSL.Insert>> writes() {
+                        return operations().writes().writes(schemaSpec, newOrExistingPartitionKeys()).withCurrentTimestamp().inserts();
                     }
 
                     public Gen<Object[]> newOrExistingPartitionKeys()
@@ -196,7 +196,7 @@ public class CompactionQTTest extends DistributedTestBase
                                                       .build())
                                      .build());
 
-                        addStep(100, builder("write", this::insertRow, this::writes, () -> nodeSelector).build());
+                        addStep(100, builder("write", this::insertRows, this::writes, () -> nodeSelector).build());
                         addStep(5, builder("flush", this::flush).precondition(this::worthFlushing).build());
                         addStep(1, builder("compactAndValidate", this::compact)
                                    .precondition(this::worthCompacting)
