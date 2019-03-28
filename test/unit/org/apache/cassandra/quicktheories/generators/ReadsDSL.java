@@ -270,7 +270,7 @@ public class ReadsDSL
             };
         }
 
-        private void addRelation(Object[] pk, List<ColumnSpec<?>> columnSpecs, List<Relation> relations)
+        private static void addRelation(Object[] pk, List<ColumnSpec<?>> columnSpecs, List<Relation> relations)
         {
             for (int i = 0; i < pk.length; i++)
             {

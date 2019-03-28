@@ -18,13 +18,26 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
+import com.google.common.collect.Streams;
+
+import com.datastax.driver.core.querybuilder.Clause;
 import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
+import org.quicktheories.generators.ArbitraryDSL;
+import org.quicktheories.generators.Generate;
 
+import static com.datastax.driver.core.querybuilder.QueryBuilder.bindMarker;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.column;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.eq;
 import static com.datastax.driver.core.querybuilder.QueryBuilder.timestamp;
 import static org.quicktheories.generators.SourceDSL.arbitrary;
@@ -33,207 +46,291 @@ import static org.quicktheories.generators.SourceDSL.integers;
 
 public class DeletesDSL
 {
+    // TODO: delete a single field
+    // TODO: conditional updates
+    public enum DeleteType
+    {
+        SINGLE_PARTITION,
+//        PARTITION_RANGE_OPEN,
+//        PARTITION_RANGE_CLOSED,
+//        MULTI_CLUSTERING_SLICE,
+//        MULTI_CLUSTERING_RANGE,
+        SINGLE_ROW,
+        CLUSTERING_SLICE,
+        CLUSTERING_RANGE
+    }
+
+    public DeletesBuilder partitionDelete(SchemaSpec schema)
+    {
+        return new DeletesBuilder(schema,
+                                  schema.partitionKeyGenerator,
+                                  null,
+                                  DeleteType.SINGLE_PARTITION);
+    }
+
 
     /**
      * Generate a single partition delete
      *
-     * @param schema the schema to generate the delete for
+     * @param schema        the schemaSpec to generate the delete for
      * @param partitionKeys a generator used when generating which partition to delete
      * @return a {@link DeletesBuilder} used to customize and create the generator
      */
-    public DeletesBuilder deletePartition(SchemaSpec schema,
+    public DeletesBuilder partitionDelete(SchemaSpec schema,
                                           Gen<Object[]> partitionKeys)
     {
-        return deletePartition(schema, () -> partitionKeys);
+        return new DeletesBuilder(schema,
+                                  partitionKeys,
+                                  null,
+                                  DeleteType.SINGLE_PARTITION);
     }
 
-    /**
-     * Generate a single partition delete
-     *
-     * @param schema the schema to generate the delete for
-     * @param partitionKeys a generator supplier used when generating which partition to delete
-     * @return a {@link DeletesBuilder} used to customize and create the generator
-     */
-    public DeletesBuilder deletePartition(SchemaSpec schema,
-                                          Supplier<Gen<Object[]>> partitionKeys)
+    public DeletesBuilder rowDelete(SchemaSpec schema)
     {
-        return delete(schema, partitionKeys, () -> arbitrary().constant(new Object[]{})).partitionDeletesOnly();
+        return new DeletesBuilder(schema,
+                                  schema.partitionKeyGenerator,
+                                  (pk) -> schema.clusteringKeyGenerator,
+                                  DeleteType.SINGLE_ROW);
     }
 
-
     /**
-     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
+     * Generate a row delete within a partition.
      *
-     * @param schema the schema to generate the delete for
+     * @param schema        the schemaSpec to generate the delete for
      * @param partitionKeys a generator used when generating which partition to delete
-     * @param clusterings a generator used when generating which rows/ranges within a partition to delete
+     * @param clusterings   a generator used when generating which rows/ranges within a partition to delete
      * @return a {@link DeletesBuilder} used to customize and create the generator
      */
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Gen<Object[]> partitionKeys,
-                                 Gen<Object[]> clusterings)
+    public DeletesBuilder rowDelete(SchemaSpec schema,
+                                    Gen<Object[]> partitionKeys,
+                                    Function<Object[], Gen<Object[]>> clusterings)
     {
-        return delete(schema, () -> partitionKeys, () -> clusterings);
+        return new DeletesBuilder(schema,
+                                  partitionKeys,
+                                  clusterings,
+                                  DeleteType.SINGLE_ROW);
     }
 
-    /**
-     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
-     *
-     * @param schema the schema to generate the delete for
-     * @param partitionKeys a generator supplier used when generating which partition to delete
-     * @param clusterings a generator used when generating which rows/ranges within a partition to delete
-     * @return a {@link DeletesBuilder} used to customize and create the generator
-     */
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Supplier<Gen<Object[]>> partitionKeys,
-                                 Gen<Object[]> clusterings)
+    public DeletesBuilder rowSliceDelete(SchemaSpec schema,
+                                         Gen<Object[]> partitionKeys,
+                                         Function<Object[], Gen<Object[]>> clusterings)
     {
-        return delete(schema, partitionKeys, () -> clusterings);
+        return new DeletesBuilder(schema,
+                                  partitionKeys,
+                                  clusterings,
+                                  DeleteType.CLUSTERING_SLICE);
     }
 
-    /**
-     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
-     *
-     * @param schema the schema to generate the delete for
-     * @param partitionKeys a generator used when generating which partition to delete
-     * @param clusterings a generator supplier used when generating which rows/ranges within a partition to delete
-     * @return a {@link DeletesBuilder} used to customize and create the generator
-     */
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Gen<Object[]> partitionKeys,
-                                 Supplier<Gen<Object[]>> clusterings)
+    public DeletesBuilder rowRangeDelete(SchemaSpec schema,
+                                         Gen<Object[]> partitionKeys,
+                                         Function<Object[], Gen<Object[]>> clusterings)
     {
-        return delete(schema, () -> partitionKeys, clusterings);
+        return new DeletesBuilder(schema,
+                                  partitionKeys,
+                                  clusterings,
+                                  DeleteType.CLUSTERING_RANGE);
     }
 
-    /**
-     * Generate a delete within a partition. Deletes can be point or range deletes depending on further customization.
-     *
-     * @param schema the schema to generate the delete for
-     * @param partitionKeys a generator supplier used when generating which partition to delete
-     * @param clusterings a generator supplier used when generating which rows/ranges within a partition to delete
-     * @return a {@link DeletesBuilder} used to customize and create the generator
-     */
-    public DeletesBuilder delete(SchemaSpec schema,
-                                 Supplier<Gen<Object[]>> partitionKeys,
-                                 Supplier<Gen<Object[]>> clusterings)
+    public static class Relation
     {
-        return new DeletesBuilder(schema, partitionKeys, clusterings);
+        private final String column;
+        private final Sign sign;
+        private final Object value;
+
+        public Relation(String column,
+                        Sign sign,
+                        Object value)
+        {
+            this.column = column;
+            this.sign = sign;
+            this.value = value;
+        }
+
+        public Clause toClause()
+        {
+            return sign.getClause(column, bindMarker());
+        }
     }
 
+    public static Relation relation(String column, Sign sign, Object value)
+    {
+        return new Relation(column, sign, value);
+    }
 
     public static class DeletesBuilder
     {
-        private final SchemaSpec schema;
-        private final Supplier<Gen<Object[]>> partitionKeys;
-        private final Supplier<Gen<Object[]>> clusterings;
+        private final SchemaSpec schemaSpec;
+        private final DeleteType deleteType;
+        private final Gen<Object[]> pkGen;
+        private final Function<Object[], Gen<Object[]>> ckGenSupplier;
+        private Gen<Optional<List<String>>> columnDeleteGenerator = Generate.constant(Optional.empty());
+        private Gen<Optional<Long>> timestampGen = Generate.constant(Optional.empty());
 
-        private boolean rowPointDeletes = true;
-        private boolean rowRangeDeletes = true;
-
-
-        public DeletesBuilder(SchemaSpec schema, Supplier<Gen<Object[]>> partitionKeys, Supplier<Gen<Object[]>> clusterings)
+        DeletesBuilder(SchemaSpec schemaSpec,
+                       Gen<Object[]> pkGen,
+                       Function<Object[], Gen<Object[]>> ckGenSupplier,
+                       DeleteType deleteType)
         {
-            this.schema = schema;
-            this.partitionKeys = partitionKeys;
-            this.clusterings = clusterings;
+            this.schemaSpec = schemaSpec;
+            this.pkGen = pkGen;
+            this.ckGenSupplier = ckGenSupplier;
+            this.deleteType = deleteType;
         }
 
-        public DeletesBuilder partitionDeletesOnly()
+        public DeletesBuilder withTimestamp(Gen<Long> timestamps)
         {
-            rowRangeDeletes = false;
-            rowPointDeletes = false;
+            this.timestampGen = timestamps.map(Optional::of);
             return this;
         }
 
-        public DeletesBuilder pointDeletesOnly()
+        public DeletesBuilder withTimestamp(long ts)
         {
-            rowRangeDeletes = false;
-            rowPointDeletes = true;
+            this.timestampGen = arbitrary().constant(Optional.of(ts));
             return this;
         }
 
-        public DeletesBuilder rangeDeletesOnly()
-        {
-            rowPointDeletes = false;
-            rowRangeDeletes = true;
-            return this;
-        }
-
-        public DeletesBuilder pointOrRangeDeletes()
-        {
-            rowPointDeletes = rowRangeDeletes = true;
-            return this;
-        }
-
-
-        public Gen<Delete> withCurrentTimestamp()
+        public DeletesBuilder withCurrentTimestamp()
         {
             return withTimestamp(FBUtilities.timestampMicros());
         }
 
-        // TODO (jwest): add version that takes timestamp generator
-        // TODO (jwest): borrowed heavily from QueryGen.deleteGen with a few minor changes
-        public Gen<Delete> withTimestamp(long ts)
+        // TODO: add static columns?
+        public DeletesBuilder deleteColumns()
         {
-            return in -> {
-                Gen<Object[]> clusteringGen = clusterings.get();
-                Object[] pk = partitionKeys.get().generate(in);
-                Object[] ckEq = clusteringGen.generate(in);
+            this.columnDeleteGenerator = Extensions.subsetGenerator(schemaSpec.regularColumns.stream()
+                                                                                             .map(ColumnSpec::name)
+                                                                                             .collect(Collectors.toList()))
+                                                   .map(Optional::of);
+            return this;
+        }
+        private static void addRelation(Object[] pk, List<ColumnSpec<?>> columnSpecs, List<Relation> relations)
+        {
+            for (int i = 0; i < pk.length; i++)
+            {
+                ColumnSpec<?> spec = columnSpecs.get(i);
+                relations.add(relation(spec.name, Sign.EQ, pk[i]));
+            }
+        }
 
-                Delete delete = QueryBuilder.delete().from(schema.ksName, schema.tableName);
+        private static Gen<Sign> signGen = Generate.enumValues(Sign.class);
 
-                Delete.Where where = delete.where();
-
-                for (int i = 0; i < schema.partitionKeys.size(); i++)
+        // TODO: take this out; combine with reads dsl
+        private Gen<List<Relation>> relationsGen()
+        {
+            return (prng) -> {
+                List<Relation> relations = new ArrayList<>();
+                switch (deleteType)
                 {
-                    ColumnSpec<?> pkColumn = schema.partitionKeys.get(i);
-                    where.and(eq(pkColumn.name, pk[i]));
-                }
-
-                // TODO (jwest): randomly generate point deletes too
-                if (schema.clusteringKeys.size() == 0 || !rowRangeDeletes && !rowPointDeletes)
-                {
-                    delete.using(timestamp(ts));
-                    return delete;
-                }
-
-                int eqs;
-                if (rowRangeDeletes && !rowPointDeletes) // range only
-                    eqs = integers().between(0, schema.clusteringKeys.size() - 1).generate(in);
-                else if (rowPointDeletes && !rowRangeDeletes) // point only
-                    eqs = schema.clusteringKeys.size();
-                else // both
-                    eqs = integers().between(0, schema.clusteringKeys.size()).generate(in);
-
-
-                for (int i = 0; i < eqs; i++)
-                {
-                    ColumnSpec<?> ck = schema.clusteringKeys.get(i);
-                    where.and(eq(ck.name, ckEq[i]));
-                }
-
-                // maybe include bound if range query
-                int i = Math.max(eqs, 0);
-                boolean includeBound = booleans().all().generate(in);
-                if (includeBound && i < schema.clusteringKeys.size())
-                {
-                    Sign sign = arbitrary().pick(Sign.LT, Sign.GT, Sign.GTE, Sign.LTE).generate(in);
-                    ColumnSpec<?> ck = schema.clusteringKeys.get(i);
-                    where.and(sign.getClause(ck.name, ckEq[i]));
-
-                    if (booleans().all().generate(in)) // maybe add opposite bound
+                    case SINGLE_PARTITION:
                     {
-                        Object[] ckBound = clusteringGen.generate(in);
-                        where.and(sign.negate().getClause(ck.name, ckBound[i]));
+                        addRelation(pkGen.generate(prng), schemaSpec.partitionKeys, relations);
+                        break;
+                    }
+                    case SINGLE_ROW:
+                    {
+                        Object[] pk = pkGen.generate(prng);
+                        addRelation(pk, schemaSpec.partitionKeys, relations);
+                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
+                        addRelation(ckGen.generate(prng), schemaSpec.clusteringKeys, relations);
+                        break;
+                    }
+                    case CLUSTERING_SLICE:
+                    {
+                        Object[] pk = pkGen.generate(prng);
+                        addRelation(pk, schemaSpec.partitionKeys, relations);
+                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
+                        Object[] ck = ckGen.generate(prng);
+                        for (int i = 0; i < ck.length; i++)
+                        {
+                            ColumnSpec<?> spec = schemaSpec.clusteringKeys.get(i);
+                            Sign sign = signGen.generate(prng);
+                            relations.add(relation(spec.name, sign, ck[i]));
+
+                            if (sign != Sign.EQ)
+                                break;
+                        }
+
+                        break;
+                    }
+                    case CLUSTERING_RANGE:
+                    {
+                        Object[] pk = pkGen.generate(prng);
+                        addRelation(pk, schemaSpec.partitionKeys, relations);
+                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
+                        Object[] ck1 = ckGen.generate(prng);
+                        Object[] ck2 = ckGen.generate(prng);
+                        assert ck1.length == ck2.length;
+                        for (int i = 0; i < ck1.length; i++)
+                        {
+                            ColumnSpec<?> spec = schemaSpec.clusteringKeys.get(i);
+                            Sign sign = signGen.generate(prng);
+                            relations.add(relation(spec.name, sign, ck1[i]));
+                            // TODO (alexp): we can also use a roll of dice to mark inclusion/exclusion
+                            if (sign.isNegatable())
+                                relations.add(relation(spec.name, sign.negate(), ck2[i]));
+
+                            if (sign != Sign.EQ)
+                                break;
+                        }
                     }
                 }
 
-                delete.using(timestamp(ts));
-                return delete;
+                return relations;
             };
         }
 
+        public Gen<Delete> build()
+        {
+            return columnDeleteGenerator.zip(relationsGen(),
+                                             timestampGen,
+                                             (columns, relations, ts) -> new Delete(schemaSpec,
+                                                                                    columns,
+                                                                                    relations,
+                                                                                    ts));
+        }
     }
 
+    public static class Delete
+    {
+        private final SchemaSpec schemaSpec;
+        private final Optional<List<String>> columnsToDelete;
+        private final Optional<Long> timestamp;
+        public final List<Relation> relations;
+
+        Delete(SchemaSpec schemaSpec,
+               Optional<List<String>> columnsToDelete,
+               List<Relation> relations,
+               Optional<Long> timestamp)
+        {
+            this.schemaSpec = schemaSpec;
+            this.relations = relations;
+            this.columnsToDelete = columnsToDelete;
+            this.timestamp = timestamp;
+        }
+
+        public CompiledStatement compile()
+        {
+            com.datastax.driver.core.querybuilder.Delete delete = (columnsToDelete.isPresent() ?
+                                                                   QueryBuilder.delete(toArray(columnsToDelete.get())) :
+                                                                   QueryBuilder.delete())
+                                                                  .from(schemaSpec.ksName, schemaSpec.tableName);
+            com.datastax.driver.core.querybuilder.Delete.Where where = delete.where();
+
+            Object[] bindings = new Object[relations.size()];
+            for (int i = 0; i < relations.size(); i++)
+            {
+                where.and(relations.get(i).toClause());
+                bindings[i] = relations.get(i).value;
+            }
+
+            timestamp.ifPresent(delete::setDefaultTimestamp);
+            return new CompiledStatement(delete.toString(), bindings);
+        }
+    }
+
+    public static String[] toArray(List<String> strings)
+    {
+        return strings.toArray(new String[strings.size()]);
+    }
 }
+
