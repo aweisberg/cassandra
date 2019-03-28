@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.quicktheories.tests;
 
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import org.junit.Test;
@@ -72,8 +71,7 @@ public class DistributedQTTest extends DistributedTestBase
                                  .build());
                     addSetupStep(builder("generatePartitionKeys",
                                          this::insertRows,
-                                         () -> operations().writes().writes(schemaSpec)
-                                                           .partitionCountBetween(1, 100)
+                                         () -> operations().writes().rows(schemaSpec)
                                                            .rowCountBetween(10, 100)
                                                            .withCurrentTimestamp()
                                                            .inserts(),

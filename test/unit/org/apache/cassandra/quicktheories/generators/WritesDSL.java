@@ -18,13 +18,14 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
+import org.quicktheories.core.RandomnessSource;
 import org.quicktheories.generators.Generate;
 
 import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
@@ -32,6 +33,16 @@ import static org.quicktheories.generators.SourceDSL.*;
 
 public class WritesDSL
 {
+    /**
+     * Generate a random write
+     *
+     * @param schema the schema to generate writes for
+     * @return a {@link WritesBuilder} used to customize and create the generator
+     */
+    public WriteBuilder row(SchemaSpec schema)
+    {
+        return row(schema, schema.partitionKeyGenerator);
+    }
 
     /**
      * Generate a write to the given partition (randomly generated row and values)
@@ -40,22 +51,10 @@ public class WritesDSL
      * @param partitionKey the partition key to write to
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public static WriteBuilder write(SchemaSpec schema, Object[] partitionKey)
+    public WriteBuilder row(SchemaSpec schema, Object[] partitionKey)
     {
-        return write(schema, Generate.constant(partitionKey));
+        return row(schema, Generate.constant(partitionKey));
     }
-
-    /**
-     * Generate a random write
-     *
-     * @param schema the schema to generate writes for
-     * @return a {@link WritesBuilder} used to customize and create the generator
-     */
-    public static WriteBuilder write(SchemaSpec schema)
-    {
-        return write(schema, schema.partitionKeyGenerator);
-    }
-
 
     /**
      * Generate a random write
@@ -64,7 +63,7 @@ public class WritesDSL
      * @param partitionKeys the generator to use when generating partition keys
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public static WriteBuilder write(SchemaSpec schema, Gen<Object[]> partitionKeys)
+    public WriteBuilder row(SchemaSpec schema, Gen<Object[]> partitionKeys)
     {
         return new WriteBuilder(schema, partitionKeys, schema.clusteringKeyGenerator, schema.rowDataGenerator);
     }
@@ -76,7 +75,7 @@ public class WritesDSL
      * @param partitionKey the partition to generates writes to
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public WritesBuilder writes(SchemaSpec schemaSpec, Object[] partitionKey)
+    public WritesBuilder rows(SchemaSpec schemaSpec, Object[] partitionKey)
     {
         return new WritesBuilder(schemaSpec, Generate.constant(partitionKey), schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
     }
@@ -88,7 +87,7 @@ public class WritesDSL
      * @param partitionKeys the generator to use when generating partition keys
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public WritesBuilder writes(SchemaSpec schemaSpec, Gen<Object[]> partitionKeys)
+    public WritesBuilder rows(SchemaSpec schemaSpec, Gen<Object[]> partitionKeys)
     {
         return new WritesBuilder(schemaSpec, partitionKeys, schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
     }
@@ -99,7 +98,7 @@ public class WritesDSL
      * @param schemaSpec the schema to generate writes for
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public WritesBuilder writes(SchemaSpec schemaSpec)
+    public WritesBuilder rows(SchemaSpec schemaSpec)
     {
         return new WritesBuilder(schemaSpec,
                                  schemaSpec.partitionKeyGenerator,
@@ -108,19 +107,19 @@ public class WritesDSL
     }
 
 
-    public static class WriteBuilder
+    public static abstract class AbstractBuilder<T extends AbstractBuilder>
     {
-        private final SchemaSpec schema;
-        private final Gen<Object[]> pkGen;
-        private final Gen<Object[]> ckGen;
-        private final Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen;
-        private Gen<Optional<Long>> timestampGen = Generate.constant(Optional::empty);
-        private Gen<Optional<Integer>> ttlGen = Generate.constant(Optional::empty);
+        protected final SchemaSpec schema;
+        protected final Gen<Object[]> pkGen;
+        protected final Gen<Object[]> ckGen;
+        protected final Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen;
+        protected Gen<Optional<Long>> timestampGen = Generate.constant(Optional::empty);
+        protected Gen<Optional<Integer>> ttlGen = Generate.constant(Optional::empty);
 
-        WriteBuilder(SchemaSpec schema,
-                     Gen<Object[]> pkGen,
-                     Gen<Object[]> ckGen,
-                     Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+        AbstractBuilder(SchemaSpec schema,
+                        Gen<Object[]> pkGen,
+                        Gen<Object[]> ckGen,
+                        Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
         {
             this.schema = schema;
             this.pkGen = pkGen;
@@ -128,41 +127,53 @@ public class WritesDSL
             this.dataGen = dataGen;
         }
 
-        public WriteBuilder withTimestamp(Gen<Long> timestamps)
+        public T withTimestamp(Gen<Long> timestamps)
         {
             this.timestampGen = timestamps.map(Optional::of);
-            return this;
+            return (T) this;
         }
 
-        public WriteBuilder withTimestamp(long ts)
+        public T withTimestamp(long ts)
         {
             this.timestampGen = arbitrary().constant(Optional.of(ts));
-            return this;
+            return (T) this;
         }
 
-        public WriteBuilder withCurrentTimestamp()
+        public T withCurrentTimestamp()
         {
             return withTimestamp(FBUtilities.timestampMicros());
         }
 
-        public WriteBuilder withTTL(Gen<Integer> timestamps)
+        public T withTTL(Gen<Integer> timestamps)
         {
             this.ttlGen = timestamps.map(Optional::of);
-            return this;
+            return (T) this;
         }
 
-        public WriteBuilder withTTL(int ts)
+        public T withTTL(int ts)
         {
             this.ttlGen = arbitrary().constant(Optional.of(ts));
-            return this;
+            return (T) this;
+        }
+    }
+
+    public static class WriteBuilder extends AbstractBuilder<WriteBuilder>
+    {
+
+        WriteBuilder(SchemaSpec schema,
+                     Gen<Object[]> pkGen,
+                     Gen<Object[]> ckGen,
+                     Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+        {
+            super(schema, pkGen, ckGen, dataGen);
         }
 
-        private Gen<Insert> insert()
+        public Gen<Insert> insert()
         {
             return build(WritesDSL::insertGen);
         }
 
-        private Gen<Update> updates()
+        public Gen<Update> update()
         {
             return build(WritesDSL::updateGen);
         }
@@ -181,17 +192,24 @@ public class WritesDSL
 
     }
 
-    public static class WritesBuilder
+    public static <T> Gen<T> once(Gen<T> delegate)
     {
-        private final SchemaSpec schema;
-        private final Gen<Object[]> pkGen;
-        private final Gen<Object[]> ckGen;
-        private final Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen;
-        private Gen<Optional<Long>> timestampGen = Generate.constant(Optional.empty());
-        private Gen<Optional<Integer>> ttlGen = Generate.constant(Optional.empty());
+        return new Gen<T>()
+        {
+            private final AtomicReference<T> generated = new AtomicReference<>();
+            public T generate(RandomnessSource prng)
+            {
+                return generated.updateAndGet(existing -> {
+                    if (existing == null)
+                        return delegate.generate(prng);
+                    return existing;
+                });
+            }
+        };
+    }
 
-        private int minPartitions = 1;
-        private int maxPartitions = 1;
+    public static class WritesBuilder extends AbstractBuilder<WritesBuilder>
+    {
         private int minRows = 1;
         private int maxRows = 1;
 
@@ -200,25 +218,7 @@ public class WritesDSL
                               Gen<Object[]> ckGen,
                               Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
         {
-            this.schema = schema;
-            this.pkGen = pkGen;
-            this.ckGen = ckGen;
-            this.dataGen = dataGen;
-        }
-
-        public WritesBuilder partitionCount(int count)
-        {
-            return partitionCountBetween(count, count);
-        }
-
-        public WritesBuilder partitionCountBetween(int min, int max)
-        {
-            assert min > 0 : "Minimum partition count should be non-negative but was " + min;
-            assert min <= max : "Minimum partition count not exceed maximum partition count";
-
-            minPartitions = min;
-            maxPartitions = max;
-            return this;
+            super(schema, once(pkGen), ckGen, dataGen);
         }
 
         public WritesBuilder rowCount(int count)
@@ -233,29 +233,6 @@ public class WritesDSL
 
             minRows = min;
             maxRows = max;
-            return this;
-        }
-
-        public WritesBuilder withTimestamp(Gen<Long> timestamps)
-        {
-            this.timestampGen = timestamps.map(Optional::of);
-            return this;
-        }
-
-        public WritesBuilder withTimestamp(long ts)
-        {
-            this.timestampGen = arbitrary().constant(Optional.of(ts));
-            return this;
-        }
-
-        public WritesBuilder withCurrentTimestamp()
-        {
-            return withTimestamp(FBUtilities.timestampMicros());
-        }
-
-        public WritesBuilder withTTL(Gen<Integer> ttls)
-        {
-            this.ttlGen = ttls.map(Optional::of);
             return this;
         }
 
@@ -276,26 +253,13 @@ public class WritesDSL
                                                                               Gen<Optional<Integer>>,
                                                                               Gen<T>> gen)
         {
-            Gen<List<T>> rows =
-            pkGen.flatMap(pk -> {
-                return lists().of(ckGen.flatMap(ck -> gen.apply(schema, new FullKey(pk, ck), dataGen, timestampGen, ttlGen)))
-                              .ofSizeBetween(minRows, maxRows);
-            });
+            Gen<T> rows = pkGen.zip(ckGen, FullKey::new)
+                               .flatMap(fk -> gen.apply(schema, fk, dataGen, timestampGen, ttlGen));
 
             return lists().of(rows)
-                          .ofSizeBetween(minPartitions, maxPartitions)
-                          .map(WritesDSL::flatten);
+                          .ofSizeBetween(minRows, maxRows);
         }
     }
-
-    private static <T> List<T> flatten(List<List<T>> llist)
-    {
-        return llist.stream().reduce(new ArrayList<>(), (a, b) -> {
-            a.addAll(b);
-            return a;
-        });
-    }
-
 
     /**
      * Auxilitary intermediate row representation
@@ -394,6 +358,13 @@ public class WritesDSL
             int bindingsCount = 0;
             com.datastax.driver.core.querybuilder.Update update = update(schemaSpec.ksName, schemaSpec.tableName);
 
+            // TODO: will this work when only a subset of columns is set?
+            for (Pair<ColumnSpec<?>, Object> row : rowData)
+            {
+                update.with(set(row.left.name, bindMarker()));
+                bindings[bindingsCount++] = row.right;
+            }
+
             com.datastax.driver.core.querybuilder.Update.Where where = update.where();
             for (int i = 0; i < schemaSpec.partitionKeys.size(); i++)
             {
@@ -407,33 +378,11 @@ public class WritesDSL
                 bindings[bindingsCount++] = fullKey.clustering[i];
             }
 
-            for (Pair<ColumnSpec<?>, Object> row : rowData)
-            {
-                update.with(set(row.left.name, bindMarker()));
-                bindings[bindingsCount++] = row.right;
-            }
-
             timestamp.ifPresent(ts -> update.using(timestamp(ts)));
             ttl.ifPresent(ts -> update.using(ttl(ts)));
 
             return CompiledStatement.create(update.toString(), bindings);
         }
-    }
-
-    private static Gen<Insert> insertGen(SchemaSpec schema,
-                                          Gen<Object[]> pkGen, Gen<Object[]> ckGen, Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
-                                          Gen<Optional<Long>> tsGen, Gen<Optional<Integer>> ttlGen)
-    {
-        return pkGen.zip(ckGen, FullKey::new)
-                    .flatMap(fk -> insertGen(schema, fk, dataGen, tsGen, ttlGen));
-    }
-
-    private static Gen<Update> updateGen(SchemaSpec schema,
-                                          Gen<Object[]> pkGen, Gen<Object[]> ckGen, Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
-                                          Gen<Optional<Long>> tsGen, Gen<Optional<Integer>> ttlGen)
-    {
-        return pkGen.zip(ckGen, FullKey::new)
-                    .flatMap(fk -> updateGen(schema, fk, dataGen, tsGen, ttlGen));
     }
 
     private static Gen<Insert> insertGen(SchemaSpec schema,

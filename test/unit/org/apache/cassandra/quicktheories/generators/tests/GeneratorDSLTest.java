@@ -20,9 +20,7 @@ package org.apache.cassandra.quicktheories.generators.tests;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import org.junit.Test;
 
@@ -33,6 +31,7 @@ import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
 import org.apache.cassandra.quicktheories.generators.ReadsDSL;
 import org.apache.cassandra.quicktheories.generators.SchemaSpec;
+import org.apache.cassandra.quicktheories.generators.WritesDSL;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.SourceDSL;
@@ -95,6 +94,41 @@ public class ReadsDSLTest extends DistributedTestBase
                     testCluster.schemaChange(p.left.toCQL());
 
                     for (ReadsDSL.Select select : p.right)
+                    {
+                        CompiledStatement compiled = select.compile();
+                        testCluster.coordinator(1).execute(compiled.cql(),
+                                                           ConsistencyLevel.ALL,
+                                                           compiled.bindings());
+                    }
+                });
+        }
+    }
+
+    @Test
+    public void writesDSLTest() throws Throwable
+    {
+        boolean insert = true;
+        Function<SchemaSpec, Gen<WritesDSL.DataRow>> makeBuilder =
+        (spec) -> SourceDSL.booleans().all().zip(SourceDSL.booleans().all(),
+                                                 (withTimestamp, withTTL) -> {
+                                                     WritesDSL.WriteBuilder builder = operations().writes().row(spec);
+
+                                                     if (withTimestamp)
+                                                         builder.withTimestamp(SourceDSL.longs().between(1, Long.MAX_VALUE - 1));
+                                                     if (withTTL)
+                                                         builder.withTTL(SourceDSL.integers().between(1, Integer.MAX_VALUE - 1));
+
+                                                     return builder;
+                                                 }).flatMap(builder -> insert ? builder.insert() : builder.update());
+
+        try (AbstractCluster testCluster = init(Cluster.create(1)))
+        {
+            qt().withShrinkCycles(0)
+                .forAll(pairWithSchema(makeBuilder))
+                .checkAssert(p -> {
+                    testCluster.schemaChange(p.left.toCQL());
+
+                    for (WritesDSL.DataRow select : p.right)
                     {
                         CompiledStatement compiled = select.compile();
                         testCluster.coordinator(1).execute(compiled.cql(),
