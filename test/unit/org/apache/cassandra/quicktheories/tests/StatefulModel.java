@@ -23,28 +23,17 @@ import java.util.List;
 
 import com.google.common.collect.Iterators;
 
-import com.datastax.driver.core.querybuilder.Insert;
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import com.datastax.driver.core.querybuilder.Select;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
-import org.apache.cassandra.quicktheories.generators.ColumnSpec;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
-import org.apache.cassandra.quicktheories.generators.FullKey;
+import org.apache.cassandra.quicktheories.generators.ReadsDSL;
 import org.apache.cassandra.quicktheories.generators.SchemaSpec;
-import org.apache.cassandra.quicktheories.generators.Sign;
 import org.apache.cassandra.quicktheories.generators.WritesDSL;
-import org.apache.cassandra.schema.ColumnMetadata;
-import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
-import org.quicktheories.generators.Generate;
 import org.quicktheories.generators.SourceDSL;
 import org.quicktheories.impl.stateful.StatefulTheory;
 
-import static com.datastax.driver.core.querybuilder.QueryBuilder.eq;
 import static org.apache.cassandra.distributed.test.DistributedTestBase.assertRows;
-import static org.apache.cassandra.quicktheories.generators.Extensions.combine;
-import static org.apache.cassandra.quicktheories.generators.Extensions.subsetGenerator;
 
 public abstract class StatefulModel extends StatefulTheory.StepBased
 {
@@ -64,16 +53,18 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         this.nodeSelector = SourceDSL.integers().between(1, testCluster.size());
     }
 
-    public void run(Select query, int node)
+    public void run(ReadsDSL.Select query, int node)
     {
         Iterator<Object[]> modelRows;
         Iterator<Object[]> sutRows;
         try
         {
-            modelRows = Iterators.forArray(testCluster.get(1).executeInternal(query.toString()));
-            sutRows = testCluster.coordinator(node).executeWithPaging(query.toString(),
+            CompiledStatement compiled = query.compile();
+            modelRows = Iterators.forArray(testCluster.get(1).executeInternal(compiled.cql(), compiled.bindings()));
+            sutRows = testCluster.coordinator(node).executeWithPaging(compiled.cql(),
                                                                       ConsistencyLevel.QUORUM,
-                                                                      2);
+                                                                      2,
+                                                                      compiled.bindings());
             assertRows(modelRows, sutRows);
         }
         catch (Exception e)

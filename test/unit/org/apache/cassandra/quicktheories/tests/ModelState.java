@@ -29,6 +29,8 @@ public interface ModelState
     public boolean addFullKey(FullKey fullKey);
     public Gen<Object[]> primaryKeyGen();
     public Gen<FullKey> fullKeyGen();
+    public Gen<FullKey> fullKeyGen(Object[] pk);
+    public Gen<Object[]> clusteringKeyGen(Object[] pk);
     public List<Object[]> partitionKeys();
     public Gen<List<FullKey>> fullKeysFromSamePartition(int min, int max);
 

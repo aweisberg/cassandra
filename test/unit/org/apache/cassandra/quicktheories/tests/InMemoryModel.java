@@ -59,10 +59,19 @@ public class InMemoryModel implements ModelState
     public Gen<FullKey> fullKeyGen()
     {
         return primaryKeyGen()
-               .flatMap(pk -> {
-                   List<FullKey> fullKeys = partitions.get(pk).fullKeys;
-                   return SourceDSL.arbitrary().pick(fullKeys);
-               });
+               .flatMap(this::fullKeyGen);
+    }
+
+    public Gen<FullKey> fullKeyGen(Object[] pk)
+    {
+        List<FullKey> fullKeys = partitions.get(pk).fullKeys;
+        return SourceDSL.arbitrary().pick(fullKeys);
+    }
+
+    public Gen<Object[]> clusteringKeyGen(Object[] pk)
+    {
+        List<FullKey> fullKeys = partitions.get(pk).fullKeys;
+        return SourceDSL.arbitrary().pick(fullKeys).map(FullKey::clusteringKey);
     }
 
     public List<Object[]> partitionKeys()

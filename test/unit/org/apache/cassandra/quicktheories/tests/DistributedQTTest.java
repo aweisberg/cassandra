@@ -79,12 +79,15 @@ public class DistributedQTTest extends DistributedTestBase
                                                            .inserts(),
                                          () -> nodeSelector)
                                  .build());
-//                    addStep(builder("generateRead",
-//                                    this::run,
-//                                    // TODO: add an ability to generate all sorts of reads (rows partitions slices etc) from state
-//                                    () -> operations().reads().rowRead(schemaSpec, ),
-//                                    () -> nodeSelector)
-//                                 .build());
+                    addStep(builder("generateRead",
+                                    this::run,
+                                    // TODO: add an ability to generate all sorts of reads (rows partitions slices etc) from state
+                                    () -> operations().reads().rowRead(schemaSpec,
+                                                                       modelState.primaryKeyGen(),
+                                                                       modelState::clusteringKeyGen)
+                                                      .build(),
+                                    () -> nodeSelector)
+                                 .build());
 
                     // !!! Test keys that do not exist
                 }

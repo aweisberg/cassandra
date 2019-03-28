@@ -48,6 +48,16 @@ public class FullKey
                Arrays.equals(clustering, key.clustering);
     }
 
+    public Object[] partitionKey()
+    {
+        return partition;
+    }
+
+    public Object[] clusteringKey()
+    {
+        return clustering;
+    }
+
     public int hashCode()
     {
         int result = Arrays.hashCode(partition);

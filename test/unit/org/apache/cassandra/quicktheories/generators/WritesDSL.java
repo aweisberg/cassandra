@@ -40,9 +40,9 @@ public class WritesDSL
      * @param partitionKey the partition key to write to
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public static WriteBuilder insert(SchemaSpec schema, Object[] partitionKey)
+    public static WriteBuilder write(SchemaSpec schema, Object[] partitionKey)
     {
-        return insert(schema, Generate.constant(partitionKey));
+        return write(schema, Generate.constant(partitionKey));
     }
 
     /**
@@ -51,9 +51,9 @@ public class WritesDSL
      * @param schema the schema to generate writes for
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public static WriteBuilder insert(SchemaSpec schema)
+    public static WriteBuilder write(SchemaSpec schema)
     {
-        return insert(schema, schema.partitionKeyGenerator);
+        return write(schema, schema.partitionKeyGenerator);
     }
 
 
@@ -64,7 +64,7 @@ public class WritesDSL
      * @param partitionKeys the generator to use when generating partition keys
      * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public static WriteBuilder insert(SchemaSpec schema, Gen<Object[]> partitionKeys)
+    public static WriteBuilder write(SchemaSpec schema, Gen<Object[]> partitionKeys)
     {
         return new WriteBuilder(schema, partitionKeys, schema.clusteringKeyGenerator, schema.rowDataGenerator);
     }
