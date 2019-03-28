@@ -26,11 +26,14 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import com.datastax.driver.core.querybuilder.Clause;
+import com.datastax.driver.core.querybuilder.Ordering;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.Generate;
 
+import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
 import static org.apache.cassandra.quicktheories.generators.Extensions.subsetGenerator;
 import static org.quicktheories.generators.SourceDSL.booleans;
 import static org.quicktheories.generators.SourceDSL.integers;
@@ -319,9 +322,9 @@ public class ReadsDSL
             this.value = value;
         }
 
-        public String toCQL()
+        public Clause toClause()
         {
-            return column + " " + sign + " ?";
+            return sign.getClause(column, bindMarker());
         }
     }
 
@@ -358,51 +361,37 @@ public class ReadsDSL
         {
             Object[] bindings = new Object[relations.size()];
             int bindingCount = 0;
-            StringBuilder builder = new StringBuilder();
-            if (selectedColumns.isPresent())
-            {
-                builder.append("SELECT ");
-                SchemaSpec.SeparatorAppender ca = new SchemaSpec.SeparatorAppender();
-                for (String s : selectedColumns.get())
-                    ca.accept(builder, s);
-            }
-            else
-            {
-                builder.append("SELECT *");
-            }
-            builder.append(" FROM ")
-                   .append(schemaSpec.ksName)
-                   .append('.')
-                   .append(schemaSpec.tableName)
-                   .append(' ');
+            com.datastax.driver.core.querybuilder.Select statement = (selectedColumns.isPresent() ?
+                                                                      select(selectedColumns.get().toArray()) :
+                                                                      select())
+                                                                     .from(schemaSpec.ksName, schemaSpec.tableName);
 
             if (!relations.isEmpty())
             {
-                builder.append(" WHERE ");
-                SchemaSpec.SeparatorAppender ca = new SchemaSpec.SeparatorAppender(" AND ");
+                com.datastax.driver.core.querybuilder.Select.Where where = statement.where();
                 for (Relation relation : relations)
                 {
-                    ca.accept(builder, relation.toCQL());
+                    where.and(relation.toClause());
                     bindings[bindingCount++] = relation.value;
                 }
             }
 
             if (!ordering.isEmpty())
             {
-                builder.append(" ORDER BY");
-                SchemaSpec.SeparatorAppender ca = new SchemaSpec.SeparatorAppender();
-                for (Pair<String, Boolean> tuple : ordering)
+                Ordering[] orderings = new Ordering[ordering.size()];
+                for (int i = 0; i < orderings.length; i++)
                 {
-                    builder.append(" ");
-                    ca.accept(builder, tuple.left + " " + (tuple.right ? "ASC" : "DESC"));
+                    Pair<String, Boolean> p = ordering.get(i);
+                    // TODO: this can be improved
+                    orderings[i] = p.right ? asc(p.left) : desc(p.left);
                 }
             }
 
-            limit.ifPresent(integer -> builder.append(" LIMIT ").append(integer));
+            limit.ifPresent(statement::limit);
 
             // TODO (alexp): order
             assert bindingCount == bindings.length : bindingCount + " != " + bindings.length;
-            return CompiledStatement.create(builder.toString(), bindings);
+            return CompiledStatement.create(statement.toString(), bindings);
         }
 
         public String toString()
