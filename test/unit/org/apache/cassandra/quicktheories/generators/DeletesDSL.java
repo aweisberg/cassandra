@@ -111,6 +111,13 @@ public class DeletesDSL
                                   DeleteType.SINGLE_ROW);
     }
 
+    public DeletesBuilder rowSliceDelete(SchemaSpec schema)
+    {
+        return rowSliceDelete(schema,
+                              schema.partitionKeyGenerator,
+                              pk -> schema.clusteringKeyGenerator);
+    }
+
     public DeletesBuilder rowSliceDelete(SchemaSpec schema,
                                          Gen<Object[]> partitionKeys,
                                          Function<Object[], Gen<Object[]>> clusterings)
@@ -119,6 +126,13 @@ public class DeletesDSL
                                   partitionKeys,
                                   clusterings,
                                   DeleteType.CLUSTERING_SLICE);
+    }
+
+    public DeletesBuilder rowRangeDelete(SchemaSpec schema)
+    {
+        return rowRangeDelete(schema,
+                              schema.partitionKeyGenerator,
+                              pk -> schema.clusteringKeyGenerator);
     }
 
     public DeletesBuilder rowRangeDelete(SchemaSpec schema,
@@ -175,6 +189,11 @@ public class DeletesDSL
             this.pkGen = pkGen;
             this.ckGenSupplier = ckGenSupplier;
             this.deleteType = deleteType;
+        }
+
+        public DeleteType deleteType()
+        {
+            return deleteType;
         }
 
         public DeletesBuilder withTimestamp(Gen<Long> timestamps)

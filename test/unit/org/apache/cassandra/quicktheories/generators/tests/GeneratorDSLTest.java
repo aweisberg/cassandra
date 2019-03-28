@@ -20,18 +20,22 @@ package org.apache.cassandra.quicktheories.generators.tests;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
+import org.apache.cassandra.quicktheories.generators.DeletesDSL;
 import org.apache.cassandra.quicktheories.generators.ReadsDSL;
 import org.apache.cassandra.quicktheories.generators.SchemaSpec;
 import org.apache.cassandra.quicktheories.generators.WritesDSL;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.SourceDSL;
@@ -40,7 +44,7 @@ import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.oper
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.schemas;
 import static org.quicktheories.QuickTheory.qt;
 
-public class ReadsDSLTest extends DistributedTestBase
+public class GeneratorDSLTest extends DistributedTestBase
 {
     private static final Gen<SchemaSpec> testSchemas = schemas().keyspace(KEYSPACE)
                                                                 .partitionKeyColumnCount(1, 4)
@@ -105,9 +109,19 @@ public class ReadsDSLTest extends DistributedTestBase
     }
 
     @Test
-    public void writesDSLTest() throws Throwable
+    public void insertDSLTest() throws Throwable
     {
-        boolean insert = true;
+        writesDSLTest(true);
+    }
+
+    @Test
+    public void updateDSLTest() throws Throwable
+    {
+        writesDSLTest(false);
+    }
+
+    private void writesDSLTest(boolean insert) throws Throwable
+    {
         Function<SchemaSpec, Gen<WritesDSL.DataRow>> makeBuilder =
         (spec) -> SourceDSL.booleans().all().zip(SourceDSL.booleans().all(),
                                                  (withTimestamp, withTTL) -> {
@@ -116,7 +130,7 @@ public class ReadsDSLTest extends DistributedTestBase
                                                      if (withTimestamp)
                                                          builder.withTimestamp(SourceDSL.longs().between(1, Long.MAX_VALUE - 1));
                                                      if (withTTL)
-                                                         builder.withTTL(SourceDSL.integers().between(1, Integer.MAX_VALUE - 1));
+                                                         builder.withTTL(SourceDSL.integers().between(1, (int) TimeUnit.DAYS.toSeconds(365)));
 
                                                      return builder;
                                                  }).flatMap(builder -> insert ? builder.insert() : builder.update());
@@ -137,5 +151,47 @@ public class ReadsDSLTest extends DistributedTestBase
                     }
                 });
         }
+    }
+
+    @Test
+    public void deletesDSLTest() throws Throwable
+    {
+        List<Function<SchemaSpec, DeletesDSL.DeletesBuilder>> deleteBuilders = Arrays.asList(operations().deletes()::partitionDelete,
+                                                                                             operations().deletes()::rowDelete,
+                                                                                             operations().deletes()::rowSliceDelete,
+                                                                                             operations().deletes()::rowRangeDelete);
+
+        Function<SchemaSpec, Gen<DeletesDSL.Delete>> toBuilder =
+        (spec) -> SourceDSL.arbitrary().pick(deleteBuilders)
+                           .zip(SourceDSL.booleans().all(),
+                                SourceDSL.booleans().all(),
+                                (fn, withColumns, withTimestamp) -> {
+                                    DeletesDSL.DeletesBuilder builder = fn.apply(spec);
+                                    if (withColumns && builder.deleteType() == DeletesDSL.DeleteType.SINGLE_ROW)
+                                        builder.deleteColumns();
+                                    if (withTimestamp)
+                                        builder.withTimestamp(SourceDSL.longs().between(1, Long.MAX_VALUE - 1));
+                                    return builder;
+                                })
+                           .flatMap(DeletesDSL.DeletesBuilder::build);
+
+        try (AbstractCluster testCluster = init(Cluster.create(1)))
+        {
+            qt().withShrinkCycles(0)
+                .forAll(pairWithSchema(toBuilder))
+                .checkAssert(p -> {
+                    testCluster.schemaChange(p.left.toCQL());
+
+                    for (DeletesDSL.Delete delete : p.right)
+                    {
+                        CompiledStatement compiled = delete.compile();
+                        testCluster.coordinator(1).execute(compiled.cql(),
+                                                           ConsistencyLevel.ALL,
+                                                           compiled.bindings());
+                    }
+                });
+        }
+
+
     }
 }
