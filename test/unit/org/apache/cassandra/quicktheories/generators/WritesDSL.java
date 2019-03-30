@@ -178,7 +178,7 @@ public class WritesDSL
             return build(WritesDSL::updateGen);
         }
 
-        private <T extends DataRow> Gen<T> build(Extensions.QuinFunction<SchemaSpec,
+        private <T extends Write> Gen<T> build(Extensions.QuinFunction<SchemaSpec,
                                                                         FullKey,
                                                                         Gen<List<Pair<ColumnSpec<?>, Object>>>,
                                                                         Gen<Optional<Long>>,
@@ -246,7 +246,7 @@ public class WritesDSL
             return build(WritesDSL::updateGen);
         }
 
-        private <T extends DataRow> Gen<List<T>> build(Extensions.QuinFunction<SchemaSpec,
+        private <T extends Write> Gen<List<T>> build(Extensions.QuinFunction<SchemaSpec,
                                                                               FullKey,
                                                                               Gen<List<Pair<ColumnSpec<?>, Object>>>,
                                                                               Gen<Optional<Long>>,
@@ -264,7 +264,7 @@ public class WritesDSL
     /**
      * Auxilitary intermediate row representation
      */
-    public static abstract class DataRow
+    public static abstract class Write
     {
         protected final SchemaSpec schemaSpec;
         protected final FullKey fullKey;
@@ -272,11 +272,11 @@ public class WritesDSL
         protected final Optional<Long> timestamp;
         protected final Optional<Integer> ttl;
 
-        protected DataRow(SchemaSpec schemaSpec,
-                          FullKey fullKey,
-                          List<Pair<ColumnSpec<?>, Object>> rowData,
-                          Optional<Long> timestamp,
-                          Optional<Integer> ttl)
+        protected Write(SchemaSpec schemaSpec,
+                        FullKey fullKey,
+                        List<Pair<ColumnSpec<?>, Object>> rowData,
+                        Optional<Long> timestamp,
+                        Optional<Integer> ttl)
         {
             this.schemaSpec = schemaSpec;
             this.fullKey = fullKey;
@@ -293,7 +293,7 @@ public class WritesDSL
         }
     }
 
-    public static class Insert extends DataRow
+    public static class Insert extends Write
     {
         Insert(SchemaSpec schemaSpec,
                FullKey fullKey,
@@ -340,7 +340,7 @@ public class WritesDSL
         }
     }
 
-    public static class Update extends DataRow
+    public static class Update extends Write
     {
         Update(SchemaSpec schemaSpec,
                FullKey fullKey,

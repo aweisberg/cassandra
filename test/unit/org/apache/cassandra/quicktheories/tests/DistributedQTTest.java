@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.quicktheories.tests;
 
+import java.io.File;
 import java.util.function.Supplier;
 
 import org.junit.Test;
@@ -43,7 +44,7 @@ public class DistributedQTTest extends DistributedTestBase
     }
 
     @Test
-    public void simpleTest() throws Throwable
+    public void readWriteTest() throws Throwable
     {
         try (AbstractCluster testCluster = Cluster.create(3);
              AbstractCluster modelCluster = Cluster.create(1))
@@ -60,33 +61,46 @@ public class DistributedQTTest extends DistributedTestBase
                 @Override
                 public void initSteps()
                 {
-                    addSetupStep(builder("initSchema",
+                    addSetupStep(builder("Initialize Schema",
                                          this::initSchema,
                                          schemas().keyspace(KEYSPACE)
                                                   .partitionKeyColumnCount(1, 5)
                                                   .clusteringColumnCount(0, 5)
                                                   .staticColumnCount(0, 5)
                                                   .regularColumnCount(0, 5)
-                                                  .build())
-                                 .build());
-                    addSetupStep(builder("generatePartitionKeys",
+                                                  .build()));
+
+                    addSetupStep(builder("Preload Rows",
                                          this::insertRows,
                                          () -> operations().writes().rows(schemaSpec)
                                                            .rowCountBetween(10, 100)
                                                            .withCurrentTimestamp()
                                                            .inserts(),
-                                         () -> nodeSelector)
-                                 .build());
-                    addStep(builder("generateRead",
+                                         () -> nodeSelector));
+
+                    addStep(builder("Generate Partition",
+                                    this::insertRows,
+                                    () -> operations().writes().rows(schemaSpec)
+                                                      .rowCountBetween(10, 100)
+                                                      .withCurrentTimestamp()
+                                                      .inserts(),
+                                    () -> nodeSelector));
+
+                    addStep(builder("Generate Read",
                                     this::run,
-                                    // TODO: add an ability to generate all sorts of reads (rows partitions slices etc) from state
-                                    () -> operations().reads().rowRead(schemaSpec,
+                                    () -> operations().reads().anyRead(schemaSpec,
                                                                        modelState.primaryKeyGen(),
                                                                        modelState::clusteringKeyGen)
                                                       .build(),
-                                    () -> nodeSelector)
-                                 .build());
+                                    () -> nodeSelector));
 
+                    addStep(builder("Generate Deletea",
+                                    this::run,
+                                    () -> operations().deletes().anyDelete(schemaSpec,
+                                                                           modelState.primaryKeyGen(),
+                                                                           modelState::clusteringKeyGen)
+                                                      .build(),
+                                    () -> nodeSelector));
                     // !!! Test keys that do not exist
                 }
             });

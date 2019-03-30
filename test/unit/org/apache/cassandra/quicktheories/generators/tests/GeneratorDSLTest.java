@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.quicktheories.generators.tests;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -26,7 +27,6 @@ import java.util.function.Function;
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
@@ -35,7 +35,6 @@ import org.apache.cassandra.quicktheories.generators.DeletesDSL;
 import org.apache.cassandra.quicktheories.generators.ReadsDSL;
 import org.apache.cassandra.quicktheories.generators.SchemaSpec;
 import org.apache.cassandra.quicktheories.generators.WritesDSL;
-import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.SourceDSL;
@@ -122,7 +121,7 @@ public class GeneratorDSLTest extends DistributedTestBase
 
     private void writesDSLTest(boolean insert) throws Throwable
     {
-        Function<SchemaSpec, Gen<WritesDSL.DataRow>> makeBuilder =
+        Function<SchemaSpec, Gen<WritesDSL.Write>> makeBuilder =
         (spec) -> SourceDSL.booleans().all().zip(SourceDSL.booleans().all(),
                                                  (withTimestamp, withTTL) -> {
                                                      WritesDSL.WriteBuilder builder = operations().writes().row(spec);
@@ -142,7 +141,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                 .checkAssert(p -> {
                     testCluster.schemaChange(p.left.toCQL());
 
-                    for (WritesDSL.DataRow select : p.right)
+                    for (WritesDSL.Write select : p.right)
                     {
                         CompiledStatement compiled = select.compile();
                         testCluster.coordinator(1).execute(compiled.cql(),
@@ -154,12 +153,28 @@ public class GeneratorDSLTest extends DistributedTestBase
     }
 
     @Test
+    public void deletesDSLRowsOnlyTest() throws Throwable
+    {
+        deletesDSLTest(true);
+    }
+
+    @Test
     public void deletesDSLTest() throws Throwable
     {
-        List<Function<SchemaSpec, DeletesDSL.DeletesBuilder>> deleteBuilders = Arrays.asList(operations().deletes()::partitionDelete,
-                                                                                             operations().deletes()::rowDelete,
-                                                                                             operations().deletes()::rowSliceDelete,
-                                                                                             operations().deletes()::rowRangeDelete);
+        deletesDSLTest(false);
+    }
+
+    private void deletesDSLTest(boolean rowDeleteOnly) throws Throwable
+    {
+        // We could use anyRead here, but it makes sense to test the DSL as well
+        List<Function<SchemaSpec, DeletesDSL.DeletesBuilder>> deleteBuilders = new ArrayList<>();
+        deleteBuilders.add(operations().deletes()::rowDelete);
+        if (!rowDeleteOnly)
+        {
+            deleteBuilders.addAll(Arrays.asList(operations().deletes()::partitionDelete,
+                                                operations().deletes()::rowSliceDelete,
+                                                operations().deletes()::rowRangeDelete));
+        }
 
         Function<SchemaSpec, Gen<DeletesDSL.Delete>> toBuilder =
         (spec) -> SourceDSL.arbitrary().pick(deleteBuilders)
@@ -167,7 +182,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                                 SourceDSL.booleans().all(),
                                 (fn, withColumns, withTimestamp) -> {
                                     DeletesDSL.DeletesBuilder builder = fn.apply(spec);
-                                    if (withColumns && builder.deleteType() == DeletesDSL.DeleteType.SINGLE_ROW)
+                                    if (withColumns && rowDeleteOnly)
                                         builder.deleteColumns();
                                     if (withTimestamp)
                                         builder.withTimestamp(SourceDSL.longs().between(1, Long.MAX_VALUE - 1));

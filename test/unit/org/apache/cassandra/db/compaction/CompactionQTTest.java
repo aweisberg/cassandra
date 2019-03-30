@@ -126,9 +126,9 @@ public class CompactionQTTest extends DistributedTestBase
                     private int flushes = 0;
 
                     @Override
-                    protected void insertRow(WritesDSL.DataRow row, int node)
+                    protected void run(WritesDSL.Write write, int node)
                     {
-                        super.insertRow(row, node);
+                        super.run(write, node);
                         analytics.write(true);
                     }
 

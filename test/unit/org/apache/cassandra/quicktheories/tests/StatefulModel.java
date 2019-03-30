@@ -26,6 +26,7 @@ import com.google.common.collect.Iterators;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
+import org.apache.cassandra.quicktheories.generators.DeletesDSL;
 import org.apache.cassandra.quicktheories.generators.ReadsDSL;
 import org.apache.cassandra.quicktheories.generators.SchemaSpec;
 import org.apache.cassandra.quicktheories.generators.WritesDSL;
@@ -53,7 +54,22 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         this.nodeSelector = SourceDSL.integers().between(1, testCluster.size());
     }
 
+    public void addSetupStep(StatefulTheory.StepBuilder builder)
+    {
+        addSetupStep(builder.build());
+    }
+
+    public void addStep(StatefulTheory.StepBuilder builder)
+    {
+        addStep(builder.build());
+    }
+
     public void run(ReadsDSL.Select query, int node)
+    {
+        run(query, ConsistencyLevel.QUORUM, node);
+    }
+
+    public void run(ReadsDSL.Select query, ConsistencyLevel cl, int node)
     {
         Iterator<Object[]> modelRows;
         Iterator<Object[]> sutRows;
@@ -62,37 +78,55 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
             CompiledStatement compiled = query.compile();
             modelRows = Iterators.forArray(testCluster.get(1).executeInternal(compiled.cql(), compiled.bindings()));
             sutRows = testCluster.coordinator(node).executeWithPaging(compiled.cql(),
-                                                                      ConsistencyLevel.QUORUM,
+                                                                      cl,
                                                                       2,
                                                                       compiled.bindings());
             assertRows(modelRows, sutRows);
         }
         catch (Exception e)
         {
-            System.out.println("query = " + query);
             reportAndExit(e, node);
         }
     }
 
-    private void reportAndExit(Throwable t, int node)
+    protected void run(DeletesDSL.Delete delete, int node)
     {
-        System.out.println("Node: " + node);
-        System.out.println(schemaSpec.toCQL());
-        System.err.println(t.getMessage());
-        t.printStackTrace();
-        System.exit(1);
+        run(delete, ConsistencyLevel.QUORUM, node);
     }
 
-    protected void insertRow(WritesDSL.DataRow row, int node)
+    protected void run(DeletesDSL.Delete delete, ConsistencyLevel cl, int node)
     {
         try
         {
-            modelState.addFullKey(row.key());
-            CompiledStatement compiledStatement = row.compile();
+            CompiledStatement compiledStatement = delete.compile();
 
             modelCluster.get(1).executeInternal(compiledStatement.cql(), compiledStatement.bindings());
             testCluster.coordinator(node).execute(compiledStatement.cql(),
-                                                  ConsistencyLevel.QUORUM,
+                                                  cl,
+                                                  compiledStatement.bindings());
+        }
+        catch (Throwable t)
+        {
+            // TODO (alexp): make stateful print stack trace instead of just saying that stuff has failed
+            System.out.println("t = " + t);
+            t.printStackTrace();
+        }
+    }
+
+    protected void run(WritesDSL.Write write, int node)
+    {
+        run(write, ConsistencyLevel.QUORUM, node);
+    }
+    protected void run(WritesDSL.Write write, ConsistencyLevel cl, int node)
+    {
+        try
+        {
+            modelState.addFullKey(write.key());
+            CompiledStatement compiledStatement = write.compile();
+
+            modelCluster.get(1).executeInternal(compiledStatement.cql(), compiledStatement.bindings());
+            testCluster.coordinator(node).execute(compiledStatement.cql(),
+                                                  cl,
                                                   compiledStatement.bindings());
         }
         catch (Throwable t)
@@ -105,9 +139,9 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
 
     protected void insertRows(List<WritesDSL.Insert> rows, int node)
     {
-        for (WritesDSL.DataRow row : rows)
+        for (WritesDSL.Write row : rows)
         {
-            insertRow(row, node);
+            run(row, node);
         }
     }
 
@@ -122,4 +156,12 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
     }
 
 
+    private void reportAndExit(Throwable t, int node)
+    {
+        System.out.println("Node: " + node);
+        System.out.println(schemaSpec.toCQL());
+        System.err.println(t.getMessage());
+        t.printStackTrace();
+        System.exit(1);
+    }
 }

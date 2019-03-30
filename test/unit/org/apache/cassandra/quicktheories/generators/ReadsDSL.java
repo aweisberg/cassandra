@@ -19,14 +19,12 @@
 package org.apache.cassandra.quicktheories.generators;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import com.datastax.driver.core.querybuilder.Clause;
 import com.datastax.driver.core.querybuilder.Ordering;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.Pair;
@@ -35,23 +33,27 @@ import org.quicktheories.generators.Generate;
 
 import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
 import static org.apache.cassandra.quicktheories.generators.Extensions.subsetGenerator;
-import static org.quicktheories.generators.SourceDSL.booleans;
-import static org.quicktheories.generators.SourceDSL.integers;
+import static org.apache.cassandra.quicktheories.generators.Relation.*;
+import static org.quicktheories.generators.SourceDSL.*;
 
 public class ReadsDSL
 {
-    public enum ReadType
+    public ReadsBuilder anyRead(SchemaSpec schemaSpec)
     {
-        SINGLE_PARTITION,
-        // TODO (alexp): implement these
-//        MULTI_PARTITION,
-//        PARTITION_RANGE_OPEN,
-//        PARTITION_RANGE_CLOSED,
-//        MULTI_CLUSTERING_SLICE,
-//        MULTI_CLUSTERING_RANGE,
-        SINGLE_ROW,
-        CLUSTERING_SLICE,
-        CLUSTERING_RANGE
+        return new ReadsBuilder(schemaSpec,
+                                schemaSpec.partitionKeyGenerator,
+                                pk -> schemaSpec.clusteringKeyGenerator,
+                                Generate.enumValues(QueryKind.class));
+    }
+
+    public ReadsBuilder anyRead(SchemaSpec schemaSpec,
+                                Gen<Object[]> pkGen,
+                                Function<Object[], Gen<Object[]>> ckGenSupplier)
+    {
+        return new ReadsBuilder(schemaSpec,
+                                pkGen,
+                                ckGenSupplier,
+                                Generate.enumValues(QueryKind.class));
     }
 
     public ReadsBuilder partitionRead(SchemaSpec schemaSpec)
@@ -59,7 +61,7 @@ public class ReadsDSL
         return new ReadsBuilder(schemaSpec,
                                 schemaSpec.partitionKeyGenerator,
                                 null,
-                                ReadType.SINGLE_PARTITION);
+                                Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
     public ReadsBuilder partitionRead(SchemaSpec schemaSpec, Object[] pk)
@@ -67,7 +69,7 @@ public class ReadsDSL
         return new ReadsBuilder(schemaSpec,
                                 Generate.constant(pk),
                                 null,
-                                ReadType.SINGLE_PARTITION);
+                                Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
     public ReadsBuilder rowRead(SchemaSpec schemaSpec)
@@ -77,7 +79,7 @@ public class ReadsDSL
         return new ReadsBuilder(schemaSpec,
                                 schemaSpec.partitionKeyGenerator,
                                 (pk) -> schemaSpec.clusteringKeyGenerator,
-                                ReadType.SINGLE_ROW);
+                                Generate.constant(QueryKind.SINGLE_ROW));
     }
 
     public ReadsBuilder rowRead(SchemaSpec schemaSpec, Gen<Object[]> pkGen, Function<Object[], Gen<Object[]>> ckGen)
@@ -85,7 +87,7 @@ public class ReadsDSL
         return new ReadsBuilder(schemaSpec,
                                 pkGen,
                                 ckGen,
-                                ReadType.SINGLE_ROW);
+                                Generate.constant(QueryKind.SINGLE_ROW));
     }
 
     /**
@@ -98,7 +100,7 @@ public class ReadsDSL
         return new ReadsBuilder(schemaSpec,
                                 schemaSpec.partitionKeyGenerator,
                                 (pk) -> schemaSpec.clusteringKeyGenerator,
-                                ReadType.CLUSTERING_SLICE);
+                                Generate.constant(QueryKind.CLUSTERING_SLICE));
     }
 
     /**
@@ -109,7 +111,7 @@ public class ReadsDSL
         return new ReadsBuilder(schemaSpec,
                                 schemaSpec.partitionKeyGenerator,
                                 (pk) -> schemaSpec.clusteringKeyGenerator,
-                                ReadType.CLUSTERING_RANGE);
+                                Generate.constant(QueryKind.CLUSTERING_RANGE));
     }
 
     private static Gen<List<String>> columnSubsetGen(SchemaSpec schemaSpec)
@@ -144,15 +146,12 @@ public class ReadsDSL
         });
     }
 
-    private static Gen<Sign> signGen = Generate.enumValues(Sign.class);
-    private static Gen<Sign> sliceSigns = Generate.pick(Arrays.asList(Sign.GT, Sign.GTE, Sign.LT, Sign.LTE));
-
     public static class ReadsBuilder
     {
         private final SchemaSpec schemaSpec;
         private final Gen<Object[]> pkGen;
         private final Function<Object[], Gen<Object[]>> ckGenSupplier;
-        private final ReadType readType;
+        private final Gen<QueryKind> readTypeGen;
 
         private boolean wildcard = true;
         private boolean addLimit = false;
@@ -161,19 +160,16 @@ public class ReadsDSL
         ReadsBuilder(SchemaSpec schemaSpec,
                      Gen<Object[]> pkGen,
                      Function<Object[], Gen<Object[]>> ckGenSupplier,
-                     ReadType readType)
+                     Gen<QueryKind> readTypeGen)
         {
             this.schemaSpec = schemaSpec;
             this.pkGen = pkGen;
             this.ckGenSupplier = ckGenSupplier;
-            this.readType = readType;
+            this.readTypeGen = readTypeGen;
         }
 
         public ReadsBuilder withColumnSelection()
         {
-            assert readType != ReadType.SINGLE_ROW ||
-                   schemaSpec.regularColumns.size() > 0 : "Can't use partition-level only selection when querying a row";
-
             this.wildcard = false;
             return this;
         }
@@ -190,93 +186,22 @@ public class ReadsDSL
             return this;
         }
 
-        // TODO: use
-        private void validate()
+        private QueryKind validate(QueryKind readType)
         {
             switch (readType)
             {
                 case SINGLE_PARTITION:
-                    assert pkGen != null;
-                    return;
+                    if (pkGen == null)
+                        throw new IllegalArgumentException("Need a partition key generator to generate partition reads");
+                    break;
                 case SINGLE_ROW:
                 case CLUSTERING_SLICE:
                 case CLUSTERING_RANGE:
-                    assert pkGen != null;
-                    assert ckGenSupplier != null;
+                    if (pkGen == null || ckGenSupplier == null)
+                        throw new IllegalArgumentException("Need a partition and a clustering key key generator to generate row and slice reads");
             }
-        }
 
-        private Gen<List<Relation>> relationsGen()
-        {
-            return (prng) -> {
-                List<Relation> relations = new ArrayList<>();
-                switch (readType)
-                {
-                    case SINGLE_PARTITION:
-                    {
-                        addRelation(pkGen.generate(prng), schemaSpec.partitionKeys, relations);
-                        break;
-                    }
-                    case SINGLE_ROW:
-                    {
-                        Object[] pk = pkGen.generate(prng);
-                        addRelation(pk, schemaSpec.partitionKeys, relations);
-                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
-                        addRelation(ckGen.generate(prng), schemaSpec.clusteringKeys, relations);
-                        break;
-                    }
-                    case CLUSTERING_SLICE:
-                    {
-                        Object[] pk = pkGen.generate(prng);
-                        addRelation(pk, schemaSpec.partitionKeys, relations);
-                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
-                        Object[] ck = ckGen.generate(prng);
-                        for (int i = 0; i < ck.length; i++)
-                        {
-                            ColumnSpec<?> spec = schemaSpec.clusteringKeys.get(i);
-                            Sign sign = signGen.generate(prng);
-                            relations.add(relation(spec.name, sign, ck[i]));
-
-                            if (sign != Sign.EQ)
-                                break;
-                        }
-
-                        break;
-                    }
-                    case CLUSTERING_RANGE:
-                    {
-                        Object[] pk = pkGen.generate(prng);
-                        addRelation(pk, schemaSpec.partitionKeys, relations);
-                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
-                        Object[] ck1 = ckGen.generate(prng);
-                        Object[] ck2 = ckGen.generate(prng);
-                        assert ck1.length == ck2.length;
-                        for (int i = 0; i < ck1.length; i++)
-                        {
-                            ColumnSpec<?> spec = schemaSpec.clusteringKeys.get(i);
-                            Sign sign = signGen.generate(prng);
-                            relations.add(relation(spec.name, sign, ck1[i]));
-                            // TODO (alexp): we can also use a roll of dice to mark inclusion/exclusion
-                            if (sign.isNegatable())
-                                relations.add(relation(spec.name, sign.negate(), ck2[i]));
-
-                            if (sign != Sign.EQ)
-                                break;
-                        }
-                    }
-                }
-
-                return relations;
-            };
-        }
-
-        private static void addRelation(Object[] pk, List<ColumnSpec<?>> columnSpecs, List<Relation> relations)
-        {
-            for (int i = 0; i < pk.length; i++)
-            {
-                ColumnSpec<?> spec = columnSpecs.get(i);
-                relations.add(new Relation(spec.name, Sign.EQ, pk[i]));
-            }
+            return readType;
         }
 
         // TODO (alexp): make it possible to provide columns
@@ -284,6 +209,7 @@ public class ReadsDSL
         {
             Gen<Optional<List<String>>> selectionGen = wildcard
                                                        ? Generate.constant(Optional.empty())
+                                                       // TODO: validate partition-only selection in row-level query
                                                        : columnSubsetGen(schemaSpec).map(Optional::of);
 
             Gen<Optional<Integer>> limitGen = addLimit
@@ -294,7 +220,10 @@ public class ReadsDSL
                                                            ? clusteringOrderGen(schemaSpec.clusteringKeys)
                                                            : Generate.constant(Collections.EMPTY_LIST);
 
-            return selectionGen.zip(relationsGen(),
+            return selectionGen.zip(readTypeGen.map(this::validate).flatMap(readType -> Relation.relationsGen(schemaSpec,
+                                                                                                              pkGen,
+                                                                                                              ckGenSupplier,
+                                                                                                              readType)),
                                     limitGen,
                                     orderingGen,
                                     (selection, relations, limit, order) -> {
@@ -305,32 +234,6 @@ public class ReadsDSL
                                                           order);
                                     });
         }
-    }
-
-    public static class Relation
-    {
-        private final String column;
-        private final Sign sign;
-        private final Object value;
-
-        public Relation(String column,
-                        Sign sign,
-                        Object value)
-        {
-            this.column = column;
-            this.sign = sign;
-            this.value = value;
-        }
-
-        public Clause toClause()
-        {
-            return sign.getClause(column, bindMarker());
-        }
-    }
-
-    public static Relation relation(String column, Sign sign, Object value)
-    {
-        return new Relation(column, sign, value);
     }
 
     public static class Select
@@ -372,7 +275,7 @@ public class ReadsDSL
                 for (Relation relation : relations)
                 {
                     where.and(relation.toClause());
-                    bindings[bindingCount++] = relation.value;
+                    bindings[bindingCount++] = relation.value();
                 }
             }
 

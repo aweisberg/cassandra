@@ -18,46 +18,32 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import com.google.common.collect.Streams;
-
 import com.datastax.driver.core.querybuilder.Clause;
-import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
-import org.quicktheories.generators.ArbitraryDSL;
 import org.quicktheories.generators.Generate;
 
-import static com.datastax.driver.core.querybuilder.QueryBuilder.bindMarker;
-import static com.datastax.driver.core.querybuilder.QueryBuilder.column;
-import static com.datastax.driver.core.querybuilder.QueryBuilder.eq;
-import static com.datastax.driver.core.querybuilder.QueryBuilder.timestamp;
-import static org.quicktheories.generators.SourceDSL.arbitrary;
-import static org.quicktheories.generators.SourceDSL.booleans;
-import static org.quicktheories.generators.SourceDSL.integers;
+import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
+import static org.quicktheories.generators.SourceDSL.*;
+import static org.apache.cassandra.quicktheories.generators.Relation.*;
 
 public class DeletesDSL
 {
-    // TODO: delete a single field
-    // TODO: conditional updates
-    public enum DeleteType
+
+    public DeletesBuilder anyDelete(SchemaSpec schema,
+                                    Gen<Object[]> pkGen,
+                                    Function<Object[], Gen<Object[]>> ckGenSupplier)
     {
-        SINGLE_PARTITION,
-//        PARTITION_RANGE_OPEN,
-//        PARTITION_RANGE_CLOSED,
-//        MULTI_CLUSTERING_SLICE,
-//        MULTI_CLUSTERING_RANGE,
-        SINGLE_ROW,
-        CLUSTERING_SLICE,
-        CLUSTERING_RANGE
+        return new DeletesBuilder(schema,
+                                  pkGen,
+                                  ckGenSupplier,
+                                  Generate.enumValues(QueryKind.class));
     }
 
     public DeletesBuilder partitionDelete(SchemaSpec schema)
@@ -65,7 +51,7 @@ public class DeletesDSL
         return new DeletesBuilder(schema,
                                   schema.partitionKeyGenerator,
                                   null,
-                                  DeleteType.SINGLE_PARTITION);
+                                  Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
 
@@ -82,7 +68,7 @@ public class DeletesDSL
         return new DeletesBuilder(schema,
                                   partitionKeys,
                                   null,
-                                  DeleteType.SINGLE_PARTITION);
+                                  Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
     public DeletesBuilder rowDelete(SchemaSpec schema)
@@ -90,7 +76,7 @@ public class DeletesDSL
         return new DeletesBuilder(schema,
                                   schema.partitionKeyGenerator,
                                   (pk) -> schema.clusteringKeyGenerator,
-                                  DeleteType.SINGLE_ROW);
+                                  Generate.constant(QueryKind.SINGLE_ROW));
     }
 
     /**
@@ -108,7 +94,7 @@ public class DeletesDSL
         return new DeletesBuilder(schema,
                                   partitionKeys,
                                   clusterings,
-                                  DeleteType.SINGLE_ROW);
+                                  Generate.constant(QueryKind.SINGLE_ROW));
     }
 
     public DeletesBuilder rowSliceDelete(SchemaSpec schema)
@@ -125,7 +111,7 @@ public class DeletesDSL
         return new DeletesBuilder(schema,
                                   partitionKeys,
                                   clusterings,
-                                  DeleteType.CLUSTERING_SLICE);
+                                  Generate.constant(QueryKind.CLUSTERING_SLICE));
     }
 
     public DeletesBuilder rowRangeDelete(SchemaSpec schema)
@@ -142,39 +128,13 @@ public class DeletesDSL
         return new DeletesBuilder(schema,
                                   partitionKeys,
                                   clusterings,
-                                  DeleteType.CLUSTERING_RANGE);
-    }
-
-    public static class Relation
-    {
-        private final String column;
-        private final Sign sign;
-        private final Object value;
-
-        public Relation(String column,
-                        Sign sign,
-                        Object value)
-        {
-            this.column = column;
-            this.sign = sign;
-            this.value = value;
-        }
-
-        public Clause toClause()
-        {
-            return sign.getClause(column, bindMarker());
-        }
-    }
-
-    public static Relation relation(String column, Sign sign, Object value)
-    {
-        return new Relation(column, sign, value);
+                                  Generate.constant(QueryKind.CLUSTERING_RANGE));
     }
 
     public static class DeletesBuilder
     {
         private final SchemaSpec schemaSpec;
-        private final DeleteType deleteType;
+        private final Gen<QueryKind> deleteKindGen;
         private final Gen<Object[]> pkGen;
         private final Function<Object[], Gen<Object[]>> ckGenSupplier;
         private Gen<Optional<List<String>>> columnDeleteGenerator = Generate.constant(Optional.empty());
@@ -183,17 +143,12 @@ public class DeletesDSL
         DeletesBuilder(SchemaSpec schemaSpec,
                        Gen<Object[]> pkGen,
                        Function<Object[], Gen<Object[]>> ckGenSupplier,
-                       DeleteType deleteType)
+                       Gen<QueryKind> deleteKindGen)
         {
             this.schemaSpec = schemaSpec;
             this.pkGen = pkGen;
             this.ckGenSupplier = ckGenSupplier;
-            this.deleteType = deleteType;
-        }
-
-        public DeleteType deleteType()
-        {
-            return deleteType;
+            this.deleteKindGen = deleteKindGen;
         }
 
         public DeletesBuilder withTimestamp(Gen<Long> timestamps)
@@ -222,85 +177,32 @@ public class DeletesDSL
                                                    .map(Optional::of);
             return this;
         }
-        private static void addRelation(Object[] pk, List<ColumnSpec<?>> columnSpecs, List<Relation> relations)
+
+        private QueryKind validate(QueryKind readType)
         {
-            for (int i = 0; i < pk.length; i++)
+            switch (readType)
             {
-                ColumnSpec<?> spec = columnSpecs.get(i);
-                relations.add(relation(spec.name, Sign.EQ, pk[i]));
+                case SINGLE_PARTITION:
+                    if (pkGen == null)
+                        throw new IllegalArgumentException("Need a partition key generator to generate partition deletes");
+                    break;
+                case SINGLE_ROW:
+                case CLUSTERING_SLICE:
+                case CLUSTERING_RANGE:
+                    if (pkGen == null || ckGenSupplier == null)
+                        throw new IllegalArgumentException("Need a partition and a clustering key key generator to generate row and slice reads");
             }
+
+            return readType;
         }
 
-        private static Gen<Sign> signGen = Generate.enumValues(Sign.class);
-
-        // TODO: take this out; combine with reads dsl
-        private Gen<List<Relation>> relationsGen()
-        {
-            return (prng) -> {
-                List<Relation> relations = new ArrayList<>();
-                switch (deleteType)
-                {
-                    case SINGLE_PARTITION:
-                    {
-                        addRelation(pkGen.generate(prng), schemaSpec.partitionKeys, relations);
-                        break;
-                    }
-                    case SINGLE_ROW:
-                    {
-                        Object[] pk = pkGen.generate(prng);
-                        addRelation(pk, schemaSpec.partitionKeys, relations);
-                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
-                        addRelation(ckGen.generate(prng), schemaSpec.clusteringKeys, relations);
-                        break;
-                    }
-                    case CLUSTERING_SLICE:
-                    {
-                        Object[] pk = pkGen.generate(prng);
-                        addRelation(pk, schemaSpec.partitionKeys, relations);
-                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
-                        Object[] ck = ckGen.generate(prng);
-                        for (int i = 0; i < ck.length; i++)
-                        {
-                            ColumnSpec<?> spec = schemaSpec.clusteringKeys.get(i);
-                            Sign sign = signGen.generate(prng);
-                            relations.add(relation(spec.name, sign, ck[i]));
-
-                            if (sign != Sign.EQ)
-                                break;
-                        }
-
-                        break;
-                    }
-                    case CLUSTERING_RANGE:
-                    {
-                        Object[] pk = pkGen.generate(prng);
-                        addRelation(pk, schemaSpec.partitionKeys, relations);
-                        Gen<Object[]> ckGen = ckGenSupplier.apply(pk);
-                        Object[] ck1 = ckGen.generate(prng);
-                        Object[] ck2 = ckGen.generate(prng);
-                        assert ck1.length == ck2.length;
-                        for (int i = 0; i < ck1.length; i++)
-                        {
-                            ColumnSpec<?> spec = schemaSpec.clusteringKeys.get(i);
-                            Sign sign = signGen.generate(prng);
-                            relations.add(relation(spec.name, sign, ck1[i]));
-                            // TODO (alexp): we can also use a roll of dice to mark inclusion/exclusion
-                            if (sign.isNegatable())
-                                relations.add(relation(spec.name, sign.negate(), ck2[i]));
-
-                            if (sign != Sign.EQ)
-                                break;
-                        }
-                    }
-                }
-
-                return relations;
-            };
-        }
 
         public Gen<Delete> build()
         {
-            return columnDeleteGenerator.zip(relationsGen(),
+            return columnDeleteGenerator.zip(deleteKindGen.map(this::validate).flatMap(deleteKind -> Relation.relationsGen(schemaSpec,
+                                                                                                                           pkGen,
+                                                                                                                           ckGenSupplier,
+                                                                                                                           deleteKind)),
                                              timestampGen,
                                              (columns, relations, ts) -> new Delete(schemaSpec,
                                                                                     columns,
@@ -339,7 +241,7 @@ public class DeletesDSL
             for (int i = 0; i < relations.size(); i++)
             {
                 where.and(relations.get(i).toClause());
-                bindings[i] = relations.get(i).value;
+                bindings[i] = relations.get(i).value();
             }
 
             timestamp.ifPresent(delete::setDefaultTimestamp);
