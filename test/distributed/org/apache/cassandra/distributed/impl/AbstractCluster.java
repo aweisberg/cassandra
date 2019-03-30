@@ -30,9 +30,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -342,20 +339,23 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
     create(int nodeCount, File root, Factory<I, C> factory)
     {
-        return create(nodeCount, Versions.CURRENT, root, factory);
+        return create(nodeCount, Versions.CURRENT, root, factory, false);
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
     create(int nodeCount, Versions.Version version, Factory<I, C> factory) throws IOException
     {
-        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory);
+        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory, false);
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
-    create(int nodeCount, Versions.Version version, File root, Factory<I, C> factory)
+    create(int nodeCount, Versions.Version version, File root, Factory<I, C> factory, boolean silent)
     {
         root.mkdirs();
-        setupLogging(root);
+        if (silent)
+            setupLogging(root);
+        else
+            setupSilentLogging(root);
 
         ClassLoader sharedClassLoader = Thread.currentThread().getContextClassLoader();
 
@@ -375,13 +375,22 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
 
     private static void setupLogging(File root)
     {
+        setupLogging(root, "test/conf/logback-dtest.xml");
+    }
+
+    private static void setupSilentLogging(File root)
+    {
+        setupLogging(root, "test/conf/logback-dtest-silent.xml");
+    }
+
+    private static void setupLogging(File root, String testconfPath)
+    {
         try
         {
-            String testConfPath = "test/conf/logback-dtest.xml";
             Path logConfPath = Paths.get(root.getPath(), "/logback-dtest.xml");
             if (!logConfPath.toFile().exists())
             {
-                Files.copy(new File(testConfPath).toPath(),
+                Files.copy(new File(testconfPath).toPath(),
                            logConfPath);
             }
             System.setProperty("logback.configurationFile", "file://" + logConfPath);

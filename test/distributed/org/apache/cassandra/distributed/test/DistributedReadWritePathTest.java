@@ -37,9 +37,6 @@ public class DistributedReadWritePathTest extends DistributedTestBase
     {
         // TODO: API to turn logging off and on
         // maybe something like node.silence()
-        System.setProperty("logback.configurationFile",
-                           new File("test/conf/logback-dtest.xml").getAbsolutePath());
-
         try (Cluster cluster = init(Cluster.create(3)))
         {
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
