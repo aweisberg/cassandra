@@ -54,17 +54,17 @@ public class UpgradeableCluster extends AbstractCluster<IUpgradeableInstance> im
     }
     public static UpgradeableCluster create(int nodeCount, File root)
     {
-        return create(nodeCount, Versions.CURRENT, root, UpgradeableCluster::new, false);
+        return create(nodeCount, Versions.CURRENT, root, UpgradeableCluster::new);
     }
 
     public static UpgradeableCluster create(int nodeCount, Versions.Version version) throws IOException
     {
-        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), UpgradeableCluster::new, false);
+        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), UpgradeableCluster::new);
     }
 
     public static UpgradeableCluster create(int nodeCount, Versions.Version version, File root)
     {
-        return create(nodeCount, version, root, UpgradeableCluster::new, false);
+        return create(nodeCount, version, root, UpgradeableCluster::new);
     }
 
 }

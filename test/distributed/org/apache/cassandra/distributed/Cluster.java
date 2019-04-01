@@ -50,14 +50,9 @@ public class Cluster extends AbstractCluster<IInvokableInstance> implements IClu
         return create(nodeCount, Cluster::new);
     }
 
-    public static Cluster create(int nodeCount, boolean silent) throws Throwable
-    {
-        return create(nodeCount, Versions.CURRENT, Cluster::new, silent);
-    }
-
     public static Cluster create(int nodeCount, File root)
     {
-        return create(nodeCount, Versions.CURRENT, root, Cluster::new, false);
+        return create(nodeCount, Versions.CURRENT, root, Cluster::new);
     }
 }
 

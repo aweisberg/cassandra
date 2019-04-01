@@ -27,6 +27,7 @@ import java.util.function.Function;
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
@@ -85,7 +86,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                            .flatMap(ReadsDSL.ReadsBuilder::build);
 
 
-        try (AbstractCluster testCluster = init(1))
+        try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
             qt().forAll(pairWithSchema(toBuilder))
                 .checkAssert(p -> {
@@ -129,7 +130,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                                                      return builder;
                                                  }).flatMap(builder -> insert ? builder.insert() : builder.update());
 
-        try (AbstractCluster testCluster = init(1))
+        try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
             qt().forAll(pairWithSchema(makeBuilder))
                 .checkAssert(p -> {
@@ -184,7 +185,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                                 })
                            .flatMap(DeletesDSL.DeletesBuilder::build);
 
-        try (AbstractCluster testCluster = init(1))
+        try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
             qt().forAll(pairWithSchema(toBuilder))
                 .checkAssert(p -> {

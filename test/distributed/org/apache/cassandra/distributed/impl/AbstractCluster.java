@@ -339,30 +339,20 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
     create(int nodeCount, File root, Factory<I, C> factory)
     {
-        return create(nodeCount, Versions.CURRENT, root, factory, false);
+        return create(nodeCount, Versions.CURRENT, root, factory);
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
     create(int nodeCount, Versions.Version version, Factory<I, C> factory) throws IOException
     {
-        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory, false);
+        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory);
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
-    create(int nodeCount, Versions.Version version, Factory<I, C> factory, boolean silent) throws IOException
-    {
-        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory, silent);
-    }
-
-    protected static <I extends IInstance, C extends AbstractCluster<I>> C
-    create(int nodeCount, Versions.Version version, File root, Factory<I, C> factory, boolean silent)
+    create(int nodeCount, Versions.Version version, File root, Factory<I, C> factory)
     {
         root.mkdirs();
-
-        if (silent)
-            setupSilentLogging(root);
-        else
-            setupLogging(root);
+        setupLogging(root);
 
         ClassLoader sharedClassLoader = Thread.currentThread().getContextClassLoader();
 
@@ -382,22 +372,16 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
 
     private static void setupLogging(File root)
     {
-        setupLogging(root, "test/conf/logback-dtest.xml");
-    }
-
-    private static void setupSilentLogging(File root)
-    {
-        setupLogging(root, "test/conf/logback-dtest-silent.xml");
-    }
-
-    private static void setupLogging(File root, String testconfPath)
-    {
         try
         {
+            String confSrc = System.getProperty("org.apache.cassandra.test.logback.configurationFile");
+            if (confSrc == null)
+                confSrc = "test/conf/logback-dtest.xml";
+
             Path logConfPath = Paths.get(root.getPath(), "/logback-dtest.xml");
             if (!logConfPath.toFile().exists())
             {
-                Files.copy(new File(testconfPath).toPath(),
+                Files.copy(new File(confSrc).toPath(),
                            logConfPath);
             }
             System.setProperty("logback.configurationFile", "file://" + logConfPath);

@@ -22,6 +22,7 @@ import java.util.function.Supplier;
 
 import org.junit.Test;
 
+import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.quicktheories.impl.stateful.StatefulTheory;
@@ -41,8 +42,8 @@ public class DistributedQTTest extends DistributedTestBase
     @Test
     public void readWriteTest() throws Throwable
     {
-        try (AbstractCluster testCluster = init(3);
-             AbstractCluster modelCluster = init(1))
+        try (AbstractCluster testCluster = init(Cluster.create(3));
+             AbstractCluster modelCluster = init(Cluster.create(1)))
         {
             modelCluster.disableAutoCompaction(KEYSPACE);
 

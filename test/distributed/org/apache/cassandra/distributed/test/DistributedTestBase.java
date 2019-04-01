@@ -24,17 +24,23 @@ import java.util.Iterator;
 import java.util.List;
 
 import com.google.common.collect.Iterators;
+import com.google.common.io.Resources;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
+import org.apache.tools.ant.util.ResourceUtils;
 import org.quicktheories.QuickTheory;
 import org.quicktheories.core.Profile;
 
 public class DistributedTestBase
 {
+    private final static String TEST_LOGBACK_CONFIG_PROPERTY = "org.apache.cassandra.test.logback.configurationFile";
+    private final static String LOGBACK_CONFIG_PROPERTY = "logback.configurationFile";
+    private final static String DEFAULT_LOGBACK_CONFIG = "test/conf/logback-dtest-silent.xml";
+
     @After
     public void afterEach()
     {
@@ -47,6 +53,12 @@ public class DistributedTestBase
     @BeforeClass
     public static void setup()
     {
+        // Set default dtest config file
+        if (System.getProperty(TEST_LOGBACK_CONFIG_PROPERTY) == null)
+            System.setProperty(TEST_LOGBACK_CONFIG_PROPERTY, DEFAULT_LOGBACK_CONFIG);
+        if (System.getProperty(LOGBACK_CONFIG_PROPERTY) == null)
+            System.setProperty(LOGBACK_CONFIG_PROPERTY, DEFAULT_LOGBACK_CONFIG);
+
         System.setProperty("org.apache.cassandra.disable_mbean_registration", "true");
         Profile.registerDefaultProfile(DistributedTestBase.class, s -> {
             // Defaults for local running
@@ -60,12 +72,6 @@ public class DistributedTestBase
     protected static QuickTheory qt()
     {
         return QuickTheory.qt().withProfile(DistributedTestBase.class, "ci");
-    }
-
-    protected static Cluster init(int nodeCount) throws Throwable
-    {
-        boolean silent = Boolean.getBoolean("org.apache.cassandra.test.nolog");
-        return init(Cluster.create(nodeCount, silent));
     }
 
     protected static <C extends AbstractCluster<?>> C init(C cluster)
