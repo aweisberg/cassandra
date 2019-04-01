@@ -27,7 +27,6 @@ import java.util.function.Function;
 import org.junit.Test;
 
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
@@ -41,7 +40,6 @@ import org.quicktheories.generators.SourceDSL;
 
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.operations;
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.schemas;
-import static org.quicktheories.QuickTheory.qt;
 
 public class GeneratorDSLTest extends DistributedTestBase
 {
@@ -55,11 +53,9 @@ public class GeneratorDSLTest extends DistributedTestBase
 
     private static <T> Gen<Pair<SchemaSpec, List<T>>> pairWithSchema(Function<SchemaSpec, Gen<T>> fn)
     {
-        return testSchemas.flatMap(schema -> {
-            return SourceDSL.lists()
-                            .of(fn.apply(schema)).ofSizeBetween(10, 100)
-                            .map(item -> Pair.create(schema, item));
-        });
+        return testSchemas.flatMap(schema -> SourceDSL.lists()
+                                                  .of(fn.apply(schema)).ofSizeBetween(10, 100)
+                                                  .map(item -> Pair.create(schema, item)));
     }
 
     // Makes sure that we generally generate correct CQL, withouot regard to its semantics
@@ -89,10 +85,9 @@ public class GeneratorDSLTest extends DistributedTestBase
                            .flatMap(ReadsDSL.ReadsBuilder::build);
 
 
-        try (AbstractCluster testCluster = init(Cluster.create(1)))
+        try (AbstractCluster testCluster = init(1))
         {
-            qt().withShrinkCycles(0)
-                .forAll(pairWithSchema(toBuilder))
+            qt().forAll(pairWithSchema(toBuilder))
                 .checkAssert(p -> {
                     testCluster.schemaChange(p.left.toCQL());
 
@@ -134,10 +129,9 @@ public class GeneratorDSLTest extends DistributedTestBase
                                                      return builder;
                                                  }).flatMap(builder -> insert ? builder.insert() : builder.update());
 
-        try (AbstractCluster testCluster = init(Cluster.create(1)))
+        try (AbstractCluster testCluster = init(1))
         {
-            qt().withShrinkCycles(0)
-                .forAll(pairWithSchema(makeBuilder))
+            qt().forAll(pairWithSchema(makeBuilder))
                 .checkAssert(p -> {
                     testCluster.schemaChange(p.left.toCQL());
 
@@ -190,10 +184,9 @@ public class GeneratorDSLTest extends DistributedTestBase
                                 })
                            .flatMap(DeletesDSL.DeletesBuilder::build);
 
-        try (AbstractCluster testCluster = init(Cluster.create(1)))
+        try (AbstractCluster testCluster = init(1))
         {
-            qt().withShrinkCycles(0)
-                .forAll(pairWithSchema(toBuilder))
+            qt().forAll(pairWithSchema(toBuilder))
                 .checkAssert(p -> {
                     testCluster.schemaChange(p.left.toCQL());
 

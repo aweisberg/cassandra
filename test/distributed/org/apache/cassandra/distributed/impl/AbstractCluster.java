@@ -349,13 +349,20 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
+    create(int nodeCount, Versions.Version version, Factory<I, C> factory, boolean silent) throws IOException
+    {
+        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory, silent);
+    }
+
+    protected static <I extends IInstance, C extends AbstractCluster<I>> C
     create(int nodeCount, Versions.Version version, File root, Factory<I, C> factory, boolean silent)
     {
         root.mkdirs();
+
         if (silent)
-            setupLogging(root);
-        else
             setupSilentLogging(root);
+        else
+            setupLogging(root);
 
         ClassLoader sharedClassLoader = Thread.currentThread().getContextClassLoader();
 

@@ -18,40 +18,32 @@
 
 package org.apache.cassandra.quicktheories.tests;
 
-import java.io.File;
 import java.util.function.Supplier;
 
 import org.junit.Test;
 
-import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
 import org.quicktheories.impl.stateful.StatefulTheory;
 
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.operations;
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.schemas;
-import static org.quicktheories.QuickTheory.qt;
 import static org.quicktheories.impl.stateful.StatefulTheory.builder;
 
 public class DistributedQTTest extends DistributedTestBase
 {
     private void stateful(Supplier<StatefulTheory<StatefulTheory.Step>> supplier)
     {
-        qt().withExamples(500)
-            .withMinStatefulSteps(10000)
-            .withMaxStatefulSteps(100000)
+        qt().withProfile(DistributedTestBase.class, "ci")
             .stateful(supplier::get);
     }
 
     @Test
     public void readWriteTest() throws Throwable
     {
-        try (AbstractCluster testCluster = Cluster.create(3);
-             AbstractCluster modelCluster = Cluster.create(1))
+        try (AbstractCluster testCluster = init(3);
+             AbstractCluster modelCluster = init(1))
         {
-            init(testCluster);
-            init(modelCluster);
-
             modelCluster.disableAutoCompaction(KEYSPACE);
 
             stateful(() -> new StatefulModel(new InMemoryModel(),

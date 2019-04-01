@@ -28,7 +28,10 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 
+import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
+import org.quicktheories.QuickTheory;
+import org.quicktheories.core.Profile;
 
 public class DistributedTestBase
 {
@@ -45,6 +48,24 @@ public class DistributedTestBase
     public static void setup()
     {
         System.setProperty("org.apache.cassandra.disable_mbean_registration", "true");
+        Profile.registerDefaultProfile(DistributedTestBase.class, s -> {
+            // Defaults for local running
+            return s.withExamples(50)
+             .withMinStatefulSteps(100)
+             .withMaxStatefulSteps(1000);
+        });
+
+    }
+
+    protected static QuickTheory qt()
+    {
+        return QuickTheory.qt().withProfile(DistributedTestBase.class, "ci");
+    }
+
+    protected static Cluster init(int nodeCount) throws Throwable
+    {
+        boolean silent = Boolean.getBoolean("org.apache.cassandra.test.nolog");
+        return init(Cluster.create(nodeCount, silent));
     }
 
     protected static <C extends AbstractCluster<?>> C init(C cluster)
