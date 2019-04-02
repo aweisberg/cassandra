@@ -300,6 +300,14 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
         }).run();
     }
 
+    public void disableAutoCompaction(String keyspace)
+    {
+        sync(() -> {
+            for (ColumnFamilyStore columnFamilyStore : Keyspace.open(keyspace).getColumnFamilyStores())
+                columnFamilyStore.disableAutoCompaction();
+        }).run();
+    }
+
     private void mkdirs()
     {
         new File(config.getString("saved_caches_directory")).mkdirs();

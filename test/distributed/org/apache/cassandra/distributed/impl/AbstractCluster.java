@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -41,9 +42,7 @@ import com.google.common.collect.Sets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.distributed.api.ICoordinator;
 import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
@@ -167,6 +166,14 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
             return future;
         }
 
+        public void disableAutoCompaction(String ks)
+        {
+            if (isShutdown)
+                throw new IllegalStateException();
+
+            delegate.disableAutoCompaction(ks);
+        }
+
         @Override
         public void receiveMessage(IMessage message)
         {
@@ -229,7 +236,7 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         return instances.size();
     }
     public Stream<I> stream() { return instances.stream(); }
-    public void forEach(IIsolatedExecutor.SerializableRunnable runnable) { forEach(i -> i.sync(runnable)); }
+    public void forEach(IIsolatedExecutor.SerializableRunnable runnable) { forEach(i -> i.sync(runnable).run() ); }
     public void forEach(Consumer<? super I> consumer) { instances.forEach(consumer); }
     public void parallelForEach(IIsolatedExecutor.SerializableConsumer<? super I> consumer, long timeout, TimeUnit units)
     {
@@ -245,10 +252,8 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
 
     public void disableAutoCompaction(String keyspace)
     {
-        forEach(() -> {
-            for (ColumnFamilyStore cs : Keyspace.open(keyspace).getColumnFamilyStores())
-                cs.disableAutoCompaction();
-        });
+        for (I instance : instances)
+            instance.disableAutoCompaction(keyspace);
     }
 
     public void schemaChange(String query)

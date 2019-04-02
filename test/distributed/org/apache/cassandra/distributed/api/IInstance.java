@@ -43,5 +43,6 @@ public interface IInstance extends IIsolatedExecutor
 
     // these methods are not for external use, but for simplicity we leave them public and on the normal IInstance interface
     void startup(ICluster cluster);
+    void disableAutoCompaction(String ks);
     void receiveMessage(IMessage message);
 }
