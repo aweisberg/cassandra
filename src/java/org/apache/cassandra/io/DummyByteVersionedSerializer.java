@@ -43,7 +43,8 @@ public class DummyByteVersionedSerializer implements IVersionedSerializer<byte[]
 
     public byte[] deserialize(DataInputPlus in, int version) throws IOException
     {
-        assert(0 == in.readByte());
+        int i =  in.readByte();
+        assert 0 == i;
         return MessagingService.ONE_BYTE;
     }
 
