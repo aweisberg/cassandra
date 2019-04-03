@@ -22,6 +22,8 @@ import java.util.Iterator;
 import java.util.List;
 
 import com.google.common.collect.Iterators;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
@@ -38,6 +40,8 @@ import static org.apache.cassandra.distributed.test.DistributedTestBase.assertRo
 
 public abstract class StatefulModel extends StatefulTheory.StepBased
 {
+    private static final Logger logger = LoggerFactory.getLogger(StatefulModel.class);
+
     private final AbstractCluster testCluster;
     private final AbstractCluster modelCluster;
     protected final ModelState modelState;
@@ -83,9 +87,10 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
                                                                       compiled.bindings());
             assertRows(modelRows, sutRows);
         }
-        catch (Exception e)
+        catch (Throwable t)
         {
-            reportAndExit(e, node);
+            logger.error(String.format("Caught exception while executing: %s", query), t);
+            throw t;
         }
     }
 
@@ -107,9 +112,8 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         }
         catch (Throwable t)
         {
-            // TODO (alexp): make stateful print stack trace instead of just saying that stuff has failed
-            System.out.println("t = " + t);
-            t.printStackTrace();
+            logger.error(String.format("Caught exception while executing: %s", delete), t);
+            throw t;
         }
     }
 
@@ -131,18 +135,15 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         }
         catch (Throwable t)
         {
-            // TODO (alexp): make stateful print stack trace instead of just saying that stuff has failed
-            System.out.println("t = " + t);
-            t.printStackTrace();
+            logger.error(String.format("Caught exception while executing: %s", write), t);
+            throw t;
         }
     }
 
     protected void insertRows(List<WritesDSL.Insert> rows, int node)
     {
         for (WritesDSL.Write row : rows)
-        {
             run(row, node);
-        }
     }
 
     public void initSchema(SchemaSpec schemaSpec)
@@ -150,18 +151,8 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         assert this.schemaSpec == null : "Schema was already initialized";
         this.schemaSpec = schemaSpec;
         String ddl = schemaSpec.toCQL();
-        System.out.println("CREATING SCHEMA: \n" + ddl);
+        logger.info("Creating schema:", ddl);
         modelCluster.schemaChange(ddl);
         testCluster.schemaChange(ddl);
-    }
-
-
-    private void reportAndExit(Throwable t, int node)
-    {
-        System.out.println("Node: " + node);
-        System.out.println(schemaSpec.toCQL());
-        System.err.println(t.getMessage());
-        t.printStackTrace();
-        System.exit(1);
     }
 }

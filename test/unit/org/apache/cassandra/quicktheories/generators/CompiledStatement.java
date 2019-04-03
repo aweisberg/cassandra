@@ -18,6 +18,8 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
+import java.util.Arrays;
+
 public class CompiledStatement
 {
 
@@ -41,5 +43,14 @@ public class CompiledStatement
     public static CompiledStatement create(String cql, Object[] bindings)
     {
         return new CompiledStatement(cql, bindings);
+    }
+
+
+    public String toString()
+    {
+        return "CompiledStatement{" +
+               "cql='" + cql + '\'' +
+               ", bindings=" + Arrays.toString(bindings) +
+               '}';
     }
 }
