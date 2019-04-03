@@ -60,13 +60,15 @@ public class DistributedTestBase
             System.setProperty(LOGBACK_CONFIG_PROPERTY, DEFAULT_LOGBACK_CONFIG);
 
         System.setProperty("org.apache.cassandra.disable_mbean_registration", "true");
-        Profile.registerDefaultProfile(DistributedTestBase.class, s -> {
-            // Defaults for local running
-            return s.withExamples(50)
-             .withMinStatefulSteps(100)
-             .withMaxStatefulSteps(1000);
-        });
-
+        if (!Profile.getProfile(DistributedTestBase.class, "default").isPresent())
+        {
+            Profile.registerDefaultProfile(DistributedTestBase.class, s -> {
+                // Defaults for local running
+                return s.withExamples(50)
+                        .withMinStatefulSteps(100)
+                        .withMaxStatefulSteps(1000);
+            });
+        }
     }
 
     protected static QuickTheory qt()
