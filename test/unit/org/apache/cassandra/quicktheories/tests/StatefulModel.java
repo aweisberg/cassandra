@@ -151,7 +151,7 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         assert this.schemaSpec == null : "Schema was already initialized";
         this.schemaSpec = schemaSpec;
         String ddl = schemaSpec.toCQL();
-        logger.info("Creating schema:", ddl);
+        logger.info("Creating schema: {}", ddl);
         modelCluster.schemaChange(ddl);
         testCluster.schemaChange(ddl);
     }
