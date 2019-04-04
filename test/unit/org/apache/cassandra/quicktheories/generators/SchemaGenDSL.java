@@ -42,6 +42,7 @@ import static org.quicktheories.generators.SourceDSL.integers;
 import static org.quicktheories.generators.SourceDSL.lists;
 import static org.quicktheories.generators.SourceDSL.longs;
 
+// TODO: rework schemagen to intermediate representation, too
 public class SchemaGenDSL
 {
     public SchemaGenBuilder keyspace(String keyspace) {

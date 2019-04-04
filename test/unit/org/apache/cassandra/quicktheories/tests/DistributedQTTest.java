@@ -87,7 +87,7 @@ public class DistributedQTTest extends DistributedTestBase
                                                       .build(),
                                     () -> nodeSelector));
 
-                    addStep(builder("Generate Deletea",
+                    addStep(builder("Generate Delete",
                                     this::run,
                                     () -> operations().deletes().anyDelete(schemaSpec,
                                                                            modelState.primaryKeyGen(),

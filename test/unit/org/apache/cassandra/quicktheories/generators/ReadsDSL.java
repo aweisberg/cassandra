@@ -297,14 +297,11 @@ public class ReadsDSL
             return CompiledStatement.create(statement.toString(), bindings);
         }
 
+        @Override
         public String toString()
         {
-            return "Select{" +
-                   "selectedColumns=" + selectedColumns +
-                   ", relations=" + relations +
-                   ", limit=" + limit +
-                   ", ordering=" + ordering +
-                   '}';
+            // A little wasteful, but necessary
+            return compile().toString();
         }
     }
 }

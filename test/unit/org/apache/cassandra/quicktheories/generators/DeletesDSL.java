@@ -247,6 +247,13 @@ public class DeletesDSL
             timestamp.ifPresent(delete::setDefaultTimestamp);
             return new CompiledStatement(delete.toString(), bindings);
         }
+
+        @Override
+        public String toString()
+        {
+            // A little wasteful, but necessary
+            return compile().toString();
+        }
     }
 
     public static String[] toArray(List<String> strings)
@@ -254,4 +261,3 @@ public class DeletesDSL
         return strings.toArray(new String[strings.size()]);
     }
 }
-

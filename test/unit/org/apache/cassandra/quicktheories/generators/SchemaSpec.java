@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 import com.google.common.collect.Streams;
 
+import com.datastax.driver.core.querybuilder.QueryBuilder;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
@@ -33,6 +34,7 @@ import org.quicktheories.generators.SourceDSL;
 import static java.util.stream.Collectors.toList;
 import static org.apache.cassandra.quicktheories.generators.Extensions.subsetGenerator;
 
+// TODO: rename consistently with the other classes
 public class SchemaSpec
 {
     public final String ksName;
@@ -100,15 +102,17 @@ public class SchemaSpec
         };
     }
 
-    public String toCQL()
+    public CompiledStatement compile()
     {
         StringBuilder sb = new StringBuilder();
 
         sb.append("CREATE TABLE ");
-        sb.append(ksName).append(".").append(tableName).append(" (");
+        sb.append(ksName)
+          .append(".")
+          .append(tableName)
+          .append(" (");
 
         SeparatorAppender commaAppender = new SeparatorAppender();
-        sb.append("\n\t");
         for (ColumnSpec cd : partitionKeys)
         {
             commaAppender.accept(sb);
@@ -127,16 +131,14 @@ public class SchemaSpec
 
         if (clusteringKeys.size() > 0 || partitionKeys.size() > 1)
         {
-            sb.append(",\n\t").append(getPrimaryKeyCql());
+            sb.append(", ").append(getPrimaryKeyCql());
         }
 
-        sb.append("\n) ");
+        sb.append(')')
+          .append(getClusteringOrderCql())
+          .append(';');
 
-        sb.append(getClusteringOrderCql());
-
-        sb.append(';');
-
-        return sb.toString();
+        return new CompiledStatement(sb.toString(), new Object[]{});
     }
 
     private String getClusteringOrderCql()
@@ -152,7 +154,7 @@ public class SchemaSpec
                 commaAppender.accept(sb);
                 sb.append(cd.name).append(' ').append(cd.type.isReversed() ? "DESC" : "ASC");
             }
-            sb.append(")\n\t");
+            sb.append(")");
         }
         return sb.toString();
     }
@@ -187,11 +189,19 @@ public class SchemaSpec
     {
         return "SchemaSpec{" +
                "tableName='" + tableName + '\'' +
-               ", partitionKeys=" + partitionKeys +
-               ", clusteringKeys=" + clusteringKeys +
-               ", staticColumns=" + staticColumns +
-               ", regularColumns=" + regularColumns +
+               ", partitionKeys=" + toString(partitionKeys) +
+               ", clusteringKeys=" + toString(clusteringKeys) +
+               ", staticColumns=" + toString(staticColumns) +
+               ", regularColumns=" + toString(regularColumns) +
                '}';
+    }
+
+    private static String toString(List<ColumnSpec<?>> specs)
+    {
+        return specs.stream().map(c -> String.format("%s(%s)",
+                                                     c.name,
+                                                     c.type.asCQL3Type().toString()))
+                    .collect(Collectors.joining(", "));
     }
 
     public static class SeparatorAppender implements Consumer<StringBuilder>

@@ -90,7 +90,7 @@ public class GeneratorDSLTest extends DistributedTestBase
         {
             qt().forAll(pairWithSchema(toBuilder))
                 .checkAssert(p -> {
-                    testCluster.schemaChange(p.left.toCQL());
+                    testCluster.schemaChange(p.left.compile().cql());
 
                     for (ReadsDSL.Select select : p.right)
                     {
@@ -134,7 +134,7 @@ public class GeneratorDSLTest extends DistributedTestBase
         {
             qt().forAll(pairWithSchema(makeBuilder))
                 .checkAssert(p -> {
-                    testCluster.schemaChange(p.left.toCQL());
+                    testCluster.schemaChange(p.left.compile().cql());
 
                     for (WritesDSL.Write select : p.right)
                     {
@@ -189,7 +189,7 @@ public class GeneratorDSLTest extends DistributedTestBase
         {
             qt().forAll(pairWithSchema(toBuilder))
                 .checkAssert(p -> {
-                    testCluster.schemaChange(p.left.toCQL());
+                    testCluster.schemaChange(p.left.compile().cql());
 
                     for (DeletesDSL.Delete delete : p.right)
                     {

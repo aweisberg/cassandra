@@ -46,7 +46,7 @@ public class SchemaGenTest extends CQLTester
                                               .regularColumnCount(0, 10)
                                               .build())
             .check(schemaDefinition -> {
-                String tableDef = schemaDefinition.toCQL();
+                String tableDef = schemaDefinition.compile().cql();
 
                 createTable(KEYSPACE, tableDef);
 

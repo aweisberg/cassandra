@@ -285,7 +285,15 @@ public class WritesDSL
             this.ttl = ttl;
         }
 
+        @Override
+        public String toString()
+        {
+            // A little wasteful, but necessary
+            return compile().toString();
+        }
+
         // TODO: insert with just a subset of columns
+        // TODO: maybe we should have some sort of non-compiled statement interface
         public abstract CompiledStatement compile();
         public FullKey key()
         {
