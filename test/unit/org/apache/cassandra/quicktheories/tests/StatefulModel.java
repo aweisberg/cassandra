@@ -121,6 +121,7 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
     {
         run(write, ConsistencyLevel.QUORUM, node);
     }
+
     protected void run(WritesDSL.Write write, ConsistencyLevel cl, int node)
     {
         try
@@ -154,5 +155,17 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         logger.info("Creating schema: {}", ddl);
         modelCluster.schemaChange(ddl.cql());
         testCluster.schemaChange(ddl.cql());
+    }
+
+    @Override
+    public void teardown()
+    {
+        // Make sure to drop the table to avoid OOMs
+        if (schemaSpec != null)
+        {
+            String dropTable = String.format("DROP TABLE %s.%s", schemaSpec.ksName, schemaSpec.tableName);
+            testCluster.schemaChange(dropTable);
+            modelCluster.schemaChange(dropTable);
+        }
     }
 }

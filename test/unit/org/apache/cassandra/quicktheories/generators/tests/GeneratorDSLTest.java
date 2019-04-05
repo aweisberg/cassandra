@@ -99,6 +99,8 @@ public class GeneratorDSLTest extends DistributedTestBase
                                                            ConsistencyLevel.ALL,
                                                            compiled.bindings());
                     }
+
+                    testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
                 });
         }
     }
@@ -143,6 +145,8 @@ public class GeneratorDSLTest extends DistributedTestBase
                                                            ConsistencyLevel.ALL,
                                                            compiled.bindings());
                     }
+
+                    testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
                 });
         }
     }
@@ -198,9 +202,9 @@ public class GeneratorDSLTest extends DistributedTestBase
                                                            ConsistencyLevel.ALL,
                                                            compiled.bindings());
                     }
+
+                    testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
                 });
         }
-
-
     }
 }
