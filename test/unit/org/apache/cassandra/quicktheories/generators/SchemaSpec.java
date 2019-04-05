@@ -187,13 +187,7 @@ public class SchemaSpec
 
     public String toString()
     {
-        return "SchemaSpec{" +
-               "tableName='" + tableName + '\'' +
-               ", partitionKeys=" + toString(partitionKeys) +
-               ", clusteringKeys=" + toString(clusteringKeys) +
-               ", staticColumns=" + toString(staticColumns) +
-               ", regularColumns=" + toString(regularColumns) +
-               '}';
+        return compile().toString();
     }
 
     private static String toString(List<ColumnSpec<?>> specs)
