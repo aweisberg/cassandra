@@ -400,35 +400,36 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
     @Override
     public void close()
     {
-        FBUtilities.waitOnFutures(instances.stream()
-                                           .map(IInstance::shutdown)
-                                           .collect(Collectors.toList()),
-                                  1L, TimeUnit.MINUTES);
+        try
+        {
+            FBUtilities.waitOnFutures(instances.stream()
+                                               .map(IInstance::shutdown)
+                                               .collect(Collectors.toList()),
+                                      1L, TimeUnit.MINUTES);
+        }
+        catch (Throwable t)
+        {
+            logger.error("Failed to shut down the cluster timely.",
+                         new RuntimeException("Threads that are still running" + drumpRunningThreads(), t));
+        }
 
         instances.clear();
         instanceMap.clear();
         // Make sure to only delete directory when threads are stopped
         FileUtils.deleteRecursive(root);
-
-        //withThreadLeakCheck(futures);
     }
 
-    // We do not want this check to run every time until we fix problems with tread stops
-    private void withThreadLeakCheck(List<Future<?>> futures)
+    private String drumpRunningThreads()
     {
-        FBUtilities.waitOnFutures(futures);
-
         Set<Thread> threadSet = Thread.getAllStackTraces().keySet();
         threadSet = Sets.difference(threadSet, Collections.singletonMap(Thread.currentThread(), null).keySet());
+        StringBuilder builder = new StringBuilder();
         if (!threadSet.isEmpty())
         {
             for (Thread thread : threadSet)
-            {
-                System.out.println(thread);
-                System.out.println(Arrays.toString(thread.getStackTrace()));
-            }
-            throw new RuntimeException(String.format("Not all threads have shut down. %d threads are still running: %s", threadSet.size(), threadSet));
+                builder.append(thread.getName()).append(':').append(Arrays.toString(thread.getStackTrace())).append('\n');
         }
+        return builder.toString();
     }
 
 }
