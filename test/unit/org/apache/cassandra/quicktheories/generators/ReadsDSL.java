@@ -38,80 +38,80 @@ import static org.quicktheories.generators.SourceDSL.*;
 
 public class ReadsDSL
 {
-    public ReadsBuilder anyRead(SchemaSpec schemaSpec)
+    public Builder anyRead(SchemaSpec schemaSpec)
     {
-        return new ReadsBuilder(schemaSpec,
-                                schemaSpec.partitionKeyGenerator,
+        return new Builder(schemaSpec,
+                           schemaSpec.partitionKeyGenerator,
                                 pk -> schemaSpec.clusteringKeyGenerator,
-                                Generate.enumValues(QueryKind.class));
+                           Generate.enumValues(QueryKind.class));
     }
 
-    public ReadsBuilder anyRead(SchemaSpec schemaSpec,
-                                Gen<Object[]> pkGen,
-                                Function<Object[], Gen<Object[]>> ckGenSupplier)
+    public Builder anyRead(SchemaSpec schemaSpec,
+                           Gen<Object[]> pkGen,
+                           Function<Object[], Gen<Object[]>> ckGenSupplier)
     {
-        return new ReadsBuilder(schemaSpec,
-                                pkGen,
-                                ckGenSupplier,
-                                Generate.enumValues(QueryKind.class));
+        return new Builder(schemaSpec,
+                           pkGen,
+                           ckGenSupplier,
+                           Generate.enumValues(QueryKind.class));
     }
 
-    public ReadsBuilder partitionRead(SchemaSpec schemaSpec)
+    public Builder partitionRead(SchemaSpec schemaSpec)
     {
-        return new ReadsBuilder(schemaSpec,
-                                schemaSpec.partitionKeyGenerator,
-                                null,
-                                Generate.constant(QueryKind.SINGLE_PARTITION));
+        return new Builder(schemaSpec,
+                           schemaSpec.partitionKeyGenerator,
+                           null,
+                           Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
-    public ReadsBuilder partitionRead(SchemaSpec schemaSpec, Object[] pk)
+    public Builder partitionRead(SchemaSpec schemaSpec, Object[] pk)
     {
-        return new ReadsBuilder(schemaSpec,
-                                Generate.constant(pk),
-                                null,
-                                Generate.constant(QueryKind.SINGLE_PARTITION));
+        return new Builder(schemaSpec,
+                           Generate.constant(pk),
+                           null,
+                           Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
-    public ReadsBuilder rowRead(SchemaSpec schemaSpec)
+    public Builder rowRead(SchemaSpec schemaSpec)
     {
         assert schemaSpec.clusteringKeys.size() > 0 : "Can't read a row from the table that has no clustering columns";
 
-        return new ReadsBuilder(schemaSpec,
-                                schemaSpec.partitionKeyGenerator,
-                                (pk) -> schemaSpec.clusteringKeyGenerator,
-                                Generate.constant(QueryKind.SINGLE_ROW));
+        return new Builder(schemaSpec,
+                           schemaSpec.partitionKeyGenerator,
+                           (pk) -> schemaSpec.clusteringKeyGenerator,
+                           Generate.constant(QueryKind.SINGLE_ROW));
     }
 
-    public ReadsBuilder rowRead(SchemaSpec schemaSpec, Gen<Object[]> pkGen, Function<Object[], Gen<Object[]>> ckGen)
+    public Builder rowRead(SchemaSpec schemaSpec, Gen<Object[]> pkGen, Function<Object[], Gen<Object[]>> ckGen)
     {
-        return new ReadsBuilder(schemaSpec,
-                                pkGen,
-                                ckGen,
-                                Generate.constant(QueryKind.SINGLE_ROW));
+        return new Builder(schemaSpec,
+                           pkGen,
+                           ckGen,
+                           Generate.constant(QueryKind.SINGLE_ROW));
     }
 
     /**
      * Generates a row slice, e.g. (ck, ∞), (∞, ck), [ck, ∞), (∞, ck]
      */
-    public ReadsBuilder rowSlice(SchemaSpec schemaSpec)
+    public Builder rowSlice(SchemaSpec schemaSpec)
     {
         assert schemaSpec.clusteringKeys.size() > 0 : "Can't read a row slice from the table that has no clustering columns";
 
-        return new ReadsBuilder(schemaSpec,
-                                schemaSpec.partitionKeyGenerator,
-                                (pk) -> schemaSpec.clusteringKeyGenerator,
-                                Generate.constant(QueryKind.CLUSTERING_SLICE));
+        return new Builder(schemaSpec,
+                           schemaSpec.partitionKeyGenerator,
+                           (pk) -> schemaSpec.clusteringKeyGenerator,
+                           Generate.constant(QueryKind.CLUSTERING_SLICE));
     }
 
     /**
      * Generates a row slice, e.g., inclusive or exclusive range between two clusterings
      */
-    public ReadsBuilder rowRange(SchemaSpec schemaSpec)
+    public Builder rowRange(SchemaSpec schemaSpec)
     {
-        return new ReadsBuilder(schemaSpec,
-                                schemaSpec.partitionKeyGenerator,
-                                (pk) -> schemaSpec.clusteringKeyGenerator,
-                                Generate.constant(QueryKind.CLUSTERING_RANGE));
+        return new Builder(schemaSpec,
+                           schemaSpec.partitionKeyGenerator,
+                           (pk) -> schemaSpec.clusteringKeyGenerator,
+                           Generate.constant(QueryKind.CLUSTERING_RANGE));
     }
 
     private static Gen<List<String>> columnSubsetGen(SchemaSpec schemaSpec)
@@ -146,7 +146,7 @@ public class ReadsDSL
         });
     }
 
-    public static class ReadsBuilder
+    public static class Builder
     {
         private final SchemaSpec schemaSpec;
         private final Gen<Object[]> pkGen;
@@ -157,10 +157,10 @@ public class ReadsDSL
         private boolean addLimit = false;
         private boolean addOrder = false;
 
-        ReadsBuilder(SchemaSpec schemaSpec,
-                     Gen<Object[]> pkGen,
-                     Function<Object[], Gen<Object[]>> ckGenSupplier,
-                     Gen<QueryKind> readTypeGen)
+        Builder(SchemaSpec schemaSpec,
+                Gen<Object[]> pkGen,
+                Function<Object[], Gen<Object[]>> ckGenSupplier,
+                Gen<QueryKind> readTypeGen)
         {
             this.schemaSpec = schemaSpec;
             this.pkGen = pkGen;
@@ -168,19 +168,19 @@ public class ReadsDSL
             this.readTypeGen = readTypeGen;
         }
 
-        public ReadsBuilder withColumnSelection()
+        public Builder withColumnSelection()
         {
             this.wildcard = false;
             return this;
         }
 
-        public ReadsBuilder withLimit()
+        public Builder withLimit()
         {
             this.addLimit = true;
             return this;
         }
 
-        public ReadsBuilder withOrder()
+        public Builder withOrder()
         {
             this.addOrder = true;
             return this;

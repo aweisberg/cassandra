@@ -37,7 +37,7 @@ public class WritesDSL
      * Generate a random write
      *
      * @param schema the schema to generate writes for
-     * @return a {@link WritesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
     public WriteBuilder row(SchemaSpec schema)
     {
@@ -49,7 +49,7 @@ public class WritesDSL
      *
      * @param schema       the schema to generate writes for
      * @param partitionKey the partition key to write to
-     * @return a {@link WritesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
     public WriteBuilder row(SchemaSpec schema, Object[] partitionKey)
     {
@@ -61,7 +61,7 @@ public class WritesDSL
      *
      * @param schema        the schema to generate writes for
      * @param partitionKeys the generator to use when generating partition keys
-     * @return a {@link WritesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
     public WriteBuilder row(SchemaSpec schema, Gen<Object[]> partitionKeys)
     {
@@ -73,11 +73,11 @@ public class WritesDSL
      *
      * @param schemaSpec   the schema to generate writes for
      * @param partitionKey the partition to generates writes to
-     * @return a {@link WritesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
-    public WritesBuilder rows(SchemaSpec schemaSpec, Object[] partitionKey)
+    public Builder rows(SchemaSpec schemaSpec, Object[] partitionKey)
     {
-        return new WritesBuilder(schemaSpec, Generate.constant(partitionKey), schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
+        return new Builder(schemaSpec, Generate.constant(partitionKey), schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
     }
 
     /**
@@ -85,25 +85,25 @@ public class WritesDSL
      *
      * @param schemaSpec    the schema to generate writes for
      * @param partitionKeys the generator to use when generating partition keys
-     * @return a {@link WritesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
-    public WritesBuilder rows(SchemaSpec schemaSpec, Gen<Object[]> partitionKeys)
+    public Builder rows(SchemaSpec schemaSpec, Gen<Object[]> partitionKeys)
     {
-        return new WritesBuilder(schemaSpec, partitionKeys, schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
+        return new Builder(schemaSpec, partitionKeys, schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
     }
 
     /**
      * Generate writes to one or more partitions
      *
      * @param schemaSpec the schema to generate writes for
-     * @return a {@link WritesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
-    public WritesBuilder rows(SchemaSpec schemaSpec)
+    public Builder rows(SchemaSpec schemaSpec)
     {
-        return new WritesBuilder(schemaSpec,
-                                 schemaSpec.partitionKeyGenerator,
-                                 schemaSpec.clusteringKeyGenerator,
-                                 schemaSpec.rowDataGenerator);
+        return new Builder(schemaSpec,
+                           schemaSpec.partitionKeyGenerator,
+                           schemaSpec.clusteringKeyGenerator,
+                           schemaSpec.rowDataGenerator);
     }
 
 
@@ -208,25 +208,25 @@ public class WritesDSL
         };
     }
 
-    public static class WritesBuilder extends AbstractBuilder<WritesBuilder>
+    public static class Builder extends AbstractBuilder<Builder>
     {
         private int minRows = 1;
         private int maxRows = 1;
 
-        private WritesBuilder(SchemaSpec schema,
-                              Gen<Object[]> pkGen,
-                              Gen<Object[]> ckGen,
-                              Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+        private Builder(SchemaSpec schema,
+                        Gen<Object[]> pkGen,
+                        Gen<Object[]> ckGen,
+                        Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
         {
             super(schema, once(pkGen), ckGen, dataGen);
         }
 
-        public WritesBuilder rowCount(int count)
+        public Builder rowCount(int count)
         {
             return rowCountBetween(count, count);
         }
 
-        public WritesBuilder rowCountBetween(int min, int max)
+        public Builder rowCountBetween(int min, int max)
         {
             assert min > 0 : "Minimum row count should be non-negative but was " + min;
             assert min <= max : "Minimum row count not exceed maximum partition count";

@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 
 import com.datastax.driver.core.querybuilder.QueryBuilder;
@@ -48,7 +50,6 @@ public class SchemaSpec
     public final Gen<List<Pair<ColumnSpec<?>, Object>>> rowDataGenerator;
     public final List<ColumnSpec<?>> allColumns;
 
-    // TODO: improve SchemaSpec builder that would allow configuring amount of columns etc
     SchemaSpec(String ksName,
                String tableName,
                List<ColumnSpec<?>> partitionKeys,
@@ -58,23 +59,19 @@ public class SchemaSpec
     {
         this.ksName = ksName;
         this.tableName = tableName;
-        this.partitionKeys = partitionKeys;
-        this.clusteringKeys = clusteringKeys;
-        this.staticColumns = staticColumns;
-        this.regularColumns = regularColumns;
+        this.partitionKeys = ImmutableList.copyOf(partitionKeys);
+        this.clusteringKeys = ImmutableList.copyOf(clusteringKeys);
+        this.staticColumns = ImmutableList.copyOf(staticColumns);
+        this.regularColumns = ImmutableList.copyOf(regularColumns);
+        this.allColumns = ImmutableList.copyOf(Iterables.concat(partitionKeys,
+                                                                clusteringKeys,
+                                                                staticColumns,
+                                                                regularColumns));
 
-        // TODO: move this to static method; schema should not be able to generate anything
         this.partitionKeyGenerator = keyGenerator(partitionKeys);
         this.clusteringKeyGenerator = keyGenerator(clusteringKeys);
-        this.rowDataGenerator = dataGenerator(Streams.concat(regularColumns.stream(),
-                                                             staticColumns.stream())
-                                                     .collect(toList()));
+        this.rowDataGenerator = dataGenerator(Iterables.concat(regularColumns, staticColumns));
 
-        this.allColumns = Streams.concat(partitionKeys.stream(),
-                                         clusteringKeys.stream(),
-                                         staticColumns.stream(),
-                                         regularColumns.stream())
-                                 .collect(toList());
     }
 
     static Gen<Object[]> keyGenerator(List<ColumnSpec<?>> columns)
@@ -89,15 +86,13 @@ public class SchemaSpec
         };
     }
 
-
-    static Gen<List<Pair<ColumnSpec<?>, Object>>> dataGenerator(List<ColumnSpec<?>> columns)
+    static Gen<List<Pair<ColumnSpec<?>, Object>>> dataGenerator(Iterable<ColumnSpec<?>> columns)
     {
         return in -> {
-            List<Pair<ColumnSpec<?>, Object>> pairs = new ArrayList<>(columns.size());
+            List<Pair<ColumnSpec<?>, Object>> pairs = new ArrayList<>();
             for (ColumnSpec<?> cd : columns)
-            {
                 pairs.add(Pair.create(cd, cd.generator.generate(in)));
-            }
+
             return pairs;
         };
     }
@@ -188,14 +183,6 @@ public class SchemaSpec
     public String toString()
     {
         return compile().toString();
-    }
-
-    private static String toString(List<ColumnSpec<?>> specs)
-    {
-        return specs.stream().map(c -> String.format("%s(%s)",
-                                                     c.name,
-                                                     c.type.asCQL3Type().toString()))
-                    .collect(Collectors.joining(", "));
     }
 
     public static class SeparatorAppender implements Consumer<StringBuilder>

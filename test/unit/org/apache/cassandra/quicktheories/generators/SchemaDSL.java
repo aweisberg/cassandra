@@ -42,11 +42,10 @@ import static org.quicktheories.generators.SourceDSL.integers;
 import static org.quicktheories.generators.SourceDSL.lists;
 import static org.quicktheories.generators.SourceDSL.longs;
 
-// TODO: rework schemagen to intermediate representation, too
-public class SchemaGenDSL
+public class SchemaDSL
 {
-    public SchemaGenBuilder keyspace(String keyspace) {
-        return new SchemaGenBuilder(keyspace);
+    public Builder keyspace(String keyspace) {
+        return new Builder(keyspace);
     }
 
     @SuppressWarnings("unchecked")
@@ -110,7 +109,7 @@ public class SchemaGenDSL
     public static Map<AbstractType<?>, Gen<?>> types = ImmutableMap.<AbstractType<?>, Gen<?>>builder()
                                                        .put(AsciiType.instance, asciiGen)
                                                        .put(LongType.instance, longGen)
-//                                                       .put(BytesType.instance, blobGen)
+//                                                       . put(BytesType.instance, blobGen)
 //                                                       .put(BooleanType.instance, booleanGen)
 //                                                       .put(SimpleDateType.instance, dateGen)
                                                        .build();
@@ -179,7 +178,7 @@ public class SchemaGenDSL
                                                                            ColumnMetadata.Kind.REGULAR));
     }
 
-    public static class SchemaGenBuilder
+    public static class Builder
     {
         private final String keyspace;
 
@@ -193,59 +192,59 @@ public class SchemaGenDSL
         private int minRegular = 0;
         private int maxRegular = 0;
 
-        public SchemaGenBuilder(String keyspace)
+        public Builder(String keyspace)
         {
             this(keyspace, tableNameGenerator);
         }
 
-        public SchemaGenBuilder(String keyspace, Gen<String> tableNameGen)
+        public Builder(String keyspace, Gen<String> tableNameGen)
         {
             this.keyspace = keyspace;
             this.tableNameGen = tableNameGen;
         }
 
-        public SchemaGenBuilder partitionKeyColumnCount(int numCols)
+        public Builder partitionKeyColumnCount(int numCols)
         {
             return partitionKeyColumnCount(numCols, numCols);
         }
 
-        public SchemaGenBuilder partitionKeyColumnCount(int minCols, int maxCols)
+        public Builder partitionKeyColumnCount(int minCols, int maxCols)
         {
             this.minPks = minCols;
             this.maxPks = maxCols;
             return this;
         }
 
-        public SchemaGenBuilder clusteringColumnCount(int numCols)
+        public Builder clusteringColumnCount(int numCols)
         {
             return clusteringColumnCount(numCols, numCols);
         }
 
-        public SchemaGenBuilder clusteringColumnCount(int minCols, int maxCols)
+        public Builder clusteringColumnCount(int minCols, int maxCols)
         {
             this.minCluster = minCols;
             this.maxCluster = maxCols;
             return this;
         }
 
-        public SchemaGenBuilder staticColumnCount(int numCols)
+        public Builder staticColumnCount(int numCols)
         {
             return staticColumnCount(numCols, numCols);
         }
 
-        public SchemaGenBuilder staticColumnCount(int minCols, int maxCols)
+        public Builder staticColumnCount(int minCols, int maxCols)
         {
             this.minStatics = minCols;
             this.maxStatics = maxCols;
             return this;
         }
 
-        public SchemaGenBuilder regularColumnCount(int numCols)
+        public Builder regularColumnCount(int numCols)
         {
             return regularColumnCount(numCols, numCols);
         }
 
-        public SchemaGenBuilder regularColumnCount(int minCols, int maxCols)
+        public Builder regularColumnCount(int minCols, int maxCols)
         {
             this.minRegular = minCols;
             this.maxRegular = maxCols;

@@ -20,9 +20,9 @@ package org.apache.cassandra.quicktheories.generators;
 
 public class CassandraGenDSL
 {
-    public static SchemaGenDSL schemas()
+    public static SchemaDSL schemas()
     {
-        return new SchemaGenDSL();
+        return new SchemaDSL();
     }
 
     public static OperationsDSL operations()

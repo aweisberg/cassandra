@@ -63,10 +63,10 @@ public class GeneratorDSLTest extends DistributedTestBase
     @Test
     public void readDSLTest() throws Throwable
     {
-        List<Function<SchemaSpec, ReadsDSL.ReadsBuilder>> readBuilders = Arrays.asList(operations().reads()::partitionRead,
-                                                                                       operations().reads()::rowRead,
-                                                                                       operations().reads()::rowSlice,
-                                                                                       operations().reads()::rowRange);
+        List<Function<SchemaSpec, ReadsDSL.Builder>> readBuilders = Arrays.asList(operations().reads()::partitionRead,
+                                                                                  operations().reads()::rowRead,
+                                                                                  operations().reads()::rowSlice,
+                                                                                  operations().reads()::rowRange);
 
         Function<SchemaSpec, Gen<ReadsDSL.Select>> toBuilder =
         (spec) -> SourceDSL.arbitrary().pick(readBuilders)
@@ -74,7 +74,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                                 SourceDSL.booleans().all(),
                                 SourceDSL.booleans().all(),
                                 (fn, withSelection, withLimit, withOrder) -> {
-                                    ReadsDSL.ReadsBuilder builder = fn.apply(spec);
+                                    ReadsDSL.Builder builder = fn.apply(spec);
                                     if (withSelection)
                                         builder.withColumnSelection();
                                     if (withLimit)
@@ -83,7 +83,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                                         builder.withOrder();
                                     return builder;
                                 })
-                           .flatMap(ReadsDSL.ReadsBuilder::build);
+                           .flatMap(ReadsDSL.Builder::build);
 
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
@@ -166,7 +166,7 @@ public class GeneratorDSLTest extends DistributedTestBase
     private void deletesDSLTest(boolean rowDeleteOnly) throws Throwable
     {
         // We could use anyRead here, but it makes sense to test the DSL as well
-        List<Function<SchemaSpec, DeletesDSL.DeletesBuilder>> deleteBuilders = new ArrayList<>();
+        List<Function<SchemaSpec, DeletesDSL.Builder>> deleteBuilders = new ArrayList<>();
         deleteBuilders.add(operations().deletes()::rowDelete);
         if (!rowDeleteOnly)
         {
@@ -180,14 +180,14 @@ public class GeneratorDSLTest extends DistributedTestBase
                            .zip(SourceDSL.booleans().all(),
                                 SourceDSL.booleans().all(),
                                 (fn, withColumns, withTimestamp) -> {
-                                    DeletesDSL.DeletesBuilder builder = fn.apply(spec);
+                                    DeletesDSL.Builder builder = fn.apply(spec);
                                     if (withColumns && rowDeleteOnly)
                                         builder.deleteColumns();
                                     if (withTimestamp)
                                         builder.withTimestamp(SourceDSL.longs().between(1, Long.MAX_VALUE - 1));
                                     return builder;
                                 })
-                           .flatMap(DeletesDSL.DeletesBuilder::build);
+                           .flatMap(DeletesDSL.Builder::build);
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
         {

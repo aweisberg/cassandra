@@ -23,35 +23,33 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import com.datastax.driver.core.querybuilder.Clause;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import org.apache.cassandra.utils.FBUtilities;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.Generate;
 
-import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
-import static org.quicktheories.generators.SourceDSL.*;
-import static org.apache.cassandra.quicktheories.generators.Relation.*;
+import static org.apache.cassandra.quicktheories.generators.Relation.QueryKind;
+import static org.quicktheories.generators.SourceDSL.arbitrary;
 
 public class DeletesDSL
 {
 
-    public DeletesBuilder anyDelete(SchemaSpec schema,
-                                    Gen<Object[]> pkGen,
-                                    Function<Object[], Gen<Object[]>> ckGenSupplier)
+    public Builder anyDelete(SchemaSpec schema,
+                             Gen<Object[]> pkGen,
+                             Function<Object[], Gen<Object[]>> ckGenSupplier)
     {
-        return new DeletesBuilder(schema,
-                                  pkGen,
-                                  ckGenSupplier,
-                                  Generate.enumValues(QueryKind.class));
+        return new Builder(schema,
+                           pkGen,
+                           ckGenSupplier,
+                           Generate.enumValues(QueryKind.class));
     }
 
-    public DeletesBuilder partitionDelete(SchemaSpec schema)
+    public Builder partitionDelete(SchemaSpec schema)
     {
-        return new DeletesBuilder(schema,
-                                  schema.partitionKeyGenerator,
-                                  null,
-                                  Generate.constant(QueryKind.SINGLE_PARTITION));
+        return new Builder(schema,
+                           schema.partitionKeyGenerator,
+                           null,
+                           Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
 
@@ -60,23 +58,23 @@ public class DeletesDSL
      *
      * @param schema        the schemaSpec to generate the delete for
      * @param partitionKeys a generator used when generating which partition to delete
-     * @return a {@link DeletesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
-    public DeletesBuilder partitionDelete(SchemaSpec schema,
-                                          Gen<Object[]> partitionKeys)
+    public Builder partitionDelete(SchemaSpec schema,
+                                   Gen<Object[]> partitionKeys)
     {
-        return new DeletesBuilder(schema,
-                                  partitionKeys,
-                                  null,
-                                  Generate.constant(QueryKind.SINGLE_PARTITION));
+        return new Builder(schema,
+                           partitionKeys,
+                           null,
+                           Generate.constant(QueryKind.SINGLE_PARTITION));
     }
 
-    public DeletesBuilder rowDelete(SchemaSpec schema)
+    public Builder rowDelete(SchemaSpec schema)
     {
-        return new DeletesBuilder(schema,
-                                  schema.partitionKeyGenerator,
-                                  (pk) -> schema.clusteringKeyGenerator,
-                                  Generate.constant(QueryKind.SINGLE_ROW));
+        return new Builder(schema,
+                           schema.partitionKeyGenerator,
+                           (pk) -> schema.clusteringKeyGenerator,
+                           Generate.constant(QueryKind.SINGLE_ROW));
     }
 
     /**
@@ -85,53 +83,53 @@ public class DeletesDSL
      * @param schema        the schemaSpec to generate the delete for
      * @param partitionKeys a generator used when generating which partition to delete
      * @param clusterings   a generator used when generating which rows/ranges within a partition to delete
-     * @return a {@link DeletesBuilder} used to customize and create the generator
+     * @return a {@link Builder} used to customize and create the generator
      */
-    public DeletesBuilder rowDelete(SchemaSpec schema,
-                                    Gen<Object[]> partitionKeys,
-                                    Function<Object[], Gen<Object[]>> clusterings)
+    public Builder rowDelete(SchemaSpec schema,
+                             Gen<Object[]> partitionKeys,
+                             Function<Object[], Gen<Object[]>> clusterings)
     {
-        return new DeletesBuilder(schema,
-                                  partitionKeys,
-                                  clusterings,
-                                  Generate.constant(QueryKind.SINGLE_ROW));
+        return new Builder(schema,
+                           partitionKeys,
+                           clusterings,
+                           Generate.constant(QueryKind.SINGLE_ROW));
     }
 
-    public DeletesBuilder rowSliceDelete(SchemaSpec schema)
+    public Builder rowSliceDelete(SchemaSpec schema)
     {
         return rowSliceDelete(schema,
                               schema.partitionKeyGenerator,
                               pk -> schema.clusteringKeyGenerator);
     }
 
-    public DeletesBuilder rowSliceDelete(SchemaSpec schema,
-                                         Gen<Object[]> partitionKeys,
-                                         Function<Object[], Gen<Object[]>> clusterings)
+    public Builder rowSliceDelete(SchemaSpec schema,
+                                  Gen<Object[]> partitionKeys,
+                                  Function<Object[], Gen<Object[]>> clusterings)
     {
-        return new DeletesBuilder(schema,
-                                  partitionKeys,
-                                  clusterings,
-                                  Generate.constant(QueryKind.CLUSTERING_SLICE));
+        return new Builder(schema,
+                           partitionKeys,
+                           clusterings,
+                           Generate.constant(QueryKind.CLUSTERING_SLICE));
     }
 
-    public DeletesBuilder rowRangeDelete(SchemaSpec schema)
+    public Builder rowRangeDelete(SchemaSpec schema)
     {
         return rowRangeDelete(schema,
                               schema.partitionKeyGenerator,
                               pk -> schema.clusteringKeyGenerator);
     }
 
-    public DeletesBuilder rowRangeDelete(SchemaSpec schema,
-                                         Gen<Object[]> partitionKeys,
-                                         Function<Object[], Gen<Object[]>> clusterings)
+    public Builder rowRangeDelete(SchemaSpec schema,
+                                  Gen<Object[]> partitionKeys,
+                                  Function<Object[], Gen<Object[]>> clusterings)
     {
-        return new DeletesBuilder(schema,
-                                  partitionKeys,
-                                  clusterings,
-                                  Generate.constant(QueryKind.CLUSTERING_RANGE));
+        return new Builder(schema,
+                           partitionKeys,
+                           clusterings,
+                           Generate.constant(QueryKind.CLUSTERING_RANGE));
     }
 
-    public static class DeletesBuilder
+    public static class Builder
     {
         private final SchemaSpec schemaSpec;
         private final Gen<QueryKind> deleteKindGen;
@@ -140,10 +138,10 @@ public class DeletesDSL
         private Gen<Optional<List<String>>> columnDeleteGenerator = Generate.constant(Optional.empty());
         private Gen<Optional<Long>> timestampGen = Generate.constant(Optional.empty());
 
-        DeletesBuilder(SchemaSpec schemaSpec,
-                       Gen<Object[]> pkGen,
-                       Function<Object[], Gen<Object[]>> ckGenSupplier,
-                       Gen<QueryKind> deleteKindGen)
+        Builder(SchemaSpec schemaSpec,
+                Gen<Object[]> pkGen,
+                Function<Object[], Gen<Object[]>> ckGenSupplier,
+                Gen<QueryKind> deleteKindGen)
         {
             this.schemaSpec = schemaSpec;
             this.pkGen = pkGen;
@@ -151,25 +149,25 @@ public class DeletesDSL
             this.deleteKindGen = deleteKindGen;
         }
 
-        public DeletesBuilder withTimestamp(Gen<Long> timestamps)
+        public Builder withTimestamp(Gen<Long> timestamps)
         {
             this.timestampGen = timestamps.map(Optional::of);
             return this;
         }
 
-        public DeletesBuilder withTimestamp(long ts)
+        public Builder withTimestamp(long ts)
         {
             this.timestampGen = arbitrary().constant(Optional.of(ts));
             return this;
         }
 
-        public DeletesBuilder withCurrentTimestamp()
+        public Builder withCurrentTimestamp()
         {
             return withTimestamp(FBUtilities.timestampMicros());
         }
 
         // TODO: add static columns?
-        public DeletesBuilder deleteColumns()
+        public Builder deleteColumns()
         {
             this.columnDeleteGenerator = Extensions.subsetGenerator(schemaSpec.regularColumns.stream()
                                                                                              .map(ColumnSpec::name)
