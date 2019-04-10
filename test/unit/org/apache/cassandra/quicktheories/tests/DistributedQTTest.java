@@ -54,6 +54,7 @@ public class DistributedQTTest extends DistributedTestBase
                 @Override
                 public void initSteps()
                 {
+                    System.out.println("SCHEMA");
                     addSetupStep(builder("Initialize Schema",
                                          this::initSchema,
                                          schemas().keyspace(KEYSPACE)
@@ -91,9 +92,8 @@ public class DistributedQTTest extends DistributedTestBase
                                     () -> operations().deletes().anyDelete(schemaSpec,
                                                                            modelState.primaryKeyGen(),
                                                                            modelState::clusteringKeyGen)
-                                                      .deleteColumns()
-                                                      .withCurrentTimestamp()
-                                                      .build(),
+//                                                      .deleteColumns()
+                                                      .withCurrentTimestamp(),
                                     () -> nodeSelector));
                     // !!! Test keys that do not exist
                 }

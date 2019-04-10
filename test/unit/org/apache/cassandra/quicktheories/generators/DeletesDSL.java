@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import org.apache.cassandra.utils.FBUtilities;
 import org.quicktheories.core.Gen;
+import org.quicktheories.core.RandomnessSource;
 import org.quicktheories.generators.Generate;
 
 import static org.apache.cassandra.quicktheories.generators.Relation.QueryKind;
@@ -129,36 +130,50 @@ public class DeletesDSL
                            Generate.constant(QueryKind.CLUSTERING_RANGE));
     }
 
-    public static class Builder
+    public static class Builder implements Gen<Delete>
     {
         private final SchemaSpec schemaSpec;
         private final Gen<QueryKind> deleteKindGen;
         private final Gen<Object[]> pkGen;
         private final Function<Object[], Gen<Object[]>> ckGenSupplier;
-        private Gen<Optional<List<String>>> columnDeleteGenerator = Generate.constant(Optional.empty());
-        private Gen<Optional<Long>> timestampGen = Generate.constant(Optional.empty());
+        private final Gen<Optional<List<String>>> columnDeleteGenerator;
+        private final Gen<Optional<Long>> timestampGen;
+        private final Gen<Delete> generator;
 
         Builder(SchemaSpec schemaSpec,
                 Gen<Object[]> pkGen,
                 Function<Object[], Gen<Object[]>> ckGenSupplier,
                 Gen<QueryKind> deleteKindGen)
         {
+            this(schemaSpec, pkGen, ckGenSupplier, deleteKindGen,
+                 Generate.constant(Optional.empty()),
+                 Generate.constant(Optional.empty()));
+        }
+
+        Builder(SchemaSpec schemaSpec,
+                Gen<Object[]> pkGen,
+                Function<Object[], Gen<Object[]>> ckGenSupplier,
+                Gen<QueryKind> deleteKindGen,
+                Gen<Optional<List<String>>> columnDeleteGenerator,
+                Gen<Optional<Long>> timestampGen)
+        {
             this.schemaSpec = schemaSpec;
             this.pkGen = pkGen;
             this.ckGenSupplier = ckGenSupplier;
             this.deleteKindGen = deleteKindGen;
+            this.columnDeleteGenerator = columnDeleteGenerator;
+            this.timestampGen = timestampGen;
+            this.generator = build(schemaSpec, pkGen, ckGenSupplier, deleteKindGen, columnDeleteGenerator, timestampGen);
         }
 
         public Builder withTimestamp(Gen<Long> timestamps)
         {
-            this.timestampGen = timestamps.map(Optional::of);
-            return this;
+            return new Builder(schemaSpec, pkGen, ckGenSupplier, deleteKindGen, columnDeleteGenerator, timestamps.map(Optional::of));
         }
 
         public Builder withTimestamp(long ts)
         {
-            this.timestampGen = arbitrary().constant(Optional.of(ts));
-            return this;
+            return withTimestamp(arbitrary().constant(ts));
         }
 
         public Builder withCurrentTimestamp()
@@ -169,14 +184,18 @@ public class DeletesDSL
         // TODO: add static columns?
         public Builder deleteColumns()
         {
-            this.columnDeleteGenerator = Extensions.subsetGenerator(schemaSpec.regularColumns.stream()
-                                                                                             .map(ColumnSpec::name)
-                                                                                             .collect(Collectors.toList()))
-                                                   .map(Optional::of);
-            return this;
+            // TODO: some sort of warning/validation to make sure we do not allow to generate this with ranges?
+            return new Builder(schemaSpec, pkGen, ckGenSupplier, deleteKindGen,
+                               Extensions.subsetGenerator(schemaSpec.regularColumns.stream()
+                                                                                   .map(ColumnSpec::name)
+                                                                                   .collect(Collectors.toList()))
+                                         .map(Optional::of),
+                               timestampGen);
         }
 
-        private QueryKind validate(QueryKind readType)
+        private static QueryKind validate(Gen<Object[]> pkGen,
+                                          Function<Object[], Gen<Object[]>> ckGenSupplier,
+                                          QueryKind readType)
         {
             switch (readType)
             {
@@ -194,18 +213,32 @@ public class DeletesDSL
             return readType;
         }
 
-
-        public Gen<Delete> build()
+        private static Gen<Delete> build(SchemaSpec schemaSpec,
+                                        Gen<Object[]> pkGen,
+                                        Function<Object[], Gen<Object[]>> ckGenSupplier,
+                                        Gen<QueryKind> deleteKindGen,
+                                        Gen<Optional<List<String>>> columnDeleteGenerator,
+                                        Gen<Optional<Long>> timestampGen)
         {
-            return columnDeleteGenerator.zip(deleteKindGen.map(this::validate).flatMap(deleteKind -> Relation.relationsGen(schemaSpec,
-                                                                                                                           pkGen,
-                                                                                                                           ckGenSupplier,
-                                                                                                                           deleteKind)),
-                                             timestampGen,
-                                             (columns, relations, ts) -> new Delete(schemaSpec,
-                                                                                    columns,
-                                                                                    relations,
-                                                                                    ts));
+            return prng -> {
+                QueryKind kind = validate(pkGen, ckGenSupplier, deleteKindGen.generate(prng));
+                List<Relation> relations = Relation.relationsGen(schemaSpec,
+                                                                 pkGen,
+                                                                 ckGenSupplier,
+                                                                 kind).generate(prng);
+                Optional<List<String>> columns = kind == QueryKind.SINGLE_ROW ? columnDeleteGenerator.generate(prng) : Optional.empty();
+                Optional<Long> ts = timestampGen.generate(prng);
+                return new Delete(schemaSpec,
+                                  columns,
+                                  relations,
+                                  ts);
+            };
+
+        }
+
+        public Delete generate(RandomnessSource prng)
+        {
+            return generator.generate(prng);
         }
     }
 

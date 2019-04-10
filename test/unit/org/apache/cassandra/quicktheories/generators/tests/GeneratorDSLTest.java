@@ -124,7 +124,7 @@ public class GeneratorDSLTest extends DistributedTestBase
         Function<SchemaSpec, Gen<WritesDSL.Write>> makeBuilder =
         (spec) -> SourceDSL.booleans().all().zip(SourceDSL.booleans().all(),
                                                  (withTimestamp, withTTL) -> {
-                                                     WritesDSL.WriteBuilder builder = operations().writes().row(spec);
+                                                     WritesDSL.WriteBuilder<WritesDSL.Insert> builder = operations().writes().row(spec);
 
                                                      if (withTimestamp)
                                                          builder.withTimestamp(SourceDSL.longs().between(1, Long.MAX_VALUE - 1));
@@ -132,7 +132,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                                                          builder.withTTL(SourceDSL.integers().between(1, (int) TimeUnit.DAYS.toSeconds(365)));
 
                                                      return builder;
-                                                 }).flatMap(builder -> insert ? builder.insert() : builder.update());
+                                                 }).flatMap(builder -> insert ? builder : builder.update());
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
@@ -189,7 +189,7 @@ public class GeneratorDSLTest extends DistributedTestBase
                                         builder.withTimestamp(SourceDSL.longs().between(1, Long.MAX_VALUE - 1));
                                     return builder;
                                 })
-                           .flatMap(DeletesDSL.Builder::build);
+                           .flatMap(id -> id);
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
