@@ -18,7 +18,6 @@
 
 package org.apache.cassandra.quicktheories.generators;
 
-import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Map;
 
@@ -27,20 +26,24 @@ import com.google.common.collect.ImmutableMap;
 import com.datastax.driver.core.ClusteringOrder;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.AsciiType;
+import org.apache.cassandra.db.marshal.BooleanType;
+import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.DurationType;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.marshal.ReversedType;
+import org.apache.cassandra.db.marshal.SimpleDateType;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.quicktheories.core.Gen;
-import org.quicktheories.core.RandomnessSource;
 import org.quicktheories.generators.Generate;
 
 import static org.apache.cassandra.quicktheories.generators.Extensions.monotonicGen;
-import static org.quicktheories.generators.SourceDSL.booleans;
-import static org.quicktheories.generators.SourceDSL.characters;
+import static org.apache.cassandra.quicktheories.generators.TypesDSL.asciiGen;
+import static org.apache.cassandra.quicktheories.generators.TypesDSL.blobGen;
+import static org.apache.cassandra.quicktheories.generators.TypesDSL.booleanGen;
+import static org.apache.cassandra.quicktheories.generators.TypesDSL.dateGen;
+import static org.apache.cassandra.quicktheories.generators.TypesDSL.longGen;
 import static org.quicktheories.generators.SourceDSL.integers;
 import static org.quicktheories.generators.SourceDSL.lists;
-import static org.quicktheories.generators.SourceDSL.longs;
 
 public class SchemaDSL
 {
@@ -60,58 +63,12 @@ public class SchemaDSL
                         .map(i -> allValues[i]);
     }
 
-    public static Gen<String> asciiGen = new Gen<String>()
-    {
-        private final Gen<Integer> lenghGenerator = integers().between(1, 5);
-        private final Gen<Character> charGen = characters().basicLatinCharacters();
-
-        public String generate(RandomnessSource in)
-        {
-            int size = lenghGenerator.generate(in);
-
-            char[] chars = new char[size];
-            for (int i = 0; i < size; i++)
-            {
-                chars[i] = charGen.generate(in);
-            }
-
-            return new String(chars, 0, size);
-        }
-    };
-
-    public static Gen<Long> longGen = longs().all();
-
-    public static Gen<ByteBuffer> blobGen = new Gen<ByteBuffer>()
-    {
-
-        // TODO (alexp): remove arbitrary limits
-        private final Gen<Integer> lenghGenerator = integers().between(0, 10000);
-        private final Gen<Character> charGen = characters().ascii();
-
-        public ByteBuffer generate(RandomnessSource in)
-        {
-            int size = lenghGenerator.generate(in);
-
-            byte[] bytes = new byte[size];
-            for (int i = 0; i < size; i++)
-            {
-                bytes[i] = (byte) charGen.generate(in).charValue();
-            }
-
-            return ByteBuffer.wrap(bytes);
-        }
-    };
-
-    public static Gen<Boolean> booleanGen = booleans().all();
-
-    public static Gen<Integer> dateGen = integers().all();
-
     public static Map<AbstractType<?>, Gen<?>> types = ImmutableMap.<AbstractType<?>, Gen<?>>builder()
                                                        .put(AsciiType.instance, asciiGen)
                                                        .put(LongType.instance, longGen)
-//                                                       . put(BytesType.instance, blobGen)
-//                                                       .put(BooleanType.instance, booleanGen)
-//                                                       .put(SimpleDateType.instance, dateGen)
+                                                       .put(BytesType.instance, blobGen)
+                                                       .put(BooleanType.instance, booleanGen)
+                                                       .put(SimpleDateType.instance, dateGen)
                                                        .build();
 
     private static Gen<AbstractType<?>> nativeTypeGenerator = fromValues(types.keySet());

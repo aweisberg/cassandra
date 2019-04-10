@@ -25,6 +25,11 @@ public class CassandraGenDSL
         return new SchemaDSL();
     }
 
+    public static TypesDSL types()
+    {
+        return new TypesDSL();
+    }
+
     public static OperationsDSL operations()
     {
         return new OperationsDSL();
