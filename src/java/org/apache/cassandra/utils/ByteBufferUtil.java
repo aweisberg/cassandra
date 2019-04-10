@@ -498,24 +498,30 @@ public class ByteBufferUtil
 
     public static ByteBuffer objectToBytes(Object obj)
     {
-        if (obj instanceof Integer)
-            return ByteBufferUtil.bytes((int) obj);
+        assert obj != null;
+
+        if (obj instanceof ByteBuffer)
+            return ((ByteBuffer) obj).duplicate();
+        else if (obj instanceof Integer)
+            return bytes((int) obj);
         else if (obj instanceof Byte)
-            return ByteBufferUtil.bytes((byte) obj);
+            return bytes((byte) obj);
         else if (obj instanceof Short)
-            return ByteBufferUtil.bytes((short) obj);
+            return bytes((short) obj);
         else if (obj instanceof Long)
-            return ByteBufferUtil.bytes((long) obj);
+            return bytes((long) obj);
         else if (obj instanceof Float)
-            return ByteBufferUtil.bytes((float) obj);
+            return bytes((float) obj);
         else if (obj instanceof Double)
-            return ByteBufferUtil.bytes((double) obj);
+            return bytes((double) obj);
         else if (obj instanceof UUID)
-            return ByteBufferUtil.bytes((UUID) obj);
+            return bytes((UUID) obj);
         else if (obj instanceof InetAddress)
-            return ByteBufferUtil.bytes((InetAddress) obj);
+            return bytes((InetAddress) obj);
         else if (obj instanceof String)
-            return ByteBufferUtil.bytes((String) obj);
+            return bytes((String) obj);
+        else if (obj instanceof Boolean)
+            return bytes((Boolean) obj);
         else
             throw new IllegalArgumentException(String.format("Cannot convert value %s of type %s",
                                                              obj,
@@ -550,6 +556,11 @@ public class ByteBufferUtil
     public static ByteBuffer bytes(double d)
     {
         return ByteBuffer.allocate(8).putDouble(0, d);
+    }
+
+    public static ByteBuffer bytes(boolean b)
+    {
+        return ByteBuffer.allocate(1).put(0, (byte) (b ? 1 : 0));
     }
 
     public static InputStream inputStream(ByteBuffer bytes)
