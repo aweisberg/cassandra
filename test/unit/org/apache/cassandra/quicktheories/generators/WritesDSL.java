@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.cassandra.stress.generate.values.Generator;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
@@ -37,9 +38,9 @@ public class WritesDSL
      * Generate a random write
      *
      * @param schema the schema to generate writes for
-     * @return a {@link Builder} used to customize and create the generator
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public WriteBuilder row(SchemaSpec schema)
+    public WriteBuilder<Insert> row(SchemaSpec schema)
     {
         return row(schema, schema.partitionKeyGenerator);
     }
@@ -49,9 +50,9 @@ public class WritesDSL
      *
      * @param schema       the schema to generate writes for
      * @param partitionKey the partition key to write to
-     * @return a {@link Builder} used to customize and create the generator
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public WriteBuilder row(SchemaSpec schema, Object[] partitionKey)
+    public WriteBuilder<Insert> row(SchemaSpec schema, Object[] partitionKey)
     {
         return row(schema, Generate.constant(partitionKey));
     }
@@ -61,11 +62,18 @@ public class WritesDSL
      *
      * @param schema        the schema to generate writes for
      * @param partitionKeys the generator to use when generating partition keys
-     * @return a {@link Builder} used to customize and create the generator
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public WriteBuilder row(SchemaSpec schema, Gen<Object[]> partitionKeys)
+    public WriteBuilder<Insert> row(SchemaSpec schema, Gen<Object[]> partitionKeys)
     {
-        return new WriteBuilder(schema, partitionKeys, schema.clusteringKeyGenerator, schema.rowDataGenerator);
+        return row(schema, partitionKeys, schema.clusteringKeyGenerator, schema.rowDataGenerator);
+    }
+
+    public WriteBuilder<Insert> row(SchemaSpec schema, Gen<Object[]> pkGen, Gen<Object[]> ckGen, Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+    {
+        return new WriteBuilder<Insert>(schema, pkGen, ckGen, dataGen,
+                                        Generate.constant(Optional::empty), Generate.constant(Optional::empty),
+                                        WritesDSL::insertGen);
     }
 
     /**
@@ -73,11 +81,11 @@ public class WritesDSL
      *
      * @param schemaSpec   the schema to generate writes for
      * @param partitionKey the partition to generates writes to
-     * @return a {@link Builder} used to customize and create the generator
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public Builder rows(SchemaSpec schemaSpec, Object[] partitionKey)
+    public WritesBuilder<Insert> rows(SchemaSpec schemaSpec, Object[] partitionKey)
     {
-        return new Builder(schemaSpec, Generate.constant(partitionKey), schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
+        return rows(schemaSpec, Generate.constant(partitionKey));
     }
 
     /**
@@ -85,27 +93,31 @@ public class WritesDSL
      *
      * @param schemaSpec    the schema to generate writes for
      * @param partitionKeys the generator to use when generating partition keys
-     * @return a {@link Builder} used to customize and create the generator
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public Builder rows(SchemaSpec schemaSpec, Gen<Object[]> partitionKeys)
+    public WritesBuilder<Insert> rows(SchemaSpec schemaSpec, Gen<Object[]> partitionKeys)
     {
-        return new Builder(schemaSpec, partitionKeys, schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
+        return rows(schemaSpec, partitionKeys, schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
     }
 
     /**
      * Generate writes to one or more partitions
      *
      * @param schemaSpec the schema to generate writes for
-     * @return a {@link Builder} used to customize and create the generator
+     * @return a {@link WritesBuilder} used to customize and create the generator
      */
-    public Builder rows(SchemaSpec schemaSpec)
+    public WritesBuilder<Insert> rows(SchemaSpec schemaSpec)
     {
-        return new Builder(schemaSpec,
-                           schemaSpec.partitionKeyGenerator,
-                           schemaSpec.clusteringKeyGenerator,
-                           schemaSpec.rowDataGenerator);
+        return rows(schemaSpec, schemaSpec.partitionKeyGenerator, schemaSpec.clusteringKeyGenerator, schemaSpec.rowDataGenerator);
     }
 
+    public WritesBuilder<Insert> rows(SchemaSpec schema, Gen<Object[]> pkGen, Gen<Object[]> ckGen, Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+    {
+        return new WritesBuilder<Insert>(schema, pkGen, ckGen, dataGen,
+                                         Generate.constant(Optional::empty), Generate.constant(Optional::empty),
+                                         1, 1,
+                                         WritesDSL::insertGen);
+    }
 
     public static abstract class AbstractBuilder<T extends AbstractBuilder>
     {
@@ -113,30 +125,39 @@ public class WritesDSL
         protected final Gen<Object[]> pkGen;
         protected final Gen<Object[]> ckGen;
         protected final Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen;
-        protected Gen<Optional<Long>> timestampGen = Generate.constant(Optional::empty);
-        protected Gen<Optional<Integer>> ttlGen = Generate.constant(Optional::empty);
+        protected final Gen<Optional<Long>> timestampGen;
+        protected final Gen<Optional<Integer>> ttlGen;
 
         AbstractBuilder(SchemaSpec schema,
                         Gen<Object[]> pkGen,
                         Gen<Object[]> ckGen,
-                        Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+                        Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                        Gen<Optional<Long>> timestampGen,
+                        Gen<Optional<Integer>> ttlGen)
         {
             this.schema = schema;
             this.pkGen = pkGen;
             this.ckGen = ckGen;
             this.dataGen = dataGen;
+            this.timestampGen = timestampGen;
+            this.ttlGen = ttlGen;
         }
+
+        protected abstract T make(SchemaSpec schema,
+                                  Gen<Object[]> pkGen,
+                                  Gen<Object[]> ckGen,
+                                  Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                                  Gen<Optional<Long>> timestampGen,
+                                  Gen<Optional<Integer>> ttlGen);
 
         public T withTimestamp(Gen<Long> timestamps)
         {
-            this.timestampGen = timestamps.map(Optional::of);
-            return (T) this;
+            return make(schema, pkGen, ckGen, dataGen,  timestamps.map(Optional::of), ttlGen);
         }
 
         public T withTimestamp(long ts)
         {
-            this.timestampGen = arbitrary().constant(Optional.of(ts));
-            return (T) this;
+            return withTimestamp(arbitrary().constant(ts));
         }
 
         public T withCurrentTimestamp()
@@ -144,120 +165,149 @@ public class WritesDSL
             return withTimestamp(FBUtilities.timestampMicros());
         }
 
-        public T withTTL(Gen<Integer> timestamps)
+        public T withTTL(Gen<Integer> ttls)
         {
-            this.ttlGen = timestamps.map(Optional::of);
-            return (T) this;
+            return make(schema, pkGen, ckGen, dataGen, timestampGen, ttls.map(Optional::of));
         }
 
         public T withTTL(int ts)
         {
-            this.ttlGen = arbitrary().constant(Optional.of(ts));
-            return (T) this;
+            return withTTL(arbitrary().constant(ts));
         }
     }
 
-    public static class WriteBuilder extends AbstractBuilder<WriteBuilder>
+    public static class WriteBuilder<T extends Write> extends AbstractBuilder<WriteBuilder> implements Gen<T>
     {
+        private final GeneratorBuilder<T> generatorBuilder;
+        private final Gen<T> generator;
 
         WriteBuilder(SchemaSpec schema,
                      Gen<Object[]> pkGen,
                      Gen<Object[]> ckGen,
-                     Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+                     Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                     Gen<Optional<Long>> timestampGen,
+                     Gen<Optional<Integer>> ttlGen,
+                     GeneratorBuilder<T> generatorBuilder)
         {
-            super(schema, pkGen, ckGen, dataGen);
+            super(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen);
+            this.generatorBuilder = generatorBuilder;
+            this.generator = build(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, generatorBuilder);
         }
 
-        public Gen<Insert> insert()
+        protected WriteBuilder<T> make(SchemaSpec schema,
+                                       Gen<Object[]> pkGen,
+                                       Gen<Object[]> ckGen,
+                                       Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                                       Gen<Optional<Long>> timestampGen,
+                                       Gen<Optional<Integer>> ttlGen)
         {
-            return build(WritesDSL::insertGen);
+            return new WriteBuilder<T>(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, generatorBuilder);
         }
 
-        public Gen<Update> update()
+        public WriteBuilder<Insert> insert()
         {
-            return build(WritesDSL::updateGen);
+            return new WriteBuilder<>(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, WritesDSL::insertGen);
         }
 
-        private <T extends Write> Gen<T> build(Extensions.QuinFunction<SchemaSpec,
-                                                                        FullKey,
-                                                                        Gen<List<Pair<ColumnSpec<?>, Object>>>,
-                                                                        Gen<Optional<Long>>,
-                                                                        Gen<Optional<Integer>>,
-                                                                        Gen<T>> gen)
+        public WriteBuilder<Update> update()
+        {
+            return new WriteBuilder<>(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, WritesDSL::updateGen);
+        }
+
+        private static <T extends Write> Gen<T> build(SchemaSpec schema,
+                                                      Gen<Object[]> pkGen,
+                                                      Gen<Object[]> ckGen,
+                                                      Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                                                      Gen<Optional<Long>> timestampGen,
+                                                      Gen<Optional<Integer>> ttlGen,
+                                                      GeneratorBuilder<T> gen)
         {
             return pkGen.zip(ckGen, FullKey::new)
                         .flatMap(fk -> gen.apply(schema, fk, dataGen, timestampGen, ttlGen));
         }
 
-
+        public T generate(RandomnessSource prng)
+        {
+            return generator.generate(prng);
+        }
     }
 
-    public static <T> Gen<T> once(Gen<T> delegate)
+    public static class WritesBuilder<T extends Write> extends AbstractBuilder<WritesBuilder<T>> implements Gen<List<T>>
     {
-        return new Gen<T>()
-        {
-            private final AtomicReference<T> generated = new AtomicReference<>();
-            public T generate(RandomnessSource prng)
-            {
-                return generated.updateAndGet(existing -> {
-                    if (existing == null)
-                        return delegate.generate(prng);
-                    return existing;
-                });
-            }
-        };
-    }
+        private final int minRows;
+        private final int maxRows;
+        private final GeneratorBuilder<T> generatorBuilder;
+        private final Gen<List<T>> generator;
 
-    public static class Builder extends AbstractBuilder<Builder>
-    {
-        private int minRows = 1;
-        private int maxRows = 1;
-
-        private Builder(SchemaSpec schema,
-                        Gen<Object[]> pkGen,
-                        Gen<Object[]> ckGen,
-                        Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen)
+        WritesBuilder(SchemaSpec schema,
+                              Gen<Object[]> pkGen,
+                              Gen<Object[]> ckGen,
+                              Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                              Gen<Optional<Long>> timestampGen,
+                              Gen<Optional<Integer>> ttlGen,
+                              int minRows,
+                              int maxRows,
+                              GeneratorBuilder<T> generatorBuilder)
         {
-            super(schema, once(pkGen), ckGen, dataGen);
+            super(schema, once(pkGen), ckGen, dataGen, timestampGen, ttlGen);
+            this.minRows = minRows;
+            this.maxRows = maxRows;
+            this.generatorBuilder = generatorBuilder;
+            this.generator = build(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, minRows, maxRows, generatorBuilder);
         }
 
-        public Builder rowCount(int count)
+        public WritesBuilder<T> rowCount(int count)
         {
             return rowCountBetween(count, count);
         }
 
-        public Builder rowCountBetween(int min, int max)
+        public WritesBuilder<T> rowCountBetween(int min, int max)
         {
             assert min > 0 : "Minimum row count should be non-negative but was " + min;
             assert min <= max : "Minimum row count not exceed maximum partition count";
-
-            minRows = min;
-            maxRows = max;
-            return this;
+            return new WritesBuilder<>(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, min, max, generatorBuilder);
         }
 
-        public Gen<List<Insert>> inserts()
+        public WritesBuilder<Insert> inserts()
         {
-            return build(WritesDSL::insertGen);
+            return new WritesBuilder<>(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, minRows, maxRows, WritesDSL::insertGen);
         }
 
-        public Gen<List<Update>> updates()
+        public WritesBuilder<Update> updates()
         {
-            return build(WritesDSL::updateGen);
+            return new WritesBuilder<>(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, minRows, maxRows, WritesDSL::updateGen);
         }
 
-        private <T extends Write> Gen<List<T>> build(Extensions.QuinFunction<SchemaSpec,
-                                                                              FullKey,
-                                                                              Gen<List<Pair<ColumnSpec<?>, Object>>>,
-                                                                              Gen<Optional<Long>>,
-                                                                              Gen<Optional<Integer>>,
-                                                                              Gen<T>> gen)
+        private static <T extends Write> Gen<List<T>> build(SchemaSpec schema,
+                                                            Gen<Object[]> pkGen,
+                                                            Gen<Object[]> ckGen,
+                                                            Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                                                            Gen<Optional<Long>> timestampGen,
+                                                            Gen<Optional<Integer>> ttlGen,
+                                                            int minRows,
+                                                            int maxRows,
+                                                            GeneratorBuilder<T> gen)
         {
             Gen<T> rows = pkGen.zip(ckGen, FullKey::new)
                                .flatMap(fk -> gen.apply(schema, fk, dataGen, timestampGen, ttlGen));
 
             return lists().of(rows)
                           .ofSizeBetween(minRows, maxRows);
+        }
+
+        protected WritesBuilder<T> make(SchemaSpec schema,
+                                        Gen<Object[]> pkGen,
+                                        Gen<Object[]> ckGen,
+                                        Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
+                                        Gen<Optional<Long>> timestampGen,
+                                        Gen<Optional<Integer>> ttlGen)
+        {
+            return new WritesBuilder<T>(schema, pkGen, ckGen, dataGen, timestampGen, ttlGen, minRows, maxRows, generatorBuilder);
+        }
+
+        public List<T> generate(RandomnessSource prng)
+        {
+            return generator.generate(prng);
         }
     }
 
@@ -393,6 +443,12 @@ public class WritesDSL
         }
     }
 
+    public interface GeneratorBuilder<T extends Write> extends Extensions.QuinFunction<SchemaSpec,
+                                                                            FullKey,
+                                                                            Gen<List<Pair<ColumnSpec<?>, Object>>>,
+                                                                            Gen<Optional<Long>>,
+                                                                            Gen<Optional<Integer>>,
+                                                                            Gen<T>> {}
     private static Gen<Insert> insertGen(SchemaSpec schema,
                                          FullKey fk, Gen<List<Pair<ColumnSpec<?>, Object>>> dataGen,
                                          Gen<Optional<Long>> tsGen, Gen<Optional<Integer>> ttlGen)
@@ -408,4 +464,21 @@ public class WritesDSL
         return dataGen.zip(tsGen, ttlGen,
                            (data, ts, ttl) -> new Update(schema, fk, data, ts, ttl));
     }
+
+    public static <T> Gen<T> once(Gen<T> delegate)
+    {
+        return new Gen<T>()
+        {
+            private final AtomicReference<T> generated = new AtomicReference<>();
+            public T generate(RandomnessSource prng)
+            {
+                return generated.updateAndGet(existing -> {
+                    if (existing == null)
+                        return delegate.generate(prng);
+                    return existing;
+                });
+            }
+        };
+    }
+
 }

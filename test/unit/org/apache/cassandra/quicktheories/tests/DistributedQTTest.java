@@ -67,24 +67,23 @@ public class DistributedQTTest extends DistributedTestBase
                                          this::insertRows,
                                          () -> operations().writes().rows(schemaSpec)
                                                            .rowCountBetween(10, 100)
-                                                           .withCurrentTimestamp()
-                                                           .inserts(),
+                                                           .withCurrentTimestamp(),
                                          () -> nodeSelector));
 
                     addStep(builder("Generate Partition",
                                     this::insertRows,
                                     () -> operations().writes().rows(schemaSpec)
                                                       .rowCountBetween(10, 100)
-                                                      .withCurrentTimestamp()
-                                                      .inserts(),
+                                                      .withCurrentTimestamp(),
                                     () -> nodeSelector));
+
 
                     addStep(builder("Generate Read",
                                     this::run,
                                     () -> operations().reads().anyRead(schemaSpec,
                                                                        modelState.primaryKeyGen(),
                                                                        modelState::clusteringKeyGen)
-                                                      .build(),
+,
                                     () -> nodeSelector));
 
                     addStep(builder("Generate Delete",
@@ -92,6 +91,8 @@ public class DistributedQTTest extends DistributedTestBase
                                     () -> operations().deletes().anyDelete(schemaSpec,
                                                                            modelState.primaryKeyGen(),
                                                                            modelState::clusteringKeyGen)
+                                                      .deleteColumns()
+                                                      .withCurrentTimestamp()
                                                       .build(),
                                     () -> nodeSelector));
                     // !!! Test keys that do not exist
