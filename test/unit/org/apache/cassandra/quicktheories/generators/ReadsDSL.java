@@ -29,6 +29,7 @@ import com.datastax.driver.core.querybuilder.Ordering;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
+import org.quicktheories.core.RandomnessSource;
 import org.quicktheories.generators.Generate;
 
 import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
@@ -146,47 +147,75 @@ public class ReadsDSL
         });
     }
 
-    public static class Builder
+    public static class Builder implements Gen<Select>
     {
         private final SchemaSpec schemaSpec;
         private final Gen<Object[]> pkGen;
         private final Function<Object[], Gen<Object[]>> ckGenSupplier;
         private final Gen<QueryKind> readTypeGen;
 
-        private boolean wildcard = true;
-        private boolean addLimit = false;
-        private boolean addOrder = false;
+        private final boolean wildcard;
+        private final boolean addLimit;
+        private final boolean addOrder;
+
+        private final Gen<Select> generator;
 
         Builder(SchemaSpec schemaSpec,
                 Gen<Object[]> pkGen,
                 Function<Object[], Gen<Object[]>> ckGenSupplier,
                 Gen<QueryKind> readTypeGen)
         {
+            this(schemaSpec, pkGen, ckGenSupplier, readTypeGen,
+                 true, false, false);
+        }
+
+        Builder(SchemaSpec schemaSpec,
+                Gen<Object[]> pkGen,
+                Function<Object[], Gen<Object[]>> ckGenSupplier,
+                Gen<QueryKind> readTypeGen,
+                boolean wildcard,
+                boolean addLimit,
+                boolean addOrder)
+        {
             this.schemaSpec = schemaSpec;
             this.pkGen = pkGen;
             this.ckGenSupplier = ckGenSupplier;
             this.readTypeGen = readTypeGen;
+
+            this.wildcard = wildcard;
+            this.addLimit = addLimit;
+            this.addOrder = addOrder;
+
+            this.generator = build(schemaSpec, pkGen, ckGenSupplier, readTypeGen, wildcard, addLimit, addOrder);
         }
 
         public Builder withColumnSelection()
         {
-            this.wildcard = false;
-            return this;
+            if (!wildcard)
+                return this;
+
+            return new Builder(schemaSpec, pkGen, ckGenSupplier, readTypeGen, false, addLimit, addOrder);
         }
 
         public Builder withLimit()
         {
-            this.addLimit = true;
-            return this;
+            if (addLimit)
+                return this;
+
+            return new Builder(schemaSpec, pkGen, ckGenSupplier, readTypeGen, wildcard, true, addOrder);
         }
 
         public Builder withOrder()
         {
-            this.addOrder = true;
-            return this;
+            if (addOrder)
+                return this;
+
+            return new Builder(schemaSpec, pkGen, ckGenSupplier, readTypeGen, wildcard, addLimit, true);
         }
 
-        private QueryKind validate(QueryKind readType)
+        private static QueryKind validate(Gen<Object[]> pkGen,
+                                          Function<Object[], Gen<Object[]>> ckGenSupplier,
+                                          QueryKind readType)
         {
             switch (readType)
             {
@@ -205,7 +234,13 @@ public class ReadsDSL
         }
 
         // TODO (alexp): make it possible to provide columns
-        public Gen<Select> build()
+        private static Gen<Select> build(SchemaSpec schemaSpec,
+                                         Gen<Object[]> pkGen,
+                                         Function<Object[], Gen<Object[]>> ckGenSupplier,
+                                         Gen<QueryKind> readTypeGen,
+                                         boolean wildcard,
+                                         boolean addLimit,
+                                         boolean addOrder)
         {
             Gen<Optional<List<String>>> selectionGen = wildcard
                                                        ? Generate.constant(Optional.empty())
@@ -220,10 +255,11 @@ public class ReadsDSL
                                                            ? clusteringOrderGen(schemaSpec.clusteringKeys)
                                                            : Generate.constant(Collections.EMPTY_LIST);
 
-            return selectionGen.zip(readTypeGen.map(this::validate).flatMap(readType -> Relation.relationsGen(schemaSpec,
-                                                                                                              pkGen,
-                                                                                                              ckGenSupplier,
-                                                                                                              readType)),
+            return selectionGen.zip(readTypeGen.map(readType -> validate(pkGen, ckGenSupplier, readType))
+                                               .flatMap(readType -> Relation.relationsGen(schemaSpec,
+                                                                                          pkGen,
+                                                                                          ckGenSupplier,
+                                                                                          readType)),
                                     limitGen,
                                     orderingGen,
                                     (selection, relations, limit, order) -> {
@@ -233,6 +269,11 @@ public class ReadsDSL
                                                           limit,
                                                           order);
                                     });
+        }
+
+        public Select generate(RandomnessSource prng)
+        {
+            return generator.generate(prng);
         }
     }
 

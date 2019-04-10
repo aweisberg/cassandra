@@ -63,7 +63,8 @@ public class GeneratorDSLTest extends DistributedTestBase
     @Test
     public void readDSLTest() throws Throwable
     {
-        List<Function<SchemaSpec, ReadsDSL.Builder>> readBuilders = Arrays.asList(operations().reads()::partitionRead,
+        List<Function<SchemaSpec, ReadsDSL.Builder>> readBuilders = Arrays.asList(operations().reads()::anyRead,
+                                                                                  operations().reads()::partitionRead,
                                                                                   operations().reads()::rowRead,
                                                                                   operations().reads()::rowSlice,
                                                                                   operations().reads()::rowRange);
@@ -78,12 +79,13 @@ public class GeneratorDSLTest extends DistributedTestBase
                                     if (withSelection)
                                         builder.withColumnSelection();
                                     if (withLimit)
-                                        builder.withColumnSelection();
+                                        builder.withLimit();
                                     if (withOrder)
                                         builder.withOrder();
                                     return builder;
                                 })
-                           .flatMap(ReadsDSL.Builder::build);
+                           // We might want to add some sort of flatZip
+                           .flatMap(id -> id);
 
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
