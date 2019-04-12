@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.quicktheories.generators;
+package org.apache.cassandra.quicktheories;
 
 import java.util.ArrayList;
 import java.util.Collection;

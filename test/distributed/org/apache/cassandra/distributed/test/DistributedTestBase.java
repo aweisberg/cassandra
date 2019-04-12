@@ -18,20 +18,22 @@
 
 package org.apache.cassandra.distributed.test;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.google.common.collect.Iterators;
-import com.google.common.io.Resources;
+import org.apache.commons.collections.IteratorUtils;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 
-import org.apache.cassandra.distributed.Cluster;
+import org.apache.cassandra.cql3.Lists;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
-import org.apache.tools.ant.util.ResourceUtils;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.quicktheories.QuickTheory;
 import org.quicktheories.core.Profile;
 
@@ -39,7 +41,8 @@ public class DistributedTestBase
 {
     private final static String TEST_LOGBACK_CONFIG_PROPERTY = "org.apache.cassandra.test.logback.configurationFile";
     private final static String LOGBACK_CONFIG_PROPERTY = "logback.configurationFile";
-    private final static String DEFAULT_LOGBACK_CONFIG = "test/conf/logback-dtest-silent.xml";
+//    private final static String DEFAULT_LOGBACK_CONFIG = "test/conf/logback-dtest.xml"; // -silent
+    private final static String DEFAULT_LOGBACK_CONFIG = "test/conf/logback-dtest-silent.xml"; //
 
     @After
     public void afterEach()
@@ -102,12 +105,68 @@ public class DistributedTestBase
                           Arrays.equals(actual, expected));
     }
 
-    public static void assertRows(Iterator<Object[]> actual, Iterator<Object[]> expected)
+    // Iterator that preserves values
+    private static class SavingIterator<T> implements Iterator<T>
     {
-        while (actual.hasNext() && expected.hasNext())
-            assertRow(actual.next(), expected.next());
+        private final Iterator<T> delegate;
+        private final List<T> results;
 
-        Assert.assertEquals("Resultsets have different sizes", actual.hasNext(), expected.hasNext());
+        public SavingIterator(Iterator<T> delegate)
+        {
+            this.delegate = delegate;
+            this.results = new ArrayList<>();
+        }
+        public boolean hasNext()
+        {
+            return delegate.hasNext();
+        }
+
+        public T next()
+        {
+            T next = delegate.next();
+            this.results.add(next);
+            return next;
+        }
+
+        public List<T> results()
+        {
+            return results;
+        }
+    }
+
+    private static <T> Iterator<T> forceIterator(Iterator<T> iter)
+    {
+        while (iter.hasNext())
+            iter.next();
+        return iter;
+    }
+
+    public static void assertRows(Iterator<Object[]> actualOrig, Iterator<Object[]> expectedOrig)
+    {
+        SavingIterator<Object[]> actual = new SavingIterator<>(actualOrig);
+        SavingIterator<Object[]> expected = new SavingIterator<>(expectedOrig);
+
+        boolean mismatch = false;
+        while (actual.hasNext() && expected.hasNext())
+        {
+            if (!Arrays.equals(actual.next(), expected.next()))
+            {
+                mismatch = true;
+                break;
+            }
+        }
+
+        boolean l = actual.hasNext();
+        boolean r = expected.hasNext();
+        forceIterator(actual);
+        forceIterator(expected);
+
+        if (mismatch || l != r)
+        {
+            Assert.fail(String.format("Results are not equal:\nExpected: %s\nActual:   %s",
+                                      rowsToString(expected.results),
+                                      rowsToString(actual.results)));
+        }
     }
 
     public static void assertRows(Iterator<Object[]> actual, Object[]... expected)
@@ -131,6 +190,16 @@ public class DistributedTestBase
 
     public static String rowsToString(Object[][] rows)
     {
+        return rowsToString(Arrays.asList(rows));
+    }
+
+    public static String rowsToString(Iterator<Object[]> rows)
+    {
+        return rowsToString(IteratorUtils.toList(rows));
+    }
+
+    public static String rowsToString(Iterable<Object[]> rows)
+    {
         StringBuilder builder = new StringBuilder();
         builder.append("[");
         boolean isFirst = true;
@@ -140,7 +209,18 @@ public class DistributedTestBase
                 isFirst = false;
             else
                 builder.append(",");
-            builder.append(Arrays.toString(row));
+            builder.append("[")
+                   .append(Arrays.stream(row).map(v -> {
+                       String s;
+                       if (v instanceof ByteBuffer)
+                           s = "hex:\"" + ByteBufferUtil.bytesToHex((ByteBuffer) v) + "...\"";
+                       else
+                           s = String.valueOf(v);
+
+                       s = s.substring(0, Math.min(100, s.length()));
+                       return s;
+                   }).collect(Collectors.joining(",")))
+                   .append("]");
         }
         builder.append("]");
         return builder.toString();
