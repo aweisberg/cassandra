@@ -26,6 +26,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.datastax.driver.core.querybuilder.Ordering;
+import org.apache.cassandra.quicktheories.Extensions;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
@@ -33,7 +34,6 @@ import org.quicktheories.core.RandomnessSource;
 import org.quicktheories.generators.Generate;
 
 import static com.datastax.driver.core.querybuilder.QueryBuilder.*;
-import static org.apache.cassandra.quicktheories.generators.Extensions.subsetGenerator;
 import static org.apache.cassandra.quicktheories.generators.Relation.*;
 import static org.quicktheories.generators.SourceDSL.*;
 
@@ -120,16 +120,16 @@ public class ReadsDSL
         if (schemaSpec.allColumns.size() == 0)
             throw new IllegalArgumentException("Can't generate a subset of an empty set");
 
-        return subsetGenerator(schemaSpec.allColumns, 1, schemaSpec.allColumns.size() == 1 ? 1 : schemaSpec.allColumns.size() - 1)
-               // We can only restrict clustering columns when selecting non-static columns
-               // using `map` instead of `assuming` to avoid running out of variants
-               .map(columnDefinitions -> {
+        return Extensions.subsetGenerator(schemaSpec.allColumns, 1, schemaSpec.allColumns.size() == 1 ? 1 : schemaSpec.allColumns.size() - 1)
+                         // We can only restrict clustering columns when selecting non-static columns
+                         // using `map` instead of `assuming` to avoid running out of variants
+                         .map(columnDefinitions -> {
                    if (columnDefinitions.stream().allMatch((cd) -> cd.kind == ColumnMetadata.Kind.STATIC ||
                                                                    cd.kind == ColumnMetadata.Kind.PARTITION_KEY))
                        return schemaSpec.allColumns;
                    return columnDefinitions;
                })
-               .map(cds -> cds.stream().map(ColumnSpec::name).collect(Collectors.toList()));
+                         .map(cds -> cds.stream().map(ColumnSpec::name).collect(Collectors.toList()));
     }
 
     private static Gen<List<Pair<String, Boolean>>> clusteringOrderGen(List<ColumnSpec<?>> columnSpecs)

@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import org.apache.cassandra.quicktheories.generators.Extensions;
+import org.apache.cassandra.quicktheories.Extensions;
 import org.apache.cassandra.quicktheories.generators.FullKey;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.SourceDSL;

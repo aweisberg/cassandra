@@ -18,14 +18,12 @@
 
 package org.apache.cassandra.quicktheories.tests;
 
-import java.util.function.Supplier;
-
 import org.junit.Test;
 
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
-import org.quicktheories.impl.stateful.StatefulTheory;
+import org.apache.cassandra.quicktheories.QuickTheories;
 
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.operations;
 import static org.apache.cassandra.quicktheories.generators.CassandraGenDSL.schemas;
@@ -33,12 +31,6 @@ import static org.quicktheories.impl.stateful.StatefulTheory.builder;
 
 public class DistributedQTTest extends DistributedTestBase
 {
-    private void stateful(Supplier<StatefulTheory<StatefulTheory.Step>> supplier)
-    {
-        qt().withProfile(DistributedTestBase.class, "ci")
-            .stateful(supplier::get);
-    }
-
     @Test
     public void readWriteTest() throws Throwable
     {
@@ -47,14 +39,13 @@ public class DistributedQTTest extends DistributedTestBase
         {
             modelCluster.disableAutoCompaction(KEYSPACE);
 
-            stateful(() -> new StatefulModel(new InMemoryModel(),
-                                             testCluster,
-                                             modelCluster)
+            QuickTheories.stateful(() -> new StatefulModel(new InMemoryModel(),
+                                                           testCluster,
+                                                           modelCluster)
             {
                 @Override
                 public void initSteps()
                 {
-                    System.out.println("SCHEMA");
                     addSetupStep(builder("Initialize Schema",
                                          this::initSchema,
                                          schemas().keyspace(KEYSPACE)
@@ -78,13 +69,18 @@ public class DistributedQTTest extends DistributedTestBase
                                                       .withCurrentTimestamp(),
                                     () -> nodeSelector));
 
+                    addStep(builder("Inject failure",
+                                    (node) -> {
+                                        restoreNetwork();
+                                        injectFailure(node);
+                                    },
+                                    () -> nodeSelector));
 
                     addStep(builder("Generate Read",
                                     this::run,
                                     () -> operations().reads().anyRead(schemaSpec,
                                                                        modelState.primaryKeyGen(),
-                                                                       modelState::clusteringKeyGen)
-,
+                                                                       modelState::clusteringKeyGen),
                                     () -> nodeSelector));
 
                     addStep(builder("Generate Delete",

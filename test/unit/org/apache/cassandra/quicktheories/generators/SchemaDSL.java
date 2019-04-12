@@ -32,11 +32,11 @@ import org.apache.cassandra.db.marshal.DurationType;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.marshal.ReversedType;
 import org.apache.cassandra.db.marshal.SimpleDateType;
+import org.apache.cassandra.quicktheories.Extensions;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.Generate;
 
-import static org.apache.cassandra.quicktheories.generators.Extensions.monotonicGen;
 import static org.apache.cassandra.quicktheories.generators.TypesDSL.asciiGen;
 import static org.apache.cassandra.quicktheories.generators.TypesDSL.blobGen;
 import static org.apache.cassandra.quicktheories.generators.TypesDSL.booleanGen;
@@ -110,7 +110,7 @@ public class SchemaDSL
 
     private static Gen<String> staticNameGenerator()
     {
-        return monotonicGen()
+        return Extensions.monotonicGen()
                .map(i -> String.format("s" + i));
     }
 
@@ -124,7 +124,7 @@ public class SchemaDSL
 
     private static Gen<String> regularNameGenerator()
     {
-        return monotonicGen().map(i -> String.format("regular" + i));
+        return Extensions.monotonicGen().map(i -> String.format("regular" + i));
     }
 
     public static Gen<ColumnSpec<?>> regularColumnGenerator()

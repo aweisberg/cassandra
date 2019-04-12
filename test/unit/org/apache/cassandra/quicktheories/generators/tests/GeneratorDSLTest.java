@@ -30,6 +30,7 @@ import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.test.DistributedTestBase;
+import org.apache.cassandra.quicktheories.QuickTheories;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
 import org.apache.cassandra.quicktheories.generators.DeletesDSL;
 import org.apache.cassandra.quicktheories.generators.ReadsDSL;
@@ -90,20 +91,20 @@ public class GeneratorDSLTest extends DistributedTestBase
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
-            qt().forAll(pairWithSchema(toBuilder))
-                .checkAssert(p -> {
-                    testCluster.schemaChange(p.left.compile().cql());
+            QuickTheories.stateless(pairWithSchema(toBuilder),
+                                    p -> {
+                                        testCluster.schemaChange(p.left.compile().cql());
 
-                    for (ReadsDSL.Select select : p.right)
-                    {
-                        CompiledStatement compiled = select.compile();
-                        testCluster.coordinator(1).execute(compiled.cql(),
-                                                           ConsistencyLevel.ALL,
-                                                           compiled.bindings());
-                    }
+                                        for (ReadsDSL.Select select : p.right)
+                                        {
+                                            CompiledStatement compiled = select.compile();
+                                            testCluster.coordinator(1).execute(compiled.cql(),
+                                                                               ConsistencyLevel.ALL,
+                                                                               compiled.bindings());
+                                        }
 
-                    testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
-                });
+                                        testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
+                                    });
         }
     }
 
@@ -136,20 +137,22 @@ public class GeneratorDSLTest extends DistributedTestBase
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
-            qt().forAll(pairWithSchema(makeBuilder))
-                .checkAssert(p -> {
-                    testCluster.schemaChange(p.left.compile().cql());
 
-                    for (WritesDSL.Write select : p.right)
-                    {
-                        CompiledStatement compiled = select.compile();
-                        testCluster.coordinator(1).execute(compiled.cql(),
-                                                           ConsistencyLevel.ALL,
-                                                           compiled.bindings());
-                    }
+            QuickTheories.stateless(pairWithSchema(makeBuilder),
+                                    p -> {
+                                        testCluster.schemaChange(p.left.compile().cql());
 
-                    testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
-                });
+                                        for (WritesDSL.Write select : p.right)
+                                        {
+                                            CompiledStatement compiled = select.compile();
+                                            testCluster.coordinator(1).execute(compiled.cql(),
+                                                                               ConsistencyLevel.ALL,
+                                                                               compiled.bindings());
+                                        }
+
+                                        // TODO: move to teardown
+                                        testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
+                                    });
         }
     }
 
@@ -193,20 +196,20 @@ public class GeneratorDSLTest extends DistributedTestBase
 
         try (AbstractCluster testCluster = init(Cluster.create(1)))
         {
-            qt().forAll(pairWithSchema(toBuilder))
-                .checkAssert(p -> {
-                    testCluster.schemaChange(p.left.compile().cql());
+            QuickTheories.stateless(pairWithSchema(toBuilder),
+                                    p -> {
+                                        testCluster.schemaChange(p.left.compile().cql());
 
-                    for (DeletesDSL.Delete delete : p.right)
-                    {
-                        CompiledStatement compiled = delete.compile();
-                        testCluster.coordinator(1).execute(compiled.cql(),
-                                                           ConsistencyLevel.ALL,
-                                                           compiled.bindings());
-                    }
+                                        for (DeletesDSL.Delete delete : p.right)
+                                        {
+                                            CompiledStatement compiled = delete.compile();
+                                            testCluster.coordinator(1).execute(compiled.cql(),
+                                                                               ConsistencyLevel.ALL,
+                                                                               compiled.bindings());
+                                        }
 
-                    testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
-                });
+                                        testCluster.schemaChange(String.format("DROP TABLE %s.%s", p.left.ksName, p.left.tableName));
+                                    });
         }
     }
 }

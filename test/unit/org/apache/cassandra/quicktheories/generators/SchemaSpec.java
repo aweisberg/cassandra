@@ -21,20 +21,14 @@ package org.apache.cassandra.quicktheories.generators;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 
-import com.datastax.driver.core.querybuilder.QueryBuilder;
-import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.quicktheories.core.Gen;
-import org.quicktheories.generators.SourceDSL;
 
-import static java.util.stream.Collectors.toList;
-import static org.apache.cassandra.quicktheories.generators.Extensions.subsetGenerator;
 
 // TODO: rename consistently with the other classes
 public class SchemaSpec
