@@ -39,6 +39,8 @@ public interface IInstance extends IIsolatedExecutor
     void startup();
     void compact(String keyspace, String table);
     void flush(String keyspace, String table);
+    void markPeerAlive(int peer);
+    void markPeerDead(int peer);
     Future<Void> shutdown();
 
     // these methods are not for external use, but for simplicity we leave them public and on the normal IInstance interface

@@ -86,9 +86,34 @@ public abstract class DelegatingInvokableInstance implements IInvokableInstance
         return delegate().coordinator();
     }
 
+    @Override
     public IListen listen()
     {
         return delegate().listen();
+    }
+
+    @Override
+    public void compact(String keyspace, String table)
+    {
+        delegate().compact(keyspace, table);
+    }
+
+    @Override
+    public void flush(String keyspace, String table)
+    {
+        delegate().flush(keyspace, table);
+    }
+
+    @Override
+    public void markPeerDead(int peer)
+    {
+        delegate().markPeerDead(peer);
+    }
+
+    @Override
+    public void markPeerAlive(int peer)
+    {
+        delegate().markPeerAlive(peer);
     }
 
     @Override

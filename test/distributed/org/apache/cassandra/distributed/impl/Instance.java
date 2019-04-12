@@ -25,9 +25,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiConsumer;
 
 import org.slf4j.LoggerFactory;
@@ -89,6 +91,7 @@ import org.apache.cassandra.utils.memory.BufferPool;
 public class Instance extends IsolatedExecutor implements IInvokableInstance
 {
     public final IInstanceConfig config;
+    private final List<InetAddressAndPort> peers = new ArrayList<>();
 
     // should never be invoked directly, so that it is instantiated on other class loader;
     // only visible for inheritance
@@ -180,6 +183,22 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
                 throw new RuntimeException("Error setting schema for test (query was: " + query + ")", e);
             }
         }).run();
+    }
+
+    @Override
+    public void markPeerDead(int peer)
+    {
+        acceptsOnInstance((InetAddressAndPort ep) -> {
+            Gossiper.instance.markDead(ep, Gossiper.instance.getEndpointStateForEndpoint(ep));
+        }).accept(peers.get(peer - 1));
+    }
+
+    @Override
+    public void markPeerAlive(int peer)
+    {
+        acceptsOnInstance((InetAddressAndPort ep) -> {
+            Gossiper.instance.realMarkAlive(ep, Gossiper.instance.getEndpointStateForEndpoint(ep));
+        }).accept(peers.get(peer - 1));
     }
 
     private void registerMockMessaging(ICluster cluster)
@@ -367,6 +386,9 @@ public class Instance extends IsolatedExecutor implements IInvokableInstance
             // check that all nodes are in token metadata
             for (int i = 0; i < tokens.size(); ++i)
                 assert storageService.getTokenMetadata().isMember(hosts.get(i));
+
+            assert peers.isEmpty();
+            peers.addAll(hosts);
         }
         catch (Throwable e) // UnknownHostException
         {

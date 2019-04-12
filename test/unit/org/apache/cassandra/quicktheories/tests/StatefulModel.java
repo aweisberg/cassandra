@@ -18,14 +18,17 @@
 
 package org.apache.cassandra.quicktheories.tests;
 
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import com.google.common.collect.Iterators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.quicktheories.generators.CompiledStatement;
 import org.apache.cassandra.quicktheories.generators.DeletesDSL;
@@ -37,25 +40,29 @@ import org.quicktheories.generators.SourceDSL;
 import org.quicktheories.impl.stateful.StatefulTheory;
 
 import static org.apache.cassandra.distributed.test.DistributedTestBase.assertRows;
+import static org.apache.cassandra.distributed.test.DistributedTestBase.rowsToString;
 
 public abstract class StatefulModel extends StatefulTheory.StepBased
 {
     private static final Logger logger = LoggerFactory.getLogger(StatefulModel.class);
 
-    private final AbstractCluster testCluster;
-    private final AbstractCluster modelCluster;
+    private final AbstractCluster<IInstance> testCluster;
+    private final AbstractCluster<IInstance> modelCluster;
     protected final ModelState modelState;
     protected final Gen<Integer> nodeSelector;
     protected SchemaSpec schemaSpec;
+    protected Set<Integer> deadNodes = new HashSet<>();
 
     public StatefulModel(ModelState modelState,
-                         AbstractCluster testCluster,
-                         AbstractCluster modelCluster)
+                         AbstractCluster<IInstance> testCluster,
+                         AbstractCluster<IInstance> modelCluster)
     {
         this.modelState = modelState;
         this.testCluster = testCluster;
         this.modelCluster = modelCluster;
-        this.nodeSelector = SourceDSL.integers().between(1, testCluster.size());
+        this.nodeSelector = SourceDSL.integers().between(1, testCluster.size())
+                                     // Never try querying dead nodes
+                                     .assuming(i -> !deadNodes.contains(i));
     }
 
     public void addSetupStep(StatefulTheory.StepBuilder builder)
@@ -68,6 +75,32 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         addStep(builder.build());
     }
 
+    void injectFailure(int node)
+    {
+        testCluster.filters().allVerbs().to(node).drop();
+        testCluster.filters().allVerbs().from(node).drop();
+
+        for (int i = 1; i <= testCluster.size(); i++)
+        {
+            if (node != i)
+                testCluster.get(i).markPeerDead(node);
+        }
+        deadNodes.add(node);
+    }
+
+    void restoreNetwork()
+    {
+        testCluster.filters().reset();
+        for (int i = 1; i <= testCluster.size(); i++)
+        {
+            for (int j = 1; j <= testCluster.size(); j++)
+            {
+                testCluster.get(i).markPeerAlive(j);
+            }
+        }
+        deadNodes.clear();
+    }
+
     public void run(ReadsDSL.Select query, int node)
     {
         run(query, ConsistencyLevel.QUORUM, node);
@@ -77,20 +110,21 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
     {
         Iterator<Object[]> modelRows;
         Iterator<Object[]> sutRows;
+        CompiledStatement compiledStatement = query.compile();
+
         try
         {
-            CompiledStatement compiled = query.compile();
-            modelRows = Iterators.forArray(testCluster.get(1).executeInternal(compiled.cql(), compiled.bindings()));
-            sutRows = testCluster.coordinator(node).executeWithPaging(compiled.cql(),
+            modelRows = Iterators.forArray(modelCluster.get(1).executeInternal(compiledStatement.cql(), compiledStatement.bindings()));
+            sutRows = testCluster.coordinator(node).executeWithPaging(compiledStatement.cql(),
                                                                       cl,
-                                                                      2,
-                                                                      compiled.bindings());
-            assertRows(modelRows, sutRows);
+                                                                      // TODO: randomsie page size
+                                                                      20,
+                                                                      compiledStatement.bindings());
+            assertRows(sutRows, modelRows);
         }
         catch (Throwable t)
         {
-            logger.error(String.format("Caught exception while executing: %s", query), t);
-            throw t;
+            throw new RuntimeException(String.format("Caught exception while executing: %s with %s CL on node %d", query, cl, node), t) ;
         }
     }
 
@@ -101,10 +135,11 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
 
     protected void run(DeletesDSL.Delete delete, ConsistencyLevel cl, int node)
     {
+        assert !deadNodes.contains(node);
+        CompiledStatement compiledStatement = delete.compile();
+
         try
         {
-            CompiledStatement compiledStatement = delete.compile();
-
             modelCluster.get(1).executeInternal(compiledStatement.cql(), compiledStatement.bindings());
             testCluster.coordinator(node).execute(compiledStatement.cql(),
                                                   cl,
@@ -112,8 +147,7 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         }
         catch (Throwable t)
         {
-            logger.error(String.format("Caught exception while executing: %s", delete), t);
-            throw t;
+            throw new RuntimeException(String.format("Caught exception while executing: %s", delete), t);
         }
     }
 
@@ -124,10 +158,11 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
 
     protected void run(WritesDSL.Write write, ConsistencyLevel cl, int node)
     {
+        assert !deadNodes.contains(node);
+        CompiledStatement compiledStatement = write.compile();
         try
         {
             modelState.addFullKey(write.key());
-            CompiledStatement compiledStatement = write.compile();
 
             modelCluster.get(1).executeInternal(compiledStatement.cql(), compiledStatement.bindings());
             testCluster.coordinator(node).execute(compiledStatement.cql(),
@@ -136,13 +171,13 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
         }
         catch (Throwable t)
         {
-            logger.error(String.format("Caught exception while executing: %s", write), t);
-            throw t;
+            throw new RuntimeException(String.format("Caught exception while executing: %s", write), t);
         }
     }
 
     protected void insertRows(List<WritesDSL.Insert> rows, int node)
     {
+        assert !deadNodes.contains(node);
         for (WritesDSL.Write row : rows)
             run(row, node);
     }
@@ -160,12 +195,13 @@ public abstract class StatefulModel extends StatefulTheory.StepBased
     @Override
     public void teardown()
     {
+        restoreNetwork();
         // Make sure to drop the table to avoid OOMs
         if (schemaSpec != null)
         {
             String dropTable = String.format("DROP TABLE %s.%s", schemaSpec.ksName, schemaSpec.tableName);
-            testCluster.schemaChange(dropTable);
             modelCluster.schemaChange(dropTable);
+            testCluster.schemaChange(dropTable);
         }
     }
 }
