@@ -24,11 +24,13 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.datastax.driver.core.querybuilder.QueryBuilder;
+import org.apache.cassandra.quicktheories.Extensions;
 import org.apache.cassandra.utils.FBUtilities;
 import org.quicktheories.core.Gen;
 import org.quicktheories.core.RandomnessSource;
 import org.quicktheories.generators.Generate;
 
+import static com.datastax.driver.core.querybuilder.QueryBuilder.timestamp;
 import static org.apache.cassandra.quicktheories.generators.Relation.QueryKind;
 import static org.quicktheories.generators.SourceDSL.arbitrary;
 
@@ -52,7 +54,6 @@ public class DeletesDSL
                            null,
                            Generate.constant(QueryKind.SINGLE_PARTITION));
     }
-
 
     /**
      * Generate a single partition delete
@@ -275,7 +276,7 @@ public class DeletesDSL
                 bindings[i] = relations.get(i).value();
             }
 
-            timestamp.ifPresent(delete::setDefaultTimestamp);
+            timestamp.ifPresent(ts -> delete.using(timestamp(ts)));
             return new CompiledStatement(delete.toString(), bindings);
         }
 
