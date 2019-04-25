@@ -20,9 +20,14 @@ package org.apache.cassandra.distributed.impl;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.UnknownHostException;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -37,6 +42,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.google.common.base.Charsets;
 import com.google.common.collect.Sets;
 
 import org.slf4j.Logger;
@@ -53,6 +59,7 @@ import org.apache.cassandra.distributed.api.IMessageFilters;
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.PropertyFileSnitch;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.SimpleCondition;
@@ -122,7 +129,17 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
 
         private IInvokableInstance newInstance()
         {
-            ClassLoader classLoader = new InstanceClassLoader(config.num(), version.classpath, sharedClassLoader);
+            //Add the root so resources can be loaded out of it
+            List<URL> classpath = new ArrayList<>(Arrays.asList(version.classpath));
+            try
+            {
+                classpath.add(0, root.toURI().toURL());
+            }
+            catch (MalformedURLException e)
+            {
+                throw new RuntimeException(e);
+            }
+            ClassLoader classLoader = new InstanceClassLoader(config.num(), classpath.toArray(new URL[0]), sharedClassLoader);
             return Instance.transferAdhoc((SerializableBiFunction<IInstanceConfig, ClassLoader, Instance>)Instance::new, classLoader)
                                         .apply(config.forVersion(version.major), classLoader);
         }
@@ -322,36 +339,38 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
-    create(int nodeCount, Factory<I, C> factory) throws Throwable
+    create(int nodeCount, Factory<I, C> factory, Map<String, Integer> dcs) throws Throwable
     {
-        return create(nodeCount, Files.createTempDirectory("dtests").toFile(), factory);
+        return create(nodeCount, Files.createTempDirectory("dtests").toFile(), factory, dcs);
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
-    create(int nodeCount, File root, Factory<I, C> factory)
+    create(int nodeCount, File root, Factory<I, C> factory, Map<String, Integer> dcs)
     {
-        return create(nodeCount, Versions.CURRENT, root, factory);
+        return create(nodeCount, Versions.CURRENT, root, factory, dcs);
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
-    create(int nodeCount, Versions.Version version, Factory<I, C> factory) throws IOException
+    create(int nodeCount, Versions.Version version, Factory<I, C> factory, Map<String, Integer> dcs) throws IOException
     {
-        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory);
+        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), factory, dcs);
     }
 
     protected static <I extends IInstance, C extends AbstractCluster<I>> C
-    create(int nodeCount, Versions.Version version, File root, Factory<I, C> factory)
+    create(int nodeCount, Versions.Version version, File root, Factory<I, C> factory, Map<String, Integer> dcs)
     {
         root.mkdirs();
         setupLogging(root);
 
         ClassLoader sharedClassLoader = Thread.currentThread().getContextClassLoader();
 
+        File pfsProperties = createPFSProperties(root, dcs);
+
         List<InstanceConfig> configs = new ArrayList<>();
         long token = Long.MIN_VALUE + 1, increment = 2 * (Long.MAX_VALUE / nodeCount);
         for (int i = 0 ; i < nodeCount ; ++i)
         {
-            InstanceConfig config = InstanceConfig.generate(i + 1, root, String.valueOf(token));
+            InstanceConfig config = InstanceConfig.generate(i + 1, root, String.valueOf(token), pfsProperties);
             configs.add(config);
             token += increment;
         }
@@ -359,6 +378,35 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster, 
         C cluster = factory.newCluster(root, version, configs, sharedClassLoader);
         cluster.startup();
         return cluster;
+    }
+
+    private static File createPFSProperties(File root, Map<String, Integer> dcs)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append("default=dc1:r1");
+        sb.append(System.lineSeparator());
+        int endpointCounter = 1;
+        for (Map.Entry<String, Integer> e : dcs.entrySet())
+        {
+            String dc = e.getKey();
+            Integer replicas = e.getValue();
+            for (int i = 0; i < replicas; i++)
+            {
+                sb.append("127.0.0." + endpointCounter + "=" + dc + ":r1");
+                sb.append(System.lineSeparator());
+                endpointCounter++;
+            }
+        }
+        File pfsProperties = new File(root, PropertyFileSnitch.SNITCH_PROPERTIES_FILENAME);
+        try
+        {
+            Files.write(pfsProperties.toPath(), sb.toString().getBytes(Charsets.UTF_8));
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+        return pfsProperties;
     }
 
     private static void setupLogging(File root)

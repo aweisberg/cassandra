@@ -20,6 +20,7 @@ package org.apache.cassandra.distributed.test;
 
 import java.io.File;
 
+import com.google.common.collect.ImmutableMap;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -37,7 +38,7 @@ public class DistributedReadWritePathTest extends DistributedTestBase
     {
         // TODO: API to turn logging off and on
         // maybe something like node.silence()
-        try (Cluster cluster = init(Cluster.create(3)))
+        try (Cluster cluster = init(Cluster.create(3, ImmutableMap.of("dc1", 1, "dc2", 1, "dc3", 1))))
         {
             cluster.schemaChange("CREATE TABLE " + KEYSPACE + ".tbl (pk int, ck int, v int, PRIMARY KEY (pk, ck)) WITH read_repair='none'");
 

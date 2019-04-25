@@ -21,7 +21,11 @@ package org.apache.cassandra.distributed;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+
+import com.google.common.collect.ImmutableMap;
 
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
@@ -47,12 +51,17 @@ public class Cluster extends AbstractCluster<IInvokableInstance> implements IClu
 
     public static Cluster create(int nodeCount) throws Throwable
     {
-        return create(nodeCount, Cluster::new);
+        return create(nodeCount, Cluster::new, ImmutableMap.of());
+    }
+
+    public static Cluster create(int nodeCount, Map<String, Integer> dcs) throws Throwable
+    {
+        return create(nodeCount, Cluster::new, dcs);
     }
 
     public static Cluster create(int nodeCount, File root)
     {
-        return create(nodeCount, Versions.CURRENT, root, Cluster::new);
+        return create(nodeCount, Versions.CURRENT, root, Cluster::new, null);
     }
 }
 

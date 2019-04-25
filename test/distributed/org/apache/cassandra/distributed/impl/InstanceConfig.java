@@ -22,6 +22,7 @@ import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.ParameterizedClass;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.PropertyFileSnitch;
 import org.apache.cassandra.locator.SimpleSeedProvider;
 import org.apache.cassandra.locator.SimpleSnitch;
 
@@ -98,7 +99,7 @@ public class InstanceConfig implements IInstanceConfig
                 .set("memtable_heap_space_in_mb", 10)
                 .set("commitlog_sync", "batch")
                 .set("storage_port", 7010)
-                .set("endpoint_snitch", SimpleSnitch.class.getName())
+                .set("endpoint_snitch", PropertyFileSnitch.class.getName())
                 .set("seed_provider", new ParameterizedClass(SimpleSeedProvider.class.getName(),
                         Collections.singletonMap("seeds", "127.0.0.1:7010")))
                 // required settings for dtest functionality
@@ -203,7 +204,7 @@ public class InstanceConfig implements IInstanceConfig
         return (String)params.get(name);
     }
 
-    public static InstanceConfig generate(int nodeNum, File root, String token)
+    public static InstanceConfig generate(int nodeNum, File root, String token, File pfsProperties)
     {
         return new InstanceConfig(nodeNum,
                                   "127.0.0." + nodeNum,

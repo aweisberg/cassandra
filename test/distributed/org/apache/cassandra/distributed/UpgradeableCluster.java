@@ -23,6 +23,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
 
+import com.google.common.collect.ImmutableMap;
+
 import org.apache.cassandra.distributed.api.ICluster;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.impl.IUpgradeableInstance;
@@ -50,21 +52,21 @@ public class UpgradeableCluster extends AbstractCluster<IUpgradeableInstance> im
 
     public static UpgradeableCluster create(int nodeCount) throws Throwable
     {
-        return create(nodeCount, UpgradeableCluster::new);
+        return create(nodeCount, UpgradeableCluster::new, ImmutableMap.of());
     }
     public static UpgradeableCluster create(int nodeCount, File root)
     {
-        return create(nodeCount, Versions.CURRENT, root, UpgradeableCluster::new);
+        return create(nodeCount, Versions.CURRENT, root, UpgradeableCluster::new, ImmutableMap.of());
     }
 
     public static UpgradeableCluster create(int nodeCount, Versions.Version version) throws IOException
     {
-        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), UpgradeableCluster::new);
+        return create(nodeCount, version, Files.createTempDirectory("dtests").toFile(), UpgradeableCluster::new, ImmutableMap.of());
     }
 
     public static UpgradeableCluster create(int nodeCount, Versions.Version version, File root)
     {
-        return create(nodeCount, version, root, UpgradeableCluster::new);
+        return create(nodeCount, version, root, UpgradeableCluster::new, ImmutableMap.of());
     }
 
 }

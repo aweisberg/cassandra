@@ -81,7 +81,15 @@ public class DistributedTestBase
 
     protected static <C extends AbstractCluster<?>> C init(C cluster)
     {
-        cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + cluster.size() + "};");
+        return init(cluster, false);
+    }
+
+    protected static <C extends AbstractCluster<?>> C init(C cluster, boolean multidc)
+    {
+        if (multidc)
+            cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'NetworkTopologyStrategy', 'dc1': 1, 'dc2' : 1, 'dc3' : 1};");
+        else
+            cluster.schemaChange("CREATE KEYSPACE " + KEYSPACE + " WITH replication = {'class': 'SimpleStrategy', 'replication_factor': " + cluster.size() + "};");
         return cluster;
     }
 

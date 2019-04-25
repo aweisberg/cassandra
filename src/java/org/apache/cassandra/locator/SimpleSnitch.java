@@ -17,6 +17,10 @@
  */
 package org.apache.cassandra.locator;
 
+import java.util.Map;
+
+import com.google.common.collect.ImmutableMap;
+
 /**
  * A simple endpoint snitch implementation that treats Strategy order as proximity,
  * allowing non-read-repaired reads to prefer a single endpoint, which improves
@@ -24,6 +28,20 @@ package org.apache.cassandra.locator;
  */
 public class SimpleSnitch extends AbstractEndpointSnitch
 {
+    private final boolean throwOnMissingDC;
+    private final Map<InetAddressAndPort, String> endpointToDC;
+
+    public SimpleSnitch()
+    {
+        this(ImmutableMap.of(), false);
+    }
+
+    public SimpleSnitch(Map<InetAddressAndPort, String> endpointToDC, boolean throwOnMissingDC)
+    {
+        this.throwOnMissingDC = throwOnMissingDC;
+        this.endpointToDC = endpointToDC;
+    }
+
     public String getRack(InetAddressAndPort endpoint)
     {
         return "rack1";
@@ -31,7 +49,12 @@ public class SimpleSnitch extends AbstractEndpointSnitch
 
     public String getDatacenter(InetAddressAndPort endpoint)
     {
-        return "datacenter1";
+        if (endpointToDC == null)
+            return "datacenter1";
+        String dc = endpointToDC.get(endpoint);
+        if (dc == null && throwOnMissingDC)
+            throw new RuntimeException("Couldn't find DC for endpoint " + endpoint);
+        return dc != null ? dc : "datacenter1";
     }
 
     @Override
