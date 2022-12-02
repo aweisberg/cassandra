@@ -31,10 +31,16 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import org.apache.cassandra.cql3.CQLTester;
 
 import accord.primitives.Unseekables;
 import accord.topology.Topologies;
 import org.apache.cassandra.cql3.functions.types.utils.Bytes;
+import org.apache.cassandra.db.marshal.*;
+import org.apache.cassandra.distributed.api.ConsistencyLevel;
+import org.apache.cassandra.distributed.api.ICoordinator;
+import org.apache.cassandra.distributed.api.SimpleQueryResult;
+import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.db.marshal.MapType;
@@ -50,15 +56,16 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.cql3.CQLTester;
-import org.apache.cassandra.distributed.api.ConsistencyLevel;
-import org.apache.cassandra.distributed.api.SimpleQueryResult;
-import org.apache.cassandra.service.accord.AccordService;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 public class AccordCQLTest extends AccordTestBase
 {
@@ -268,7 +275,7 @@ public class AccordCQLTest extends AccordTestBase
              cluster ->
              {
                  cluster.coordinator(1).execute("INSERT INTO " + currentTable + " (k, c, v) VALUES (0, 0, " + lhs + ");", ConsistencyLevel.ALL);
-             
+
                  String query = "BEGIN TRANSACTION\n" +
                                 "  LET row1 = (SELECT v FROM " + currentTable + " WHERE k = ? LIMIT 1);\n" +
                                 "  SELECT row1.v;\n" +
@@ -277,7 +284,7 @@ public class AccordCQLTest extends AccordTestBase
                                 "  END IF\n" +
                                 "COMMIT TRANSACTION";
                  assertRowEqualsWithPreemptedRetry(cluster, new Object[] { lhs }, query, 0, rhs, 1, 0, 1);
-             
+
                  String check = "BEGIN TRANSACTION\n" +
                                 "  SELECT * FROM " + currentTable + " WHERE k = ? AND c = ?;\n" +
                                 "COMMIT TRANSACTION";
@@ -1477,7 +1484,7 @@ public class AccordCQLTest extends AccordTestBase
     {
         test(cluster -> {
              cluster.coordinator(1).execute("INSERT INTO " + currentTable + " (k, c, v) VALUES (0, 0, 0);", ConsistencyLevel.ALL);
-             
+
              String cql = "BEGIN TRANSACTION\n" +
                           "    LET row1 = (SELECT * FROM " + currentTable + " WHERE k = 0 LIMIT ?);\n" +
                           "    SELECT row1.v;\n" +
@@ -2277,7 +2284,7 @@ public class AccordCQLTest extends AccordTestBase
     {
         test(cluster -> {
              cluster.coordinator(1).execute("INSERT INTO " + currentTable + " (k, c, v) VALUES (0, 0, 0)", ConsistencyLevel.ALL);
-             
+
              String cql = "BEGIN TRANSACTION\n" +
                           "  LET a = (SELECT * FROM " + currentTable + " WHERE k=0 AND c=0);\n" +
                           "  IF a IS NOT NULL THEN\n" +
@@ -2295,7 +2302,7 @@ public class AccordCQLTest extends AccordTestBase
     {
         test(cluster -> {
              cluster.coordinator(1).execute("INSERT INTO " + currentTable + " (k, c, v) VALUES (0, 0, 0)", ConsistencyLevel.ALL);
-             
+
              String cql = "BEGIN TRANSACTION\n" +
                           "  LET a = (SELECT * FROM " + currentTable + " WHERE k=0 AND c=0);\n" +
                           "  IF a IS NOT NULL THEN\n" +
@@ -2303,6 +2310,32 @@ public class AccordCQLTest extends AccordTestBase
                           "  END IF\n" +
                           "COMMIT TRANSACTION";
              assertEmptyWithPreemptedRetry(cluster, cql);
+        });
+    }
+
+    @Test
+    public void testCASAndSerialRead() throws Exception
+    {
+        test("CREATE TABLE " + currentTable + " (id int, c int, v int, s int static, PRIMARY KEY ((id), c));",
+            cluster -> {
+                ICoordinator coordinator = cluster.coordinator(1);
+                int startingAccordCoordinateCount = getAccordCoordinateCount();
+                coordinator.execute("INSERT INTO " + currentTable + " (id, c, v, s) VALUES (1, 2, 3, 5);", ConsistencyLevel.ALL);
+                assertRowSerial(cluster, "SELECT id, c, v, s FROM " + currentTable + " WHERE id = 1 AND c = 2", 1, 2, 3, 5);
+                assertRowEqualsWithPreemptedRetry(cluster, new Object[]{true}, "UPDATE " + currentTable + " SET v = 4 WHERE id = 1 AND c = 2 IF v = 3");
+                assertRowSerial(cluster, "SELECT id, c, v, s FROM " + currentTable + " WHERE id = 1 AND c = 2", 1, 2, 4, 5);
+                assertRowEqualsWithPreemptedRetry(cluster, new Object[]{ false, 4 }, "UPDATE " + currentTable + " SET v = 4 WHERE id = 1 AND c = 2 IF v = 3");
+                assertRowSerial(cluster, "SELECT id, c, v, s FROM " + currentTable + " WHERE id = 1 AND c = 2", 1, 2, 4, 5);
+
+                // Test working with a static column
+                assertRowEqualsWithPreemptedRetry(cluster, new Object[]{ false, 5 }, "UPDATE " + currentTable + " SET v = 5 WHERE id = 1 AND c = 2 IF s = 4");
+                assertRowSerial(cluster, "SELECT id, c, v, s FROM " + currentTable + " WHERE id = 1 AND c = 2", 1, 2, 4, 5);
+                assertRowEqualsWithPreemptedRetry(cluster, new Object[]{true}, "UPDATE " + currentTable + " SET v = 5 WHERE id = 1 AND c = 2 IF s = 5");
+                assertRowSerial(cluster, "SELECT id, c, v, s FROM " + currentTable + " WHERE id = 1 AND c = 2", 1, 2, 5, 5);
+                assertRowEqualsWithPreemptedRetry(cluster, new Object[]{true}, "UPDATE " + currentTable + " SET s = 6 WHERE id = 1 IF s = 5");
+                assertRowSerial(cluster, "SELECT id, c, v, s FROM " + currentTable + " WHERE id = 1 AND c = 2", 1, 2, 5, 6);
+                // Make sure all the consensus using queries actually were run on Accord
+                assertEquals( 11, getAccordCoordinateCount() - startingAccordCoordinateCount);
         });
     }
 }
