@@ -18,22 +18,6 @@
 
 package org.apache.cassandra.simulator;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Optional;
-import java.util.Random;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.ToDoubleFunction;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
-import org.junit.BeforeClass;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.airlift.airline.Command;
 import io.airlift.airline.Help;
 import io.airlift.airline.Option;
@@ -52,30 +36,21 @@ import org.apache.cassandra.simulator.utils.ChanceRange;
 import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.Hex;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
+import org.junit.BeforeClass;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.ToDoubleFunction;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static java.util.Arrays.stream;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
-import static org.apache.cassandra.config.CassandraRelevantProperties.BATCH_COMMIT_LOG_SYNC_INTERVAL;
-import static org.apache.cassandra.config.CassandraRelevantProperties.CASSANDRA_JMX_REMOTE_PORT;
-import static org.apache.cassandra.config.CassandraRelevantProperties.CLOCK_GLOBAL;
-import static org.apache.cassandra.config.CassandraRelevantProperties.CLOCK_MONOTONIC_APPROX;
-import static org.apache.cassandra.config.CassandraRelevantProperties.CLOCK_MONOTONIC_PRECISE;
-import static org.apache.cassandra.config.CassandraRelevantProperties.DETERMINISM_CONSISTENT_DIRECTORY_LISTINGS;
-import static org.apache.cassandra.config.CassandraRelevantProperties.DETERMINISM_UNSAFE_UUID_NODE;
-import static org.apache.cassandra.config.CassandraRelevantProperties.DISABLE_SSTABLE_ACTIVITY_TRACKING;
-import static org.apache.cassandra.config.CassandraRelevantProperties.DETERMINISM_SSTABLE_COMPRESSION_DEFAULT;
-import static org.apache.cassandra.config.CassandraRelevantProperties.GOSSIPER_SKIP_WAITING_TO_SETTLE;
-import static org.apache.cassandra.config.CassandraRelevantProperties.IGNORE_MISSING_NATIVE_FILE_HINTS;
-import static org.apache.cassandra.config.CassandraRelevantProperties.IS_DISABLED_MBEAN_REGISTRATION;
-import static org.apache.cassandra.config.CassandraRelevantProperties.MEMTABLE_OVERHEAD_SIZE;
-import static org.apache.cassandra.config.CassandraRelevantProperties.MIGRATION_DELAY;
-import static org.apache.cassandra.config.CassandraRelevantProperties.PAXOS_REPAIR_RETRY_TIMEOUT_IN_MS;
-import static org.apache.cassandra.config.CassandraRelevantProperties.RING_DELAY;
-import static org.apache.cassandra.config.CassandraRelevantProperties.SHUTDOWN_ANNOUNCE_DELAY_IN_MS;
-import static org.apache.cassandra.config.CassandraRelevantProperties.SYSTEM_AUTH_DEFAULT_RF;
-import static org.apache.cassandra.config.CassandraRelevantProperties.TEST_IGNORE_SIGAR;
-import static org.apache.cassandra.config.CassandraRelevantProperties.DISABLE_GOSSIP_ENDPOINT_REMOVAL;
-import static org.apache.cassandra.config.CassandraRelevantProperties.TEST_JVM_DTEST_DISABLE_SSL;
+import static org.apache.cassandra.config.CassandraRelevantProperties.*;
 import static org.apache.cassandra.simulator.debug.Reconcile.reconcileWith;
 import static org.apache.cassandra.simulator.debug.Record.record;
 import static org.apache.cassandra.simulator.debug.SelfReconcile.reconcileWithSelf;
@@ -258,6 +233,9 @@ public class SimulationRunner
         @Option(name = { "--capture" }, title = "wait,wake,now", description = "Capture thread stack traces alongside events, choose from (wait,wake,now)")
         protected String capture;
 
+        @Option(name = { "--legacy-paxos-strategy" }, title = "migration|accord]", description = "What execution strategy to use for CAS and serial read")
+        protected String legacyPaxosStrategy;
+
         protected void propagate(B builder)
         {
             builder.threadCount(threadCount);
@@ -326,6 +304,8 @@ public class SimulationRunner
                                                  .orElse(new int[0]);
                 builder.debug(debugLevels, debugPrimaryKeys);
             }
+
+            Optional.ofNullable(legacyPaxosStrategy).ifPresent(builder::legacyPaxosStrategy);
         }
 
         public void run(B builder) throws IOException

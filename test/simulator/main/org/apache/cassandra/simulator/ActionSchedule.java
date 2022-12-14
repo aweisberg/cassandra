@@ -18,14 +18,8 @@
 
 package org.apache.cassandra.simulator;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.LongConsumer;
 import java.util.function.LongSupplier;
 import java.util.stream.Stream;
@@ -45,16 +39,11 @@ import org.apache.cassandra.utils.Throwables;
 
 import static org.apache.cassandra.simulator.Action.Modifier.DAEMON;
 import static org.apache.cassandra.simulator.Action.Modifier.STREAM;
-import static org.apache.cassandra.simulator.Action.Phase.CONSEQUENCE;
-import static org.apache.cassandra.simulator.Action.Phase.READY_TO_SCHEDULE;
-import static org.apache.cassandra.simulator.Action.Phase.RUNNABLE;
-import static org.apache.cassandra.simulator.Action.Phase.SCHEDULED;
-import static org.apache.cassandra.simulator.Action.Phase.SEQUENCED_POST_SCHEDULED;
-import static org.apache.cassandra.simulator.Action.Phase.SEQUENCED_PRE_SCHEDULED;
+import static org.apache.cassandra.simulator.Action.Phase.*;
 import static org.apache.cassandra.simulator.ActionSchedule.Mode.TIME_LIMITED;
 import static org.apache.cassandra.simulator.ActionSchedule.Mode.UNLIMITED;
-import static org.apache.cassandra.simulator.SimulatorUtils.failWithOOM;
 import static org.apache.cassandra.simulator.SimulatorUtils.dumpStackTraces;
+import static org.apache.cassandra.simulator.SimulatorUtils.failWithOOM;
 
 /**
  * TODO (feature): support total stalls on specific nodes
@@ -376,6 +365,9 @@ public class ActionSchedule implements CloseableIterator<Object>, LongConsumer
         maybeScheduleDaemons(perform);
 
         ActionList consequences = perform.perform();
+        System.out.printf("%.3fs %s%n", TimeUnit.NANOSECONDS.toMillis(now) / 1000.0, perform);
+        if (!consequences.isEmpty())
+            System.out.printf("%.3fs Consequences: %s%n", TimeUnit.NANOSECONDS.toMillis(now) / 1000.0, consequences);
         add(consequences);
         if (perform.is(STREAM) && !perform.is(DAEMON))
             --activeFiniteStreamCount;

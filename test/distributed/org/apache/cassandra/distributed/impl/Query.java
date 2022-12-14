@@ -72,6 +72,7 @@ public class Query implements IIsolatedExecutor.SerializableCallable<Object[][]>
         // warnings as it sets a new State instance on the ThreadLocal.
         ClientWarn.instance.captureWarnings();
 
+        System.out.printf("Calling query %s%n", query);
         ResultMessage res = prepared.execute(QueryState.forInternalCalls(),
                                              QueryOptions.create(commitConsistency,
                                                                  boundBBValues,

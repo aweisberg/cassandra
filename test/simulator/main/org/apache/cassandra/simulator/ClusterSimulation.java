@@ -18,37 +18,14 @@
 
 package org.apache.cassandra.simulator;
 
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.nio.file.FileSystem;
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.function.Consumer;
-import java.util.function.IntSupplier;
-import java.util.function.LongConsumer;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-
 import com.google.common.jimfs.Configuration;
 import com.google.common.jimfs.Jimfs;
 import com.google.common.util.concurrent.AsyncFunction;
 import com.google.common.util.concurrent.FutureCallback;
-
 import org.apache.cassandra.concurrent.ExecutorFactory;
 import org.apache.cassandra.config.ParameterizedClass;
 import org.apache.cassandra.distributed.Cluster;
-import org.apache.cassandra.distributed.api.Feature;
-import org.apache.cassandra.distributed.api.IInstance;
-import org.apache.cassandra.distributed.api.IInstanceConfig;
-import org.apache.cassandra.distributed.api.IInstanceInitializer;
-import org.apache.cassandra.distributed.api.IInvokableInstance;
-import org.apache.cassandra.distributed.api.IIsolatedExecutor;
+import org.apache.cassandra.distributed.api.*;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor.SerializableBiConsumer;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor.SerializableConsumer;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor.SerializableRunnable;
@@ -62,25 +39,11 @@ import org.apache.cassandra.simulator.asm.InterceptAsClassTransformer;
 import org.apache.cassandra.simulator.asm.NemesisFieldSelectors;
 import org.apache.cassandra.simulator.cluster.ClusterActions;
 import org.apache.cassandra.simulator.cluster.ClusterActions.TopologyChange;
-import org.apache.cassandra.simulator.systems.Failures;
+import org.apache.cassandra.simulator.systems.*;
 import org.apache.cassandra.simulator.systems.InterceptedWait.CaptureSites.Capture;
-import org.apache.cassandra.simulator.systems.InterceptibleThread;
-import org.apache.cassandra.simulator.systems.InterceptingGlobalMethods;
 import org.apache.cassandra.simulator.systems.InterceptingGlobalMethods.ThreadLocalRandomCheck;
-import org.apache.cassandra.simulator.systems.InterceptorOfGlobalMethods;
-import org.apache.cassandra.simulator.systems.InterceptingExecutorFactory;
 import org.apache.cassandra.simulator.systems.InterceptorOfGlobalMethods.IfInterceptibleThread;
-import org.apache.cassandra.simulator.systems.NetworkConfig;
 import org.apache.cassandra.simulator.systems.NetworkConfig.PhaseConfig;
-import org.apache.cassandra.simulator.systems.SchedulerConfig;
-import org.apache.cassandra.simulator.systems.SimulatedFutureActionScheduler;
-import org.apache.cassandra.simulator.systems.SimulatedSystems;
-import org.apache.cassandra.simulator.systems.SimulatedBallots;
-import org.apache.cassandra.simulator.systems.SimulatedExecution;
-import org.apache.cassandra.simulator.systems.SimulatedFailureDetector;
-import org.apache.cassandra.simulator.systems.SimulatedMessageDelivery;
-import org.apache.cassandra.simulator.systems.SimulatedSnitch;
-import org.apache.cassandra.simulator.systems.SimulatedTime;
 import org.apache.cassandra.simulator.utils.ChanceRange;
 import org.apache.cassandra.simulator.utils.IntRange;
 import org.apache.cassandra.simulator.utils.KindOfSequence;
@@ -94,15 +57,20 @@ import org.apache.cassandra.utils.memory.BufferPool;
 import org.apache.cassandra.utils.memory.BufferPools;
 import org.apache.cassandra.utils.memory.HeapPool;
 
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.nio.file.FileSystem;
+import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.*;
+
 import static java.lang.Integer.min;
 import static java.util.Collections.emptyMap;
-import static java.util.concurrent.TimeUnit.MICROSECONDS;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.NANOSECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.concurrent.TimeUnit.*;
 import static org.apache.cassandra.distributed.impl.AbstractCluster.getSharedClassPredicate;
 import static org.apache.cassandra.simulator.SimulatorUtils.failWithOOM;
-import static org.apache.cassandra.simulator.systems.NonInterceptible.Permit.REQUIRED;
 import static org.apache.cassandra.utils.Shared.Scope.ANY;
 import static org.apache.cassandra.utils.Shared.Scope.SIMULATION;
 
@@ -187,6 +155,8 @@ public class ClusterSimulation<S extends Simulation> implements AutoCloseable
         protected HeapPool.Logged.Listener memoryListener;
         protected SimulatedTime.Listener timeListener = (i1, i2) -> {};
         protected LongConsumer onThreadLocalRandomCheck;
+
+        protected String legacyPaxosStrategy = "migration";
 
         public Debug debug()
         {
@@ -515,6 +485,12 @@ public class ClusterSimulation<S extends Simulation> implements AutoCloseable
             return this;
         }
 
+        public Builder<S> legacyPaxosStrategy(String strategy)
+        {
+            this.legacyPaxosStrategy = strategy;
+            return this;
+        }
+
         public abstract ClusterSimulation<S> create(long seed) throws IOException;
     }
 
@@ -690,6 +666,7 @@ public class ClusterSimulation<S extends Simulation> implements AutoCloseable
                              .set("disk_access_mode", "standard")
                              .set("failure_detector", SimulatedFailureDetector.Instance.class.getName())
                              .set("commitlog_compression", new ParameterizedClass(LZ4Compressor.class.getName(), emptyMap()))
+                             .set("legacy_paxos_strategy", builder.legacyPaxosStrategy)
                          )))
                          .withInstanceInitializer(new IInstanceInitializer()
                          {

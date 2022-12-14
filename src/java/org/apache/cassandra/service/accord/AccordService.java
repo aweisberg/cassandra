@@ -18,6 +18,16 @@
 
 package org.apache.cassandra.service.accord;
 
+import java.util.Arrays;
+import java.util.Random;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import accord.api.Result;
 import accord.coordinate.Timeout;
 import accord.impl.SimpleProgressLog;
@@ -25,7 +35,6 @@ import accord.impl.SizeOfIntersectionSorter;
 import accord.local.Node;
 import accord.messages.Request;
 import accord.primitives.Txn;
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.cassandra.concurrent.Shutdownable;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -42,14 +51,10 @@ import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.Future;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
-import java.util.Arrays;
-import java.util.Random;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 public class AccordService implements Shutdownable
 {
+    private static final Logger logger = LoggerFactory.getLogger(AccordService.class);
+
     public final Node node;
     private final Shutdownable nodeShutdown;
     private final AccordMessageSink messageSink;
@@ -120,6 +125,7 @@ public class AccordService implements Shutdownable
     {
         try
         {
+            System.out.println("Coordinating an accord task");
             Future<Result> future = node.coordinate(txn);
             Result result = future.get(DatabaseDescriptor.getTransactionTimeout(TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS);
             return (TxnData) result;

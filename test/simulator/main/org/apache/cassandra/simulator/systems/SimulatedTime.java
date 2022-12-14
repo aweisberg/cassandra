@@ -31,19 +31,10 @@ import org.apache.cassandra.simulator.RandomSource;
 import org.apache.cassandra.simulator.utils.KindOfSequence;
 import org.apache.cassandra.simulator.utils.KindOfSequence.Period;
 import org.apache.cassandra.simulator.utils.LongRange;
-import org.apache.cassandra.utils.Clock;
-import org.apache.cassandra.utils.Closeable;
-import org.apache.cassandra.utils.FBUtilities;
-import org.apache.cassandra.utils.MonotonicClock;
+import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.MonotonicClock.AbstractEpochSamplingClock.AlmostSameTime;
-import org.apache.cassandra.utils.MonotonicClockTranslation;
-import org.apache.cassandra.utils.Shared;
 
-import static java.util.concurrent.TimeUnit.DAYS;
-import static java.util.concurrent.TimeUnit.HOURS;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.MINUTES;
-import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static java.util.concurrent.TimeUnit.*;
 import static org.apache.cassandra.simulator.RandomSource.Choices.uniform;
 
 // TODO (cleanup): when we encounter an exception and unwind the simulation, we should restore normal time to go with normal waits etc.
@@ -452,6 +443,12 @@ public class SimulatedTime
 
     public void tick(long nanos)
     {
+        long diffSeconds = NANOSECONDS.toSeconds(nanos - globalNanoTime);
+        if (diffSeconds > 1)
+        {
+             System.out.printf("What a jump %s%n", diffSeconds);
+        }
+        System.out.printf("Ticking %.3fs%n", NANOSECONDS.toMillis(nanos) / 1000.0);
         listener.accept("Tick", nanos);
         long global = globalNanoTime;
         if (nanos > global)

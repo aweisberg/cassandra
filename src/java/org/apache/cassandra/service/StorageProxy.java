@@ -17,11 +17,22 @@
  */
 package org.apache.cassandra.service;
 
-import accord.primitives.Txn;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheLoader;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.Uninterruptibles;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import accord.primitives.Txn;
 import org.apache.cassandra.batchlog.Batch;
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
@@ -63,16 +74,6 @@ import org.apache.cassandra.triggers.TriggerExecutor;
 import org.apache.cassandra.utils.*;
 import org.apache.cassandra.utils.concurrent.CountDownLatch;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.nio.ByteBuffer;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import static com.google.common.collect.Iterables.concat;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -236,11 +237,14 @@ public class StorageProxy implements StorageProxyMBean
 
         if (DatabaseDescriptor.getLegacyPaxosStrategy() == accord)
         {
+            logger.info("Modern cas");
+            // Attempting CAS with Accord
             TxnData data = AccordService.instance().coordinate(request.toAccordTxn(clientState, nowInSeconds), consistencyForPaxos);
             return request.toCasResult(data);
         }
         else
         {
+            logger.info("Legacy cas");
             return Paxos.useV2()
                    ? Paxos.cas(key, request, consistencyForPaxos, consistencyForCommit, clientState)
                    : legacyCas(keyspaceName, cfName, key, request, consistencyForPaxos, consistencyForCommit, clientState, nowInSeconds, queryStartNanoTime);
@@ -1790,10 +1794,12 @@ public class StorageProxy implements StorageProxyMBean
     {
         if (DatabaseDescriptor.getLegacyPaxosStrategy() == accord)
         {
+            logger.info("Modern read with consensus");
             return readWithAccord(group, consistencyLevel);
         }
         else
         {
+            logger.info("Legacy read with consensus");
             return Paxos.useV2()
                    ? Paxos.read(group, consistencyLevel)
                    : legacyReadWithPaxos(group, consistencyLevel, queryStartNanoTime);
@@ -1802,6 +1808,7 @@ public class StorageProxy implements StorageProxyMBean
 
     private static PartitionIterator readWithAccord(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel)
     {
+        System.out.println("Attempting read with Accord");
         if (group.queries.size() > 1)
             throw new InvalidRequestException("SERIAL/LOCAL_SERIAL consistency may only be requested for one partition at a time");
         TxnRead read = TxnRead.createRead(group.queries.get(0));

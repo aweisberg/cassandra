@@ -19,13 +19,8 @@
 package org.apache.cassandra.simulator;
 
 import java.io.Serializable;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.EnumSet;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import com.google.common.base.Preconditions;
 
@@ -39,21 +34,12 @@ import org.apache.cassandra.utils.Throwables;
 import static org.apache.cassandra.config.CassandraRelevantProperties.TEST_SIMULATOR_DEBUG;
 import static org.apache.cassandra.simulator.Action.Modifier.*;
 import static org.apache.cassandra.simulator.Action.Modifiers.NONE;
-import static org.apache.cassandra.simulator.Action.Phase.CANCELLED;
-import static org.apache.cassandra.simulator.Action.Phase.CONSEQUENCE;
-import static org.apache.cassandra.simulator.Action.Phase.FINISHED;
-import static org.apache.cassandra.simulator.Action.Phase.INVALIDATED;
-import static org.apache.cassandra.simulator.Action.Phase.NASCENT;
-import static org.apache.cassandra.simulator.Action.Phase.STARTED;
-import static org.apache.cassandra.simulator.Action.Phase.WITHHELD;
+import static org.apache.cassandra.simulator.Action.Phase.*;
 import static org.apache.cassandra.simulator.Action.RegisteredType.CHILD;
 import static org.apache.cassandra.simulator.Action.RegisteredType.LISTENER;
 import static org.apache.cassandra.simulator.ActionListener.Before.DROP;
-import static org.apache.cassandra.simulator.ActionListener.Before.INVALIDATE;
-import static org.apache.cassandra.simulator.ActionListener.Before.EXECUTE;
-import static org.apache.cassandra.simulator.utils.CompactLists.append;
-import static org.apache.cassandra.simulator.utils.CompactLists.remove;
-import static org.apache.cassandra.simulator.utils.CompactLists.safeForEach;
+import static org.apache.cassandra.simulator.ActionListener.Before.*;
+import static org.apache.cassandra.simulator.utils.CompactLists.*;
 
 public abstract class Action implements PriorityQueueNode
 {
@@ -833,6 +819,7 @@ public abstract class Action implements PriorityQueueNode
             long newDeadline = deadline == 0 ? time.nanoTime() : deadline;
             newDeadline += future.schedulerDelayNanos();
             deadline = newDeadline;
+            System.out.println("Setting deadline for " + this + " deadline " + (TimeUnit.NANOSECONDS.toMillis(deadline) / 1000.0));
             time.onTimeEvent("ResetDeadline", newDeadline);
         }
     }

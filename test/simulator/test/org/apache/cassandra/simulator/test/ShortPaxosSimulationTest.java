@@ -19,20 +19,18 @@
 package org.apache.cassandra.simulator.test;
 
 import java.io.IOException;
-import java.util.concurrent.ThreadLocalRandom;
 
-import org.junit.Ignore;
 import org.junit.Test;
 
 import org.apache.cassandra.simulator.paxos.PaxosSimulationRunner;
 
 public class ShortPaxosSimulationTest
 {
-    @Test
-    public void simulationTest() throws IOException
-    {
-        PaxosSimulationRunner.main(new String[] { "run", "-n", "3..6", "-t", "1000", "-c", "2", "--cluster-action-limit", "2", "-s", "30" });
-    }
+//    @Test
+//    public void simulationTest() throws IOException
+//    {
+//        PaxosSimulationRunner.main(new String[] { "run", "-n", "3..6", "-t", "1000", "-c", "2", "--cluster-action-limit", "2", "-s", "30" });
+//    }
 //
 // fails due to OOM DirectMemory - unclear why
 //
@@ -40,5 +38,19 @@ public class ShortPaxosSimulationTest
 //    public void selfReconcileTest() throws IOException
 //    {
 //        PaxosSimulationRunner.main(new String[] { "reconcile", "-n", "3..6", "-t", "1000", "-c", "2", "--cluster-action-limit", "2", "-s", "30", "--with-self" });
+//    }
+//
+    @Test
+    public void casOnAccordSimulationTest() throws IOException
+    {
+        //"--cluster-actions", ""
+        //"--legacy-paxos-strategy", "accord",
+        PaxosSimulationRunner.main(new String[] { "run", "--legacy-paxos-strategy", "accord", "-n", "3...6", "-t", "1000", "--cluster-action-limit", "-1", "-c", "2", "-s", "30" });
+    }
+//
+//    @Test
+//    public void casOnAccordSelfReconcileTest() throws IOException
+//    {
+//        PaxosSimulationRunner.main(new String[] { "run", "--legacy-paxos-strategy", "accord", "-n", "3..6", "-t", "1000", "-c", "2", "--cluster-action-limit", "2", "-s", "30" });
 //    }
 }

@@ -26,11 +26,11 @@ import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.annotation.Nullable;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.distributed.Cluster;
@@ -39,13 +39,7 @@ import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor;
 import org.apache.cassandra.distributed.impl.Instance;
 import org.apache.cassandra.service.accord.AccordService;
-import org.apache.cassandra.simulator.Action;
-import org.apache.cassandra.simulator.ActionList;
-import org.apache.cassandra.simulator.ActionListener;
-import org.apache.cassandra.simulator.ActionPlan;
-import org.apache.cassandra.simulator.Actions;
-import org.apache.cassandra.simulator.Debug;
-import org.apache.cassandra.simulator.RunnableActionScheduler;
+import org.apache.cassandra.simulator.*;
 import org.apache.cassandra.simulator.cluster.ClusterActions;
 import org.apache.cassandra.simulator.cluster.KeyspaceActions;
 import org.apache.cassandra.simulator.systems.SimulatedActionTask;
@@ -56,9 +50,7 @@ import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.cassandra.simulator.Action.Modifiers.RELIABLE;
 import static org.apache.cassandra.simulator.Action.Modifiers.RELIABLE_NO_TIMEOUTS;
-import static org.apache.cassandra.simulator.ActionSchedule.Mode.STREAM_LIMITED;
-import static org.apache.cassandra.simulator.ActionSchedule.Mode.TIME_AND_STREAM_LIMITED;
-import static org.apache.cassandra.simulator.ActionSchedule.Mode.TIME_LIMITED;
+import static org.apache.cassandra.simulator.ActionSchedule.Mode.*;
 import static org.apache.cassandra.simulator.Debug.EventType.PARTITION;
 
 @SuppressWarnings("unused")
@@ -159,6 +151,7 @@ abstract class AbstractPairOfSequencesPaxosSimulation extends PaxosSimulation
                 {
                     int node = simulated.random.uniform(1, nodes + 1);
                     IInvokableInstance instance = cluster.get(node);
+                    System.out.println("Getting an action with serial consistency " + serialConsistency + " and dcOf(Node) = " + simulated.snitch.dcOf(node) + " and readRatio " + readRatio);
                     switch (serialConsistency)
                     {
                         default: throw new AssertionError();
@@ -219,6 +212,7 @@ abstract class AbstractPairOfSequencesPaxosSimulation extends PaxosSimulation
                 long untilNanos = simulated.time.nanoTime() + SECONDS.toNanos(simulateKeyForSeconds.select(simulated.random));
                 int concurrency = withinKeyConcurrency.select(simulated.random);
                 Supplier<Action> supplier = primaryKeyActions.get(next);
+                System.out.printf("Requested an action for a primary key index " + next);
                 // while this stream is finite, it participates in an infinite stream via its parent, so we want to permit termination while it's running
                 return Actions.infiniteStream(concurrency, new Supplier<Action>()
                 {
@@ -227,9 +221,11 @@ abstract class AbstractPairOfSequencesPaxosSimulation extends PaxosSimulation
                     {
                         if (simulated.time.nanoTime() >= untilNanos)
                         {
+                            System.out.println("Bailing because untilNanos is < current time");
                             available.add(next);
                             return null;
                         }
+                        System.out.println("Actually returning primary key action.get()");
                         return supplier.get();
                     }
 
