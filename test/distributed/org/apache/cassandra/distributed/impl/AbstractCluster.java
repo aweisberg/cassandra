@@ -60,8 +60,6 @@ import org.junit.Assume;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Constants;
@@ -718,11 +716,6 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         }
     }
 
-    public void forEach(IIsolatedExecutor.SerializableRunnable runnable)
-    {
-        forEach(i -> i.sync(runnable));
-    }
-
     public void forEach(Consumer<? super I> consumer)
     {
         forEach(instances, consumer);
@@ -771,14 +764,6 @@ public abstract class AbstractCluster<I extends IInstance> implements ICluster<I
         for (int i = 0; i < verbs.length; ++i)
             ids[i] = verbs[i].id;
         return filters.verbs(ids);
-    }
-
-    public void disableAutoCompaction(String keyspace)
-    {
-        forEach(() -> {
-            for (ColumnFamilyStore cs : Keyspace.open(keyspace).getColumnFamilyStores())
-                cs.disableAutoCompaction();
-        });
     }
 
     public void schemaChange(String query)

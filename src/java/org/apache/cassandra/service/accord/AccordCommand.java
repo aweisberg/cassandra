@@ -23,12 +23,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
-
 import javax.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,8 +36,8 @@ import accord.api.Data;
 import accord.api.Result;
 import accord.api.RoutingKey;
 import accord.local.Command;
-import accord.local.CommandStore;
 import accord.local.CommandListener;
+import accord.local.CommandStore;
 import accord.local.Listeners;
 import accord.local.PreLoadContext;
 import accord.local.SafeCommandStore;
@@ -62,7 +62,7 @@ import org.apache.cassandra.service.accord.async.AsyncContext;
 import org.apache.cassandra.service.accord.store.StoredNavigableMap;
 import org.apache.cassandra.service.accord.store.StoredSet;
 import org.apache.cassandra.service.accord.store.StoredValue;
-import org.apache.cassandra.service.accord.txn.TxnData;
+import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.concurrent.AsyncPromise;
 import org.apache.cassandra.utils.concurrent.Future;
@@ -70,6 +70,7 @@ import org.apache.cassandra.utils.concurrent.Future;
 import static accord.local.Status.Durability.Local;
 import static accord.local.Status.Durability.NotDurable;
 import static accord.local.Status.PreApplied;
+import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.cassandra.service.accord.AccordState.WriteOnly.applyMapChanges;
 import static org.apache.cassandra.service.accord.AccordState.WriteOnly.applySetChanges;
 
@@ -80,6 +81,8 @@ public class AccordCommand extends Command implements AccordState<TxnId>
     private static final AtomicInteger INSTANCE_COUNTER = new AtomicInteger(0);
 
     private static final long EMPTY_SIZE = ObjectSizes.measure(new AccordCommand(null));
+
+    private static final ConcurrentMap<TxnId, Listeners> txnIdToTransientListeners = new ConcurrentHashMap<>();
 
     public static class WriteOnly extends AccordCommand implements AccordState.WriteOnly<TxnId, AccordCommand>
     {
@@ -93,7 +96,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
         @Override
         public void future(Future<?> future)
         {
-            Preconditions.checkArgument(this.future == null);
+            checkArgument(this.future == null);
             this.future = future;
         }
 
@@ -136,7 +139,9 @@ public class AccordCommand extends Command implements AccordState<TxnId>
     public final StoredSet.Navigable<TxnId> blockingApplyOn;
 
     public final StoredSet.DeterministicIdentity<ListenerProxy> storedListeners;
-    private final Listeners transientListeners;
+
+    // use transientListeners() and maybeTransientListeners()
+    private Listeners transientListeners;
 
     public AccordCommand(TxnId txnId)
     {
@@ -158,7 +163,6 @@ public class AccordCommand extends Command implements AccordState<TxnId>
         waitingOnCommit = new StoredSet.Navigable<>(rw());
         waitingOnApply = new StoredNavigableMap<>(rw());
         storedListeners = new StoredSet.DeterministicIdentity<>(rw());
-        transientListeners = new Listeners();
         blockingCommitOn = new StoredSet.Navigable<>(rw());
         blockingApplyOn = new StoredSet.Navigable<>(rw());
     }
@@ -185,7 +189,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
                ", waitingOnCommit=" + waitingOnCommit +
                ", waitingOnApply=" + waitingOnApply +
                ", storedListeners=" + storedListeners +
-               ", transientListeners=" + transientListeners +
+               ", transientListeners=" + maybeTransientListeners() +
                ", blockingCommitOn=" + blockingCommitOn +
                ", blockingApplyOn=" + blockingApplyOn +
                '}';
@@ -231,7 +235,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
         blockingCommitOn.setEmpty();
         waitingOnApply.setEmpty();
         blockingApplyOn.setEmpty();
-        storedListeners.setEmpty();;
+        storedListeners.setEmpty();
     }
 
     public AccordCommand initialize()
@@ -370,7 +374,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
                && waitingOnApply.equals(command.waitingOnApply)
                && blockingApplyOn.equals(command.blockingApplyOn)
                && storedListeners.equals(command.storedListeners)
-               && transientListeners.equals(command.transientListeners);
+               && ((maybeTransientListeners() == null && command.maybeTransientListeners() == null) || maybeTransientListeners().equals(command.maybeTransientListeners()));
     }
 
     boolean isReadOnly()
@@ -405,7 +409,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
                             waitingOnApply,
                             blockingApplyOn,
                             storedListeners,
-                            transientListeners);
+                            maybeTransientListeners());
     }
 
     @Override
@@ -428,7 +432,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
         size += executeAt.estimatedSizeOnHeap(AccordObjectSizes::timestamp);
         size += partialDeps.estimatedSizeOnHeap(AccordObjectSizes::dependencies);
         size += writes.estimatedSizeOnHeap(AccordObjectSizes::writes);
-        size += result.estimatedSizeOnHeap(r -> ((TxnData) r).estimatedSizeOnHeap());
+        size += result.estimatedSizeOnHeap(r -> ((TxnResult) r).estimatedSizeOnHeap());
         size += status.estimatedSizeOnHeap(s -> 0);
         size += durability.estimatedSizeOnHeap(s -> 0);
         size += waitingOnCommit.estimatedSizeOnHeap(AccordObjectSizes::timestamp);
@@ -588,12 +592,6 @@ public class AccordCommand extends Command implements AccordState<TxnId>
     }
 
     @Override
-    public void setStatus(Status status)
-    {
-        super.setStatus(status);
-    }
-
-    @Override
     public Known known()
     {
         return this.status.get().known;
@@ -668,7 +666,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
         // with the correct scope and notify the caller when that completes
         if (!canApplyWithCurrentScope(safeStore))
         {
-            Preconditions.checkArgument(canReschedule);
+            checkArgument(canReschedule);
             return applyWithCorrectScope(safeStore.commandStore());
         }
 
@@ -718,7 +716,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
         if (listener instanceof ListenerProxy)
             storedListeners.blindAdd((ListenerProxy) listener);
         else
-            transientListeners.add(listener);
+            transientListeners().add(listener);
         return this;
     }
 
@@ -729,7 +727,11 @@ public class AccordCommand extends Command implements AccordState<TxnId>
         if (listener instanceof ListenerProxy)
             storedListeners.blindRemove((ListenerProxy) listener);
         else
-            transientListeners.remove(listener);
+        {
+            Listeners transientListeners = maybeTransientListeners();
+            if (transientListeners != null)
+                transientListeners.remove(listener);
+        }
     }
 
     public boolean hasListenerFor(TxnId txnId)
@@ -742,22 +744,26 @@ public class AccordCommand extends Command implements AccordState<TxnId>
     {
         // TODO: efficiency (introduce BiConsumer method)
         storedListeners.getView().forEach(l -> l.onChange(safeStore, this));
-        transientListeners.forEach(listener -> {
-            PreLoadContext ctx = listener.listenerPreLoadContext(txnId());
-            AsyncContext context = ((SafeAccordCommandStore)safeStore).context();
-            if (context.containsScopedItems(ctx))
-            {
-                logger.trace("{}: synchronously updating listener {}", txnId(), listener);
-                listener.onChange(safeStore, this);
-            }
-            else
-            {
-                logger.trace("{}: asynchronously updating listener {}", txnId(), listener);
-                safeStore.execute(ctx, reSafeStore -> {
-                    listener.onChange(reSafeStore, reSafeStore.command(txnId()));
-                });
-            }
-        });
+        Listeners transientListeners = maybeTransientListeners();
+        if (transientListeners != null)
+        {
+            transientListeners.forEach(listener -> {
+                PreLoadContext ctx = listener.listenerPreLoadContext(txnId());
+                AsyncContext context = ((SafeAccordCommandStore) safeStore).context();
+                if (context.containsScopedItems(ctx))
+                {
+                    logger.trace("{}: synchronously updating listener {}", txnId(), listener);
+                    listener.onChange(safeStore, this);
+                }
+                else
+                {
+                    logger.trace("{}: asynchronously updating listener {}", txnId(), listener);
+                    safeStore.execute(ctx, reSafeStore -> {
+                        listener.onChange(reSafeStore, reSafeStore.command(txnId()));
+                    });
+                }
+            });
+        }
     }
 
     @Override
@@ -788,6 +794,7 @@ public class AccordCommand extends Command implements AccordState<TxnId>
     @Override
     public void addWaitingOnApplyIfAbsent(TxnId txnId, Timestamp executeAt)
     {
+        checkArgument(!txnId().equals(txnId), "Can't wait on our own application");
         waitingOnApply.blindPut(executeAt, txnId);
     }
 
@@ -810,6 +817,12 @@ public class AccordCommand extends Command implements AccordState<TxnId>
     }
 
     @Override
+    protected void reachedTerminalStatus()
+    {
+        txnIdToTransientListeners.remove(txnId);
+    }
+
+    @Override
     public TxnId firstWaitingOnApply(@Nullable TxnId ifExecutesBefore)
     {
         if (!isWaitingOnApply())
@@ -820,5 +833,21 @@ public class AccordCommand extends Command implements AccordState<TxnId>
             return first.getValue();
 
         return null;
+    }
+
+    private Listeners maybeTransientListeners()
+    {
+        if (transientListeners != null)
+            return transientListeners;
+        transientListeners = txnIdToTransientListeners.get(txnId);
+        return transientListeners;
+    }
+
+    private Listeners transientListeners()
+    {
+        if (transientListeners != null)
+            return transientListeners;
+        transientListeners = txnIdToTransientListeners.computeIfAbsent(txnId, ignored -> new Listeners());
+        return transientListeners;
     }
 }

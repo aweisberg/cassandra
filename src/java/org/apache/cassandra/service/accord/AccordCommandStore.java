@@ -27,8 +27,10 @@ import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
 import java.util.function.Function;
-
+import java.util.function.Predicate;
 import javax.annotation.Nullable;
+
+import com.google.common.base.Predicates;
 
 import accord.api.Agent;
 import accord.api.DataStore;
@@ -44,13 +46,13 @@ import accord.local.NodeTimeService;
 import accord.local.PreLoadContext;
 import accord.local.SafeCommandStore;
 import accord.local.Status;
+import accord.primitives.AbstractKeys;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
 import accord.primitives.Routables;
 import accord.primitives.Seekable;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
-import accord.primitives.AbstractKeys;
 import accord.primitives.TxnId;
 import accord.utils.Invariants;
 import org.apache.cassandra.service.accord.api.PartitionKey;
@@ -127,6 +129,11 @@ public class AccordCommandStore extends CommandStore
 
         private <O> O mapReduceForKey(Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, O terminalValue)
         {
+            return mapReduceForKeyWithTerminate(keysOrRanges, slice, map, accumulate, Predicates.equalTo(terminalValue));
+        }
+
+        private <O> O mapReduceForKeyWithTerminate(Routables<?, ?> keysOrRanges, Ranges slice, BiFunction<CommandsForKey, O, O> map, O accumulate, Predicate<O> terminate)
+        {
             switch (keysOrRanges.domain()) {
                 default:
                     throw new AssertionError();
@@ -138,7 +145,7 @@ public class AccordCommandStore extends CommandStore
                         if (!slice.contains(key)) continue;
                         CommandsForKey forKey = commandsForKey(key);
                         accumulate = map.apply(forKey, accumulate);
-                        if (accumulate.equals(terminalValue))
+                        if (terminate.test(accumulate))
                             return accumulate;
                     }
                     break;
@@ -149,10 +156,17 @@ public class AccordCommandStore extends CommandStore
             return accumulate;
         }
 
+
         @Override
         public <T> T mapReduce(Seekables<?, ?> keysOrRanges, Ranges slice, TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp, TestDep testDep, @Nullable TxnId depId, @Nullable Status minStatus, @Nullable Status maxStatus, CommandFunction<T, T> map, T accumulate, T terminalValue)
         {
-            accumulate = mapReduceForKey(keysOrRanges, slice, (forKey, prev) -> {
+            return mapReduceWithTerminate(keysOrRanges, slice, testKind, testTimestamp, timestamp, testDep, depId, minStatus, maxStatus, map, accumulate, Predicates.equalTo(terminalValue));
+        }
+
+        @Override
+        public <T> T mapReduceWithTerminate(Seekables<?, ?> keysOrRanges, Ranges slice, TestKind testKind, TestTimestamp testTimestamp, Timestamp timestamp, TestDep testDep, @Nullable TxnId depId, @Nullable Status minStatus, @Nullable Status maxStatus, CommandFunction<T, T> map, T accumulate, Predicate<T> terminate)
+        {
+            accumulate = mapReduceForKeyWithTerminate(keysOrRanges, slice, (forKey, prev) -> {
                 CommandsForKey.CommandTimeseries timeseries;
                 switch (testTimestamp)
                 {
@@ -177,8 +191,8 @@ public class AccordCommandStore extends CommandStore
                     case MAY_EXECUTE_BEFORE:
                         remapTestTimestamp = CommandsForKey.CommandTimeseries.TestTimestamp.BEFORE;
                 }
-                return timeseries.mapReduce(testKind, remapTestTimestamp, timestamp, testDep, depId, minStatus, maxStatus, map, prev, terminalValue);
-            }, accumulate, terminalValue);
+                return timeseries.mapReduce(testKind, remapTestTimestamp, timestamp, testDep, depId, minStatus, maxStatus, map, prev, terminate);
+            }, accumulate, terminate);
 
             return accumulate;
         }
@@ -254,23 +268,6 @@ public class AccordCommandStore extends CommandStore
         }
 
         @Override
-        public long latestEpoch()
-        {
-            return time.epoch();
-        }
-
-        @Override
-        public Timestamp preaccept(TxnId txnId, Seekables<?, ?> keys)
-        {
-            Timestamp max = maxConflict(keys);
-            long epoch = latestEpoch();
-            if (txnId.compareTo(max) > 0 && txnId.epoch() >= epoch && !agent.isExpired(txnId, time.now()))
-                return txnId;
-
-            return time.uniqueNow(max);
-        }
-
-        @Override
         public Future<Void> execute(PreLoadContext context, Consumer<? super SafeCommandStore> consumer)
         {
             return AccordCommandStore.this.execute(context, consumer);
@@ -286,6 +283,13 @@ public class AccordCommandStore extends CommandStore
         public NodeTimeService time()
         {
             return time;
+        }
+
+        @Override
+        public Timestamp maxConflict(Seekables<?, ?> keysOrRanges, Ranges slice)
+        {
+            Timestamp timestamp = mapReduceForKey(keysOrRanges, slice, (forKey, prev) -> Timestamp.max(forKey.max(), prev), Timestamp.NONE, null);
+            return timestamp;
         }
 
         public Timestamp maxConflict(Seekables<?, ?> keys)
