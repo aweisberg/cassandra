@@ -61,6 +61,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.management.ListenerNotFoundException;
 import javax.management.NotificationBroadcasterSupport;
@@ -145,6 +146,7 @@ import org.apache.cassandra.gms.IEndpointStateChangeSubscriber;
 import org.apache.cassandra.gms.IFailureDetector;
 import org.apache.cassandra.gms.TokenSerializer;
 import org.apache.cassandra.gms.VersionedValue;
+import org.apache.cassandra.gms.VersionedValue.VersionedValueFactory;
 import org.apache.cassandra.hints.HintsService;
 import org.apache.cassandra.io.sstable.IScrubber;
 import org.apache.cassandra.io.sstable.IVerifier;
@@ -191,6 +193,8 @@ import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.schema.ViewMetadata;
+import org.apache.cassandra.service.consensus.migration.ConsensusTableMigrationState;
+import org.apache.cassandra.service.consensus.migration.ConsensusTableMigrationState.MigrationStateSnapshot;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.disk.usage.DiskUsageBroadcaster;
 import org.apache.cassandra.service.paxos.Paxos;
@@ -206,6 +210,7 @@ import org.apache.cassandra.streaming.StreamOperation;
 import org.apache.cassandra.streaming.StreamPlan;
 import org.apache.cassandra.streaming.StreamResultFuture;
 import org.apache.cassandra.streaming.StreamState;
+import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tracing.TraceKeyspace;
 import org.apache.cassandra.transport.ClientResourceLimits;
 import org.apache.cassandra.transport.ProtocolVersion;
@@ -230,6 +235,11 @@ import org.apache.cassandra.utils.progress.ProgressListener;
 import org.apache.cassandra.utils.progress.jmx.JMXBroadcastExecutor;
 import org.apache.cassandra.utils.progress.jmx.JMXProgressSupport;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Iterables.transform;
+import static com.google.common.collect.Iterables.tryFind;
 import static java.util.Arrays.asList;
 import static java.util.Arrays.stream;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -238,11 +248,6 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
-
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.collect.Iterables.transform;
-import static com.google.common.collect.Iterables.tryFind;
-
 import static org.apache.cassandra.config.CassandraRelevantProperties.BOOTSTRAP_SCHEMA_DELAY_MS;
 import static org.apache.cassandra.config.CassandraRelevantProperties.BOOTSTRAP_SKIP_SCHEMA_CHECK;
 import static org.apache.cassandra.config.CassandraRelevantProperties.DRAIN_EXECUTOR_TIMEOUT_MS;
@@ -253,10 +258,12 @@ import static org.apache.cassandra.net.NoPayload.noPayload;
 import static org.apache.cassandra.net.Verb.REPLICATION_DONE_REQ;
 import static org.apache.cassandra.service.ActiveRepairService.ParentRepairStatus;
 import static org.apache.cassandra.service.ActiveRepairService.repairCommandExecutor;
+import static org.apache.cassandra.service.consensus.migration.ConsensusTableMigrationState.startMigrationToConsensusProtocol;
 import static org.apache.cassandra.utils.Clock.Global.currentTimeMillis;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 import static org.apache.cassandra.utils.FBUtilities.getBroadcastAddressAndPort;
 import static org.apache.cassandra.utils.FBUtilities.now;
+import static org.apache.cassandra.utils.PojoToString.pojoMapToString;
 
 /**
  * This abstraction contains the token/identifier of this node
@@ -319,6 +326,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     public static final StorageService instance = new StorageService();
 
     private final SamplingManager samplingManager = new SamplingManager();
+
+    // For tests that unsafely change the partitioner store the original here
+    private IPartitioner originalPartitioner;
 
     @VisibleForTesting // this is used for dtests only, see CASSANDRA-18152
     public volatile boolean skipNotificationListeners = false;
@@ -1105,7 +1115,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 checkForEndpointCollision(localHostId, SystemKeyspace.loadHostIds().keySet());
                 if (SystemKeyspace.bootstrapComplete())
                 {
-                    Preconditions.checkState(!Config.isClientMode());
+                    checkState(!Config.isClientMode());
                     // tokens are only ever saved to system.local after bootstrap has completed and we're joining the ring,
                     // or when token update operations (move, decom) are completed
                     Collection<Token> savedTokens = SystemKeyspace.getSavedTokens();
@@ -2219,6 +2229,43 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             logger.info("Resuming bootstrap is requested, but the node is already bootstrapped.");
             return false;
         }
+    }
+
+    @Override
+    public void migrateConsensusProtocol(@Nonnull String targetProtocol,
+                                         @Nullable List<String> keyspaceNames,
+                                         @Nonnull List<String> maybeTableNames,
+                                         @Nullable String maybeRangesStr)
+    {
+        checkNotNull(targetProtocol, "targetProtocol is null");
+
+        startMigrationToConsensusProtocol(targetProtocol, keyspaceNames, Optional.ofNullable(maybeTableNames), Optional.ofNullable(maybeRangesStr));
+    }
+
+    @Override
+    public void setConsensusMigrationTargetProtocol(@Nonnull String targetProtocol,
+                                                    @Nonnull List<String> keyspaceNames,
+                                                    @Nullable List<String> maybeTableNames)
+    {
+        checkNotNull(targetProtocol, "targetProtocol is null");
+        checkNotNull(keyspaceNames, "keyspaceNames is null");
+
+        ConsensusTableMigrationState.setConsensusMigrationTargetProtocol(targetProtocol, keyspaceNames, Optional.ofNullable(maybeTableNames));
+    }
+
+    @Override
+    public String listConsensusMigrations(@Nullable Set<String> keyspaceNames,
+                                          @Nullable Set<String> tableNames,
+                                          @Nonnull String format)
+    {
+        ClusterMetadata cm = ClusterMetadata.current();
+        MigrationStateSnapshot snapshot = cm.migrationStateSnapshot;
+        // TODO wanted something human and machine readable, but didn't expend a lot of thought
+        // on what human readable conventions should be, also couldn't get snakeyaml
+        // to output YAML containing only primitives without going through the goofy mapping process
+        // it adds tags and references that clutter the output up badly
+        Map<String, Object> snapshotAsMap = snapshot.toMap(keyspaceNames, tableNames);
+        return pojoMapToString(snapshotAsMap, format);
     }
 
     public Map<String,List<Integer>> getConcurrency(List<String> stageNames)
@@ -3466,8 +3513,8 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         public LeavingReplica(Replica leavingReplica, Replica ourReplica)
         {
-            Preconditions.checkNotNull(leavingReplica);
-            Preconditions.checkNotNull(ourReplica);
+            checkNotNull(leavingReplica);
+            checkNotNull(ourReplica);
             this.leavingReplica = leavingReplica;
             this.ourReplica = ourReplica;
         }
@@ -4843,7 +4890,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             EndpointsForRange replicas = strategy.calculateNaturalReplicas(token, metadata);
             if (replicas.size() > 0 && replicas.get(0).endpoint().equals(ep))
             {
-                Preconditions.checkState(replicas.get(0).isFull());
+                checkState(replicas.get(0).isFull());
                 primaryRanges.add(new Range<>(metadata.getPredecessor(token), token));
             }
         }
@@ -5239,7 +5286,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         Future<?> hintsSuccess = ImmediateFuture.success(null);
 
-        if (DatabaseDescriptor.getTransferHintsOnDecommission()) 
+        if (DatabaseDescriptor.getTransferHintsOnDecommission())
         {
             setMode(Mode.LEAVING, "streaming hints to other nodes", true);
             hintsSuccess = streamHints();
@@ -5825,12 +5872,24 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     // Never ever do this at home. Used by tests.
     @VisibleForTesting
-    public IPartitioner setPartitionerUnsafe(IPartitioner newPartitioner)
+    public void setPartitionerUnsafe(IPartitioner newPartitioner)
     {
-        IPartitioner oldPartitioner = DatabaseDescriptor.setPartitionerUnsafe(newPartitioner);
-        tokenMetadata = tokenMetadata.cloneWithNewPartitioner(newPartitioner);
+        checkNotNull(newPartitioner, "newPartitioner is null");
+        checkState(originalPartitioner == null, "Already changed the partitioner without resetting");
+        originalPartitioner = DatabaseDescriptor.setPartitionerUnsafe(newPartitioner);
+        tokenMetadata = new TokenMetadata();
+//        tokenMetadata = tokenMetadata.cloneWithNewPartitioner(newPartitioner);
         valueFactory = new VersionedValue.VersionedValueFactory(newPartitioner);
-        return oldPartitioner;
+    }
+
+    @VisibleForTesting
+    public void resetPartitionerUnsafe()
+    {
+        checkState(originalPartitioner != null, "Original partitioner was never changed");
+        DatabaseDescriptor.setPartitionerUnsafe(originalPartitioner);
+        tokenMetadata = new TokenMetadata();
+        valueFactory = new VersionedValueFactory(originalPartitioner);
+        originalPartitioner = null;
     }
 
     TokenMetadata setTokenMetadataUnsafe(TokenMetadata tmd)
@@ -6807,7 +6866,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         archiveCommand = archiveCommand != null ? archiveCommand : fqlOptions.archive_command;
         maxArchiveRetries = maxArchiveRetries != Integer.MIN_VALUE ? maxArchiveRetries : fqlOptions.max_archive_retries;
 
-        Preconditions.checkNotNull(path, "cassandra.yaml did not set log_dir and not set as parameter");
+        checkNotNull(path, "cassandra.yaml did not set log_dir and not set as parameter");
         FullQueryLogger.instance.enableWithoutClean(File.getPath(path), rollCycle, blocking, maxQueueWeight, maxLogSize, archiveCommand, maxArchiveRetries);
     }
 
@@ -7170,7 +7229,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
     public void setRepairRpcTimeout(Long timeoutInMillis)
     {
-        Preconditions.checkState(timeoutInMillis > 0);
+        checkState(timeoutInMillis > 0);
         DatabaseDescriptor.setRepairRpcTimeout(timeoutInMillis);
         logger.info("RepairRpcTimeout set to {}ms via JMX", timeoutInMillis);
     }

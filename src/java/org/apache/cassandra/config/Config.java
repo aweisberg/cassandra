@@ -476,6 +476,8 @@ public class Config
 
     public DataStorageSpec.LongMebibytesBound paxos_cache_size = null;
 
+    public DataStorageSpec.LongMebibytesBound consensus_migration_cache_size = null;
+
     @Replaces(oldName = "cache_load_timeout_seconds", converter = Converters.NEGATIVE_SECONDS_DURATION, deprecated = true)
     public DurationSpec.IntSecondsBound cache_load_timeout = new DurationSpec.IntSecondsBound("30s");
 
@@ -1082,7 +1084,7 @@ public class Config
 
     public volatile boolean client_request_size_metrics_enabled = true;
 
-    public LegacyPaxosStrategy legacy_paxos_strategy = LegacyPaxosStrategy.migration;
+    public LWTStrategy lwt_strategy = LWTStrategy.migration;
 
     public volatile int max_top_size_partition_count = 10;
     public volatile int max_top_tombstone_partition_count = 10;
@@ -1184,7 +1186,7 @@ public class Config
      * and serial read operations. Transaction statements
      * will always run on Accord. Legacy in this context includes PaxosV2.
      */
-    public enum LegacyPaxosStrategy
+    public enum LWTStrategy
     {
         /*
          * Allow both Accord and PaxosV1/V2 to run on the same cluster

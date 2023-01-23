@@ -23,9 +23,11 @@ import java.io.IOException;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.paxos.Ballot;
 import org.apache.cassandra.service.paxos.PaxosRepairHistory;
+import org.apache.cassandra.tcm.Epoch;
 
 public class PaxosCleanupHistory
 {
@@ -33,11 +35,14 @@ public class PaxosCleanupHistory
     final Ballot highBound;
     final PaxosRepairHistory history;
 
-    public PaxosCleanupHistory(TableId tableId, Ballot highBound, PaxosRepairHistory history)
+    final Epoch epoch;
+
+    public PaxosCleanupHistory(TableId tableId, Ballot highBound, PaxosRepairHistory history, Epoch epoch)
     {
         this.tableId = tableId;
         this.highBound = highBound;
         this.history = history;
+        this.epoch = epoch;
     }
 
     public static final IVersionedSerializer<PaxosCleanupHistory> serializer = new IVersionedSerializer<PaxosCleanupHistory>()
@@ -47,6 +52,8 @@ public class PaxosCleanupHistory
             message.tableId.serialize(out);
             message.highBound.serialize(out);
             PaxosRepairHistory.serializer.serialize(message.history, out, version);
+            if (version >= MessagingService.VERSION_50)
+                Epoch.messageSerializer.serialize(message.epoch, out, version);
         }
 
         public PaxosCleanupHistory deserialize(DataInputPlus in, int version) throws IOException
@@ -54,7 +61,10 @@ public class PaxosCleanupHistory
             TableId tableId = TableId.deserialize(in);
             Ballot lowBound = Ballot.deserialize(in);
             PaxosRepairHistory history = PaxosRepairHistory.serializer.deserialize(in, version);
-            return new PaxosCleanupHistory(tableId, lowBound, history);
+            Epoch epoch = null;
+            if (version >= MessagingService.VERSION_50)
+                Epoch.messageSerializer.deserialize(in, version);
+            return new PaxosCleanupHistory(tableId, lowBound, history, epoch);
         }
 
         public long serializedSize(PaxosCleanupHistory message, int version)
@@ -62,6 +72,8 @@ public class PaxosCleanupHistory
             long size = message.tableId.serializedSize();
             size += Ballot.sizeInBytes();
             size += PaxosRepairHistory.serializer.serializedSize(message.history, version);
+            if (version >= MessagingService.VERSION_50)
+                size += Epoch.messageSerializer.serializedSize(message.epoch, version);
             return size;
         }
     };

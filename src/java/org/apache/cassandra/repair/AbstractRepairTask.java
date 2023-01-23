@@ -24,13 +24,13 @@ import java.util.Objects;
 
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.FutureCallback;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.ExecutorPlus;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.repair.RepairRunnable.NeighborsAndRanges;
 import org.apache.cassandra.repair.messages.RepairOption;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.utils.TimeUUID;
@@ -44,18 +44,23 @@ public abstract class AbstractRepairTask implements RepairTask
     protected final RepairOption options;
     protected final String keyspace;
     protected final RepairNotifier notifier;
+    protected final NeighborsAndRanges neighborsAndRanges;
+    protected final List<CommonRange> commonRanges;
 
-    protected AbstractRepairTask(RepairOption options, String keyspace, RepairNotifier notifier)
+    protected AbstractRepairTask(RepairOption options, String keyspace, RepairNotifier notifier, NeighborsAndRanges neighborsAndRanges, List<CommonRange> commonRanges)
     {
         this.options = Objects.requireNonNull(options);
         this.keyspace = Objects.requireNonNull(keyspace);
         this.notifier = Objects.requireNonNull(notifier);
+        this.neighborsAndRanges = Objects.requireNonNull(neighborsAndRanges);
+        this.commonRanges = Objects.requireNonNull(commonRanges);
     }
 
     private List<RepairSession> submitRepairSessions(TimeUUID parentSession,
                                                      boolean isIncremental,
                                                      ExecutorPlus executor,
                                                      List<CommonRange> commonRanges,
+                                                     boolean excludedDeadNodes,
                                                      String... cfnames)
     {
         List<RepairSession> futures = new ArrayList<>(options.getRanges().size());
@@ -65,6 +70,7 @@ public abstract class AbstractRepairTask implements RepairTask
             logger.info("Starting RepairSession for {}", commonRange);
             RepairSession session = ActiveRepairService.instance.submitRepairSession(parentSession,
                                                                                      commonRange,
+                                                                                     excludedDeadNodes,
                                                                                      keyspace,
                                                                                      options.getParallelism(),
                                                                                      isIncremental,
@@ -73,6 +79,7 @@ public abstract class AbstractRepairTask implements RepairTask
                                                                                      options.optimiseStreams(),
                                                                                      options.repairPaxos(),
                                                                                      options.paxosOnly(),
+                                                                                     options.accordRepair(),
                                                                                      executor,
                                                                                      cfnames);
             if (session == null)
@@ -87,9 +94,10 @@ public abstract class AbstractRepairTask implements RepairTask
                                                         boolean isIncremental,
                                                         ExecutorPlus executor,
                                                         List<CommonRange> commonRanges,
+                                                        boolean excludedDeadNodes,
                                                         String... cfnames)
     {
-        List<RepairSession> allSessions = submitRepairSessions(parentSession, isIncremental, executor, commonRanges, cfnames);
+        List<RepairSession> allSessions = submitRepairSessions(parentSession, isIncremental, executor, commonRanges, excludedDeadNodes, cfnames);
         List<Collection<Range<Token>>> ranges = Lists.transform(allSessions, RepairSession::ranges);
         Future<List<RepairSessionResult>> f = FutureCombiner.successfulOf(allSessions);
         return f.map(results -> {

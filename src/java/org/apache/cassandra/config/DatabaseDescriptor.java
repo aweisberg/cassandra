@@ -69,6 +69,7 @@ import org.apache.cassandra.auth.IInternodeAuthenticator;
 import org.apache.cassandra.auth.INetworkAuthorizer;
 import org.apache.cassandra.auth.IRoleManager;
 import org.apache.cassandra.config.Config.CommitLogSync;
+import org.apache.cassandra.config.Config.LWTStrategy;
 import org.apache.cassandra.config.Config.PaxosOnLinearizabilityViolation;
 import org.apache.cassandra.config.Config.PaxosStatePurging;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -113,7 +114,7 @@ import static org.apache.cassandra.utils.Clock.Global.logInitializationOutcome;
 public class DatabaseDescriptor
 {
     public static final String NO_ACCORD_PAXOS_STRATEGY_WITH_ACCORD_DISABLED_MESSAGE = 
-            "Cannot use legacy_paxos_strategy \"accord\" while Accord transactions are disabled.";
+            "Cannot use lwt_strategy \"accord\" while Accord transactions are disabled.";
 
     static
     {
@@ -163,6 +164,7 @@ public class DatabaseDescriptor
 
     private static long keyCacheSizeInMiB;
     private static long paxosCacheSizeInMiB;
+    private static long consensusMigrationCacheSizeInMiB;
     private static long counterCacheSizeInMiB;
     private static long indexSummaryCapacityInMiB;
 
@@ -814,6 +816,22 @@ public class DatabaseDescriptor
                     + conf.paxos_cache_size + "', supported values are <integer> >= 0.", false);
         }
 
+        try
+        {
+            // if consensusMigrationCacheSizeInMiB option was set to "auto" then size of the cache should be "min(1% of Heap (in MB), 50MB)
+            consensusMigrationCacheSizeInMiB = (conf.consensus_migration_cache_size == null)
+                                  ? Math.min(Math.max(1, (int) (Runtime.getRuntime().totalMemory() * 0.01 / 1024 / 1024)), 50)
+                                  : conf.consensus_migration_cache_size.toMebibytes();
+
+            if (consensusMigrationCacheSizeInMiB < 0)
+                throw new NumberFormatException(); // to escape duplicating error message
+        }
+        catch (NumberFormatException e)
+        {
+            throw new ConfigurationException("consensus_migration_cache_size option was set incorrectly to '"
+                                             + conf.consensus_migration_cache_size + "', supported values are <integer> >= 0.", false);
+        }
+
         // we need this assignment for the Settings virtual table - CASSANDRA-17735
         conf.counter_cache_size = new DataStorageSpec.LongMebibytesBound(counterCacheSizeInMiB);
 
@@ -945,7 +963,7 @@ public class DatabaseDescriptor
         if (conf.dump_heap_on_uncaught_exception && DatabaseDescriptor.getHeapDumpPath() == null)
             throw new ConfigurationException(String.format("Invalid configuration. Heap dump is enabled but cannot create heap dump output path: %s.", conf.heap_dump_path != null ? conf.heap_dump_path : "null"));
         
-        if (conf.legacy_paxos_strategy == Config.LegacyPaxosStrategy.accord && !conf.accord_transactions_enabled)
+        if (conf.lwt_strategy == LWTStrategy.accord && !conf.accord_transactions_enabled)
             throw new ConfigurationException(NO_ACCORD_PAXOS_STRATEGY_WITH_ACCORD_DISABLED_MESSAGE);
     }
 
@@ -2957,9 +2975,13 @@ public class DatabaseDescriptor
         return conf.paxos_topology_repair_strict_each_quorum;
     }
 
-    public static Config.LegacyPaxosStrategy getLegacyPaxosStrategy()
+    // TODO imperative that at startup we check that the lwt strategy is compatible
+    // with cluster metadata for consensus migration
+    // If another node updates the CM with consensus migration and we don't support it that is a serious issue as well
+    // Ideally this config could only ever exist in CM so that the cluster always agrees on what it is
+    public static LWTStrategy getLWTStrategy()
     {
-        return conf.legacy_paxos_strategy;
+        return conf.lwt_strategy;
     }
 
     public static void setNativeTransportMaxRequestDataInFlightPerIpInBytes(long maxRequestDataInFlightInBytes)
@@ -3496,6 +3518,11 @@ public class DatabaseDescriptor
     public static long getPaxosCacheSizeInMiB()
     {
         return paxosCacheSizeInMiB;
+    }
+
+    public static long getConsensusMigrationCacheSizeInMiB()
+    {
+        return consensusMigrationCacheSizeInMiB;
     }
 
     public static long getCounterCacheSizeInMiB()
