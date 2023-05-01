@@ -47,6 +47,7 @@ import com.google.common.util.concurrent.Uninterruptibles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.primitives.Keys;
 import accord.primitives.Txn;
 import org.apache.cassandra.batchlog.Batch;
 import org.apache.cassandra.batchlog.BatchlogManager;
@@ -54,6 +55,7 @@ import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.Config;
+import org.apache.cassandra.config.Config.NonSerialWriteStrategy;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
@@ -126,10 +128,16 @@ import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.accord.AccordService;
+import org.apache.cassandra.service.accord.api.PartitionKey;
+import org.apache.cassandra.service.accord.txn.TxnCondition;
 import org.apache.cassandra.service.accord.txn.TxnData;
+import org.apache.cassandra.service.accord.txn.TxnDataResolver;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnRead;
+import org.apache.cassandra.service.accord.txn.TxnReferenceOperations;
 import org.apache.cassandra.service.accord.txn.TxnResult;
+import org.apache.cassandra.service.accord.txn.TxnUpdate;
+import org.apache.cassandra.service.accord.txn.TxnWrite;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.service.paxos.Ballot;
 import org.apache.cassandra.service.paxos.Commit;
@@ -176,11 +184,11 @@ import static org.apache.cassandra.net.Verb.PAXOS_PROPOSE_REQ;
 import static org.apache.cassandra.net.Verb.SCHEMA_VERSION_REQ;
 import static org.apache.cassandra.net.Verb.TRUNCATE_REQ;
 import static org.apache.cassandra.service.BatchlogResponseHandler.BatchlogCleanup;
-import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.RETRY_NEW_PROTOCOL;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.casResult;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.serialReadResult;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
+import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision;
 import static org.apache.cassandra.service.paxos.Ballot.Flag.GLOBAL;
 import static org.apache.cassandra.service.paxos.Ballot.Flag.LOCAL;
 import static org.apache.cassandra.service.paxos.BallotGenerator.Global.nextBallot;
@@ -365,6 +373,7 @@ public class StorageProxy implements StorageProxyMBean
                     break;
                 case accord:
                     TxnResult txnResult = AccordService.instance().coordinate(request.toAccordTxn(consistencyForPaxos,
+                                                                                                  consistencyForCommit,
                                                                                                   clientState,
                                                                                                   nowInSeconds),
                                                                               consistencyForPaxos,
@@ -412,7 +421,7 @@ public class StorageProxy implements StorageProxyMBean
                 {
                     Tracing.trace("CAS precondition does not match current values {}", current);
                     casWriteMetrics.conditionNotMet.inc();
-                    return Pair.create(PartitionUpdate.emptyUpdate(metadata, key), current.rowIterator());
+                    return Pair.create(PartitionUpdate.emptyUpdate(metadata, key), current.rowIterator(false));
                 }
 
                 // Create the desired updates
@@ -1194,8 +1203,10 @@ public class StorageProxy implements StorageProxyMBean
         long size = IMutation.dataSize(mutations);
         writeMetrics.mutationSize.update(size);
         writeMetricsForLevel(consistencyLevel).mutationSize.update(size);
-
-        if (augmented != null)
+        NonSerialWriteStrategy nonSerialWriteStrategy = DatabaseDescriptor.getNonSerialWriteStrategy();
+        if (nonSerialWriteStrategy.writesThroughAccord)
+            mutateWithAccord(augmented != null ? augmented : mutations, consistencyLevel, updatesView, queryStartNanoTime, nonSerialWriteStrategy);
+        else if (augmented != null)
             mutateAtomically(augmented, consistencyLevel, updatesView, queryStartNanoTime);
         else
         {
@@ -1204,6 +1215,28 @@ public class StorageProxy implements StorageProxyMBean
             else
                 mutate(mutations, consistencyLevel, queryStartNanoTime);
         }
+    }
+
+    private static void mutateWithAccord(Collection<? extends IMutation> iMutations, ConsistencyLevel consistencyLevel, boolean updatesView, long queryStartNanoTime, Config.NonSerialWriteStrategy nonSerialWriteStrategy)
+    {
+        int fragmentIndex = 0;
+        List<TxnWrite.Fragment> fragments = new ArrayList<>(iMutations.size());
+        List<PartitionKey> partitionKeys = new ArrayList<>(iMutations.size());
+        for (IMutation mutation : iMutations)
+        {
+            for (PartitionUpdate update : mutation.getPartitionUpdates())
+            {
+                PartitionKey pk = PartitionKey.of(update);
+                partitionKeys.add(pk);
+                fragments.add(new TxnWrite.Fragment(PartitionKey.of(update), fragmentIndex++, update, TxnReferenceOperations.empty()));
+            }
+        }
+        // Potentially ignore commit consistency level if the strategy specifies accord and not migration
+        ConsistencyLevel clForCommit = nonSerialWriteStrategy.commitCLForStrategy(consistencyLevel);
+        TxnUpdate update = new TxnUpdate(fragments, TxnCondition.none(), clForCommit);
+        logger.info("Mutating with Accord clForCommit " + clForCommit);
+        Txn.InMemory txn = new Txn.InMemory(Keys.of(partitionKeys), TxnRead.EMPTY_READ, new TxnDataResolver(), TxnQuery.EMPTY, update);
+        AccordService.instance().coordinate(txn, consistencyLevel, queryStartNanoTime);
     }
 
     /**
@@ -1963,15 +1996,19 @@ public class StorageProxy implements StorageProxyMBean
     {
         if (group.queries.size() > 1)
             throw new InvalidRequestException("SERIAL/LOCAL_SERIAL consistency may only be requested for one partition at a time");
-        TxnRead read = TxnRead.createSerialRead(group.queries.get(0), consistencyLevel);
-        Txn txn = new Txn.InMemory(read.keys(), read, TxnQuery.ALL);
+        SinglePartitionReadCommand readCommand = group.queries.get(0);
+        // If the non-SERIAL write strategy is sending all writes through Accord there is no need to use the supplied consistency
+        // level since Accord will manage reading safely
+        consistencyLevel = DatabaseDescriptor.getNonSerialWriteStrategy().readCLForStrategy(consistencyLevel);
+        TxnRead read = TxnRead.createSerialRead(readCommand, consistencyLevel);
+        Txn txn = new Txn.InMemory(read.keys(), read, new TxnDataResolver(), TxnQuery.ALL);
         TxnResult txnResult = AccordService.instance().coordinate(txn, consistencyLevel, queryStartNanoTime);
         if (txnResult.kind() == retry_new_protocol)
             return RETRY_NEW_PROTOCOL;
         TxnData data = (TxnData)txnResult;
         FilteredPartition partition = data.get(TxnRead.SERIAL_READ);
         if (partition != null)
-            return serialReadResult(PartitionIterators.singletonIterator(partition.rowIterator()));
+            return serialReadResult(PartitionIterators.singletonIterator(partition.rowIterator(readCommand.isReversed())));
         else
             return serialReadResult(EmptyIterators.partition());
     }

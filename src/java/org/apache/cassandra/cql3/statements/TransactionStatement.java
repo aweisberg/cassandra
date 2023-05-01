@@ -68,6 +68,7 @@ import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.txn.TxnCondition;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnDataName;
+import org.apache.cassandra.service.accord.txn.TxnDataResolver;
 import org.apache.cassandra.service.accord.txn.TxnNamedRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnRead;
@@ -300,7 +301,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
 
     TxnUpdate createUpdate(ClientState state, QueryOptions options, Map<TxnDataName, NamedSelect> autoReads, Consumer<Key> keyConsumer)
     {
-        return new TxnUpdate(createWriteFragments(state, options, autoReads, keyConsumer), createCondition(options));
+        return new TxnUpdate(createWriteFragments(state, options, autoReads, keyConsumer), createCondition(options), null);
     }
 
     Keys toKeys(SortedSet<Key> keySet)
@@ -319,8 +320,8 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
             Preconditions.checkState(conditions.isEmpty(), "No condition should exist without updates present");
             List<TxnNamedRead> reads = createNamedReads(options, state, ImmutableMap.of(), keySet::add);
             Keys txnKeys = toKeys(keySet);
-            TxnRead read = createTxnRead(reads, txnKeys, options.getSerialConsistency());
-            return new Txn.InMemory(txnKeys, read, TxnQuery.ALL);
+            TxnRead read = createTxnRead(reads, txnKeys, null);
+            return new Txn.InMemory(txnKeys, read, new TxnDataResolver(), TxnQuery.ALL);
         }
         else
         {
@@ -328,8 +329,8 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
             TxnUpdate update = createUpdate(state, options, autoReads, keySet::add);
             List<TxnNamedRead> reads = createNamedReads(options, state, autoReads, keySet::add);
             Keys txnKeys = toKeys(keySet);
-            TxnRead read = createTxnRead(reads, txnKeys, options.getSerialConsistency());
-            return new Txn.InMemory(txnKeys, read, TxnQuery.ALL, update);
+            TxnRead read = createTxnRead(reads, txnKeys, null);
+            return new Txn.InMemory(txnKeys, read, new TxnDataResolver(), TxnQuery.ALL, update);
         }
     }
 
@@ -381,8 +382,9 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
                 if (selectQuery.queries.size() == 1)
                 {
                     FilteredPartition partition = data.get(TxnDataName.returning());
+                    boolean reversed = selectQuery.queries.get(0).isReversed();
                     if (partition != null)
-                        returningSelect.select.processPartition(partition.rowIterator(), options, result, FBUtilities.nowInSeconds());
+                        returningSelect.select.processPartition(partition.rowIterator(reversed), options, result, FBUtilities.nowInSeconds());
                 }
                 else
                 {
@@ -390,8 +392,9 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
                     for (int i = 0; i < selectQuery.queries.size(); i++)
                     {
                         FilteredPartition partition = data.get(TxnDataName.returning(i));
+                        boolean reversed = selectQuery.queries.get(i).isReversed();
                         if (partition != null)
-                            returningSelect.select.processPartition(partition.rowIterator(), options, result, nowInSec);
+                            returningSelect.select.processPartition(partition.rowIterator(reversed), options, result, nowInSec);
                     }
                 }
                 return new ResultMessage.Rows(result.build());

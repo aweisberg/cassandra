@@ -19,12 +19,16 @@
 package org.apache.cassandra.service.accord;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 
+import com.google.common.collect.ImmutableSet;
+
 import accord.api.BarrierType;
+import accord.local.Node.Id;
 import accord.messages.Request;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
@@ -43,6 +47,9 @@ import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 
 public interface IAccordService
 {
+    Set<ConsistencyLevel> SUPPORTED_COMMIT_CONSISTENCY_LEVELS = ImmutableSet.of(ConsistencyLevel.ANY, ConsistencyLevel.ONE, ConsistencyLevel.QUORUM, ConsistencyLevel.SERIAL, ConsistencyLevel.ALL);
+    Set<ConsistencyLevel> SUPPORTED_READ_CONSISTENCY_LEVELS = ImmutableSet.of(ConsistencyLevel.ONE, ConsistencyLevel.QUORUM, ConsistencyLevel.SERIAL);
+
     IVerbHandler<? extends Request> verbHandler();
 
     void createEpochFromConfigUnsafe();
@@ -70,4 +77,6 @@ public interface IAccordService
     TopologyManager topology();
 
     void shutdownAndWait(long timeout, TimeUnit unit) throws InterruptedException, TimeoutException;
+
+    default Id nodeId() { throw new UnsupportedOperationException(); }
 }

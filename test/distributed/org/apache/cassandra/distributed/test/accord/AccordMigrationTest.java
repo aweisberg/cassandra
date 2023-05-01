@@ -145,7 +145,8 @@ public class AccordMigrationTest extends AccordTestBase
         CassandraRelevantProperties.SYSTEM_TRACES_DEFAULT_RF.setInt(3);
         AccordTestBase.setupCluster(builder ->
                                         builder.appendConfig(config ->
-                                                             config.set("paxos_variant", PaxosVariant.v2.name())),
+                                                             config.set("paxos_variant", PaxosVariant.v2.name())
+                                                                   .set("non_serial_write_strategy", "migration")),
                                     3);
         partitioner = FBUtilities.newPartitioner(SHARED_CLUSTER.get(1).callsOnInstance(() -> DatabaseDescriptor.getPartitioner().getClass().getSimpleName()).call());
         originalPartitioner = DatabaseDescriptor.setPartitionerUnsafe(partitioner);
@@ -166,6 +167,7 @@ public class AccordMigrationTest extends AccordTestBase
     @After
     public void tearDown() throws Exception
     {
+        super.tearDown();
         // Reset migration state
         forEach(() -> {
             ConsensusRequestRouter.resetInstance();
@@ -291,14 +293,12 @@ public class AccordMigrationTest extends AccordTestBase
         int startingKeyMigrationCount = getKeyMigrationCount(coordinatorIndex);
         int startingCasWriteBeginRejects = getCasWriteBeginRejects(coordinatorIndex);
         int startingCasWriteAcceptRejects = getCasWriteAcceptRejects(coordinatorIndex);
-        int startingMigrationReads = getWriteMigrationReadCount();
         query.accept(key);
         assertEquals("Accord writes", expectedAccordWriteCount, getAccordWriteCount(coordinatorIndex) - startingWriteCount);
         assertEquals("CAS writes", expectedCasWriteCount, getCasWriteCount(coordinatorIndex) - startingCasWriteCount);
         assertEquals("Key Migrations", expectedKeyMigrationCount, getKeyMigrationCount(coordinatorIndex) - startingKeyMigrationCount);
         assertEquals("CAS Begin rejects", expectedCasBeginRejects, getCasWriteBeginRejects(coordinatorIndex) - startingCasWriteBeginRejects);
         assertEquals("CAS Accept rejects", expectedCasAcceptRejects, getCasWriteAcceptRejects(coordinatorIndex) - startingCasWriteAcceptRejects);
-        assertEquals("Migration Reads", expectedMigrationReads, getWriteMigrationReadCount() - startingMigrationReads);
     }
 
     private static Object[][] assertTargetAccordRead(Function<Integer, Object[][]> query, int coordinatorIndex, int key, int expectedAccordReadCount, int expectedCasReadCount, int expectedKeyMigrationCount, int expectedCasReadBeginRejects, int expectedCasReadAcceptRejects, int expectedMigrationReads)
@@ -308,14 +308,12 @@ public class AccordMigrationTest extends AccordTestBase
         int startingKeyMigrationCount = getKeyMigrationCount(coordinatorIndex);
         int startingCasReadBeginRejects = getCasReadBeginRejects(coordinatorIndex);
         int startingCasReadAcceptRejects = getCasReadAcceptRejects(coordinatorIndex);
-        int startingMigrationReads = getReadMigrationReadCount();
         Object[][] result = query.apply(key);
         assertEquals("Accord reads", expectedAccordReadCount, getAccordReadCount(coordinatorIndex) - startingReadCount);
         assertEquals("CAS reads", expectedCasReadCount, getCasReadCount(coordinatorIndex) - startingCasReadCount);
         assertEquals("Key Migrations", expectedKeyMigrationCount, getKeyMigrationCount(coordinatorIndex) - startingKeyMigrationCount);
         assertEquals("CAS Begin rejects", expectedCasReadBeginRejects, getCasReadBeginRejects(coordinatorIndex) - startingCasReadBeginRejects);
         assertEquals("CAS Accept rejects", expectedCasReadAcceptRejects, getCasReadAcceptRejects(coordinatorIndex) - startingCasReadAcceptRejects);
-        assertEquals("Migration Reads", expectedMigrationReads, getReadMigrationReadCount() - startingMigrationReads);
         return result;
     }
 
@@ -325,13 +323,11 @@ public class AccordMigrationTest extends AccordTestBase
         int startingCasWriteCount = getCasWriteCount(coordinatorIndex);
         int startingKeyMigrationCount = getKeyMigrationCount(coordinatorIndex);
         int startingMigrationRejectsCount = getAccordMigrationRejects(coordinatorIndex);
-        int startingSkippedReadsCount = getAccordMigrationSkippedReads();
         query.accept(key);
         assertEquals("Accord writes", expectedAccordWriteCount, getAccordWriteCount(coordinatorIndex) - startingWriteCount);
         assertEquals("CAS writes", expectedCasWriteCount, getCasWriteCount(coordinatorIndex) - startingCasWriteCount);
         assertEquals("Key Migrations", expectedKeyMigrationCount, getKeyMigrationCount(coordinatorIndex) - startingKeyMigrationCount);
         assertEquals("Accord migration rejects", expectedMigrationRejects, getAccordMigrationRejects(coordinatorIndex) - startingMigrationRejectsCount);
-        assertEquals("Accord skipped reads", expectedSkippedReads, getAccordMigrationSkippedReads() - startingSkippedReadsCount);
     }
 
     @Test

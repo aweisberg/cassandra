@@ -73,7 +73,7 @@ import static org.apache.cassandra.utils.vint.VIntCoding.skipUnsignedVInt;
  * @param <T> The type of the message payload.
  */
 // TODO when this is version 50 instead of 42 redo the header serialization to not have if, just one for the two versions
-public class Message<T> implements ReplyContext
+public class Message<T> implements ReplyContext, IMessage<T>
 {
     private static final Logger logger = LoggerFactory.getLogger(Message.class);
     private static final NoSpamLogger noSpam1m = NoSpamLogger.getLogger(logger, 1, TimeUnit.MINUTES);
@@ -91,6 +91,12 @@ public class Message<T> implements ReplyContext
     public InetAddressAndPort from()
     {
         return header.from;
+    }
+
+    @Override
+    public T payload()
+    {
+        return payload;
     }
 
     /** Whether the message has crossed the node boundary, that is whether it originated from another node. */
@@ -1511,7 +1517,7 @@ public class Message<T> implements ReplyContext
     private int payloadSize30   = -1;
     private int payloadSize3014 = -1;
     private int payloadSize40   = -1;
-    private int payloadSize42   = -1;
+    private int payloadSize50 = -1;
 
     private int payloadSize(int version)
     {
@@ -1530,9 +1536,9 @@ public class Message<T> implements ReplyContext
                     payloadSize40 = serializer.payloadSize(this, VERSION_40);
                 return payloadSize40;
             case VERSION_50:
-                if (payloadSize42 < 0)
-                    payloadSize42 = serializer.payloadSize(this, VERSION_50);
-                return payloadSize42;
+                if (payloadSize50 < 0)
+                    payloadSize50 = serializer.payloadSize(this, VERSION_50);
+                return payloadSize50;
             default:
                 throw new IllegalStateException();
         }

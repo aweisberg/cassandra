@@ -29,11 +29,13 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.google.common.primitives.Ints;
+import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.impl.SimpleProgressLog;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
 import net.bytebuddy.implementation.MethodDelegation;
@@ -52,6 +54,7 @@ import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor.SerializableRunnable;
 import org.apache.cassandra.distributed.api.QueryResults;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
+import org.apache.cassandra.distributed.shared.AssertUtils;
 import org.apache.cassandra.distributed.shared.Metrics;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
 import org.apache.cassandra.distributed.util.QueryResultUtil;
@@ -59,11 +62,11 @@ import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.service.consensus.migration.ConsensusTableMigrationState.MigrationStateSnapshot;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.AccordTestUtils;
 import org.apache.cassandra.service.accord.exceptions.ReadPreemptedException;
 import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
+import org.apache.cassandra.service.consensus.migration.ConsensusTableMigrationState.MigrationStateSnapshot;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.utils.AssertionUtils;
 import org.apache.cassandra.utils.FBUtilities;
@@ -101,10 +104,23 @@ public abstract class AccordTestBase extends TestBaseImpl
         currentTable = KEYSPACE + ".tbl" + COUNTER.getAndIncrement();
     }
 
+    @After
+    public void tearDown() throws Exception
+    {
+        for (IInvokableInstance instance : SHARED_CLUSTER)
+            instance.runOnInstance(() -> SimpleProgressLog.PAUSE_FOR_TEST = false);
+    }
+
     protected static void assertRowSerial(Cluster cluster, String query, int k, int c, int v, int s)
     {
         Object[][] result = cluster.coordinator(1).execute(query, ConsistencyLevel.SERIAL);
         assertArrayEquals(new Object[]{new Object[] {k, c, v, s}}, result);
+    }
+
+    protected static void assertRowSerial(Cluster cluster, String query, Object[]... expected)
+    {
+        Object[][] result = cluster.coordinator(1).execute(query, ConsistencyLevel.SERIAL);
+        AssertUtils.assertRows(result, expected);
     }
 
     protected void test(String tableDDL, FailingConsumer<Cluster> fn) throws Exception
@@ -197,38 +213,9 @@ public abstract class AccordTestBase extends TestBaseImpl
         return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.AccordMigrationRejects.AccordWrite"));
     }
 
-    protected static int getAccordMigrationSkippedReads()
-    {
-        // Skipped reads can occur at any node so sum them
-        long sum = 0;
-        for (IInvokableInstance instance : SHARED_CLUSTER)
-            sum += instance.metrics().getCounter("org.apache.cassandra.metrics.ClientRequest.MigrationSkippedReads.AccordWrite");
-        return Ints.checkedCast(sum);
-    }
-
     protected static int getKeyMigrationCount(int coordinatorIndex)
     {
         return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.Table.KeyMigrationLatency.all"));
-    }
-
-    protected static int getWriteMigrationReadCount()
-    {
-        // Migration reads can occur at any node when Accord picks where to read from
-        // So add up all of them
-        long sum = 0;
-        for (IInvokableInstance instance : SHARED_CLUSTER)
-            sum += instance.metrics().getCounter("org.apache.cassandra.metrics.ClientRequest.MigrationReadLatency.AccordWrite");
-        return Ints.checkedCast(sum);
-    }
-
-    protected static int getReadMigrationReadCount()
-    {
-        // Migration reads can occur at any node when Accord picks where to read from
-        // So add up all of them
-        long sum = 0;
-        for (IInvokableInstance instance : SHARED_CLUSTER)
-            sum += instance.metrics().getCounter("org.apache.cassandra.metrics.ClientRequest.MigrationReadLatency.AccordRead");
-        return Ints.checkedCast(sum);
     }
 
     protected static int getCasWriteBeginRejects(int coordinatorIndex)
