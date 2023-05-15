@@ -20,14 +20,19 @@
  */
 package org.apache.cassandra.locator;
 
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
+
 import com.google.common.collect.Iterators;
 
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.ReplicaCollection.Builder.Conflict;
 
-import java.util.*;
-
+import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.cassandra.config.CassandraRelevantProperties.LINE_SEPARATOR;
 
 public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, EndpointsForRange.Builder>>
@@ -112,6 +117,7 @@ public class PendingRangeMaps implements Iterable<Map.Entry<Range<Token>, Endpoi
                                NavigableMap<Range<Token>, EndpointsForRange.Builder> ascendingMap,
                                NavigableMap<Range<Token>, EndpointsForRange.Builder> descendingMap)
     {
+        checkArgument(range.equals(replica.range()), "Should these be equal?");
         EndpointsForRange.Builder replicas = ascendingMap.get(range);
         if (replicas == null)
         {
