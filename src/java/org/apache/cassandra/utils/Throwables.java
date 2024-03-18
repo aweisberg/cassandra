@@ -48,6 +48,23 @@ public final class Throwables
         void perform() throws E;
     }
 
+    public interface ThrowingRunnable
+    {
+        void run() throws Exception;
+    }
+
+    public static void runUnchecked(ThrowingRunnable runnable)
+    {
+        try
+        {
+            runnable.run();
+        }
+        catch (Exception e)
+        {
+            throwAsUncheckedException(e);
+        }
+    }
+
     public static boolean isCausedBy(Throwable t, Predicate<Throwable> cause)
     {
         return cause.test(t) || (t.getCause() != null && cause.test(t.getCause()));
