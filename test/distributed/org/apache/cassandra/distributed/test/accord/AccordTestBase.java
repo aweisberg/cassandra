@@ -30,11 +30,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
-import accord.coordinate.Invalidated;
 import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
-import org.apache.cassandra.schema.Schema;
-import org.apache.cassandra.schema.TableMetadata;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -42,6 +40,7 @@ import org.junit.Before;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.coordinate.Invalidated;
 import accord.impl.SimpleProgressLog;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.dynamic.loading.ClassLoadingStrategy;
@@ -67,16 +66,20 @@ import org.apache.cassandra.distributed.util.QueryResultUtil;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.AccordTestUtils;
 import org.apache.cassandra.service.accord.exceptions.ReadPreemptedException;
 import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
+import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationState;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.serialization.Version;
 import org.apache.cassandra.utils.AssertionUtils;
 import org.apache.cassandra.utils.FailingConsumer;
 
+import static java.lang.String.format;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static org.junit.Assert.assertArrayEquals;
 
@@ -89,8 +92,10 @@ public abstract class AccordTestBase extends TestBaseImpl
 
     protected static Cluster SHARED_CLUSTER;
 
-    protected String tableName;
-    protected String qualifiedTableName;
+    protected String accordTableName;
+    protected String qualifiedAccordTableName;
+    protected String regularTableName;
+    protected String qualifiedRegularTableName;
 
     public static void setupCluster(Function<Builder, Builder> options, int nodes) throws IOException
     {
@@ -107,8 +112,10 @@ public abstract class AccordTestBase extends TestBaseImpl
     @Before
     public void setup()
     {
-        tableName = "tbl" + COUNTER.getAndIncrement();
-        qualifiedTableName = KEYSPACE + '.' + tableName;
+        accordTableName = "accordtbl" + COUNTER.getAndIncrement();
+        qualifiedAccordTableName = KEYSPACE + '.' + accordTableName;
+        regularTableName = "regulartbl" + COUNTER.getAndIncrement();
+        qualifiedRegularTableName = KEYSPACE + '.' + regularTableName;
     }
 
     @After
@@ -133,6 +140,14 @@ public abstract class AccordTestBase extends TestBaseImpl
     protected void test(String tableDDL, FailingConsumer<Cluster> fn) throws Exception
     {
         test(Collections.singletonList(tableDDL), fn);
+    }
+
+    protected List<String> createTables(String tableFormat, String... qualifiedTables)
+    {
+        ImmutableList.Builder<String> builder = ImmutableList.builder();
+        for (String qualifiedTable : qualifiedTables)
+            builder.add(format(tableFormat, qualifiedTable));
+        return builder.build();
     }
 
     public static void ensureTableIsAccordManaged(Cluster cluster, String ksname, String tableName)
@@ -165,7 +180,7 @@ public abstract class AccordTestBase extends TestBaseImpl
 
     protected void test(FailingConsumer<Cluster> fn) throws Exception
     {
-        test("CREATE TABLE " + qualifiedTableName + " (k int, c int, v int, primary key (k, c)) WITH transactional_mode='full'", fn);
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, primary key (k, c)) WITH transactional_mode='full'", fn);
     }
 
     protected static ConsensusMigrationState getMigrationStateSnapshot(IInvokableInstance instance) throws IOException
@@ -196,6 +211,19 @@ public abstract class AccordTestBase extends TestBaseImpl
     protected static int getCasWriteCount(int coordinatorIndex)
     {
         return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.Latency.CASWrite"));
+    }
+
+    protected static int getRetryOnDifferentSystemCount(int coordinatorIndex)
+    {
+        return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.MutationRetriedOnDifferentSystem.Write"));
+    }
+
+    protected int getMutationsRejectedOnWrongSystemCount()
+    {
+        long sum = 0;
+        for (IInvokableInstance instance : SHARED_CLUSTER)
+            sum += instance.metrics().getCounter("org.apache.cassandra.metrics.Table.MutationsRejectedOnWrongSystem." + qualifiedAccordTableName);
+        return Ints.checkedCast(sum);
     }
 
     protected static int getCasPrepareCount(int coordinatorIndex)
@@ -279,7 +307,7 @@ public abstract class AccordTestBase extends TestBaseImpl
         // disable vnode for now, but should enable before trunk
         Cluster.Builder builder = Cluster.build(nodes)
                            .withoutVNodes()
-                           .withConfig(c -> c.with(Feature.NETWORK, Feature.GOSSIP).set("write_request_timeout", "10s")
+                           .withConfig(c -> c.with(Feature.GOSSIP).set("write_request_timeout", "10s")
                                                                    .set("transaction_timeout", "15s")
                                              .set("transaction_timeout", "15s"))
                            .withInstanceInitializer(EnforceUpdateDoesNotPerformRead::install);
@@ -464,4 +492,9 @@ public abstract class AccordTestBase extends TestBaseImpl
     }
 
     protected abstract Logger logger();
+
+    protected void alterTableTransactionalMode(TransactionalMode mode)
+    {
+        SHARED_CLUSTER.schemaChange(format("ALTER TABLE %s WITH %s", qualifiedAccordTableName, mode.asCqlParam()));
+    }
 }

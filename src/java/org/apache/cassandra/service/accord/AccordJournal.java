@@ -40,21 +40,18 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.primitives.Ints;
-
-import accord.messages.ApplyThenWaitUntilApplied;
-import org.agrona.collections.Long2ObjectHashMap;
-import org.agrona.collections.LongArrayList;
-import org.agrona.collections.ObjectHashSet;
 import org.cliffc.high_scale_lib.NonBlockingHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.coordinate.Timeout;
 import accord.local.Node;
 import accord.local.Node.Id;
 import accord.local.SerializerSupport;
 import accord.messages.AbstractEpochRequest;
 import accord.messages.Accept;
 import accord.messages.Apply;
+import accord.messages.ApplyThenWaitUntilApplied;
 import accord.messages.BeginRecovery;
 import accord.messages.Commit;
 import accord.messages.LocalRequest;
@@ -70,6 +67,9 @@ import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.utils.Invariants;
 import accord.utils.MapReduceConsume;
+import org.agrona.collections.Long2ObjectHashMap;
+import org.agrona.collections.LongArrayList;
+import org.agrona.collections.ObjectHashSet;
 import org.apache.cassandra.concurrent.Interruptible;
 import org.apache.cassandra.concurrent.ManyToOneConcurrentLinkedQueue;
 import org.apache.cassandra.concurrent.SequentialExecutorPlus;
@@ -1001,8 +1001,19 @@ public class AccordJournal implements IJournal, Shutdownable
             haveWork.release(1);
         }
 
-        void notifyOfEpoch()
+        void notifyOfEpoch(long waitForEpoch, Void ignored, Throwable failure)
         {
+            if (failure != null)
+            {
+                // Nothing to do but keep waiting
+                if (failure instanceof Timeout)
+                {
+                    node.withEpoch(waitForEpoch, (ignored2, withEpochFailure2) -> notifyOfEpoch(waitForEpoch, ignored2, withEpochFailure2));
+                    return;
+                }
+                else
+                    throw new RuntimeException(failure);
+            }
             haveWork.release(1);
         }
 
@@ -1079,7 +1090,7 @@ public class AccordJournal implements IJournal, Shutdownable
                     if (!waitForEpochs.containsLong(waitForEpoch))
                     {
                         waitForEpochs.addLong(waitForEpoch);
-                        node.withEpoch(waitForEpoch, this::notifyOfEpoch);
+                        node.withEpoch(waitForEpoch, (ignored, withEpochFailure) -> notifyOfEpoch(waitForEpoch, ignored, withEpochFailure));
                     }
                 }
                 else

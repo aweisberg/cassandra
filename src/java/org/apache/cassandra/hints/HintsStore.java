@@ -174,6 +174,8 @@ final class HintsStore
 
     boolean isLive()
     {
+        if (hostId.equals(HintsService.RETRY_ON_DIFFERENT_SYSTEM_UUID))
+            return true;
         InetAddressAndPort address = address();
         return address != null && FailureDetector.instance.isAlive(address);
     }
@@ -191,6 +193,12 @@ final class HintsStore
     void offerLast(HintsDescriptor descriptor)
     {
         dispatchDequeue.offerLast(descriptor);
+    }
+
+    void deleteAllHintsUnsafe()
+    {
+        closeWriter();
+        deleteAllHints();
     }
 
     void deleteAllHints()

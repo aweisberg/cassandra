@@ -89,7 +89,7 @@ public class CassandraKeyspaceWriteHandler implements KeyspaceWriteHandler
                     if (update.metadata().params.memtable.factory().writesShouldSkipCommitLog())
                         ids.add(update.metadata().id);
                 }
-                mutation = mutation.without(ids);
+                mutation = mutation.filter(ids::contains);
             }
         }
         // Note: It may be a good idea to precalculate none/all for the set of all tables in the keyspace,

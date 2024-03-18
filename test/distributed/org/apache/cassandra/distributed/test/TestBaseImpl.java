@@ -140,10 +140,17 @@ public class TestBaseImpl extends DistributedTestBase
         return tupleType.pack(bbs, ByteBufferAccessor.instance);
     }
 
-    public static String batch(String... queries)
+    public static String unloggedBatch(String... queries)
+    {
+        return batch(false, queries);
+    }
+
+    public static String batch(boolean logged, String... queries)
     {
         StringBuilder sb = new StringBuilder();
-        sb.append("BEGIN UNLOGGED BATCH\n");
+        sb.append("BEGIN ");
+        sb.append(logged ? "" : "UNLOGGED ");
+        sb.append("BATCH\n");
         for (String q : queries)
             sb.append(q).append(";\n");
         sb.append("APPLY BATCH;");
