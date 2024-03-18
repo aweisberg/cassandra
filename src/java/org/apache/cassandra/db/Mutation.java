@@ -20,14 +20,15 @@ package org.apache.cassandra.db;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
+import javax.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableCollection;
@@ -54,6 +55,7 @@ import org.apache.cassandra.service.AbstractWriteResponseHandler;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.concurrent.Future;
 
+import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.net.MessagingService.VERSION_40;
 import static org.apache.cassandra.net.MessagingService.VERSION_50;
 import static org.apache.cassandra.net.MessagingService.VERSION_51;
@@ -63,6 +65,8 @@ public class Mutation implements IMutation, Supplier<Mutation>
 {
     public static final MutationSerializer serializer = new MutationSerializer();
     public static final int ALLOW_OUT_OF_RANGE_MUTATIONS_FLAG = 0x01;
+    public static final int ALLOW_POTENTIAL_TRANSACTION_CONFLICTS = 0x02;
+
 
     // todo this is redundant
     // when we remove it, also restore SerializationsTest.testMutationRead to not regenerate new Mutations each test
@@ -88,19 +92,32 @@ public class Mutation implements IMutation, Supplier<Mutation>
     /** @see CassandraRelevantProperties#CACHEABLE_MUTATION_SIZE_LIMIT */
     private static final long CACHEABLE_MUTATION_SIZE_LIMIT = CassandraRelevantProperties.CACHEABLE_MUTATION_SIZE_LIMIT.getLong();
 
+    // Allow mutations to be applied even if the node thinks that the data in this mutation is no longer own by this node.
+    // Accord needs to apply transactions in older epochs with older data placements
     private boolean allowOutOfRangeMutations;
+
+    // Paxos & Accord manage conflicts directly and needs to apply mutations to tables/ranges
+    // that are only safe to write to from a transaction system.
+    // Don't refuse to apply this mutation because it should go through a transaction system
+    // because it is being applied by one
+    private boolean allowPotentialTransactionConflicts;
 
     public Mutation(PartitionUpdate update)
     {
-        this(update.metadata().keyspace, update.partitionKey(), ImmutableMap.of(update.metadata().id, update), approxTime.now(), update.metadata().params.cdc);
+        this(update, false);
     }
 
-    public Mutation(String keyspaceName, DecoratedKey key, ImmutableMap<TableId, PartitionUpdate> modifications, long approxCreatedAtNanos, boolean allowOutOfRangeMutations)
+    public Mutation(PartitionUpdate update, boolean allowPotentialTransactionConflicts)
     {
-        this(keyspaceName, key, modifications, approxCreatedAtNanos, cdcEnabled(modifications.values()), allowOutOfRangeMutations);
+        this(update.metadata().keyspace, update.partitionKey(), ImmutableMap.of(update.metadata().id, update), approxTime.now(), update.metadata().params.cdc, false, allowPotentialTransactionConflicts);
     }
 
-    public Mutation(String keyspaceName, DecoratedKey key, ImmutableMap<TableId, PartitionUpdate> modifications, long approxCreatedAtNanos, boolean cdcEnabled, boolean allowOutOfRangeMutations)
+    public Mutation(String keyspaceName, DecoratedKey key, ImmutableMap<TableId, PartitionUpdate> modifications, long approxCreatedAtNanos, boolean allowOutOfRangeMutations, boolean allowPotentialTransactionConflicts)
+    {
+        this(keyspaceName, key, modifications, approxCreatedAtNanos, cdcEnabled(modifications.values()), allowOutOfRangeMutations, allowPotentialTransactionConflicts);
+    }
+
+    public Mutation(String keyspaceName, DecoratedKey key, ImmutableMap<TableId, PartitionUpdate> modifications, long approxCreatedAtNanos, boolean cdcEnabled, boolean allowOutOfRangeMutations, boolean allowPotentialTransactionConflicts)
     {
         this.keyspaceName = keyspaceName;
         this.key = key;
@@ -108,6 +125,7 @@ public class Mutation implements IMutation, Supplier<Mutation>
         this.cdcEnabled = cdcEnabled;
         this.approxCreatedAtNanos = approxCreatedAtNanos;
         this.allowOutOfRangeMutations = allowOutOfRangeMutations;
+        this.allowPotentialTransactionConflicts = allowPotentialTransactionConflicts;
     }
 
     private static boolean cdcEnabled(Iterable<PartitionUpdate> modifications)
@@ -118,26 +136,35 @@ public class Mutation implements IMutation, Supplier<Mutation>
         return cdc;
     }
 
-    public Mutation without(Set<TableId> tableIds)
+    @Override
+    public @Nullable Mutation filter(Predicate<TableId> predicate)
     {
-        if (tableIds.isEmpty())
+        boolean allMatch = true;
+        boolean noneMatch = true;
+        for (TableId tableId : modifications.keySet())
+        {
+            boolean test = predicate.test(tableId);
+            allMatch &= test;
+            noneMatch &= !test;
+        }
+        if (allMatch)
             return this;
+        if (noneMatch)
+            return null;
 
         ImmutableMap.Builder<TableId, PartitionUpdate> builder = new ImmutableMap.Builder<>();
         for (Map.Entry<TableId, PartitionUpdate> update : modifications.entrySet())
-        {
-            if (!tableIds.contains(update.getKey()))
-            {
+            if (predicate.test(update.getKey()))
                 builder.put(update);
-            }
-        }
 
-        return new Mutation(keyspaceName, key, builder.build(), approxCreatedAtNanos, allowOutOfRangeMutations);
+        Map<TableId, PartitionUpdate> updates = builder.build();
+        checkState(!updates.isEmpty(), "Updates should not be empty");
+        return new Mutation(keyspaceName, key, builder.build(), approxCreatedAtNanos, allowOutOfRangeMutations, allowPotentialTransactionConflicts);
     }
 
-    public Mutation without(TableId tableId)
+    public @Nullable Mutation without(TableId tableId)
     {
-        return without(Collections.singleton(tableId));
+        return filter(otherTableId -> !tableId.equals(otherTableId));
     }
 
     public String getKeyspaceName()
@@ -158,6 +185,12 @@ public class Mutation implements IMutation, Supplier<Mutation>
     public ImmutableCollection<PartitionUpdate> getPartitionUpdates()
     {
         return modifications.values();
+    }
+
+    @Override
+    public boolean hasUpdateForTable(TableId tableId)
+    {
+        return modifications.containsKey(tableId);
     }
 
     @Override
@@ -214,11 +247,15 @@ public class Mutation implements IMutation, Supplier<Mutation>
         String ks = null;
         DecoratedKey key = null;
         Boolean allowOutOfRangeMutations = null;
+        Boolean allowPotentialTransactionConflicts = null;
         for (Mutation mutation : mutations)
         {
             if (allowOutOfRangeMutations != null && allowOutOfRangeMutations != mutation.allowOutOfRangeMutations)
                 throw new IllegalArgumentException("Can't merge mutations with differing policies on allowing out of range mutations");
+            if (allowPotentialTransactionConflicts != null && allowPotentialTransactionConflicts != mutation.allowPotentialTransactionConflicts)
+                throw new IllegalArgumentException("Can't merge mutations with differing policies on allowing potential transaction conflicts");
             allowOutOfRangeMutations = mutation.allowOutOfRangeMutations;
+            allowPotentialTransactionConflicts = mutation.allowPotentialTransactionConflicts;
             updatedTables.addAll(mutation.modifications.keySet());
             if (ks != null && !ks.equals(mutation.keyspaceName))
                 throw new IllegalArgumentException();
@@ -242,10 +279,10 @@ public class Mutation implements IMutation, Supplier<Mutation>
             if (updates.isEmpty())
                 continue;
 
-            modifications.put(table, updates.size() == ALLOW_OUT_OF_RANGE_MUTATIONS_FLAG ? updates.get(0) : PartitionUpdate.merge(updates));
+            modifications.put(table, updates.size() == 1 ? updates.get(0) : PartitionUpdate.merge(updates));
             updates.clear();
         }
-        return new Mutation(ks, key, modifications.build(), approxTime.now(), allowOutOfRangeMutations);
+        return new Mutation(ks, key, modifications.build(), approxTime.now(), allowOutOfRangeMutations, allowPotentialTransactionConflicts);
     }
 
     public Future<?> applyFuture()
@@ -323,6 +360,21 @@ public class Mutation implements IMutation, Supplier<Mutation>
         return (flags & ALLOW_OUT_OF_RANGE_MUTATIONS_FLAG) != 0;
     }
 
+    public boolean allowPotentialTransactionConflicts()
+    {
+        return allowPotentialTransactionConflicts;
+    }
+
+    private static int allowPotentialTransactionConflictsFlag(boolean allowPotentialTransactionConflicts)
+    {
+        return allowPotentialTransactionConflicts ? ALLOW_POTENTIAL_TRANSACTION_CONFLICTS : 0;
+    }
+
+    private static boolean allowPotentialTransactionConflicts(int flags)
+    {
+        return (flags & ALLOW_POTENTIAL_TRANSACTION_CONFLICTS) != 0;
+    }
+
     public String toString()
     {
         return toString(false);
@@ -396,6 +448,13 @@ public class Mutation implements IMutation, Supplier<Mutation>
      */
     public interface SimpleBuilder
     {
+        /**
+         * Assume any potential transaction conflicts that might occur by applying this mutation are already
+         * being handled by the caller
+         * @return this builder
+         */
+        public SimpleBuilder allowPotentialTransactionConflicts();
+
         /**
          * Sets the timestamp to use for the following additions to this builder or any derived (update or row) builder.
          *
@@ -531,10 +590,12 @@ public class Mutation implements IMutation, Supplier<Mutation>
                 teeIn = new TeeDataInputPlus(in, dob, CACHEABLE_MUTATION_SIZE_LIMIT);
 
                 boolean allowsOutOfRangeMutations = false;
+                boolean allowPotentialTransactionConflicts = false;
                 if (version >= VERSION_51)
                 {
                     int flags = teeIn.readByte();
                     allowsOutOfRangeMutations = allowsOutOfRangeMutations(flags);
+                    allowPotentialTransactionConflicts = allowPotentialTransactionConflicts(flags);
                 }
                 int size = teeIn.readUnsignedVInt32();
                 assert size > 0;
@@ -555,7 +616,7 @@ public class Mutation implements IMutation, Supplier<Mutation>
                         update = PartitionUpdate.serializer.deserialize(teeIn, version, flag);
                         modifications.put(update.metadata().id, update);
                     }
-                    m = new Mutation(update.metadata().keyspace, dk, modifications.build(), approxTime.now(), allowsOutOfRangeMutations);
+                    m = new Mutation(update.metadata().keyspace, dk, modifications.build(), approxTime.now(), allowsOutOfRangeMutations, allowPotentialTransactionConflicts);
                 }
 
                 //Only cache serializations that don't hit the limit
@@ -655,10 +716,18 @@ public class Mutation implements IMutation, Supplier<Mutation>
         private final long approxCreatedAtNanos = approxTime.now();
         private boolean empty = true;
 
+        private boolean allowPotentialTransactionConflicts;
+
         public PartitionUpdateCollector(String keyspaceName, DecoratedKey key)
+        {
+            this(keyspaceName, key, false);
+        }
+
+        public PartitionUpdateCollector(String keyspaceName, DecoratedKey key, boolean allowPotentialTransactionConflicts)
         {
             this.keyspaceName = keyspaceName;
             this.key = key;
+            this.allowPotentialTransactionConflicts = allowPotentialTransactionConflicts;
         }
 
         public PartitionUpdateCollector add(PartitionUpdate partitionUpdate)
@@ -692,7 +761,7 @@ public class Mutation implements IMutation, Supplier<Mutation>
 
         public Mutation build()
         {
-            return new Mutation(keyspaceName, key, modifications.build(), approxCreatedAtNanos, false);
+            return new Mutation(keyspaceName, key, modifications.build(), approxCreatedAtNanos, false, allowPotentialTransactionConflicts);
         }
     }
 }

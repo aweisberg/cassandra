@@ -19,6 +19,7 @@
 package org.apache.cassandra.metrics;
 
 import com.codahale.metrics.Histogram;
+import com.codahale.metrics.Meter;
 
 import static org.apache.cassandra.metrics.CassandraMetricsRegistry.Metrics;
 
@@ -32,16 +33,19 @@ public class ClientWriteRequestMetrics extends ClientRequestMetrics
      * Metric for tracking the mutation sizes in bytes.
      */
     public final Histogram mutationSize;
+    public final Meter mutationRetriedOnDifferentSystem;
 
     public ClientWriteRequestMetrics(String scope)
     {
         super(scope);
         mutationSize = Metrics.histogram(factory.createMetricName("MutationSizeHistogram"), false);
+        mutationRetriedOnDifferentSystem = Metrics.meter(factory.createMetricName("MutationRetriedOnDifferentSystem"));
     }
 
     public void release()
     {
         super.release();
         Metrics.remove(factory.createMetricName("MutationSizeHistogram"));
+        Metrics.remove(factory.createMetricName("MutationRetriedOnDifferentSystem"));
     }
 }

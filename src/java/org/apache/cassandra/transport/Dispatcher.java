@@ -34,17 +34,22 @@ import io.netty.util.AttributeKey;
 import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
 import org.apache.cassandra.concurrent.LocalAwareExecutorPlus;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.exceptions.CoordinatorBehindException;
 import org.apache.cassandra.metrics.ClientMetrics;
 import org.apache.cassandra.net.FrameEncoder;
 import org.apache.cassandra.service.ClientWarn;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.reads.thresholds.CoordinatorWarnings;
+import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.ClientResourceLimits.Overload;
 import org.apache.cassandra.transport.Flusher.FlushItem;
+import org.apache.cassandra.transport.Message.Request;
+import org.apache.cassandra.transport.Message.Response;
 import org.apache.cassandra.transport.messages.ErrorMessage;
 import org.apache.cassandra.transport.messages.EventMessage;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 import org.apache.cassandra.utils.NoSpamLogger;
+import org.apache.cassandra.utils.Throwables;
 
 import static org.apache.cassandra.concurrent.SharedExecutorPool.SHARED;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
@@ -191,7 +196,8 @@ public class Dispatcher
 
         Message.logger.trace("Received: {}, v={}", request, connection.getVersion());
         connection.requests.inc();
-        Message.Response response = request.execute(qstate, startTimeNanos);
+
+        Response response = executeWithRetryForCoordinatorBehind(request, startTimeNanos, qstate);
 
         if (request.isTrackable())
             CoordinatorWarnings.done();
@@ -202,7 +208,34 @@ public class Dispatcher
         connection.applyStateTransition(request.type, response.type);
         return response;
     }
-    
+
+    /*
+     *  When retrying CoordinatorBehindException we want to restart the query from the beginning
+     *  so anything that was done based on out of data cluster metadata is redone with newer cluster metadata
+     */
+    private static Response executeWithRetryForCoordinatorBehind(Request request, long startTimeNanos, QueryState qstate)
+    {
+        Throwable fail = null;
+        while (true)
+        {
+            try
+            {
+                return request.execute(qstate, startTimeNanos);
+            }
+            catch (CoordinatorBehindException e)
+            {
+                Tracing.trace("Restarting query because the coordinator was behind");
+                fail = Throwables.merge(fail, e);
+            }
+            catch (Throwable t)
+            {
+                if (fail != null)
+                    t.addSuppressed(fail);
+                throw t;
+            }
+        }
+    }
+
     /**
      * Note: this method may be executed on the netty event loop.
      */

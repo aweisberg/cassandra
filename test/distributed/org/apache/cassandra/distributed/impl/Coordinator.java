@@ -40,15 +40,17 @@ import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.QueryResult;
 import org.apache.cassandra.distributed.api.QueryResults;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
+import org.apache.cassandra.exceptions.CoordinatorBehindException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.ClientWarn;
 import org.apache.cassandra.service.QueryState;
 import org.apache.cassandra.service.reads.thresholds.CoordinatorWarnings;
-import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.TimeUUID;
 
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
@@ -106,6 +108,12 @@ public class Coordinator implements ICoordinator
         }).call();
     }
 
+    @Override
+    public Future<SimpleQueryResult> asyncExecuteWithResult(String query, ConsistencyLevel consistencyLevelOrigin, Object... boundValues)
+    {
+        return instance.async(() -> unsafeExecuteInternal(query, consistencyLevelOrigin, boundValues)).call();
+    }
+
     public static org.apache.cassandra.db.ConsistencyLevel toCassandraCL(ConsistencyLevel cl)
     {
         try
@@ -131,39 +139,31 @@ public class Coordinator implements ICoordinator
     public static SimpleQueryResult unsafeExecuteInternal(String query, ConsistencyLevel serialConsistencyLevel, ConsistencyLevel commitConsistencyLevel, Object[] boundValues)
     {
         ClientState clientState = makeFakeClientState();
-        CQLStatement prepared = QueryProcessor.getStatement(query, clientState);
-        List<ByteBuffer> boundBBValues = new ArrayList<>();
-        for (Object boundValue : boundValues)
-            boundBBValues.add(ByteBufferUtil.objectToBytes(boundValue));
-
-        prepared.validate(QueryState.forInternalCalls().getClientState());
-
-        // Start capturing warnings on this thread. Note that this will implicitly clear out any previous 
+        long startTimeNanos = nanoTime();
+        Throwable fail = null;
+        // Start capturing warnings on this thread. Note that this will implicitly clear out any previous
         // warnings as it sets a new State instance on the ThreadLocal.
         ClientWarn.instance.captureWarnings();
         CoordinatorWarnings.init();
         try
         {
-            ResultMessage res = prepared.execute(QueryState.forInternalCalls(),
-                                   QueryOptions.create(toCassandraCL(commitConsistencyLevel),
-                                                       boundBBValues,
-                                                       false,
-                                                       Integer.MAX_VALUE,
-                                                       null,
-                                                       toCassandraSerialCL(serialConsistencyLevel),
-                                                       ProtocolVersion.CURRENT,
-                                                       null),
-                                   nanoTime());
-            // Collect warnings reported during the query.
-            CoordinatorWarnings.done();
-            if (res != null)
-                res.setWarnings(ClientWarn.instance.getWarnings());
-
-            return RowUtil.toQueryResult(res);
+            while (true)
+            {
+                try
+                {
+                    return doUnsafeExecuteInternal(query, serialConsistencyLevel, commitConsistencyLevel, boundValues, clientState, startTimeNanos);
+                }
+                catch (CoordinatorBehindException e)
+                {
+                    fail = Throwables.merge(fail, e);
+                }
+            }
         }
         catch (Exception | Error e)
         {
             CoordinatorWarnings.done();
+            if (fail != null)
+                e.addSuppressed(fail);
             throw e;
         }
         finally
@@ -171,6 +171,33 @@ public class Coordinator implements ICoordinator
             CoordinatorWarnings.reset();
             ClientWarn.instance.resetWarnings();
         }
+    }
+
+    private static SimpleQueryResult doUnsafeExecuteInternal(String query, ConsistencyLevel serialConsistencyLevel, ConsistencyLevel commitConsistencyLevel, Object[] boundValues, ClientState clientState, long startTimeNanos)
+    {
+        CQLStatement prepared = QueryProcessor.getStatement(query, clientState);
+        List<ByteBuffer> boundBBValues = new ArrayList<>();
+        for (Object boundValue : boundValues)
+            boundBBValues.add(ByteBufferUtil.objectToBytes(boundValue));
+
+        prepared.validate(QueryState.forInternalCalls().getClientState());
+
+        ResultMessage res = prepared.execute(QueryState.forInternalCalls(),
+                                             QueryOptions.create(toCassandraCL(commitConsistencyLevel),
+                                                                 boundBBValues,
+                                                                 false,
+                                                                 Integer.MAX_VALUE,
+                                                                 null,
+                                                                 toCassandraSerialCL(serialConsistencyLevel),
+                                                                 ProtocolVersion.CURRENT,
+                                                                 null),
+                                             startTimeNanos);
+        // Collect warnings reported during the query.
+        CoordinatorWarnings.done();
+        if (res != null)
+            res.setWarnings(ClientWarn.instance.getWarnings());
+
+        return RowUtil.toQueryResult(res);
     }
 
     public Object[][] executeWithTracing(UUID sessionId, String query, ConsistencyLevel consistencyLevelOrigin, Object... boundValues)

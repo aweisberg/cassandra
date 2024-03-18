@@ -36,8 +36,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.local.CommandsForKey;
 import accord.impl.SimpleProgressLog;
+import accord.local.CommandsForKey;
 import accord.local.Node;
 import accord.local.PreLoadContext;
 import accord.local.SafeCommand;
@@ -51,6 +51,7 @@ import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.distributed.api.Feature;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor;
 import org.apache.cassandra.gms.FailureDetector;
@@ -147,8 +148,8 @@ public class AccordIncrementalRepairTest extends AccordTestBase
     public static void setupClass() throws Throwable
     {
         CassandraRelevantProperties.ACCORD_AGENT_CLASS.setString(BarrierRecordingAgent.class.getName());
-//        setupCluster(opt -> opt.withConfig(conf -> conf.with(Feature.NETWORK, Feature.GOSSIP)), 3);
-        setupCluster(opt -> opt, 3);
+        setupCluster(opt -> opt.withConfig(conf -> conf.with(Feature.NETWORK, Feature.GOSSIP)), 3);
+//        setupCluster(opt -> opt, 3);
     }
 
     @After
@@ -248,16 +249,16 @@ public class AccordIncrementalRepairTest extends AccordTestBase
     @Test
     public void txnRepairTest() throws Throwable
     {
-        SHARED_CLUSTER.schemaChange(format("CREATE TABLE %s.%s (k int primary key, v int) WITH transactional_mode='full' AND fast_path={'size':2};", KEYSPACE, tableName));
+        SHARED_CLUSTER.schemaChange(format("CREATE TABLE %s.%s (k int primary key, v int) WITH transactional_mode='full' AND fast_path={'size':2};", KEYSPACE, accordTableName));
         final String keyspace = KEYSPACE;
-        final String table = tableName;
+        final String table = accordTableName;
 
         SHARED_CLUSTER.filters().allVerbs().to(3).drop();
         awaitEndpointDown(SHARED_CLUSTER.get(1), SHARED_CLUSTER.get(3));
 
         executeWithRetry(SHARED_CLUSTER, format("BEGIN TRANSACTION\n" +
                                                 "INSERT INTO %s (k, v) VALUES (1, 1);\n" +
-                                                "COMMIT TRANSACTION", qualifiedTableName));
+                                                "COMMIT TRANSACTION", qualifiedAccordTableName));
 
         SHARED_CLUSTER.get(1, 2).forEach(instance -> instance.runOnInstance(() -> {
             TableMetadata metadata = Schema.instance.getTableMetadata(keyspace, table);
@@ -307,9 +308,9 @@ public class AccordIncrementalRepairTest extends AccordTestBase
 
     private void testSingleNodeWrite(TransactionalMode mode)
     {
-        SHARED_CLUSTER.schemaChange(format("CREATE TABLE %s.%s (k int primary key, v int) WITH transactional_mode='%s';", KEYSPACE, tableName, mode));
+        SHARED_CLUSTER.schemaChange(format("CREATE TABLE %s.%s (k int primary key, v int) WITH transactional_mode='%s';", KEYSPACE, accordTableName, mode));
         final String keyspace = KEYSPACE;
-        final String table = tableName;
+        final String table = accordTableName;
 
         SHARED_CLUSTER.get(3).runOnInstance(() -> {
             QueryProcessor.executeInternal(String.format("INSERT INTO %s.%s (k, v) VALUES (1, 2);", keyspace, table));
@@ -382,9 +383,9 @@ public class AccordIncrementalRepairTest extends AccordTestBase
     @Test
     public void onlyAccordTest()
     {
-        SHARED_CLUSTER.schemaChange(format("CREATE TABLE %s.%s (k int primary key, v int) WITH transactional_mode='full' AND fast_path={'size':2};", KEYSPACE, tableName));
+        SHARED_CLUSTER.schemaChange(format("CREATE TABLE %s.%s (k int primary key, v int) WITH transactional_mode='full' AND fast_path={'size':2};", KEYSPACE, accordTableName));
         final String keyspace = KEYSPACE;
-        final String table = tableName;
+        final String table = accordTableName;
 
         SHARED_CLUSTER.filters().allVerbs().to(3).drop();
         awaitEndpointDown(SHARED_CLUSTER.get(1), SHARED_CLUSTER.get(3));
@@ -392,7 +393,7 @@ public class AccordIncrementalRepairTest extends AccordTestBase
 
         executeWithRetry(SHARED_CLUSTER, format("BEGIN TRANSACTION\n" +
                                                 "INSERT INTO %s (k, v) VALUES (1, 1);\n" +
-                                                "COMMIT TRANSACTION", qualifiedTableName));
+                                                "COMMIT TRANSACTION", qualifiedAccordTableName));
 
         SHARED_CLUSTER.get(1, 2).forEach(instance -> instance.runOnInstance(() -> {
             TableMetadata metadata = Schema.instance.getTableMetadata(keyspace, table);

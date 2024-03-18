@@ -140,7 +140,7 @@ public class PagingTest
         }
         Thread.sleep(1500);
 
-        Statement stmt = new SimpleStatement(String.format("SELECT DISTINCT token(id, id2), id, id2 FROM %s", table));
+        Statement stmt = new SimpleStatement(String.format("SELECT DISTINCT token(id, id2), id, id2 FROM %s WHERE token(id, id2) >= -9223372036854775808", table));
         stmt.setFetchSize(100);
         ResultSet res = session.execute(stmt);
         stmt.setFetchSize(200);
