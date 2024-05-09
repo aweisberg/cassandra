@@ -23,7 +23,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
@@ -93,7 +92,10 @@ public class Tracker
     private final List<INotificationConsumer> subscribers = new CopyOnWriteArrayList<>();
 
     public final ColumnFamilyStore cfstore;
-    final AtomicReference<View> view;
+
+    // Constructing views update can be quite slow so locking generates less CPU/garbage compared to CAS
+    final Object viewUpdateLock = new Object();
+    volatile View view = null;
     public final boolean loadsstables;
 
     /**
@@ -104,7 +106,6 @@ public class Tracker
     public Tracker(ColumnFamilyStore columnFamilyStore, Memtable memtable, boolean loadsstables)
     {
         this.cfstore = columnFamilyStore;
-        this.view = new AtomicReference<>();
         this.loadsstables = loadsstables;
         this.reset(memtable);
     }
@@ -166,14 +167,14 @@ public class Tracker
      */
     Pair<View, View> apply(Predicate<View> permit, Function<View, View> function)
     {
-        while (true)
+        synchronized (viewUpdateLock)
         {
-            View cur = view.get();
+            View cur = view;
             if (!permit.apply(cur))
                 return null;
             View updated = function.apply(cur);
-            if (view.compareAndSet(cur, updated))
-                return Pair.create(cur, updated);
+            view = updated;
+            return Pair.create(cur, updated);
         }
     }
 
@@ -282,11 +283,14 @@ public class Tracker
     @VisibleForTesting
     public void reset(Memtable memtable)
     {
-        view.set(new View(memtable != null ? singletonList(memtable) : Collections.emptyList(),
-                          Collections.emptyList(),
-                          Collections.emptyMap(),
-                          Collections.emptyMap(),
-                          SSTableIntervalTree.empty()));
+        synchronized (viewUpdateLock)
+        {
+            view = new View(memtable != null ? singletonList(memtable) : Collections.emptyList(),
+                            Collections.emptyList(),
+                            Collections.emptyMap(),
+                            Collections.emptyMap(),
+                            SSTableIntervalTree.empty());
+        }
     }
 
     public Throwable dropSSTablesIfInvalid(Throwable accumulate)
@@ -377,12 +381,13 @@ public class Tracker
         // there may be multiple memtables in the list that would 'accept' us, however we only ever choose
         // the oldest such memtable, as accepts() only prevents us falling behind (i.e. ensures we don't
         // assign operations to a memtable that was retired/queued before we started)
-        for (Memtable memtable : view.get().liveMemtables)
+        View view = this.view;
+        for (Memtable memtable : view.liveMemtables)
         {
             if (memtable.accepts(opGroup, commitLogPosition))
                 return memtable;
         }
-        throw new AssertionError(view.get().liveMemtables.toString());
+        throw new AssertionError(view.liveMemtables.toString());
     }
 
     /**
@@ -447,17 +452,17 @@ public class Tracker
 
     public Set<SSTableReader> getCompacting()
     {
-        return view.get().compacting;
+        return view.compacting;
     }
 
     public Iterable<SSTableReader> getUncompacting()
     {
-        return view.get().select(SSTableSet.NONCOMPACTING);
+        return view.select(SSTableSet.NONCOMPACTING);
     }
 
     public Iterable<SSTableReader> getUncompacting(Iterable<SSTableReader> candidates)
     {
-        return view.get().getUncompacting(candidates);
+        return view.getUncompacting(candidates);
     }
 
     public void maybeIncrementallyBackup(final Iterable<SSTableReader> sstables)
@@ -601,7 +606,7 @@ public class Tracker
 
     public View getView()
     {
-        return view.get();
+        return view;
     }
 
     @VisibleForTesting

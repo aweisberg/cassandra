@@ -360,7 +360,7 @@ public class View
 
                 Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, emptySet(), flushed);
                 return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap,
-                                SSTableIntervalTree.build(sstableMap.keySet()));
+                                    SSTableIntervalTree.addSSTables(view.intervalTree, flushed));
             }
         };
     }

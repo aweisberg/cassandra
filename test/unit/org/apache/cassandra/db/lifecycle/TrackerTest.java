@@ -127,7 +127,7 @@ public class TrackerTest
             {
                 // confound the CAS by swapping the view, and check we retry
                 if (count.incrementAndGet() < 3)
-                    tracker.view.set(ViewTest.fakeView(0, 0, cfs));
+                    tracker.view = ViewTest.fakeView(0, 0, cfs);
                 return true;
             }
         }, new Function<View, View>()
@@ -167,7 +167,7 @@ public class TrackerTest
                                                        MockSchema.sstable(2, 9, cfs));
         tracker.addInitialSSTables(copyOf(readers));
 
-        Assert.assertEquals(3, tracker.view.get().sstables.size());
+        Assert.assertEquals(3, tracker.view.sstables.size());
         Assert.assertEquals(1, listener.senders.size());
         Assert.assertEquals(1, listener.received.size());
         Assert.assertTrue(listener.received.get(0) instanceof InitialSSTableAddedNotification);
@@ -193,7 +193,7 @@ public class TrackerTest
                                                        MockSchema.sstable(2, 9, cfs));
         tracker.addSSTables(copyOf(readers));
 
-        Assert.assertEquals(3, tracker.view.get().sstables.size());
+        Assert.assertEquals(3, tracker.view.sstables.size());
 
         for (SSTableReader reader : readers)
         {

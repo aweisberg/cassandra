@@ -65,35 +65,35 @@ public class Interval<C, D>
         return Objects.equal(min, that.min) && Objects.equal(max, that.max) && Objects.equal(data, that.data);
     }
 
-    private static final AsymmetricOrdering<Interval<Comparable, Object>, Comparable> minOrdering
-    = new AsymmetricOrdering<Interval<Comparable, Object>, Comparable>()
+    private static final AsymmetricOrdering<Interval<Comparable, Comparable>, Comparable> minOrdering
+    = new AsymmetricOrdering<Interval<Comparable, Comparable>, Comparable>()
     {
-        public int compareAsymmetric(Interval<Comparable, Object> left, Comparable right)
+        public int compareAsymmetric(Interval<Comparable, Comparable> left, Comparable right)
         {
             return left.min.compareTo(right);
         }
 
-        public int compare(Interval<Comparable, Object> i1, Interval<Comparable, Object> i2)
+        public int compare(Interval<Comparable, Comparable> i1, Interval<Comparable, Comparable> i2)
         {
             return i1.min.compareTo(i2.min);
         }
     };
 
-    private static final AsymmetricOrdering<Interval<Comparable, Object>, Comparable> maxOrdering
-    = new AsymmetricOrdering<Interval<Comparable, Object>, Comparable>()
+    private static final AsymmetricOrdering<Interval<Comparable, Comparable>, Comparable> maxOrdering
+    = new AsymmetricOrdering<Interval<Comparable, Comparable>, Comparable>()
     {
-        public int compareAsymmetric(Interval<Comparable, Object> left, Comparable right)
+        public int compareAsymmetric(Interval<Comparable, Comparable> left, Comparable right)
         {
             return left.max.compareTo(right);
         }
 
-        public int compare(Interval<Comparable, Object> i1, Interval<Comparable, Object> i2)
+        public int compare(Interval<Comparable, Comparable> i1, Interval<Comparable, Comparable> i2)
         {
             return i1.max.compareTo(i2.max);
         }
     };
 
-    private static final AsymmetricOrdering<Interval<Comparable, Object>, Comparable> reverseMaxOrdering = maxOrdering.reverse();
+    private static final AsymmetricOrdering<Interval<Comparable, Comparable>, Comparable> reverseMaxOrdering = maxOrdering.reverse();
 
     public static <C extends Comparable<? super C>, V> AsymmetricOrdering<Interval<C, V>, C> minOrdering()
     {
