@@ -1119,6 +1119,9 @@ public class Gossiper implements IFailureDetectionEventListener, GossiperMBean
 
     private static long getFatClientTimeoutForEndpoint(EndpointState epState)
     {
+        logger.info("Getting fat client timeout gossip status " + getGossipStatus(epState) + " isBootStrappingState(epState) {}", isBootstrappingState(epState));
+        logger.info("{}", epState);
+        getGossipStatus(epState);
         return isBootstrappingState(epState) ?
                 FAILED_BOOTSTRAP_TIMEOUT :
                 FAT_CLIENT_TIMEOUT;
