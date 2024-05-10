@@ -522,6 +522,7 @@ public class MoveTest
     private void moveHost(InetAddressAndPort host, int token, TokenMetadata tmd, VersionedValue.VersionedValueFactory valueFactory )
     {
         StorageService.instance.onChange(host, ApplicationState.STATUS, valueFactory.moving(new BigIntegerToken(String.valueOf(token))));
+        StorageService.instance.onChange(host, ApplicationState.STATUS_WITH_PORT, valueFactory.moving(new BigIntegerToken(String.valueOf(token))));
         PendingRangeCalculatorService.instance.blockUntilFinished();
         assertTrue(tmd.isMoving(host));
     }
