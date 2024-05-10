@@ -73,6 +73,7 @@ import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -214,6 +215,9 @@ import static org.apache.cassandra.config.CassandraRelevantProperties.BOOTSTRAP_
 import static org.apache.cassandra.config.CassandraRelevantProperties.BOOTSTRAP_SKIP_SCHEMA_CHECK;
 import static org.apache.cassandra.config.CassandraRelevantProperties.DRAIN_EXECUTOR_TIMEOUT_MS;
 import static org.apache.cassandra.config.CassandraRelevantProperties.REPLACEMENT_ALLOW_EMPTY;
+import static org.apache.cassandra.gms.ApplicationState.INTERNAL_IP;
+import static org.apache.cassandra.gms.ApplicationState.RPC_ADDRESS;
+import static org.apache.cassandra.gms.ApplicationState.STATUS;
 import static org.apache.cassandra.index.SecondaryIndexManager.getIndexName;
 import static org.apache.cassandra.index.SecondaryIndexManager.isIndexColumnFamily;
 import static org.apache.cassandra.net.NoPayload.noPayload;
@@ -405,7 +409,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         List<Pair<ApplicationState, VersionedValue>> states = new ArrayList<Pair<ApplicationState, VersionedValue>>();
         states.add(Pair.create(ApplicationState.TOKENS, valueFactory.tokens(tokens)));
         states.add(Pair.create(ApplicationState.STATUS_WITH_PORT, valueFactory.normal(tokens)));
-        states.add(Pair.create(ApplicationState.STATUS, valueFactory.normal(tokens)));
+        states.add(Pair.create(STATUS, valueFactory.normal(tokens)));
         Gossiper.instance.addLocalApplicationStates(states);
     }
 
@@ -758,13 +762,13 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             for (Map.Entry<InetAddressAndPort, EndpointState> entry : epStates.entrySet())
             {
                 // ignore local node or empty status
-                if (entry.getKey().equals(FBUtilities.getBroadcastAddressAndPort()) || (entry.getValue().getApplicationState(ApplicationState.STATUS_WITH_PORT) == null & entry.getValue().getApplicationState(ApplicationState.STATUS) == null))
+                if (entry.getKey().equals(FBUtilities.getBroadcastAddressAndPort()) || (entry.getValue().getApplicationState(ApplicationState.STATUS_WITH_PORT) == null & entry.getValue().getApplicationState(STATUS) == null))
                     continue;
 
                 VersionedValue value = entry.getValue().getApplicationState(ApplicationState.STATUS_WITH_PORT);
                 if (value == null)
                 {
-                    value = entry.getValue().getApplicationState(ApplicationState.STATUS);
+                    value = entry.getValue().getApplicationState(STATUS);
                 }
 
                 String[] pieces = splitValue(value);
@@ -898,7 +902,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                 List<Pair<ApplicationState, VersionedValue>> states = new ArrayList<Pair<ApplicationState, VersionedValue>>();
                 states.add(Pair.create(ApplicationState.TOKENS, valueFactory.tokens(tokens)));
                 states.add(Pair.create(ApplicationState.STATUS_WITH_PORT, valueFactory.hibernate(true)));
-                states.add(Pair.create(ApplicationState.STATUS, valueFactory.hibernate(true)));
+                states.add(Pair.create(STATUS, valueFactory.hibernate(true)));
                 Gossiper.instance.addLocalApplicationStates(states);
             }
             doAuthSetup(true);
@@ -1015,7 +1019,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
                                 "repair must be run after the replacement process in order to make this node consistent.",
                                 DatabaseDescriptor.getReplaceAddress());
                     appStates.put(ApplicationState.STATUS_WITH_PORT, valueFactory.hibernate(true));
-                    appStates.put(ApplicationState.STATUS, valueFactory.hibernate(true));
+                    appStates.put(STATUS, valueFactory.hibernate(true));
                 }
                 MigrationCoordinator.instance.removeAndIgnoreEndpoint(DatabaseDescriptor.getReplaceAddress());
             }
@@ -1041,7 +1045,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             appStates.put(ApplicationState.NET_VERSION, valueFactory.networkVersion());
             appStates.put(ApplicationState.HOST_ID, valueFactory.hostId(localHostId));
             appStates.put(ApplicationState.NATIVE_ADDRESS_AND_PORT, valueFactory.nativeaddressAndPort(FBUtilities.getBroadcastNativeAddressAndPort()));
-            appStates.put(ApplicationState.RPC_ADDRESS, valueFactory.rpcaddress(FBUtilities.getJustBroadcastNativeAddress()));
+            appStates.put(RPC_ADDRESS, valueFactory.rpcaddress(FBUtilities.getJustBroadcastNativeAddress()));
             appStates.put(ApplicationState.RELEASE_VERSION, valueFactory.releaseVersion());
             appStates.put(ApplicationState.SSTABLE_VERSIONS, valueFactory.sstableVersions(sstablesTracker.versionsInUse()));
 
@@ -1847,7 +1851,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
             states.add(Pair.create(ApplicationState.STATUS_WITH_PORT, replacing?
                                                             valueFactory.bootReplacingWithPort(DatabaseDescriptor.getReplaceAddress()) :
                                                             valueFactory.bootstrapping(tokens)));
-            states.add(Pair.create(ApplicationState.STATUS, replacing?
+            states.add(Pair.create(STATUS, replacing?
                                                             valueFactory.bootReplacing(DatabaseDescriptor.getReplaceAddress().address) :
                                                             valueFactory.bootstrapping(tokens)));
             Gossiper.instance.addLocalApplicationStates(states);
@@ -2077,9 +2081,9 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         {
              final String ipAddress;
              // If RPC_ADDRESS present in gossip for this endpoint use it.  This is expected for 3.x nodes.
-             if (Gossiper.instance.getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.RPC_ADDRESS) != null)
+             if (Gossiper.instance.getEndpointStateForEndpoint(endpoint).getApplicationState(RPC_ADDRESS) != null)
              {
-                 ipAddress = Gossiper.instance.getEndpointStateForEndpoint(endpoint).getApplicationState(ApplicationState.RPC_ADDRESS).value;
+                 ipAddress = Gossiper.instance.getEndpointStateForEndpoint(endpoint).getApplicationState(RPC_ADDRESS).value;
              }
              else
              {
@@ -2426,7 +2430,12 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
      */
     public void onChange(InetAddressAndPort endpoint, ApplicationState state, VersionedValue value)
     {
-        if (state == ApplicationState.STATUS || state == ApplicationState.STATUS_WITH_PORT)
+        // Locally we can't filter these out since we need to publish them, but we don't want to process these versions
+        // since we have the version with PORT available to process
+        if (endpoint.equals(getBroadcastAddressAndPort()) && ImmutableSet.of(INTERNAL_IP, STATUS, RPC_ADDRESS).contains(state))
+            return;
+        
+        if (state == STATUS || state == ApplicationState.STATUS_WITH_PORT)
         {
             String[] pieces = splitValue(value);
             assert (pieces.length > 0);
@@ -3447,7 +3456,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         statusValue = epState.getApplicationState(statusState);
         if (statusValue == null)
         {
-            statusState = ApplicationState.STATUS;
+            statusState = STATUS;
             statusValue = epState.getApplicationState(statusState);
         }
         if (statusValue != null)
@@ -3455,7 +3464,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
 
         for (Map.Entry<ApplicationState, VersionedValue> entry : epState.states())
         {
-            if (entry.getKey() == ApplicationState.STATUS_WITH_PORT || entry.getKey() == ApplicationState.STATUS)
+            if (entry.getKey() == ApplicationState.STATUS_WITH_PORT || entry.getKey() == STATUS)
                 continue;
             onChange(endpoint, entry.getKey(), entry.getValue());
         }
@@ -4580,7 +4589,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
     private void startLeaving()
     {
         Gossiper.instance.addLocalApplicationState(ApplicationState.STATUS_WITH_PORT, valueFactory.leaving(getLocalTokens()));
-        Gossiper.instance.addLocalApplicationState(ApplicationState.STATUS, valueFactory.leaving(getLocalTokens()));
+        Gossiper.instance.addLocalApplicationState(STATUS, valueFactory.leaving(getLocalTokens()));
         tokenMetadata.addLeavingEndpoint(FBUtilities.getBroadcastAddressAndPort());
         PendingRangeCalculatorService.instance.update();
     }
@@ -4690,7 +4699,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         PendingRangeCalculatorService.instance.update();
 
         Gossiper.instance.addLocalApplicationState(ApplicationState.STATUS_WITH_PORT, valueFactory.left(getLocalTokens(),Gossiper.computeExpireTime()));
-        Gossiper.instance.addLocalApplicationState(ApplicationState.STATUS, valueFactory.left(getLocalTokens(),Gossiper.computeExpireTime()));
+        Gossiper.instance.addLocalApplicationState(STATUS, valueFactory.left(getLocalTokens(),Gossiper.computeExpireTime()));
         int delay = Math.max(RING_DELAY, Gossiper.intervalInMillis * 2);
         logger.info("Announcing that I have left the ring for {}ms", delay);
         Uninterruptibles.sleepUninterruptibly(delay, MILLISECONDS);
@@ -4830,7 +4839,7 @@ public class StorageService extends NotificationBroadcasterSupport implements IE
         }
 
         Gossiper.instance.addLocalApplicationState(ApplicationState.STATUS_WITH_PORT, valueFactory.moving(newToken));
-        Gossiper.instance.addLocalApplicationState(ApplicationState.STATUS, valueFactory.moving(newToken));
+        Gossiper.instance.addLocalApplicationState(STATUS, valueFactory.moving(newToken));
         setMode(Mode.MOVING, String.format("Moving %s from %s to %s.", localAddress, getLocalTokens().iterator().next(), newToken), true);
 
         setMode(Mode.MOVING, String.format("Sleeping %s ms before start streaming/fetching ranges", RING_DELAY), true);

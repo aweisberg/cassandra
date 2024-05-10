@@ -18,14 +18,6 @@
 
 package org.apache.cassandra.distributed.test.hostreplacement;
 
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
-
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.Constants;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
@@ -37,6 +29,14 @@ import org.apache.cassandra.distributed.api.TokenSupplier;
 import org.apache.cassandra.distributed.shared.AssertUtils;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
 import org.assertj.core.api.Assertions;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.Arrays;
+import java.util.List;
 
 import static org.apache.cassandra.config.CassandraRelevantProperties.BOOTSTRAP_SKIP_SCHEMA_CHECK;
 import static org.apache.cassandra.config.CassandraRelevantProperties.GOSSIPER_QUARANTINE_DELAY;
@@ -70,6 +70,7 @@ public class HostReplacementTest extends TestBaseImpl
         // start with 2 nodes, stop both nodes, start the seed, host replace the down node)
         TokenSupplier even = TokenSupplier.evenlyDistributedTokens(2);
         try (Cluster cluster = Cluster.build(2)
+                .withDynamicPortAllocation(true)
                                       .withConfig(c -> c.with(Feature.GOSSIP, Feature.NETWORK))
                                       .withTokenSupplier(node -> even.token(node == 3 ? 2 : node))
                                       .start())
@@ -89,6 +90,9 @@ public class HostReplacementTest extends TestBaseImpl
                 // since we have a downed host there might be a schema version which is old show up but
                 // can't be fetched since the host is down...
                 props.set(BOOTSTRAP_SKIP_SCHEMA_CHECK, true);
+                InetSocketAddress removedNodeAddress = nodeToRemove.config().broadcastAddress();
+                String removedNode = removedNodeAddress.getAddress().getHostAddress() + ":" + removedNodeAddress.getPort();
+                props.setProperty("cassandra.replace_address_first_boot", removedNode);
             });
 
             // wait till the replacing node is in the ring
