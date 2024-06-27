@@ -46,7 +46,7 @@ import org.apache.cassandra.service.reads.repair.BlockingReadRepair;
 
 /**
  * This update is used to support blocking read repair from non-transactional Cassandra reads. Cassandra creates
- * a read repair mutation per node and this enables some partitiosn to be readable that would otherwise run into messages
+ * a read repair mutation per node and this enables some partitions to be readable that would otherwise run into messages
  * size limits.
  *
  * This update is used during the `Execute` phase to apply the repair mutations directly in AccordInteropExecution similar
@@ -57,7 +57,8 @@ import org.apache.cassandra.service.reads.repair.BlockingReadRepair;
  * The state for this update is always kept in memory and is never serialized. Only the Id is propagated so the cache
  * can evict the update and then load it back. We don't need to persist it or have it be recoverable because if the original
  * coordinator fails to complete the transaction then the dependent Cassandra read that triggered the read repair will
- * also fail and it doesn't matter if the read repair is partially applied or not applied at all.
+ * also fail and it doesn't matter if the read repair is partially applied or not applied at all since it doesn't propose
+ * new values.
  */
 public class UnrecoverableRepairUpdate<E extends Endpoints<E>, P extends ReplicaPlan.ForRead<E, P>> extends AccordUpdate
 {
