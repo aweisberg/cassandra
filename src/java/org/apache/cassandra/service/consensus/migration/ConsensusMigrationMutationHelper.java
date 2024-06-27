@@ -349,7 +349,7 @@ public class ConsensusMigrationMutationHelper
             throw new RetryOnDifferentSystemException();
     }
 
-    private static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
+    public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
     {
         boolean transactionalModeWritesThroughAccord = tm.params.transactionalMode.writesThroughAccord;
         TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
