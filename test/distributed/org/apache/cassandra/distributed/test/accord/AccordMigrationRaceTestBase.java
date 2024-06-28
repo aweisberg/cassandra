@@ -21,17 +21,14 @@ package org.apache.cassandra.distributed.test.accord;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.Queue;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -56,9 +53,7 @@ import org.apache.cassandra.config.Config.PaxosVariant;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Mutation;
-import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.dht.IPartitioner;
-import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ICoordinator;
@@ -89,7 +84,6 @@ import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationSta
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.eclipse.jetty.util.ConcurrentHashSet;
@@ -99,8 +93,6 @@ import static java.lang.String.format;
 import static junit.framework.TestCase.assertEquals;
 import static org.apache.cassandra.Util.expectException;
 import static org.apache.cassandra.config.CassandraRelevantProperties.HINT_DISPATCH_INTERVAL_MS;
-import static org.apache.cassandra.db.SystemKeyspace.CONSENSUS_MIGRATION_STATE;
-import static org.apache.cassandra.db.SystemKeyspace.PAXOS;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.ALL;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.getNextEpoch;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseAfterEnacting;
@@ -113,7 +105,6 @@ import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTe
 import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTestBase.Scenario.MUTATION;
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.apache.cassandra.exceptions.RequestFailureReason.RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM;
-import static org.apache.cassandra.schema.SchemaConstants.SYSTEM_KEYSPACE_NAME;
 import static org.apache.cassandra.utils.Throwables.runUnchecked;
 import static org.assertj.core.api.Fail.fail;
 import static org.junit.Assert.assertFalse;
@@ -202,7 +193,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
         }
     }
 
-    private boolean migrateAwayFromAccord;
+    private final boolean migrateAwayFromAccord;
 
     protected AccordMigrationRaceTestBase()
     {
@@ -210,11 +201,6 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
     }
 
     protected abstract boolean migratingAwayFromAccord();
-
-    // To create a precise repair where the repaired range is fully contained in a locally replicated range
-    // we need to align with this token. The local ranges are (9223372036854775805,-1] and (-1,9223372036854775805]
-    // No idea why the partitioner creates such an
-    private Token maxAlignedWithLocalRanges = new LongToken(9223372036854775805L);
 
     @Override
     protected Logger logger()
@@ -253,9 +239,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
     @After
     public void tearDown() throws Exception
     {
-        migrateAwayFromAccord = false;
         messageSink.reset();
-        coordinator.execute("TRUNCATE " + SYSTEM_KEYSPACE_NAME + "." + SystemKeyspace.BATCHES, ALL);
         forEach(() -> {
             BatchlogManager.instance.resumeReplay();
             HintsService.instance.deleteAllHintsUnsafe();
@@ -268,8 +252,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
             ConsensusRequestRouter.resetInstance();
             ConsensusKeyMigrationState.reset();
         });
-        SHARED_CLUSTER.coordinators().forEach(coordinator -> coordinator.execute(format("TRUNCATE TABLE %s.%s", SYSTEM_KEYSPACE_NAME, CONSENSUS_MIGRATION_STATE), ALL));
-        SHARED_CLUSTER.coordinators().forEach(coordinator -> coordinator.execute(format("TRUNCATE TABLE %s.%s", SYSTEM_KEYSPACE_NAME, PAXOS), ALL));
+        truncateSystemTables();
     }
 
     private static ListenableFuture<String> nodetoolAsync(ICoordinator coordinator, String... commandAndArgs)
@@ -300,37 +283,6 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
         asyncThread.setDaemon(true);
         asyncThread.start();
         return task;
-    }
-
-    private static int getKeyBetweenTokens(Token left, Token right)
-    {
-        return getKeysBetweenTokens(left, right).next();
-    }
-
-    private static Iterator<Integer> getKeysBetweenTokens(Token left, Token right)
-    {
-        return new Iterator<Integer>()
-        {
-            int candidate = 0;
-            @Override
-            public boolean hasNext()
-            {
-                return true;
-            }
-
-            @Override
-            public Integer next()
-            {
-                for (int i = 0; i < 1_000_000; i++)
-                {
-                    int value = candidate;
-                    candidate++;
-                    if (partitioner.getToken(ByteBufferUtil.bytes(value)).compareTo(right) < 0 && partitioner.getToken(ByteBufferUtil.bytes(value)).compareTo(left) > 0)
-                        return value;
-                }
-                throw new IllegalStateException("Gave up after 1 million attempts");
-            }
-        };
     }
 
     @Test
@@ -490,20 +442,6 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
         };
     }
 
-    private static Stream<UUID> hostIds()
-    {
-        return Stream.concat(ClusterMetadata.current().directory.peerIds()
-                                                   .stream()
-                                                   .map(ClusterMetadata.current().directory::hostId),
-                             Stream.of(HintsService.RETRY_ON_DIFFERENT_SYSTEM_UUID));
-    }
-
-    private static boolean hasPendingHints()
-    {
-        return hostIds().map(HintsService.instance::getTotalHintsSize)
-                        .anyMatch(size -> size > 0);
-    }
-
     /*
      * Test if the coordinator is behind that the request can be re-split and routed to the correct systems
      * without surfacing an error
@@ -595,7 +533,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
 
                      // Unfortunately the batch won't be replayed until some time has passed because the starting time
                      // for replay is the current time - timeout
-                     Thread.sleep(BatchlogManager.BATCHLOG_REPLAY_TIMEOUT * 4);
+                     Thread.sleep(BatchlogManager.BATCHLOG_REPLAY_TIMEOUT + DatabaseDescriptor.getWriteRpcTimeout(TimeUnit.MILLISECONDS));
                      messageSink.reset();
 
                      // Force batch log delivery (or hint delivery) on the node that was out of sync, but should be in sync once we unpause

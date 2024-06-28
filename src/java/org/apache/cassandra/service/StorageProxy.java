@@ -1345,6 +1345,10 @@ public class StorageProxy implements StorageProxyMBean
                     // Check if the Accord mutations succeeded asynchronously
                     try
                     {
+                        // TODO (review): It's notable here that the Accord portion of the batch will not be hinted
+                        // while the regular mutations are hinted on failure and also going to be replayed later from
+                        // the batch log. It wouldn't be difficult to add hinting here, but it does seem a little
+                        // redundant with the bathc log
                         if (accordResult != null)
                         {
                             IAccordService accord = AccordService.instance();
