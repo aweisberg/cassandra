@@ -229,7 +229,6 @@ public class ConsensusMigrationMutationHelper
         {
             for (PartitionUpdate update : mutation.getPartitionUpdates())
             {
-
                 PartitionKey pk = PartitionKey.of(update);
                 partitionKeys.add(pk);
                 fragments.add(new TxnWrite.Fragment(PartitionKey.of(update), fragmentIndex++, update, TxnReferenceOperations.empty()));
@@ -237,7 +236,7 @@ public class ConsensusMigrationMutationHelper
         }
         // Potentially ignore commit consistency level if the strategy specifies accord and not migration
         ConsistencyLevel clForCommit = consistencyLevelForCommit(mutations, consistencyLevel);
-        TxnUpdate update = new TxnUpdate(fragments, TxnCondition.none(), clForCommit);
+        TxnUpdate update = new TxnUpdate(fragments, TxnCondition.none(), clForCommit, true);
         Txn.InMemory txn = new Txn.InMemory(Keys.of(partitionKeys), TxnRead.EMPTY, TxnQuery.EMPTY, update);
         IAccordService accordService = AccordService.instance();
         return accordService.coordinateAsync(txn, consistencyLevel, queryStartNanoTime);

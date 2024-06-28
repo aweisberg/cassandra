@@ -493,7 +493,8 @@ public class CQL3CasRequest implements CASRequest
         // Potentially ignore commit consistency level if non-SERIAL write strategy is Accord
         // since it is safe to match what non-SERIAL writes do
         commitConsistencyLevel = metadata.params.transactionalMode.commitCLForStrategy(commitConsistencyLevel);
-        return new TxnUpdate(createWriteFragments(clientState), createCondition(), commitConsistencyLevel);
+        // CAS requires using the new txn timestamp to correctly linearize some kinds of updates
+        return new TxnUpdate(createWriteFragments(clientState), createCondition(), commitConsistencyLevel, false);
     }
 
     private TxnCondition createCondition()
