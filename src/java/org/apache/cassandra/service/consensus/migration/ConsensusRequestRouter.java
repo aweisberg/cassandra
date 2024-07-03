@@ -18,7 +18,11 @@
 
 package org.apache.cassandra.service.consensus.migration;
 
+import java.util.Optional;
+import javax.annotation.Nonnull;
+
 import com.google.common.annotations.VisibleForTesting;
+
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
@@ -36,9 +40,6 @@ import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ClusterMetadataService;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.FBUtilities;
-
-import javax.annotation.Nonnull;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.getConsensusMigratedAt;
@@ -216,7 +217,7 @@ public class ConsensusRequestRouter
                 // barrier transactions to accomplish the migration
                 // They still might need to go through the fast local path for barrier txns
                 // at each replica, but they won't create their own txn since we created it here
-                ConsensusKeyMigrationState.repairKeyAccord(key, tms.keyspaceName, tms.tableId, tms.minMigrationEpoch(key.getToken()).getEpoch(), queryStartNanos, true, isForWrite);
+                ConsensusKeyMigrationState.repairKeyAccord(key, tms.tableId, tms.minMigrationEpoch(key.getToken()).getEpoch(), queryStartNanos, true, isForWrite);
                 return paxosV2;
             }
             // Fall through for repairKeyPaxos

@@ -420,7 +420,7 @@ public class AccordService implements IAccordService, Shutdownable
         }
         catch (ExecutionException e)
         {
-            Throwable cause = e.getCause();
+            Throwable cause = Throwables.getRootCause(e);
             if (cause instanceof Timeout)
             {
                 metrics.timeouts.mark();
@@ -653,6 +653,7 @@ public class AccordService implements IAccordService, Shutdownable
         AsyncResult<Result> asyncResult = node.coordinate(txnId, txn);
         AsyncPromise<TxnResult> resultFuture = new AsyncPromise<>();
         asyncResult.addCallback((success, failure) -> {
+            Throwable cause = failure != null ? Throwables.getRootCause(failure) : null;
             long durationNanos = nanoTime() - queryStartNanos;
             metrics.addNano(durationNanos);
             if (success != null)
@@ -661,13 +662,13 @@ public class AccordService implements IAccordService, Shutdownable
                 return;
             }
 
-            if (failure instanceof Timeout)
+            if (cause instanceof Timeout)
             {
                 metrics.timeouts.mark();
                 resultFuture.tryFailure(newTimeout(txnId, txn.isWrite(), consistencyLevel));
                 return;
             }
-            if (failure instanceof Preempted)
+            if (cause instanceof Preempted)
             {
                 metrics.preempted.mark();
                 //TODO need to improve
@@ -676,14 +677,14 @@ public class AccordService implements IAccordService, Shutdownable
                 resultFuture.tryFailure(newPreempted(txnId, txn.isWrite(), consistencyLevel));
                 return;
             }
-            if (failure instanceof TopologyMismatch)
+            if (cause instanceof TopologyMismatch)
             {
                 metrics.topologyMismatches.mark();
-                resultFuture.tryFailure(RequestValidations.invalidRequest(failure.getMessage()));
+                resultFuture.tryFailure(RequestValidations.invalidRequest(cause.getMessage()));
                 return;
             }
             metrics.failures.mark();
-            resultFuture.tryFailure(new RuntimeException(failure));
+            resultFuture.tryFailure(new RuntimeException(cause));
         });
         return Pair.create(txnId, resultFuture);
     }
