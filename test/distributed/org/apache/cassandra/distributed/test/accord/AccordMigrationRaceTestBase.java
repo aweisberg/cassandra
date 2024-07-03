@@ -111,7 +111,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /*
- * Test that non-transactional write operations such as regular mutations, batch log, hints, and read repair
+ * Test that non-transactional write operations such as regular mutations, batch log, and hints
  * all detect when a migration is in progress, and then retry on the correct system.
  */
 public abstract class AccordMigrationRaceTestBase extends AccordTestBase

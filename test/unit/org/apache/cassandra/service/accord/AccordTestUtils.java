@@ -27,9 +27,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
+import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
 import javax.annotation.Nullable;
 
 import com.google.common.collect.Lists;
@@ -366,15 +366,16 @@ public class AccordTestUtils
         TableMetadata metadata = Schema.instance.getTableMetadata(keyspace, table);
         TokenRange range = TokenRange.fullRange(metadata.id);
         Node.Id node = new Id(1);
-        Topology topology = new Topology(1, new Shard(range, Lists.newArrayList(node), Sets.newHashSet(node), Collections.emptySet()));
         NodeTimeService time = new NodeTimeService()
         {
+            private ToLongFunction<TimeUnit> elapsed = NodeTimeService.elapsedWrapperFromNonMonotonicSource(TimeUnit.MICROSECONDS, this::now);
+
             @Override public Id id() { return node;}
             @Override public long epoch() {return 1; }
             @Override public long now() {return now.getAsLong(); }
             @Override public Timestamp uniqueNow(Timestamp atLeast) { return Timestamp.fromValues(1, now.getAsLong(), node); }
             @Override
-            public long unix(TimeUnit timeUnit) { return NodeTimeService.unixWrapper(TimeUnit.MICROSECONDS, this::now).applyAsLong(timeUnit); }
+            public long elapsed(TimeUnit timeUnit) { return elapsed.applyAsLong(timeUnit); }
         };
 
         SingleEpochRanges holder = new SingleEpochRanges(Ranges.of(range));
@@ -392,12 +393,14 @@ public class AccordTestUtils
     {
         NodeTimeService time = new NodeTimeService()
         {
+            private ToLongFunction<TimeUnit> elapsed = NodeTimeService.elapsedWrapperFromNonMonotonicSource(TimeUnit.MICROSECONDS, this::now);
+
             @Override public Id id() { return node;}
             @Override public long epoch() {return 1; }
             @Override public long now() {return now.getAsLong(); }
             @Override public Timestamp uniqueNow(Timestamp atLeast) { return Timestamp.fromValues(1, now.getAsLong(), node); }
             @Override
-            public long unix(TimeUnit timeUnit) { return NodeTimeService.unixWrapper(TimeUnit.MICROSECONDS, this::now).applyAsLong(timeUnit); }
+            public long elapsed(TimeUnit timeUnit) { return elapsed.applyAsLong(timeUnit); }
         };
 
         AccordJournal journal = new AccordJournal(null, new AccordSpec.JournalSpec());

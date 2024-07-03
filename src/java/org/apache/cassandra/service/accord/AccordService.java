@@ -351,7 +351,7 @@ public class AccordService implements IAccordService, Shutdownable
                              this::handleLocalRequest,
                              configService,
                              AccordService::uniqueNow,
-                             NodeTimeService.unixWrapper(TimeUnit.MICROSECONDS, AccordService::uniqueNow),
+                             NodeTimeService.elapsedWrapperFromMonotonicSource(NANOSECONDS, Clock.Global::nanoTime),
                              () -> dataStore,
                              new KeyspaceSplitter(new EvenSplit<>(DatabaseDescriptor.getAccordShardCount(), getPartitioner().accordSplitter())),
                              agent,
