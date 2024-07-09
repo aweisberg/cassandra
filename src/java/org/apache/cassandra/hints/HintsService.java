@@ -265,7 +265,7 @@ public final class HintsService implements HintsServiceMBean
 
     public void resumeDispatch()
     {
-        logger.info("Resumed hints dispatch");
+        logger.debug("Resumed hints dispatch");
         isDispatchPaused.set(false);
 
         HintsServiceDiagnostics.dispatchingResumed(this);

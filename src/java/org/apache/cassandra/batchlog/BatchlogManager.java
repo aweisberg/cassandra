@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 
 import accord.primitives.TxnId;
 import org.apache.cassandra.concurrent.ScheduledExecutorPlus;
+import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.cassandra.cql3.UntypedResultSet.Row;
@@ -103,7 +104,6 @@ import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 public class BatchlogManager implements BatchlogManagerMBean
 {
     public static final String MBEAN_NAME = "org.apache.cassandra.db:type=BatchlogManager";
-    private static final long REPLAY_INTERVAL = 10 * 1000; // milliseconds
     static final int DEFAULT_PAGE_SIZE = 128;
 
     private static final Logger logger = LoggerFactory.getLogger(BatchlogManager.class);
@@ -131,7 +131,7 @@ public class BatchlogManager implements BatchlogManagerMBean
 
         batchlogTasks.scheduleWithFixedDelay(this::replayFailedBatches,
                                              StorageService.RING_DELAY_MILLIS,
-                                             REPLAY_INTERVAL,
+                                             CassandraRelevantProperties.BATCHLOG_REPLAY_INTERVAL_MS.getLong(),
                                              MILLISECONDS);
     }
 
@@ -200,7 +200,9 @@ public class BatchlogManager implements BatchlogManagerMBean
 
     public void forceBatchlogReplay() throws Exception
     {
+        logger.debug("Forcing batchlog replay");
         startBatchlogReplay().get();
+        logger.debug("Finished forcing batchlog replay");
     }
 
     public Future<?> startBatchlogReplay()
@@ -482,6 +484,7 @@ public class BatchlogManager implements BatchlogManagerMBean
             }
             catch (Exception e)
             {
+                logger.debug("Unexpected batchlog replay exception", e);
                 failure = Throwables.merge(failure, e);
             }
 

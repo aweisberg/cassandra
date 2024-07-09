@@ -28,9 +28,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
-import accord.messages.ReadTxnData;
-import accord.primitives.Ballot;
-import org.apache.cassandra.schema.TableId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +40,8 @@ import accord.local.Node;
 import accord.local.Node.Id;
 import accord.messages.Commit;
 import accord.messages.Commit.Kind;
+import accord.messages.ReadTxnData;
+import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
 import accord.primitives.Participants;
@@ -74,6 +73,7 @@ import org.apache.cassandra.metrics.AccordClientRequestMetrics;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.RequestCallback;
 import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.accord.AccordEndpointMapper;
 import org.apache.cassandra.service.accord.TokenRange;
@@ -260,8 +260,8 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
 
                 // This should only rarely occur when coordinators start a transaction in a migrating range
                 // because they haven't yet updated their cluster metadata.
-                // It would be harmless to do the read, but we can respond faster skipping it
-                // and getting the transaction on the correct protocol
+                // It would be harmless to do the read, because it will be rejected in `TxnQuery` anyways,
+                // but it's faster to skip the read
                 TableMigrationState tms = ConsensusTableMigration.getTableMigrationState(command.metadata().id);
                 AccordClientRequestMetrics metrics = txn.kind().isWrite() ? accordWriteMetrics : accordReadMetrics;
                 if (ConsensusRequestRouter.instance.isKeyInMigratingOrMigratedRangeFromAccord(command.metadata(), tms, command.partitionKey()))

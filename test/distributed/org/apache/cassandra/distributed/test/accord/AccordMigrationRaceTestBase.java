@@ -56,6 +56,7 @@ import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Cluster;
+import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.ICoordinator;
 import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
@@ -65,6 +66,7 @@ import org.apache.cassandra.distributed.api.NodeToolResult;
 import org.apache.cassandra.distributed.api.QueryResults;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.impl.Instance;
+import org.apache.cassandra.distributed.impl.TestChangeListener;
 import org.apache.cassandra.distributed.shared.ClusterUtils;
 import org.apache.cassandra.exceptions.CoordinatorBehindException;
 import org.apache.cassandra.exceptions.RequestFailure;
@@ -86,12 +88,14 @@ import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.concurrent.AsyncPromise;
+import org.apache.cassandra.utils.concurrent.Promise;
 import org.eclipse.jetty.util.ConcurrentHashSet;
 
-import static com.google.common.util.concurrent.Futures.getUnchecked;
 import static java.lang.String.format;
 import static junit.framework.TestCase.assertEquals;
 import static org.apache.cassandra.Util.expectException;
+import static org.apache.cassandra.Util.spinAssertEquals;
 import static org.apache.cassandra.config.CassandraRelevantProperties.HINT_DISPATCH_INTERVAL_MS;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.ALL;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.getNextEpoch;
@@ -457,6 +461,11 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
                  // Node 3 is always the out of sync node
                  IInvokableInstance outOfSyncInstance = setUpOutOfSyncNode(cluster);
 
+                 // Force the batchlog Accord txn to run after this read txn in the new epoch where it
+                 // will trigger RetryDifferentSystem
+                 if (scenario == BATCHLOG_FAILED_ROUTING_THEN_HINT && migrateAwayFromAccord)
+                     writeAccordRowViaAccord();
+
                  // Need to be able to block writing to the test keyspace forcing batchlog replay
                  // without also failing writes to the batch log
                  if (scenario.initiallyBlockTestKeyspaceMutations)
@@ -533,7 +542,11 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
 
                      // Unfortunately the batch won't be replayed until some time has passed because the starting time
                      // for replay is the current time - timeout
-                     Thread.sleep(BatchlogManager.BATCHLOG_REPLAY_TIMEOUT + DatabaseDescriptor.getWriteRpcTimeout(TimeUnit.MILLISECONDS));
+                     // Don't wait here for the batchlog if we need to spin on the creation of the Accord transaction
+                     // and then unpause to test Accord routing failure
+                     boolean unpauseAfterBatchLogCreatesTransaction = migrateAwayFromAccord && scenario == BATCHLOG_FAILED_ROUTING_THEN_HINT;
+                     if (!unpauseAfterBatchLogCreatesTransaction)
+                        Thread.sleep(BatchlogManager.BATCHLOG_REPLAY_TIMEOUT + DatabaseDescriptor.getWriteRpcTimeout(TimeUnit.MILLISECONDS));
                      messageSink.reset();
 
                      // Force batch log delivery (or hint delivery) on the node that was out of sync, but should be in sync once we unpause
@@ -545,9 +558,40 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
                          HintsService.instance.deleteAllHintsUnsafe();
                          assertFalse(hasPendingHints());
                          BatchlogManager.instance.resumeReplay();
-                         BatchlogManager.instance.forceBatchlogReplay();
+
+                         // Unpausing needs to be done async because it waits for the batch log replay
+                         Promise<Void> unpaused = new AsyncPromise<>();
+                         if (unpauseAfterBatchLogCreatesTransaction)
+                         {
+                             logger.info("Creating thread to unpause after batchlog creates Accord transaction");
+                             new Thread(() ->
+                                        {
+                                     try
+                                     {
+                                         // Unpause so it can route incorrectly instead of timing out waiting to fetch the epoch, need the transaction to be created first
+                                         // otherwise it will just be routed straight to non-Accord.
+                                         logger.info("Spinning waiting on a transaction");
+                                         Util.spinUntilTrue(() -> !((AccordService)AccordService.instance()).node().coordinating().isEmpty(), 20);
+                                         logger.info("Foudn transaction, unpausing");
+                                         TestChangeListener.instance.unpause();
+                                         unpaused.trySuccess(null);
+                                     }
+                                     catch (Throwable t)
+                                     {
+                                         unpaused.tryFailure(t);
+                                     }
+                                 }).start();
+                         }
+                         else
+                         {
+                             // Force replay so mosts tests don't have to wait
+                             BatchlogManager.instance.forceBatchlogReplay();
+                             unpaused.trySuccess(null);
+                         }
+                         // Fetch errors
+                         unpaused.get();
                          // Ensure the batch log did or didn't create pending hints depending on the test scenario
-                         assertEquals(scenario == BATCHLOG_FAILED_TIMEOUT_THEN_HINT || scenario == BATCHLOG_FAILED_ROUTING_THEN_HINT, hasPendingHints());
+                         spinAssertEquals(scenario == BATCHLOG_FAILED_TIMEOUT_THEN_HINT || scenario == BATCHLOG_FAILED_ROUTING_THEN_HINT, () -> hasPendingHints(), 20);
                      }));
                  }
 
@@ -576,7 +620,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
                      else
                      {
                          Stopwatch sw = Stopwatch.createStarted();
-                         Util.spinAssertEquals(startRejectedCount + 2, 10, () -> getMutationsRejectedOnWrongSystemCount() - startRejectedCount);
+                         spinAssertEquals(startRejectedCount + 2, 10, () -> getMutationsRejectedOnWrongSystemCount() - startRejectedCount);
                          logger.info("Took {}ms to get mutations rejected on wrong system", sw.elapsed(TimeUnit.MILLISECONDS));
                      }
 
@@ -616,28 +660,23 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
                      cluster.filters().reset();
                      long startingAccordTimeouts = outOfSyncInstance.callOnInstance(() -> ClientRequestsMetricsHolder.accordWriteMetrics.timeouts.getCount());
                      long startingAccordPreempted = outOfSyncInstance.callOnInstance(() -> ClientRequestsMetricsHolder.accordWriteMetrics.preempted.getCount());
+                     long startingAccordMigrationRejects = outOfSyncInstance.callOnInstance(() -> ClientRequestsMetricsHolder.accordWriteMetrics.accordMigrationRejects.getCount());
                      long startingHintTimeouts = outOfSyncInstance.callOnInstance(() -> HintsServiceMetrics.hintsTimedOut.getCount());
                      outOfSyncInstance.runOnInstance(() -> HintsService.instance.resumeDispatch());
-                     // The initial hinting attempt should fail because the coordinator is out of sync
-                     if (migrateAwayFromAccord)
+                     // The initial hinting attempt should fail, unless it's a batchlog routing failure in which
+                     // case the coordinator has already caught up so the hint will succeed on the first try
+                     // Can only really have this case for BATCHLOG_FAILED_TIMEOUT_THEN_HINT becuase Accord timeouts don't
+                     // write hints so there is nothing to test
+                     if (migrateAwayFromAccord && scenario == BATCHLOG_FAILED_TIMEOUT_THEN_HINT)
                      {
-                         // Currently being blocked attempting to update TCM doesn't time out until TCM is unpaused
-                         // and it throws preempted not timeout which is hopefully addressed soon
                          Callable<Boolean> test = () -> outOfSyncInstance.callOnInstance(() -> {
-                                                                           logger.info("startingAccordTimeouts {}, startingAccordPreempts {}, startingHintTimeouts {}, accord timeouts {}, accordPreempts {}, hint timeouts {}", startingAccordTimeouts, startingAccordPreempted, startingHintTimeouts, ClientRequestsMetricsHolder.accordWriteMetrics.timeouts.getCount(), ClientRequestsMetricsHolder.accordWriteMetrics.preempted.getCount(), HintsServiceMetrics.hintsTimedOut.getCount());
-                                                                                             AccordClientRequestMetrics accordMetrics = ClientRequestsMetricsHolder.accordWriteMetrics;
-                                                                                             // Preempt occurs before timeout and produces a different error, but either would be fine
-                                                                           return (accordMetrics.timeouts.getCount() >= (startingAccordTimeouts + 1) || accordMetrics.preempted.getCount() >= (startingAccordTimeouts + 1))
-                                    && HintsServiceMetrics.hintsTimedOut.getCount() >= (startingHintTimeouts + 1);
-                                                                                         }
-                                                                                         );
-
-                         // Accord won't be able to execute the transaction and will time out waiting for TCM to update
-                         // which can't happen because enactment is paused. Accord won't log the timeout because it will
-                         // never actually complete the transaction! Hints has its own timeout we can check though
-                         Util.spinUntilTrue(test, 20);
+                             logger.info("startingAccordTimeouts {}, startingAccordPreempts {}, startingAccordMigrationRejects {}, startingHintTimeouts {}, accord timeouts {}, accordPreempts {}, accordMigrationRejects {}, hint timeouts {}", startingAccordTimeouts, startingAccordPreempted, startingAccordMigrationRejects, startingHintTimeouts, ClientRequestsMetricsHolder.accordWriteMetrics.timeouts.getCount(), ClientRequestsMetricsHolder.accordWriteMetrics.preempted.getCount(), ClientRequestsMetricsHolder.accordWriteMetrics.accordMigrationRejects.getCount(), HintsServiceMetrics.hintsTimedOut.getCount());
+                             AccordClientRequestMetrics accordMetrics = ClientRequestsMetricsHolder.accordWriteMetrics;
+                             return accordMetrics.timeouts.getCount() >= (startingAccordTimeouts + 1) && HintsServiceMetrics.hintsTimedOut.getCount() >= (startingHintTimeouts + 1);
+                         });
+                         Util.spinUntilTrue(test, 40);
                      }
-                     else
+                     else if (!migrateAwayFromAccord)
                      {
                          // Expect two retry on different system responses when migrating from Paxos to Accord, one from each
                          // node that knows it is on the wrong system
@@ -686,11 +725,8 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
             unpauseEnactment(i2);
             unpauseEnactment(i3);
             result.get();
-            // Repair to complete migration to Accord
-            cluster.coordinators().forEach(coordinator -> getUnchecked(nodetoolAsync(coordinator, "repair", KEYSPACE, accordTableName)));
-            // Repair will increment the epoch again so wait for it to finish
-            long repairedEpoch = nextEpoch.nextEpoch().getEpoch();
-            Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(repairedEpoch)))), 10);
+            long migratingEpoch = nextEpoch.getEpoch();
+            Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(migratingEpoch)))), 10);
             nextEpoch = getNextEpoch(i1);
             pausedBeforeEnacting = pauseBeforeEnacting(i3, nextEpoch);
             i2PausedAfterEnacting = pauseAfterEnacting(i2, nextEpoch);
@@ -745,5 +781,13 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
     private static String insertCQL(String qualifiedTableName, int pkey, int value)
     {
         return format("INSERT INTO %s ( id, c, v ) VALUES ( %d, %d, %d )", qualifiedTableName, pkey, CLUSTERING_VALUE, value);
+    }
+
+    // Prevents the creation of transactions in an older epoch because later writes need to order after earlier
+    private void writeAccordRowViaAccord()
+    {
+        logger.info("Initiating Accord row write");
+        SHARED_CLUSTER.coordinator(1).execute(insertCQL(qualifiedAccordTableName, PKEY_ACCORD, 99), ConsistencyLevel.QUORUM);
+        logger.info("Finished Accord row write");
     }
 }

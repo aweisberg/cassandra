@@ -454,6 +454,7 @@ public class ClusterUtils
                 {
                     logger.info("EpochPause Waiting before enacting epoch {}", epoch);
                     promise.get(wait, waitUnit);
+                    logger.info("EpochPause stopped waiting before enacting epoch {}", epoch);
                     return null;
                 }
                 catch (Throwable e)
@@ -484,6 +485,7 @@ public class ClusterUtils
                 {
                     logger.info("EpochPause Waiting after enacting epoch {}", epoch);
                     promise.get(wait, waitUnit);
+                    logger.info("EpochPause done waiting after enacting epoch {}", epoch);
                     return null;
                 }
                 catch (Throwable e)

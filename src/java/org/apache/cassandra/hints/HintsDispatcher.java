@@ -42,6 +42,7 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.exceptions.RequestFailure;
 import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
+import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.io.util.File;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.locator.Replica;
@@ -478,7 +479,7 @@ final class HintsDispatcher implements AutoCloseable
             }
             catch (Exception e)
             {
-                accordOutcome = FAILURE;
+                accordOutcome = e instanceof WriteTimeoutException ? TIMEOUT : FAILURE;
                 String msg = "Accord hint delivery transaction failed";
                 if (noSpamLogger.getStatement(msg).shouldLog(Clock.Global.nanoTime()))
                     logger.error(msg, e);

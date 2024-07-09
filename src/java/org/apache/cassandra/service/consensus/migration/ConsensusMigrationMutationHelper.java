@@ -237,7 +237,7 @@ public class ConsensusMigrationMutationHelper
         // Potentially ignore commit consistency level if the strategy specifies accord and not migration
         ConsistencyLevel clForCommit = consistencyLevelForCommit(mutations, consistencyLevel);
         TxnUpdate update = new TxnUpdate(fragments, TxnCondition.none(), clForCommit, true);
-        Txn.InMemory txn = new Txn.InMemory(Keys.of(partitionKeys), TxnRead.EMPTY, TxnQuery.EMPTY, update);
+        Txn.InMemory txn = new Txn.InMemory(Keys.of(partitionKeys), TxnRead.EMPTY, TxnQuery.NONE, update);
         IAccordService accordService = AccordService.instance();
         return accordService.coordinateAsync(txn, consistencyLevel, queryStartNanoTime);
     }
@@ -372,12 +372,27 @@ public class ConsensusMigrationMutationHelper
                     return migrationFromWritesThroughAccord;
             }
 
-            // Anything migrating or migrated should be running on Accord
+            // This logic is driven by the fact that Paxos is not picky about how data is written since it's txn recovery
+            // is deterministic in the face of non-deterministic reads because consensus is agreeing on the writes that will be done to the database
+            // Accord agrees on what computation will produce those writes and then asynchronously executes those computations, potentially multiple times
+            // with different results if Accord reads non-transactionally written data that could be seen differently by different coordinators
+
+            // If the current mode writes through Accord then we should always write though Accord for ranges managed by Accord.
+            // Accord needs to do synchronous commit and respect the consistency level so that Accord will later be able to
+            // read its own writes
             if (transactionalModeWritesThroughAccord)
                 return isInNormalizedRanges(token, tms.migratingAndMigratedRanges);
-            // Migrated ranges are on Paxos because if current mode and migration from are on Accord we exit early at the start
+
+            // If we are migrating from a mode that used to write to Accord then any range that isn't migrating/migrated
+            // should continue to write through Accord.
+            // It's not completely symmetrical because Paxos is able to read Accord's writes by performing a single key barrier
+            // and regular mutations will be able to do the same thing (needs to be added along with non-transactional reads)
+            // This means that migrating ranges don't need to be written through Accord because we are running Paxos now
+            // and not Accord. When migrating to Accord we need to do all the writes through Accord even if we aren't
+            // reading through Accord so that repair + Accord metadata is sufficient for Accord to be able to read
+            // safely and deterministically from any coordinator
             if (migrationFromWritesThroughAccord)
-                return isInNormalizedRanges(token, tms.migratingRanges);
+                return !isInNormalizedRanges(token, tms.migratingAndMigratedRanges);
         }
         return false;
     }
