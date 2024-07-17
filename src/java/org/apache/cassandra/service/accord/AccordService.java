@@ -20,6 +20,7 @@ package org.apache.cassandra.service.accord;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -71,7 +72,6 @@ import accord.primitives.Ranges;
 import accord.primitives.Seekable;
 import accord.primitives.Seekables;
 import accord.primitives.SyncPoint;
-import accord.primitives.Timestamp;
 import accord.primitives.Txn;
 import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
@@ -408,16 +408,14 @@ public class AccordService implements IAccordService, Shutdownable
         }
 
         AccordClientRequestMetrics metrics = isForWrite ? accordWriteMetrics : accordReadMetrics;
-        TxnId txnId = null;
         try
         {
             logger.debug("Starting barrier key: {} epoch: {} barrierType: {} isForWrite {}", keysOrRanges, epoch, barrierType, isForWrite);
-            txnId = node.nextTxnId(Kind.SyncPoint, keysOrRanges.domain());
             AsyncResult<TxnId> asyncResult = syncPoint == null
                                                  ? Barrier.barrier(node, keysOrRanges, epoch, barrierType)
                                                  : Barrier.barrier(node, keysOrRanges, epoch, barrierType, syncPoint);
             long deadlineNanos = queryStartNanos + timeoutNanos;
-            Timestamp barrierExecuteAt = AsyncChains.getBlocking(asyncResult, deadlineNanos - nanoTime(), NANOSECONDS);
+            AsyncChains.getBlocking(asyncResult, deadlineNanos - nanoTime(), NANOSECONDS);
             logger.debug("Completed barrier attempt in {}ms, {}ms since attempts start, barrier key: {} epoch: {} barrierType: {} isForWrite {}",
                          sw.elapsed(MILLISECONDS),
                          NANOSECONDS.toMillis(nanoTime() - queryStartNanos),
@@ -430,20 +428,20 @@ public class AccordService implements IAccordService, Shutdownable
             if (cause instanceof Timeout)
             {
                 metrics.timeouts.mark();
-                throw newBarrierTimeout(txnId, barrierType.global);
+                throw newBarrierTimeout(((CoordinationFailed)cause).txnId(), barrierType.global);
             }
             if (cause instanceof Preempted)
             {
                 //TODO need to improve
                 // Coordinator "could" query the accord state to see whats going on but that doesn't exist yet.
                 // Protocol also doesn't have a way to denote "unknown" outcome, so using a timeout as the closest match
-                throw newBarrierPreempted(txnId, barrierType.global);
+                throw newBarrierPreempted(((CoordinationFailed)cause).txnId(), barrierType.global);
             }
             if (cause instanceof Exhausted)
             {
                 // this case happens when a non-timeout exception is seen, and we are unable to move forward
                 metrics.failures.mark();
-                throw newBarrierExhausted(txnId, barrierType.global);
+                throw newBarrierExhausted(((CoordinationFailed)cause).txnId(), barrierType.global);
             }
             // unknown error
             metrics.failures.mark();
@@ -457,7 +455,7 @@ public class AccordService implements IAccordService, Shutdownable
         catch (TimeoutException e)
         {
             metrics.timeouts.mark();
-            throw newBarrierTimeout(txnId, barrierType.global);
+            throw newBarrierTimeout(null, barrierType.global);
         }
         finally
         {
@@ -532,19 +530,19 @@ public class AccordService implements IAccordService, Shutdownable
     }
 
     @VisibleForTesting
-    static ReadTimeoutException newBarrierTimeout(TxnId txnId, boolean global)
+    static ReadTimeoutException newBarrierTimeout(@Nonnull TxnId txnId, boolean global)
     {
-        return new ReadTimeoutException(global ? ConsistencyLevel.ANY : ConsistencyLevel.QUORUM, 0, 0, false, txnId.toString());
+        return new ReadTimeoutException(global ? ConsistencyLevel.ANY : ConsistencyLevel.QUORUM, 0, 0, false, Objects.toString(txnId.toString()));
     }
 
     @VisibleForTesting
-    static ReadTimeoutException newBarrierPreempted(TxnId txnId, boolean global)
+    static ReadTimeoutException newBarrierPreempted(@Nullable TxnId txnId, boolean global)
     {
-        return new ReadPreemptedException(global ? ConsistencyLevel.ANY : ConsistencyLevel.QUORUM, 0, 0, false, txnId.toString());
+        return new ReadPreemptedException(global ? ConsistencyLevel.ANY : ConsistencyLevel.QUORUM, 0, 0, false, Objects.toString(txnId.toString()));
     }
 
     @VisibleForTesting
-    static ReadExhaustedException newBarrierExhausted(TxnId txnId, boolean global)
+    static ReadExhaustedException newBarrierExhausted(@Nullable TxnId txnId, boolean global)
     {
         //TODO (usability): not being able to show the txn is a bad UX, this becomes harder to trace back in logs
         return new ReadExhaustedException(global ? ConsistencyLevel.ANY : ConsistencyLevel.QUORUM, 0, 0, false, ImmutableMap.of());

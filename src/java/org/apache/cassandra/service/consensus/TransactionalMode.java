@@ -19,7 +19,11 @@
 package org.apache.cassandra.service.consensus;
 
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.accord.IAccordService;
+import org.apache.cassandra.service.consensus.migration.TableMigrationState;
+import org.apache.cassandra.tcm.ClusterMetadata;
 
 /*
  * Configure the transactional behavior of a table. Enables accord on a table and defines how it mixes with non-serial writes
@@ -60,8 +64,11 @@ public enum TransactionalMode
     off(false, false, false, false),
 
     /*
-     * Execute writes through Cassandra via StorageProxy's normal write path. This can lead Accord to compute
-     * multiple outcomes for a transaction that depends on data written by non-SERIAL writes.
+     * Execute non-SERIAL writes through Cassandra via StorageProxy's normal write path. This can lead Accord to compute
+     * multiple outcomes for a transaction that depend on data written by non-SERIAL writes.
+     *
+     * SERIAL reads and CAS will run on Accord. Accord will honor provided consistency levels and do synchronous commit
+     * so the results can be read with non-SERIAL CLs.
      */
     unsafe(true, false, false, false),
 
@@ -101,10 +108,22 @@ public enum TransactionalMode
         this.cqlParam = String.format("transactional_mode = '%s'", this.name().toLowerCase());
     }
 
-    public ConsistencyLevel commitCLForStrategy(ConsistencyLevel consistencyLevel)
+    public ConsistencyLevel commitCLForStrategy(ConsistencyLevel consistencyLevel, TableId tableId, Token token)
     {
         if (ignoresSuppliedConsistencyLevel)
+        {
+            TableMigrationState tms = ClusterMetadata.current().consensusMigrationState.tableStates.get(tableId);
+            if (tms != null)
+            {
+                // Only ignore the supplied consistency level if the token is not migrating
+                // otherwise honor it since there could still be Paxos and non-SERIAL reads racing with migration.
+                // Migrating to Accord, Paxos continues reading during the first phase of migration
+                // Migrating to Paxos, this doesn't really matter since this transaction will get RetryOnDifferentSystemException
+                if (tms.migratingRanges.intersects(token))
+                    return consistencyLevel;
+            }
             return null;
+        }
 
         if (!IAccordService.SUPPORTED_COMMIT_CONSISTENCY_LEVELS.contains(consistencyLevel))
             throw new UnsupportedOperationException("Consistency level " + consistencyLevel + " is unsupported with Accord for write/commit, supported are ANY, ONE, QUORUM, and ALL");
@@ -112,10 +131,6 @@ public enum TransactionalMode
         return consistencyLevel;
     }
 
-    // TODO (required): This won't work for migration directly from none to full because there is no safe system to read from
-    // during the first phase (repair). Accord won't read correctly beacuse it won't honor the CL and miss non-transactional writes that haven't been repaired and non-transactional
-    // reads will miss all the writes being routed through Accord since they occur asynchronously. Something has to give here where either writes routed through are Accord are synchronous at CL
-    // or reads are routed through Accord and read at quorum as long as the range has not completed the first phase (repair).
     public ConsistencyLevel readCLForStrategy(ConsistencyLevel consistencyLevel)
     {
         if (ignoresSuppliedConsistencyLevel)
