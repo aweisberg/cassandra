@@ -102,9 +102,31 @@ public abstract class ConsensusMigrationAdmin extends NodeTool.NodeToolCmd
             String maybeRangesStr = startToken != null ? startToken + ":" + endToken : null;
             List<String> keyspaceNames = parseOptionalKeyspace(schemaArgs, probe, KeyspaceSet.ACCORD_MANAGED);
             List<String> maybeTableNames = schemaArgs.size() > 1 ? schemaArgs.subList(1, schemaArgs.size()) : null;
+            // Finish can't actually finish with one set of repairs when migrating from Paxos -> Accord
+            // and it's async when the next invocation will see TCM updates from the repair that will correctly determine
+            // the next set of repairs needed. If we spin we will issue redundant repairs.
+            // It's also pretty involved not to return handles on the repairs since there is already a lot of plumbing
+            // leveraging monitoring in progress repairs.
             for (String keyspace : keyspaceNames)
             {
+                output.out.println("Starting first round of repairs");
                 List<Integer> commands = probe.getStorageService().finishConsensusMigration(keyspace, maybeTableNames, maybeRangesStr);
+                for (Integer command : commands)
+                {
+                    try
+                    {
+                        probe.blockOnAsyncRepair(probe.output().out, keyspace, command);
+                    }
+                    catch (IOException e)
+                    {
+                        throw new RuntimeException("Error occurred attempting to finish migration for keyspace " + keyspace + " tables " + maybeTableNames + " and ranges " + maybeRangesStr, e);
+                    }
+                }
+                // The repair should have at least committed the TCM change to the node we asked to coordinate the repair
+                // so calling finishedConsensusMigration a second time should trigger any needed 2nd phase repairs
+                // or does nothing if none are needed
+                output.out.println("Starting second round of repairs (may do nothing if migrating from Accord to Paxos)");
+                commands = probe.getStorageService().finishConsensusMigration(keyspace, maybeTableNames, maybeRangesStr);
                 for (Integer command : commands)
                 {
                     try
