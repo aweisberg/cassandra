@@ -29,6 +29,7 @@ import org.junit.Test;
 import accord.coordinate.Exhausted;
 import accord.coordinate.Preempted;
 import accord.coordinate.Timeout;
+import accord.impl.IntKey;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.TxnId;
@@ -77,12 +78,12 @@ public class AccordServiceTest
                         attempts++;
                         throw AccordService.newBarrierExhausted(TxnId.NONE, true);
                     default:
-                        return Ranges.EMPTY;
+                        return Ranges.of(IntKey.range(1, 2));
                 }
             }
         }
         Task failing = new Task();
-        assertThat(doWithRetries(blocking, failing, Integer.MAX_VALUE, 100, 1000)).isEqualTo(42);
+        assertThat(doWithRetries(blocking, failing, Integer.MAX_VALUE, 100, 1000)).isEqualTo(Ranges.of(IntKey.range(1,2)));
         verify(blocking).sleep(100);
         verify(blocking).sleep(200);
         verify(blocking).sleep(400);
