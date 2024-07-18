@@ -198,7 +198,8 @@ public class RepairOption
         boolean force = Boolean.parseBoolean(options.get(FORCE_REPAIR_KEY));
         boolean pullRepair = Boolean.parseBoolean(options.get(PULL_REPAIR_KEY));
         boolean ignoreUnreplicatedKeyspaces = Boolean.parseBoolean(options.get(IGNORE_UNREPLICATED_KS));
-        boolean repairData = Boolean.parseBoolean(options.get(REPAIR_DATA_KEY));
+        // Default to true because historically it was a default and some tests were written to expect it
+        boolean repairData = Boolean.parseBoolean(options.getOrDefault(REPAIR_DATA_KEY, "true"));
         boolean repairPaxos = Boolean.parseBoolean(options.get(REPAIR_PAXOS_KEY));
         boolean repairAccord = Boolean.parseBoolean(options.get(REPAIR_ACCORD_KEY));
         boolean isConsensusMigration = Boolean.parseBoolean(options.get(IS_CONSENSUS_MIGRATION_KEY));
