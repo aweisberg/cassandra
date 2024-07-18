@@ -294,7 +294,8 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
                 }
                 cfs.metric.repairsCompleted.inc();
                 logger.info("Completing repair with excludedDeadNodes {}", session.excludedDeadNodes);
-                trySuccess(new RepairResult(desc, stats, ConsensusMigrationRepairResult.fromRepair(repairStartingEpoch, getUnchecked(accordRepair), session.repairData, doPaxosRepair, doAccordRepair, session.excludedDeadNodes)));
+                ConsensusMigrationRepairResult cmrs = ConsensusMigrationRepairResult.fromRepair(repairStartingEpoch, getUnchecked(accordRepair), session.repairData, doPaxosRepair, doAccordRepair, session.excludedDeadNodes);
+                trySuccess(new RepairResult(desc, stats, cmrs));
             }
 
             /**

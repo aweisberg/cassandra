@@ -21,6 +21,7 @@ package org.apache.cassandra.service.consensus.migration;
 import javax.annotation.Nullable;
 
 import accord.primitives.Ranges;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.tcm.Epoch;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -42,8 +43,9 @@ public class ConsensusMigrationRepairResult
 
     public static ConsensusMigrationRepairResult fromRepair(Epoch minEpoch, Ranges barrieredRanges, boolean dataRepaired, boolean paxosRepaired, boolean accordRepaired, boolean deadNodesExcluded)
     {
+        if (!DatabaseDescriptor.getAccordTransactionsEnabled() || !accordRepaired)
+            return INELIGIBLE;
         checkArgument(((paxosRepaired && dataRepaired) && !accordRepaired) || minEpoch.isAfter(Epoch.EMPTY), "Epoch should not be empty if Paxos and regular repairs were performed");
-
         if (deadNodesExcluded) return INELIGIBLE;
         return new ConsensusMigrationRepairResult(new ConsensusMigrationRepairType(dataRepaired, paxosRepaired, accordRepaired), minEpoch, barrieredRanges);
     }

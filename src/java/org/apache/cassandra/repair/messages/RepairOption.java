@@ -202,6 +202,11 @@ public class RepairOption
         boolean repairData = Boolean.parseBoolean(options.getOrDefault(REPAIR_DATA_KEY, "true"));
         boolean repairPaxos = Boolean.parseBoolean(options.get(REPAIR_PAXOS_KEY));
         boolean repairAccord = Boolean.parseBoolean(options.get(REPAIR_ACCORD_KEY));
+        if (repairAccord && !DatabaseDescriptor.getAccordTransactionsEnabled())
+        {
+            logger.info("Overriding and disabling Accord repair because Accord is not enabled");
+            repairAccord = false;
+        }
         boolean isConsensusMigration = Boolean.parseBoolean(options.get(IS_CONSENSUS_MIGRATION_KEY));
 
         if (previewKind != PreviewKind.NONE)
