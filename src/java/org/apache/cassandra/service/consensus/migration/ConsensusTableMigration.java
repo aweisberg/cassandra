@@ -73,6 +73,7 @@ import static org.apache.cassandra.dht.Range.normalize;
 import static org.apache.cassandra.dht.Range.normalizedRanges;
 import static org.apache.cassandra.utils.CollectionSerializers.deserializeList;
 import static org.apache.cassandra.utils.CollectionSerializers.serializeCollection;
+import static org.apache.cassandra.utils.CollectionSerializers.serializedCollectionSize;
 
 /**
  * Track and update the migration state of individual table and ranges within those tables
@@ -99,7 +100,7 @@ public abstract class ConsensusTableMigration
         @Override
         public long serializedSize(NormalizedRanges<Token> t, Version version)
         {
-            return 0;
+            return serializedCollectionSize(t, version, Range.serializer);
         }
     };
 

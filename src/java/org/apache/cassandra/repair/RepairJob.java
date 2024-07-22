@@ -199,7 +199,7 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
             accordRepair = paxosRepair.flatMap(unused -> {
                 logger.info("{} {}.{} starting accord repair", session.previewKind.logPrefix(session.getId()), desc.keyspace, desc.columnFamily);
                 IPartitioner partitioner = metadata.partitioner;
-                AccordRepair repair = new AccordRepair(ctx, cfs, partitioner, desc.keyspace, desc.ranges, session.isConsensusMigration, allEndpoints);
+                AccordRepair repair = new AccordRepair(ctx, cfs, partitioner, desc.keyspace, desc.ranges, true, allEndpoints);
                 return repair.repair(taskExecutor);
             }, taskExecutor);
         }

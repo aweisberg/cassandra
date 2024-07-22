@@ -275,6 +275,7 @@ public class ConsensusRequestRouter
         // Migration from Paxos to Accord has two phases and in the first phase we continue to run Paxos
         // until the data has been repaired for the range so that Accord can safely read it after Paxos key migration
         if (tms.repairPendingRanges.intersects(token))
+            return false;
         // The coordinator will need to retry either on Accord if they are trying
         // to propose their own value, or by setting the consensus migration epoch to recover an incomplete transaction
         if (tms.migratingAndMigratedRanges.intersects(token))
