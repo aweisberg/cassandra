@@ -84,7 +84,6 @@ import org.apache.cassandra.concurrent.Shutdownable;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.statements.RequestValidations;
-import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
@@ -137,6 +136,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.cassandra.config.DatabaseDescriptor.getPartitioner;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.accordReadMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.accordWriteMetrics;
+import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 
 public class AccordService implements IAccordService, Shutdownable
@@ -498,8 +498,7 @@ public class AccordService implements IAccordService, Shutdownable
         }
 
         ClusterMetadata cm = ClusterMetadata.current();
-        ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
-        TableMetadata tm = cfs.metadata();
+        TableMetadata tm = getTableMetadata(cm, tableId);
 
         // Barriers can be needed just because it's an Accord managed range, but it could also be a migration back to Paxos
         // in which case we do want to barrier the migrating/migrated ranges even though the target for the migration is not Accord

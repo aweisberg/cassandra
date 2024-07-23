@@ -71,6 +71,7 @@ import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.TxnUpdate;
 import org.apache.cassandra.service.accord.txn.TxnWrite;
 import org.apache.cassandra.service.paxos.Ballot;
+import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.TimeUUID;
 
@@ -80,6 +81,7 @@ import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.R
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.casResult;
 import static org.apache.cassandra.service.accord.txn.TxnDataName.Kind.CAS_READ;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
+import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
 
 
 /**
@@ -492,7 +494,8 @@ public class CQL3CasRequest implements CASRequest
     {
         // Potentially ignore commit consistency level if non-SERIAL write strategy is Accord
         // since it is safe to match what non-SERIAL writes do
-        commitConsistencyLevel = metadata.params.transactionalMode.commitCLForStrategy(commitConsistencyLevel, metadata.id, key.getToken());
+        ClusterMetadata cm = ClusterMetadata.current();
+        commitConsistencyLevel = getTableMetadata(cm, metadata.id).params.transactionalMode.commitCLForStrategy(commitConsistencyLevel, cm, metadata.id, key.getToken());
         // CAS requires using the new txn timestamp to correctly linearize some kinds of updates
         return new TxnUpdate(createWriteFragments(clientState), createCondition(), commitConsistencyLevel, false);
     }

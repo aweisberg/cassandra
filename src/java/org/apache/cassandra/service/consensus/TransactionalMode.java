@@ -61,7 +61,7 @@ import org.apache.cassandra.tcm.ClusterMetadata;
 public enum TransactionalMode
 {
     // Running on Paxos V1 or V2 with Accord disabled
-    off(false, false, false, false),
+    off(false, false, false, false, false),
 
     /*
      * Execute non-SERIAL writes through Cassandra via StorageProxy's normal write path. This can lead Accord to compute
@@ -70,49 +70,51 @@ public enum TransactionalMode
      * SERIAL reads and CAS will run on Accord. Accord will honor provided consistency levels and do synchronous commit
      * so the results can be read with non-SERIAL CLs.
      */
-    unsafe(true, false, false, false),
+    unsafe(true, false, false, false, false),
 
     /*
      * Allow mixing of non-SERIAL writes and Accord, but still force BRR through Accord.
      * This mode makes it safe to perform non-SERIAL or SERIAL reads of Accord data, but unsafe
      * to write data that Accord may attempt to read.
      */
-    unsafe_writes(true, false, false, true),
+    unsafe_writes(true, false, false, false, true),
 
     /*
      * Execute writes through Accord skipping StorageProxy's normal write path, but commit
      * writes at the provided consistency level so they can be read via non-SERIAL consistency levels.
      * This mode makes it safe to read/write data that Accord will read/write.
      */
-    mixed_reads(true, false, true, true),
+    mixed_reads(true, false, true, false, true),
 
     /*
      * Execute writes through Accord skipping StorageProxy's normal write path. Ignores the provided consistency level
      * which makes Accord commit writes at ANY similar to Paxos with commit consistency level ANY.
      */
-    full(true, true, true, true);
+    full(true, true, true, true, true);
 
     public final boolean accordIsEnabled;
     public final boolean ignoresSuppliedConsistencyLevel;
     public final boolean writesThroughAccord;
+    public final boolean readsThroughAccord;
 
     public final boolean blockingReadRepairThroughAccord;
     private final String cqlParam;
 
-    TransactionalMode(boolean accordIsEnabled, boolean ignoresSuppliedConsistencyLevel, boolean writesThroughAccord, boolean blockingReadRepairThroughAccord)
+    TransactionalMode(boolean accordIsEnabled, boolean ignoresSuppliedConsistencyLevel, boolean writesThroughAccord, boolean readsThroughAccord, boolean blockingReadRepairThroughAccord)
     {
         this.accordIsEnabled = accordIsEnabled;
         this.ignoresSuppliedConsistencyLevel = ignoresSuppliedConsistencyLevel;
         this.writesThroughAccord = writesThroughAccord;
+        this.readsThroughAccord = readsThroughAccord;
         this.blockingReadRepairThroughAccord = blockingReadRepairThroughAccord;
         this.cqlParam = String.format("transactional_mode = '%s'", this.name().toLowerCase());
     }
 
-    public ConsistencyLevel commitCLForStrategy(ConsistencyLevel consistencyLevel, TableId tableId, Token token)
+    public ConsistencyLevel commitCLForStrategy(ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
     {
         if (ignoresSuppliedConsistencyLevel)
         {
-            TableMigrationState tms = ClusterMetadata.current().consensusMigrationState.tableStates.get(tableId);
+            TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
             if (tms != null)
             {
                 // Only ignore the supplied consistency level if the token is not migrating

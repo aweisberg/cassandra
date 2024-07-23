@@ -43,7 +43,6 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.CoordinatorBehindException;
 import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
-import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
@@ -92,15 +91,16 @@ public class ConsensusMigrationMutationHelper
         if (consistencyLevel == null)
             return null;
 
+        ClusterMetadata cm = ClusterMetadata.current();
         for (IMutation mutation : mutations)
         {
             for (TableId tableId : mutation.getTableIds())
             {
-                TransactionalMode mode = Schema.instance.getTableMetadata(tableId).params.transactionalMode;
+                TransactionalMode mode = getTableMetadata(cm, tableId).params.transactionalMode;
                 // commitCLForStrategy should return either null or the supplied consistency level
                 // in which case we will commit everything at that CL since Accord doesn't support per table
                 // commit consistency
-                ConsistencyLevel commitCL = mode.commitCLForStrategy(consistencyLevel, tableId, mutation.key().getToken());
+                ConsistencyLevel commitCL = mode.commitCLForStrategy(consistencyLevel, cm, tableId, mutation.key().getToken());
                 if (commitCL != null)
                     return commitCL;
             }
@@ -297,14 +297,9 @@ public class ConsensusMigrationMutationHelper
             }
             catch (RetryOnDifferentSystemException e)
             {
-                writeMetrics.mutationRetriedOnDifferentSystem.mark();
-                writeMetricsForLevel(consistencyLevel).mutationRetriedOnDifferentSystem.mark();
+                writeMetrics.retryDifferentSystem.mark();
+                writeMetricsForLevel(consistencyLevel).retryDifferentSystem.mark();
                 logger.debug("Retrying mutations on different system because some mutations were misrouted");
-                continue;
-            }
-            catch (CoordinatorBehindException e)
-            {
-                logger.debug("Retrying mutations now that coordinator has caught up to cluster metadata");
                 continue;
             }
             break;
@@ -330,8 +325,8 @@ public class ConsensusMigrationMutationHelper
         Set<TableId> markedColumnFamilies = null;
         for (PartitionUpdate pu : mutation.getPartitionUpdates())
         {
-            ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(pu.metadata().id);
-            TableMetadata tm = cfs.metadata();
+            ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(pu.metadata().keyspace, pu.metadata().name);
+            TableMetadata tm = getTableMetadata(cm, pu.metadata().id);
             if (tokenShouldBeWrittenThroughAccord(cm, tm, dk.getToken()))
             {
                 throwRetryOnDifferentSystem = true;
@@ -346,6 +341,17 @@ public class ConsensusMigrationMutationHelper
         if (throwRetryOnDifferentSystem)
             throw new RetryOnDifferentSystemException();
     }
+
+//    public static boolean tokenShouldBeReadThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
+//    {
+//        boolean transactionalModeReadsThroughAccord = tm.params.transactionalMode.readsThroughAccord;
+//        TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
+//        boolean migrationFromReadsThroughAccord = transactionalMigrationFromMode.readsThroughAccord();
+//        if (transactionalModeReadsThroughAccord && migrationFromReadsThroughAccord)
+//            return true;
+//
+//
+//    }
 
     public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
     {

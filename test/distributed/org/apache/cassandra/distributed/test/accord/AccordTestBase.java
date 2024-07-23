@@ -235,7 +235,7 @@ public abstract class AccordTestBase extends TestBaseImpl
 
     protected static int getRetryOnDifferentSystemCount(int coordinatorIndex)
     {
-        return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.MutationRetriedOnDifferentSystem.Write"));
+        return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.RetryDifferentSystem.Write"));
     }
 
     protected int getMutationsRejectedOnWrongSystemCount()

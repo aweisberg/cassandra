@@ -64,6 +64,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 
 /**
@@ -196,7 +197,8 @@ public class BlockingReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.Fo
         // so all mutations need to be applied either transactionally or non-transactionally
         // There is no retry loop here because read repair is relatively rare so it racing with changes to migrating
         // ranges should also be pretty rare so it isn't worth the added complexity
-        if (ConsensusMigrationMutationHelper.tokenShouldBeWrittenThroughAccord(ClusterMetadata.current(), command.metadata(), dk.getToken()))
+        ClusterMetadata cm = ClusterMetadata.current();
+        if (ConsensusMigrationMutationHelper.tokenShouldBeWrittenThroughAccord(cm, getTableMetadata(cm, command.metadata().id), dk.getToken()))
             repairTransactionally(dk, mutations, writePlan);
         else
             repairNonTransactionally(dk, mutations, writePlan);
