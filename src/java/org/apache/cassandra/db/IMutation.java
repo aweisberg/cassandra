@@ -91,4 +91,5 @@ public interface IMutation
 
     // Construct replacement mutation that is identical except it only includes updates for the specified tables
     @Nullable IMutation filter(Predicate<TableId> predicate);
-}
+
+    default void clearCachedSerializationsForRetry() {}}

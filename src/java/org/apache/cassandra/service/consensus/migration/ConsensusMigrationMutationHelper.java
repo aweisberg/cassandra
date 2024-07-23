@@ -43,7 +43,6 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.CoordinatorBehindException;
 import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
-import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
@@ -52,8 +51,8 @@ import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.IAccordService;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.txn.TxnCondition;
+import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
-import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.service.accord.txn.TxnReferenceOperations;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.TxnUpdate;
@@ -85,7 +84,7 @@ public class ConsensusMigrationMutationHelper
 {
     private static final Logger logger = LoggerFactory.getLogger(ConsensusMigrationMutationHelper.class);
 
-    private static ConsistencyLevel consistencyLevelForCommit(Collection<? extends IMutation> mutations, @Nullable ConsistencyLevel consistencyLevel)
+    private static ConsistencyLevel consistencyLevelForCommit(ClusterMetadata cm, Collection<? extends IMutation> mutations, @Nullable ConsistencyLevel consistencyLevel)
     {
         // Null means no specific consistency behavior is required from Accord, it's functionally similar to ANY
         // if you aren't reading the result back via Accord
@@ -96,11 +95,11 @@ public class ConsensusMigrationMutationHelper
         {
             for (TableId tableId : mutation.getTableIds())
             {
-                TransactionalMode mode = Schema.instance.getTableMetadata(tableId).params.transactionalMode;
+                TransactionalMode mode = getTableMetadata(cm, tableId).params.transactionalMode;
                 // commitCLForStrategy should return either null or the supplied consistency level
                 // in which case we will commit everything at that CL since Accord doesn't support per table
                 // commit consistency
-                ConsistencyLevel commitCL = mode.commitCLForStrategy(consistencyLevel, tableId, mutation.key().getToken());
+                ConsistencyLevel commitCL = mode.commitCLForStrategy(consistencyLevel, cm, tableId, mutation.key().getToken());
                 if (commitCL != null)
                     return commitCL;
             }
@@ -108,9 +107,8 @@ public class ConsensusMigrationMutationHelper
         return null;
     }
 
-    public static <T extends IMutation> Pair<List<T>, List<T>> splitMutationsIntoAccordAndNormal(List<T> mutations)
+    public static <T extends IMutation> Pair<List<T>, List<T>> splitMutationsIntoAccordAndNormal(ClusterMetadata cm, List<T> mutations)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
         List<T> accordMutations = null;
         List<T> normalMutations = null;
         for (int i=0,mi=mutations.size(); i<mi; i++)
@@ -157,9 +155,8 @@ public class ConsensusMigrationMutationHelper
         return Pair.create(accordMutation, normalMutation);
     }
 
-    public static Pair<List<? extends IMutation>, List<WriteResponseHandlerWrapper>> splitWrappersIntoAccordAndNormal(List<WriteResponseHandlerWrapper> wrappers)
+    public static Pair<List<? extends IMutation>, List<WriteResponseHandlerWrapper>> splitWrappersIntoAccordAndNormal(ClusterMetadata cm, List<WriteResponseHandlerWrapper> wrappers)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
         List<IMutation> accordMutations = null;
         List<WriteResponseHandlerWrapper> normalWrappers = null;
         for (int i=0,mi=wrappers.size(); i<mi; i++)
@@ -213,13 +210,13 @@ public class ConsensusMigrationMutationHelper
         return Pair.create(accordMutation, new WriteResponseHandlerWrapper(wrapper.handler, normalMutation));
     }
 
-    public static Pair<TxnId, Future<TxnResult>> mutateWithAccordAsync(Mutation mutation, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    public static Pair<TxnId, Future<TxnResult>> mutateWithAccordAsync(ClusterMetadata cm, Mutation mutation, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
     {
-        return mutateWithAccordAsync(ImmutableList.of(mutation), consistencyLevel, queryStartNanoTime);
+        return mutateWithAccordAsync(cm, ImmutableList.of(mutation), consistencyLevel, queryStartNanoTime);
     }
 
 
-    public static Pair<TxnId, Future<TxnResult>> mutateWithAccordAsync(Collection<? extends IMutation> mutations, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    public static Pair<TxnId, Future<TxnResult>> mutateWithAccordAsync(ClusterMetadata cm, Collection<? extends IMutation> mutations, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
     {
         int fragmentIndex = 0;
         List<TxnWrite.Fragment> fragments = new ArrayList<>(mutations.size());
@@ -234,9 +231,9 @@ public class ConsensusMigrationMutationHelper
             }
         }
         // Potentially ignore commit consistency level if the strategy specifies accord and not migration
-        ConsistencyLevel clForCommit = consistencyLevelForCommit(mutations, consistencyLevel);
+        ConsistencyLevel clForCommit = consistencyLevelForCommit(cm, mutations, consistencyLevel);
         TxnUpdate update = new TxnUpdate(fragments, TxnCondition.none(), clForCommit, true);
-        Txn.InMemory txn = new Txn.InMemory(Keys.of(partitionKeys), TxnRead.EMPTY, TxnQuery.NONE, update);
+        Txn.InMemory txn = new Txn.InMemory(Keys.of(partitionKeys), TxnKeyRead.EMPTY, TxnQuery.NONE, update);
         IAccordService accordService = AccordService.instance();
         return accordService.coordinateAsync(txn, consistencyLevel, queryStartNanoTime);
     }
@@ -245,16 +242,17 @@ public class ConsensusMigrationMutationHelper
     {
         while (true)
         {
+            ClusterMetadata cm = ClusterMetadata.current();
             try
             {
                 // Keep attempting to route the mutations until they all succeed on the correct system
                 // TODO (review): Metrics are going to double count when we split between the two systems
                 // but they will be split across different accord/non-accord metrics
-                Pair<List<IMutation>, List<IMutation>> accordAndNormal = splitMutationsIntoAccordAndNormal((List<IMutation>)mutations);
+                Pair<List<IMutation>, List<IMutation>> accordAndNormal = splitMutationsIntoAccordAndNormal(cm, (List<IMutation>)mutations);
                 List<? extends IMutation> accordMutations = accordAndNormal.left;
                 // TODO this can race with migration to/from Accord and Accord doesn't know what range we are referring to or it just hasn't updated to the epoch we are aware of
                 // client side retry can still succeed but the error could be exposed
-                Pair<TxnId, Future<TxnResult>> accordResult = accordMutations != null ? mutateWithAccordAsync(accordMutations, consistencyLevel, queryStartNanoTime) : null;
+                Pair<TxnId, Future<TxnResult>> accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, queryStartNanoTime) : null;
                 List<? extends IMutation> normalMutations = accordAndNormal.right;
 
                 Throwable failure = null;
@@ -297,13 +295,14 @@ public class ConsensusMigrationMutationHelper
             }
             catch (RetryOnDifferentSystemException e)
             {
-                writeMetrics.mutationRetriedOnDifferentSystem.mark();
-                writeMetricsForLevel(consistencyLevel).mutationRetriedOnDifferentSystem.mark();
+                writeMetrics.retryDifferentSystem.mark();
+                writeMetricsForLevel(consistencyLevel).retryDifferentSystem.mark();
                 logger.debug("Retrying mutations on different system because some mutations were misrouted");
                 continue;
             }
             catch (CoordinatorBehindException e)
             {
+                mutations.forEach(IMutation::clearCachedSerializationsForRetry);
                 logger.debug("Retrying mutations now that coordinator has caught up to cluster metadata");
                 continue;
             }
@@ -330,8 +329,8 @@ public class ConsensusMigrationMutationHelper
         Set<TableId> markedColumnFamilies = null;
         for (PartitionUpdate pu : mutation.getPartitionUpdates())
         {
-            ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(pu.metadata().id);
-            TableMetadata tm = cfs.metadata();
+            ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(pu.metadata().keyspace, pu.metadata().name);
+            TableMetadata tm = getTableMetadata(cm, pu.metadata().id);
             if (tokenShouldBeWrittenThroughAccord(cm, tm, dk.getToken()))
             {
                 throwRetryOnDifferentSystem = true;
@@ -346,6 +345,17 @@ public class ConsensusMigrationMutationHelper
         if (throwRetryOnDifferentSystem)
             throw new RetryOnDifferentSystemException();
     }
+
+//    public static boolean tokenShouldBeReadThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
+//    {
+//        boolean transactionalModeReadsThroughAccord = tm.params.transactionalMode.readsThroughAccord;
+//        TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
+//        boolean migrationFromReadsThroughAccord = transactionalMigrationFromMode.readsThroughAccord();
+//        if (transactionalModeReadsThroughAccord && migrationFromReadsThroughAccord)
+//            return true;
+//
+//
+//    }
 
     public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
     {

@@ -20,56 +20,51 @@ package org.apache.cassandra.service.accord.txn;
 
 import java.io.IOException;
 
+import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.tcm.Epoch;
-import org.apache.cassandra.utils.ObjectSizes;
 
-/**
- * Potentially returned by any transaction that tries to execute in an Epoch
- * where the range has migrated away from Accord
- */
-public class RetryWithNewProtocolResult implements TxnResult
+public class TxnRangeReadResult implements TxnResult
 {
-    private static final long SIZE = ObjectSizes.measure(new RetryWithNewProtocolResult(Epoch.FIRST));
+    public final PartitionIterator partitions;
 
-    public final Epoch epoch;
-
-    RetryWithNewProtocolResult(Epoch epoch)
+    public TxnRangeReadResult(PartitionIterator partitions)
     {
-        this.epoch = epoch;
+        this.partitions = partitions;
     }
 
     @Override
     public Kind kind()
     {
-        return Kind.retry_new_protocol;
+        return Kind.range_read;
     }
 
     @Override
     public long estimatedSizeOnHeap()
     {
-        return SIZE;
+        return 0;
     }
 
-    public static final TxnResultSerializer<RetryWithNewProtocolResult> serializer = new TxnResultSerializer<RetryWithNewProtocolResult>()
+    // Should never need to serialize the result since it is computed at the coordinator and then processed outside
+    // Accord
+    public static final TxnResultSerializer<TxnRangeReadResult> serializer = new TxnResultSerializer<TxnRangeReadResult>()
     {
         @Override
-        public void serialize(RetryWithNewProtocolResult retry, DataOutputPlus out, int version) throws IOException
+        public void serialize(TxnRangeReadResult data, DataOutputPlus out, int version) throws IOException
         {
-            Epoch.messageSerializer.serialize(retry.epoch, out, version);
+            throw new UnsupportedOperationException();
         }
 
         @Override
-        public RetryWithNewProtocolResult deserialize(DataInputPlus in, int version) throws IOException
+        public TxnRangeReadResult deserialize(DataInputPlus in, int version) throws IOException
         {
-            return new RetryWithNewProtocolResult(Epoch.messageSerializer.deserialize(in, version));
+            throw new UnsupportedOperationException();
         }
 
         @Override
-        public long serializedSize(RetryWithNewProtocolResult retry, int version)
+        public long serializedSize(TxnRangeReadResult data, int version)
         {
-            return Epoch.messageSerializer.serializedSize(retry.epoch, version);
+            throw new UnsupportedOperationException();
         }
     };
 }

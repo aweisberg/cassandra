@@ -40,6 +40,7 @@ public class ClientRequestMetrics extends LatencyMetrics
     public final Meter readSizeAborts;
     public final Meter localRequests;
     public final Meter remoteRequests;
+    public final Meter retryDifferentSystem;
 
     public ClientRequestMetrics(String scope)
     {
@@ -53,6 +54,7 @@ public class ClientRequestMetrics extends LatencyMetrics
         readSizeAborts = Metrics.meter(factory.createMetricName("ReadSizeAborts"));
         localRequests = Metrics.meter(factory.createMetricName("LocalRequests"));
         remoteRequests = Metrics.meter(factory.createMetricName("RemoteRequests"));
+        retryDifferentSystem = Metrics.meter(factory.createMetricName("RetryDifferentSystem"));
     }
 
     public void markAbort(Throwable cause)

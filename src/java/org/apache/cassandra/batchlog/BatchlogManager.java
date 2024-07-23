@@ -345,9 +345,10 @@ public class BatchlogManager implements BatchlogManagerMBean
     {
         while (true)
         {
+            ClusterMetadata cm = ClusterMetadata.current();
             try
             {
-                ReplayingBatch batch = new ReplayingBatch(id, version, row.getList("mutations", BytesType.instance));
+                ReplayingBatch batch = new ReplayingBatch(id, version, row.getList("mutations", BytesType.instance), cm);
                 if (batch.replay(rateLimiter, hintedNodes))
                 {
                     unfinishedBatches.add(batch);
@@ -395,22 +396,24 @@ public class BatchlogManager implements BatchlogManagerMBean
         private final List<Mutation> normalMutations;
         private final List<Mutation> accordMutations;
         private final int replayedBytes;
+        private final ClusterMetadata cm;
 
         private List<ReplayWriteResponseHandler<Mutation>> replayHandlers = ImmutableList.of();
         private Pair<TxnId, Future<TxnResult>> accordResult;
         private long accordTxnStartNanos;
 
-        ReplayingBatch(TimeUUID id, int version, List<ByteBuffer> serializedMutations) throws IOException
+        ReplayingBatch(TimeUUID id, int version, List<ByteBuffer> serializedMutations, ClusterMetadata cm) throws IOException
         {
             this.id = id;
             this.writtenAt = id.unix(MILLISECONDS);
             List<Mutation> unsplitMutations = new ArrayList<>(serializedMutations.size());
             this.replayedBytes = addMutations(unsplitMutations, version, serializedMutations);
             unsplitGcGs = gcgs(unsplitMutations);
-            Pair<List<Mutation>, List<Mutation>> accordAndNormal = ConsensusMigrationMutationHelper.splitMutationsIntoAccordAndNormal(unsplitMutations);
+            Pair<List<Mutation>, List<Mutation>> accordAndNormal = ConsensusMigrationMutationHelper.splitMutationsIntoAccordAndNormal(cm, unsplitMutations);
             logger.trace("Replaying batch with Accord {} and normal {}", accordAndNormal.left, accordAndNormal.right);
             normalMutations = accordAndNormal.right;
             accordMutations = accordAndNormal.left;
+            this.cm = cm;
         }
 
         public boolean replay(RateLimiter rateLimiter, Set<UUID> hintedNodes) throws IOException
@@ -427,7 +430,7 @@ public class BatchlogManager implements BatchlogManagerMBean
             if (accordMutations != null)
             {
                 accordTxnStartNanos = Clock.Global.nanoTime();
-                accordResult = accordMutations != null ? mutateWithAccordAsync(accordMutations, null, accordTxnStartNanos) : null;
+                accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, null, accordTxnStartNanos) : null;
             }
 
             if (normalMutations != null)

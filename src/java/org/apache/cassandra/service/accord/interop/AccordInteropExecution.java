@@ -57,6 +57,7 @@ import accord.utils.async.AsyncChains;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Mutation;
+import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
@@ -83,7 +84,9 @@ import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.interop.AccordInteropReadCallback.MaximalCommitSender;
 import org.apache.cassandra.service.accord.txn.AccordUpdate;
 import org.apache.cassandra.service.accord.txn.TxnData;
-import org.apache.cassandra.service.accord.txn.TxnRead;
+import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
+import org.apache.cassandra.service.accord.txn.TxnDataRangeValue;
+import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.UnrecoverableRepairUpdate;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.service.consensus.migration.ConsensusTableMigration;
@@ -245,15 +248,11 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         node.send(id, readRepair, executor, new AccordInteropReadRepair.ReadRepairCallback(id, to, message, callback, this));
     }
 
-    private AsyncChain<Data> readChains()
+    private List<AsyncChain<Data>> keyReadChains(int nowInSeconds, long nanoStart)
     {
-        int nowInSeconds = (int) TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
-        // TODO (expected): use normal query nano time
-        long nanoStart = Clock.Global.nanoTime();
-
-        TxnRead read = (TxnRead) txn.read();
-        List<AsyncChain<Data>> results = new ArrayList<>();
+        TxnKeyRead read = (TxnKeyRead) txn.read();
         Seekables<?, ?> keys = txn.read().keys();
+        List<AsyncChain<Data>> results = new ArrayList<>();
         keys.forEach(key -> {
             read.forEachWithKey((PartitionKey) key, fragment -> {
                 SinglePartitionReadCommand command = (SinglePartitionReadCommand) fragment.command();
@@ -280,9 +279,9 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
                         {
                             try (RowIterator partition = iterator.next())
                             {
-                                FilteredPartition filtered = FilteredPartition.create(partition);
-                                if (filtered.hasRows() || command.selectsFullPartition())
-                                    result.put(fragment.txnDataName(), filtered);
+                                TxnDataKeyValue value = new TxnDataKeyValue(partition);
+                                if (value.hasRows() || command.selectsFullPartition())
+                                    result.put(fragment.txnDataName(), value);
                             }
                         }
                     }
@@ -290,6 +289,68 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
                 }));
             });
         });
+        return results;
+    }
+
+    private List<AsyncChain<Data>> rangeReadChains(int nowInSeconds, long nanoStart)
+    {
+        TxnKeyRead read = (TxnKeyRead) txn.read();
+        Seekables<?, ?> keys = txn.read().keys();
+        List<AsyncChain<Data>> results = new ArrayList<>();
+        keys.forEach(key -> {
+            read.forEachWithKey((PartitionKey) key, fragment -> {
+                PartitionRangeReadCommand command = (PartitionRangeReadCommand) fragment.command();
+
+                // This should only rarely occur when coordinators start a transaction in a migrating range
+                // because they haven't yet updated their cluster metadata.
+                // It would be harmless to do the read, because it will be rejected in `TxnQuery` anyways,
+                // but it's faster to skip the read
+                // TODO (required): To make migration work we need to validate that the range is all on Accord
+                // if any part isn't we should reject the read
+//                TableMigrationState tms = ConsensusTableMigration.getTableMigrationState(command.metadata().id);
+//                AccordClientRequestMetrics metrics = txn.kind().isWrite() ? accordWriteMetrics : accordReadMetrics;
+//                if (ConsensusRequestRouter.instance.isKeyInMigratingOrMigratedRangeFromAccord(command.metadata(), tms, command.partitionKey()))
+//                {
+//                    metrics.migrationSkippedReads.mark();
+//                    results.add(AsyncChains.success(TxnData.emptyPartition(fragment.txnDataName(), command)));
+//                    return;
+//                }
+
+                PartitionRangeReadCommand commandWithNowInSec = command.withNowInSec(nowInSeconds);
+                results.add(AsyncChains.ofCallable(Stage.ACCORD_MIGRATION.executor(), () -> {
+                    TxnData result = new TxnData();
+                    try (PartitionIterator iterator = StorageProxy.getRangeSlice(commandWithNowInSec, consistencyLevel, this, nanoStart))
+                    {
+                        TxnDataRangeValue value = new TxnDataRangeValue();
+                        while (iterator.hasNext())
+                        {
+                            try (RowIterator partition = iterator.next())
+                            {
+                                FilteredPartition filtered = FilteredPartition.create(partition);
+                                if (filtered.hasRows() || command.selectsFullPartition())
+                                    value.add(filtered);
+                            }
+                        }
+                        result.put(fragment.txnDataName(), value);
+                    }
+                    return result;
+                }));
+            });
+        });
+        return results;
+    }
+
+    private AsyncChain<Data> readChains()
+    {
+        int nowInSeconds = (int) TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
+        // TODO (expected): use normal query nano time
+        long nanoStart = Clock.Global.nanoTime();
+
+        List<AsyncChain<Data>> results;
+        if (txn.keys().domain().isKey())
+            results = keyReadChains(nowInSeconds, nanoStart);
+        else
+            results = rangeReadChains(nowInSeconds, nanoStart);
 
         if (results.isEmpty())
             return AsyncChains.success(new TxnData());
