@@ -568,7 +568,12 @@ public class Mutation implements IMutation, Supplier<Mutation>
             Map<TableId, PartitionUpdate> modifications = mutation.modifications;
 
             if (version >= VERSION_51)
-                out.write(allowsOutOfRangeMutationsFlag(mutation.allowsOutOfRangeMutations()));
+            {
+                int flags = 0;
+                flags |= allowsOutOfRangeMutationsFlag(mutation.allowOutOfRangeMutations);
+                flags |= allowPotentialTransactionConflictsFlag(mutation.allowPotentialTransactionConflicts);
+                out.write(flags);
+            }
 
             /* serialize the modifications in the mutation */
             int size = modifications.size();
