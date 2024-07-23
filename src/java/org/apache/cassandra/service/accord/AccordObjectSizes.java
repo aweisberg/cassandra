@@ -24,11 +24,11 @@ import java.util.function.ToLongFunction;
 import accord.api.Key;
 import accord.api.Result;
 import accord.api.RoutingKey;
-import accord.local.CommandsForKey;
-import accord.local.CommandsForKey.TxnInfo;
 import accord.impl.TimestampsForKey;
 import accord.local.Command;
 import accord.local.Command.WaitingOn;
+import accord.local.CommandsForKey;
+import accord.local.CommandsForKey.TxnInfo;
 import accord.local.CommandsForKey.TxnInfoWithMissing;
 import accord.local.CommonAttributes;
 import accord.local.Node;
@@ -153,7 +153,7 @@ public class AccordObjectSizes
                + key(route.homeKey());
     }
 
-    private static long rangesOnly(AbstractRanges ranges)
+    public static long ranges(AbstractRanges ranges)
     {
         long size = ObjectSizes.sizeOfReferenceArray(ranges.size());
         for (int i=0, mi=ranges.size(); i<mi; i++)
@@ -165,7 +165,7 @@ public class AccordObjectSizes
     public static long fullRangeRoute(FullRangeRoute route)
     {
         return EMPTY_FULL_RANGE_ROUTE_SIZE
-               + rangesOnly(route)
+               + ranges(route)
                + key(route.homeKey()); // TODO: we will probably dedup homeKey, serializer dependent, but perhaps this is an acceptable error
     }
 
@@ -173,7 +173,7 @@ public class AccordObjectSizes
     public static long partialRangeRoute(PartialRangeRoute route)
     {
         return EMPTY_PARTIAL_RANGE_ROUTE_KEYS_SIZE
-               + rangesOnly(route)
+               + ranges(route)
                + ranges(route.covering())
                + key(route.homeKey());
     }

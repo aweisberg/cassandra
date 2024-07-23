@@ -114,9 +114,8 @@ public class ConsensusRequestRouter
         return tbm;
     }
 
-    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull DecoratedKey key, @Nonnull String keyspace, @Nonnull String table, ConsistencyLevel consistencyLevel, long queryStartNanoTime, long timeoutNanos, boolean isForWrite)
+    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull ClusterMetadata cm, @Nonnull DecoratedKey key, @Nonnull String keyspace, @Nonnull String table, ConsistencyLevel consistencyLevel, long queryStartNanoTime, long timeoutNanos, boolean isForWrite)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
         TableMetadata metadata = metadata(cm, keyspace, table);
         // Non-distributed tables always take the Paxos path
         if (metadata == null)
@@ -124,9 +123,8 @@ public class ConsensusRequestRouter
         return routeAndMaybeMigrate(cm, metadata, key, consistencyLevel, queryStartNanoTime, timeoutNanos, isForWrite);
     }
 
-    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull DecoratedKey key, @Nonnull TableId tableId, ConsistencyLevel consistencyLevel,  long queryStartNanotime, long timeoutNanos, boolean isForWrite)
+    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull ClusterMetadata cm, @Nonnull DecoratedKey key, @Nonnull TableId tableId, ConsistencyLevel consistencyLevel,  long queryStartNanotime, long timeoutNanos, boolean isForWrite)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
         TableMetadata metadata = getTableMetadata(cm, tableId);
         // Non-distributed tables always take the Paxos path
         if (metadata == null)
@@ -148,35 +146,6 @@ public class ConsensusRequestRouter
             return null;
         }
         return tm;
-    }
-
-    protected static boolean mayWriteThroughAccord(TableMetadata metadata)
-    {
-        return metadata.params.transactionalMode.writesThroughAccord || metadata.params.transactionalMigrationFrom.writesThroughAccord();
-    }
-
-    public boolean shouldWriteThroughAccordAndMaybeMigrate(@Nonnull DecoratedKey key, @Nonnull TableId tableId, ConsistencyLevel consistencyLevel,  long queryStartNanotime, long timeoutNanos, boolean isForWrite)
-    {
-        ClusterMetadata cm = ClusterMetadata.current();
-        TableMetadata metadata = cm.schema.getTableMetadata(tableId);
-        if (metadata == null)
-            throw new IllegalStateException(String.format("Can't route consensus request for nonexistent table %s", tableId));
-
-        if (!mayWriteThroughAccord(metadata))
-            return false;
-
-        consistencyLevel = consistencyLevel.isDatacenterLocal() ? ConsistencyLevel.LOCAL_SERIAL : ConsistencyLevel.SERIAL;
-        ConsensusRoutingDecision decision = routeAndMaybeMigrate(cm, metadata, key, consistencyLevel, queryStartNanotime, timeoutNanos, isForWrite);
-        switch (decision)
-        {
-            case paxosV1:
-            case paxosV2:
-                return false;
-            case accord:
-                return true;
-            default:
-                throw new IllegalStateException("Unsupported consensus " + decision);
-        }
     }
 
     protected ConsensusRoutingDecision routeAndMaybeMigrate(ClusterMetadata cm, @Nonnull TableMetadata tmd, @Nonnull DecoratedKey key, ConsistencyLevel consistencyLevel, long queryStartNanoTime, long timeoutNanos, boolean isForWrite)
@@ -301,7 +270,7 @@ public class ConsensusRequestRouter
     {
         ClusterMetadata cm = ClusterMetadataService.instance().fetchLogFromCMS(epoch);
         TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
-        return isKeyInMigratingOrMigratedRangeFromAccord(cm.schema.getTableMetadata(tableId), tms, key);
+        return isKeyInMigratingOrMigratedRangeFromAccord(getTableMetadata(cm, tableId), tms, key);
     }
 
     /*

@@ -117,6 +117,17 @@ public abstract class AccordTestBase extends TestBaseImpl
     protected String regularTableName;
     protected String qualifiedRegularTableName;
 
+    protected final TransactionalMode transactionalMode;
+
+    protected AccordTestBase()
+    {
+        this.transactionalMode = TransactionalMode.full;
+    }
+
+    protected AccordTestBase(TransactionalMode transactionalMode) {
+        this.transactionalMode = transactionalMode;
+    }
+
     public static void setupCluster(Function<Builder, Builder> options, int nodes) throws IOException
     {
         SHARED_CLUSTER = createCluster(nodes, options);
@@ -200,7 +211,7 @@ public abstract class AccordTestBase extends TestBaseImpl
 
     protected void test(FailingConsumer<Cluster> fn) throws Exception
     {
-        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, primary key (k, c)) WITH transactional_mode='full'", fn);
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, primary key (k, c)) WITH transactional_mode='" + transactionalMode + "'", fn);
     }
 
     protected static ConsensusMigrationState getMigrationStateSnapshot(IInvokableInstance instance) throws IOException
@@ -235,7 +246,7 @@ public abstract class AccordTestBase extends TestBaseImpl
 
     protected static int getRetryOnDifferentSystemCount(int coordinatorIndex)
     {
-        return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.MutationRetriedOnDifferentSystem.Write"));
+        return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.RetryDifferentSystem.Write"));
     }
 
     protected int getMutationsRejectedOnWrongSystemCount()
