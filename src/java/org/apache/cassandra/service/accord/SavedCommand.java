@@ -25,7 +25,6 @@ import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import accord.api.Result;
 import accord.local.Command;
 import accord.local.CommonAttributes;
 import accord.local.Listeners;
@@ -148,19 +147,8 @@ public class SavedCommand
                              ifNotEqual(before, after, Command::durableListeners, true));
     }
 
-    static Command reconstructFromDiff(List<LoadedDiff> diffs)
-    {
-        return reconstructFromDiff(diffs, CommandSerializers.APPLIED);
-    }
-
-    /**
-     * @param result is exposed because we are _not_ persisting result, since during loading or replay
-     *               we do not expect we will have to send a result to the client, and data results
-     *               can potentially contain a large number of entries, so it's best if they are not
-     *               written into the log.
-     */
     @VisibleForTesting
-    static Command reconstructFromDiff(List<LoadedDiff> diffs, Result result)
+    static Command reconstructFromDiff(List<LoadedDiff> diffs)
     {
         TxnId txnId = null;
 
@@ -252,7 +240,7 @@ public class SavedCommand
                 return Command.Committed.committed(attrs, saveStatus, executeAt, promised, acceptedOrCommitted, waitingOn);
             case PreApplied:
             case Applied:
-                return Command.Executed.executed(attrs, saveStatus, executeAt, promised, acceptedOrCommitted, waitingOn, writes, result);
+                return Command.Executed.executed(attrs, saveStatus, executeAt, promised, acceptedOrCommitted, waitingOn, writes, CommandSerializers.APPLIED);
             case Truncated:
             case Invalidated:
             default:

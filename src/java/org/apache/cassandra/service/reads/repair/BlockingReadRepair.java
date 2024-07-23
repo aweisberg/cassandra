@@ -47,8 +47,8 @@ import org.apache.cassandra.locator.ReplicaPlan.ForWrite;
 import org.apache.cassandra.metrics.ReadRepairMetrics;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.api.PartitionKey;
+import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
-import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.UnrecoverableRepairUpdate;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper;
@@ -217,7 +217,7 @@ public class BlockingReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.Fo
         Future<TxnResult> repairFuture;
         try
         {
-            Txn txn = new Txn.InMemory(Txn.Kind.Read, key, TxnRead.createNoOpRead(key), TxnQuery.NONE, repairUpdate);
+            Txn txn = new Txn.InMemory(Txn.Kind.Read, key, TxnKeyRead.createNoOpRead(key), TxnQuery.NONE, repairUpdate);
             repairFuture = Stage.ACCORD_MIGRATION.submit(() -> {
                 try
                 {

@@ -41,7 +41,6 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.service.accord.txn.TxnData;
-import org.apache.cassandra.service.accord.txn.TxnResult;
 
 import static org.apache.cassandra.db.TypeSizes.sizeof;
 import static org.apache.cassandra.utils.NullableSerializer.deserializeNullable;
@@ -86,7 +85,6 @@ public class ReadDataSerializers
             CommandSerializers.partialTxn.serialize(msg.txn, out, version);
             DepsSerializer.partialDeps.serialize(msg.deps, out, version);
             CommandSerializers.writes.serialize(msg.writes, out, version);
-            TxnResult.serializer.serialize((TxnResult) msg.result, out, version);
             KeySerializers.nullableSeekables.serialize(msg.notify, out, version);
         }
 
@@ -101,7 +99,7 @@ public class ReadDataSerializers
             CommandSerializers.partialTxn.deserialize(in, version),
             DepsSerializer.partialDeps.deserialize(in, version),
             CommandSerializers.writes.deserialize(in, version),
-            TxnResult.serializer.deserialize(in, version),
+            CommandSerializers.APPLIED,
             KeySerializers.nullableSeekables.deserialize(in, version));
         }
 
@@ -115,7 +113,6 @@ public class ReadDataSerializers
                    + CommandSerializers.partialTxn.serializedSize(msg.txn, version)
                    + DepsSerializer.partialDeps.serializedSize(msg.deps, version)
                    + CommandSerializers.writes.serializedSize(msg.writes, version)
-                   + TxnResult.serializer.serializedSize((TxnData)msg.result, version)
                    + KeySerializers.nullableSeekables.serializedSize(msg.notify, version);
         }
     }

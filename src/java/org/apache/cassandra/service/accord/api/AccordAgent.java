@@ -37,8 +37,8 @@ import accord.primitives.Txn.Kind;
 import accord.primitives.TxnId;
 import org.apache.cassandra.metrics.AccordMetrics;
 import org.apache.cassandra.service.accord.AccordService;
+import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
-import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.JVMStabilityInspector;
 
@@ -139,7 +139,7 @@ public class AccordAgent implements Agent
     @Override
     public Txn emptySystemTxn(Kind kind, Seekables<?, ?> seekables)
     {
-        return new Txn.InMemory(kind, seekables, TxnRead.EMPTY, TxnQuery.UNSAFE_EMPTY, null);
+        return new Txn.InMemory(kind, seekables, TxnKeyRead.EMPTY, TxnQuery.UNSAFE_EMPTY, null);
     }
 
     @Override

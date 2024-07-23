@@ -24,16 +24,16 @@ import java.util.function.ToLongFunction;
 import accord.api.Key;
 import accord.api.Result;
 import accord.api.RoutingKey;
-import accord.local.cfk.CommandsForKey;
-import accord.local.cfk.CommandsForKey.TxnInfo;
 import accord.impl.TimestampsForKey;
 import accord.local.Command;
 import accord.local.Command.WaitingOn;
-import accord.local.cfk.CommandsForKey.TxnInfoExtra;
 import accord.local.CommonAttributes;
 import accord.local.Node;
 import accord.local.SaveStatus;
 import accord.local.Status;
+import accord.local.cfk.CommandsForKey;
+import accord.local.cfk.CommandsForKey.TxnInfo;
+import accord.local.cfk.CommandsForKey.TxnInfoExtra;
 import accord.primitives.AbstractKeys;
 import accord.primitives.AbstractRanges;
 import accord.primitives.Ballot;
@@ -61,15 +61,16 @@ import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey.TokenKey;
 import org.apache.cassandra.service.accord.api.PartitionKey;
+import org.apache.cassandra.service.accord.serializers.CommandSerializers;
 import org.apache.cassandra.service.accord.serializers.WaitingOnSerializer;
 import org.apache.cassandra.service.accord.txn.AccordUpdate;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnRead;
-import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.TxnWrite;
 import org.apache.cassandra.utils.ObjectSizes;
 
 import static accord.local.cfk.CommandsForKey.NO_TXNIDS;
+import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.utils.ObjectSizes.measure;
 
 public class AccordObjectSizes
@@ -153,7 +154,7 @@ public class AccordObjectSizes
                + key(route.homeKey());
     }
 
-    private static long rangesOnly(AbstractRanges ranges)
+    public static long ranges(AbstractRanges ranges)
     {
         long size = ObjectSizes.sizeOfReferenceArray(ranges.size());
         for (int i=0, mi=ranges.size(); i<mi; i++)
@@ -165,7 +166,7 @@ public class AccordObjectSizes
     public static long fullRangeRoute(FullRangeRoute route)
     {
         return EMPTY_FULL_RANGE_ROUTE_SIZE
-               + rangesOnly(route)
+               + ranges(route)
                + key(route.homeKey()); // TODO: we will probably dedup homeKey, serializer dependent, but perhaps this is an acceptable error
     }
 
@@ -173,7 +174,7 @@ public class AccordObjectSizes
     public static long partialRangeRoute(PartialRangeRoute route)
     {
         return EMPTY_PARTIAL_RANGE_ROUTE_KEYS_SIZE
-               + rangesOnly(route)
+               + ranges(route)
                + key(route.homeKey());
     }
 
@@ -261,11 +262,6 @@ public class AccordObjectSizes
         return size;
     }
 
-    public static long results(Result result)
-    {
-        return ((TxnResult) result).estimatedSizeOnHeap();
-    }
-
     private static final long EMPTY_COMMAND_LISTENER = measure(new Command.ProxyListener(null));
     public static long listener(Command.DurableAndIdempotentListener listener)
     {
@@ -351,8 +347,8 @@ public class AccordObjectSizes
         size += sizeNullable(command.acceptedOrCommitted(), AccordObjectSizes::timestamp);
         size += sizeNullable(command.writes(), AccordObjectSizes::writes);
 
-        if (command.result() instanceof TxnResult)
-            size += sizeNullable(command.result(), AccordObjectSizes::results);
+        Result result = command.result();
+        checkState(result == null || result == CommandSerializers.APPLIED);
 
         if (!(command instanceof Command.Committed && command.saveStatus().hasBeen(Status.Stable)))
             return size;
