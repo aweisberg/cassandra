@@ -314,14 +314,15 @@ final class HintsDispatcher implements AutoCloseable
     // again only applying the hints that ended up needing to be re-routed
     private Callback sendHint(Hint hint)
     {
-        Pair<Mutation, Hint> accordAndNormal = splitHintIntoAccordAndNormal(hint);
+        ClusterMetadata cm = ClusterMetadata.current();
+        Pair<Mutation, Hint> accordAndNormal = splitHintIntoAccordAndNormal(cm, hint);
         Mutation accordHintMutation = accordAndNormal.left;
         long txnStartNanoTime = 0;
         Pair<TxnId, Future<TxnResult>> accordTxnResult = null;
         if (accordHintMutation != null)
         {
             txnStartNanoTime = Clock.Global.nanoTime();
-            accordTxnResult = accordHintMutation != null ? mutateWithAccordAsync(accordHintMutation, null, txnStartNanoTime) : null;
+            accordTxnResult = accordHintMutation != null ? mutateWithAccordAsync(cm, accordHintMutation, null, txnStartNanoTime) : null;
         }
 
         Hint normalHint = accordAndNormal.right;
@@ -354,9 +355,8 @@ final class HintsDispatcher implements AutoCloseable
         return callback;
     }
 
-    private Pair<Mutation, Hint> splitHintIntoAccordAndNormal(Hint hint)
+    private Pair<Mutation, Hint> splitHintIntoAccordAndNormal(ClusterMetadata cm, Hint hint)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
         Pair<Mutation, Mutation> accordAndNormal = splitMutationIntoAccordAndNormal(hint.mutation, cm);
         if (accordAndNormal.left == null)
             return Pair.create(null, hint);

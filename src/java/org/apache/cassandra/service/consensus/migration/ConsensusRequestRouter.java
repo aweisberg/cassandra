@@ -102,9 +102,8 @@ public class ConsensusRequestRouter
         return tbm;
     }
 
-    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull DecoratedKey key, @Nonnull String keyspace, @Nonnull String table, ConsistencyLevel consistencyLevel, long queryStartNanoTime, long timeoutNanos, boolean isForWrite)
+    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull ClusterMetadata cm, @Nonnull DecoratedKey key, @Nonnull String keyspace, @Nonnull String table, ConsistencyLevel consistencyLevel, long queryStartNanoTime, long timeoutNanos, boolean isForWrite)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
         TableMetadata metadata = metadata(cm, keyspace, table);
         // Non-distributed tables always take the Paxos path
         if (metadata == null)
@@ -112,9 +111,8 @@ public class ConsensusRequestRouter
         return routeAndMaybeMigrate(cm, metadata, key, consistencyLevel, queryStartNanoTime, timeoutNanos, isForWrite);
     }
 
-    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull DecoratedKey key, @Nonnull TableId tableId, ConsistencyLevel consistencyLevel,  long queryStartNanotime, long timeoutNanos, boolean isForWrite)
+    public ConsensusRoutingDecision routeAndMaybeMigrate(@Nonnull ClusterMetadata cm, @Nonnull DecoratedKey key, @Nonnull TableId tableId, ConsistencyLevel consistencyLevel,  long queryStartNanotime, long timeoutNanos, boolean isForWrite)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
         TableMetadata metadata = getTableMetadata(cm, tableId);
         // Non-distributed tables always take the Paxos path
         if (metadata == null)

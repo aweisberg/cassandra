@@ -18,7 +18,10 @@
 
 package org.apache.cassandra.service.consensus;
 
+import com.google.common.collect.ImmutableList;
+
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.accord.IAccordService;
@@ -133,10 +136,45 @@ public enum TransactionalMode
         return consistencyLevel;
     }
 
-    public ConsistencyLevel readCLForStrategy(ConsistencyLevel consistencyLevel)
+    public ConsistencyLevel readCLForStrategy(ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
     {
         if (ignoresSuppliedConsistencyLevel)
+        {
+            TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
+            if (tms != null)
+            {
+                // Only ignore the supplied consistency level if the token is not migrating
+                // otherwise honor it because we might read through Accord for non-SERIAL reads before repair is run
+                // this is OK to do because BRR still works and Accord isn't computing a write so recovery
+                // determinism isn't an issue
+                if (tms.migratingRanges.intersects(token))
+                    return consistencyLevel;
+            }
             return null;
+        }
+
+        if (!IAccordService.SUPPORTED_READ_CONSISTENCY_LEVELS.contains(consistencyLevel))
+            throw new UnsupportedOperationException("Consistency level " + consistencyLevel + " is unsupported with Accord for read, supported are ONE, QUORUM, and SERIAL");
+
+        return consistencyLevel;
+    }
+
+    public ConsistencyLevel readCLForStrategy(ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Range<Token> range)
+    {
+        if (ignoresSuppliedConsistencyLevel)
+        {
+            TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
+            if (tms != null)
+            {
+                // Only ignore the supplied consistency level if none of the range is migrating
+                // otherwise honor it because we might read through Accord for non-SERIAL reads before repair is run
+                // this is OK to do because BRR still works and Accord isn't computing a write so recovery
+                // determinism isn't an issue
+                if (!tms.migratingRanges.intersection(Range.normalizedRanges(ImmutableList.of(range))).isEmpty())
+                    return consistencyLevel;
+            }
+            return null;
+        }
 
         if (!IAccordService.SUPPORTED_READ_CONSISTENCY_LEVELS.contains(consistencyLevel))
             throw new UnsupportedOperationException("Consistency level " + consistencyLevel + " is unsupported with Accord for read, supported are ONE, QUORUM, and SERIAL");

@@ -19,6 +19,7 @@ package org.apache.cassandra.db;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -85,8 +86,7 @@ public class Mutation implements IMutation, Supplier<Mutation>
 
     private static final int SERIALIZATION_VERSION_COUNT = MessagingService.Version.values().length;
     // Contains serialized representations of this mutation.
-    // Note: there is no functionality to clear/remove serialized instances, because a mutation must never
-    // be modified (e.g. calling add(PartitionUpdate)) when it's being serialized.
+    // Note: The cached serializations can be cleared when CoordinatorBehindException is being retried
     private final Serialization[] cachedSerializations = new Serialization[SERIALIZATION_VERSION_COUNT];
 
     /** @see CassandraRelevantProperties#CACHEABLE_MUTATION_SIZE_LIMIT */
@@ -378,6 +378,12 @@ public class Mutation implements IMutation, Supplier<Mutation>
     public String toString()
     {
         return toString(false);
+    }
+
+    @Override
+    public void clearCachedSerializationsForRetry()
+    {
+        Arrays.fill(cachedSerializations, null);
     }
 
     public String toString(boolean shallow)

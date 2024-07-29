@@ -30,12 +30,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.function.IntPredicate;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -49,7 +51,6 @@ import org.slf4j.LoggerFactory;
 
 import accord.primitives.Txn;
 import accord.primitives.TxnId;
-import accord.utils.Invariants;
 import org.apache.cassandra.batchlog.Batch;
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
@@ -82,6 +83,7 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.view.ViewUtils;
+import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.exceptions.CasWriteTimeoutException;
 import org.apache.cassandra.exceptions.CasWriteUnknownResultException;
@@ -129,15 +131,23 @@ import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.IAccordService;
 import org.apache.cassandra.service.accord.txn.TxnData;
+import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
+import org.apache.cassandra.service.accord.txn.TxnDataName;
+import org.apache.cassandra.service.accord.txn.TxnDataValue;
+import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
+import org.apache.cassandra.service.accord.txn.TxnRangeRead;
+import org.apache.cassandra.service.accord.txn.TxnRangeReadResult;
 import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
+import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.service.paxos.Ballot;
 import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.service.paxos.ContentionStrategy;
@@ -194,10 +204,12 @@ import static org.apache.cassandra.service.BatchlogResponseHandler.BatchlogClean
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.RETRY_NEW_PROTOCOL;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.casResult;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.serialReadResult;
+import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.range_read;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
 import static org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.dispatchMutationsWithRetryOnDifferentSystem;
 import static org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.mutateWithAccordAsync;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision;
+import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
 import static org.apache.cassandra.service.paxos.Ballot.Flag.GLOBAL;
 import static org.apache.cassandra.service.paxos.Ballot.Flag.LOCAL;
 import static org.apache.cassandra.service.paxos.BallotGenerator.Global.nextBallot;
@@ -352,11 +364,13 @@ public class StorageProxy implements StorageProxyMBean
         ConsensusAttemptResult lastAttemptResult;
         do
         {
+            ClusterMetadata cm = ClusterMetadata.current();
             ConsensusRoutingDecision decision;
             if (keyspaceName.equals(SchemaConstants.METADATA_KEYSPACE_NAME))
                 decision = ConsensusRoutingDecision.paxosV2;
             else
-                decision = ConsensusRequestRouter.instance.routeAndMaybeMigrate(key,
+                decision = ConsensusRequestRouter.instance.routeAndMaybeMigrate(cm,
+                                                                                key,
                                                                                 keyspaceName,
                                                                                 cfName,
                                                                                 consistencyForPaxos,
@@ -385,10 +399,11 @@ public class StorageProxy implements StorageProxyMBean
                                                   queryStartNanoTime);
                     break;
                 case accord:
-                    Txn txn = request.toAccordTxn(consistencyForPaxos,
-                                                        consistencyForCommit,
-                                                        clientState,
-                                                        nowInSeconds);
+                    Txn txn = request.toAccordTxn(cm,
+                                                  consistencyForPaxos,
+                                                  consistencyForCommit,
+                                                  clientState,
+                                                  nowInSeconds);
                     IAccordService accordService = AccordService.instance();
                     TxnResult txnResult = accordService.coordinate(txn,
                                                                    consistencyForPaxos,
@@ -1281,6 +1296,7 @@ public class StorageProxy implements StorageProxyMBean
             boolean wroteToBatchLog = false;
             while (true)
             {
+                ClusterMetadata cm = ClusterMetadata.current();
                 try
                 {
                     BatchlogCleanup cleanup = new BatchlogCleanup(mutations.size(),
@@ -1304,7 +1320,7 @@ public class StorageProxy implements StorageProxyMBean
                     // Where this is tricky is that we have to defer the ack for cleanup in the wrapper if it also depends on Accord and that is something the custom splitting code does
                     // in addition to papering over the different between Mutation and WriteResponseHandlerWrapper
                     // Want to do a cleanup pass here, but not exactly sure what it should look like
-                    Pair<List<? extends IMutation>, List<WriteResponseHandlerWrapper>> accordAndNormal = ConsensusMigrationMutationHelper.splitWrappersIntoAccordAndNormal(wrappers);
+                    Pair<List<? extends IMutation>, List<WriteResponseHandlerWrapper>> accordAndNormal = ConsensusMigrationMutationHelper.splitWrappersIntoAccordAndNormal(cm, wrappers);
                     List<? extends IMutation> accordMutations = accordAndNormal.left;
                     List<WriteResponseHandlerWrapper> normalWrappers = accordAndNormal.right;
 
@@ -1324,7 +1340,7 @@ public class StorageProxy implements StorageProxyMBean
                     }
 
                     // Start Accord executing so it executes while the mutations are synchronously applied
-                    Pair<TxnId, Future<TxnResult>> accordResult = accordMutations != null ? mutateWithAccordAsync(accordMutations, consistencyLevel, queryStartNanoTime) : null;
+                    Pair<TxnId, Future<TxnResult>> accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, queryStartNanoTime) : null;
 
                     Throwable failure = null;
                     try
@@ -1375,12 +1391,13 @@ public class StorageProxy implements StorageProxyMBean
                 }
                 catch (RetryOnDifferentSystemException e)
                 {
-                    writeMetrics.mutationRetriedOnDifferentSystem.mark();
-                    writeMetricsForLevel(consistencyLevel).mutationRetriedOnDifferentSystem.mark();
+                    writeMetrics.retryDifferentSystem.mark();
+                    writeMetricsForLevel(consistencyLevel).retryDifferentSystem.mark();
                     logger.debug("Retrying batch txn on different system because some mutations were misrouted");
                 }
                 catch (CoordinatorBehindException e)
                 {
+                    mutations.forEach(Mutation::clearCachedSerializationsForRetry);
                     logger.debug("Retrying batch now that coordinator has caught up to cluster metadata");
                 }
             }
@@ -1996,13 +2013,15 @@ public class StorageProxy implements StorageProxyMBean
         ConsensusAttemptResult lastResult;
         do
         {
+            ClusterMetadata cm = ClusterMetadata.current();
             SinglePartitionReadCommand command = group.queries.get(0);
             ConsensusRoutingDecision decision;
             // TODO PaxosV2 errors on read if the configuration doesn't specify PaxosV2
             if (group.metadata().keyspace.equals(SchemaConstants.METADATA_KEYSPACE_NAME))
                 decision = Paxos.useV2() ? ConsensusRoutingDecision.paxosV2 : ConsensusRoutingDecision.paxosV1;
             else
-                decision = ConsensusRequestRouter.instance.routeAndMaybeMigrate(command.partitionKey(),
+                decision = ConsensusRequestRouter.instance.routeAndMaybeMigrate(cm,
+                                                                                command.partitionKey(),
                                                                                 command.metadata().id,
                                                                                 consistencyLevel,
                                                                                 queryStartNanoTime,
@@ -2017,7 +2036,7 @@ public class StorageProxy implements StorageProxyMBean
                     lastResult = legacyReadWithPaxos(group, consistencyLevel, queryStartNanoTime);
                     break;
                 case accord:
-                    lastResult = readWithAccord(group, consistencyLevel, queryStartNanoTime);
+                    lastResult = readWithAccord(cm, group, consistencyLevel, queryStartNanoTime);
                     break;
                 default:
                     throw new IllegalStateException("Unsupported consensus " + decision);
@@ -2026,28 +2045,92 @@ public class StorageProxy implements StorageProxyMBean
         return lastResult.serialReadResult;
     }
 
-    private static ConsensusAttemptResult readWithAccord(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    private static ConsistencyLevel consistencyLevelForRead(ClusterMetadata cm, SinglePartitionReadCommand.Group group, @Nullable ConsistencyLevel consistencyLevel)
     {
-        if (group.queries.size() > 1)
-            throw new InvalidRequestException("SERIAL/LOCAL_SERIAL consistency may only be requested for one partition at a time");
-        SinglePartitionReadCommand readCommand = group.queries.get(0);
+        // Null means no specific consistency behavior is required from Accord, it's functionally similar to ANY
+        // if you aren't reading the result back via Accord
+        if (consistencyLevel == null)
+            return null;
+
+        TableId tableId = group.queries.get(0).metadata().id;
+        TransactionalMode mode = getTableMetadata(cm, tableId).params.transactionalMode;
+        for (SinglePartitionReadCommand command : group.queries)
+        {
+            // commitCLForStrategy should return either null or the supplied consistency level
+            // in which case we will commit everything at that CL since Accord doesn't support per table
+            // commit consistency
+            ConsistencyLevel commitCL = mode.readCLForStrategy(consistencyLevel, cm, tableId, command.partitionKey().getToken());
+            if (commitCL != null)
+                return commitCL;
+        }
+        return null;
+    }
+
+    public static Future<ConsensusAttemptResult> readWithAccord(ClusterMetadata cm, PartitionRangeReadCommand command, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    {
+        consistencyLevel = command.metadata().params.transactionalMode.readCLForStrategy(consistencyLevel, cm, command.metadata().id, new Range<>(command.dataRange().startKey().getToken(), command.dataRange().stopKey().getToken()));
+        TxnRead read = new TxnRangeRead(command, consistencyLevel);
+        Txn.Kind kind = Txn.Kind.Read;
+        Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.RANGE_QUERY, null);
+        IntPredicate alwaysTrue = ignored -> true;
+        IntPredicate alwaysFalse = ignored -> false;
+        return readWithAccord(cm, txn, 1, command.isReversed() ? alwaysTrue : alwaysFalse, consistencyLevel, queryStartNanoTime);
+    }
+
+    private static ConsensusAttemptResult readWithAccord(ClusterMetadata cm, SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    {
         // If the non-SERIAL write strategy is sending all writes through Accord there is no need to use the supplied consistency
         // level since Accord will manage reading safely
         TransactionalMode transactionalMode = group.metadata().params.transactionalMode;
-        consistencyLevel = transactionalMode.readCLForStrategy(consistencyLevel);
-        TxnRead read = TxnRead.createSerialRead(readCommand, consistencyLevel);
-        Invariants.checkState(read.keys().size() == 1, "Ephemeral reads are only strict-serializable for single partition reads");
-        Txn txn = new Txn.InMemory(transactionalMode == TransactionalMode.full && DatabaseDescriptor.getAccordEphemeralReadEnabledEnabled() ? EphemeralRead : Read, read.keys(), read, TxnQuery.ALL, null);
+        consistencyLevel = consistencyLevelForRead(cm, group, consistencyLevel);
+        TxnKeyRead read = TxnKeyRead.createSerialRead(group.queries, consistencyLevel);
+        Txn.Kind kind = Read;
+        if (transactionalMode == TransactionalMode.full && DatabaseDescriptor.getAccordEphemeralReadEnabledEnabled() && group.queries.size() == 1)
+            kind = EphemeralRead;
+        Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.ALL, null);
+        Future<ConsensusAttemptResult> resultFuture = readWithAccord(cm, txn, group.queries.size(), index -> group.queries.get(index).isReversed(), consistencyLevel, queryStartNanoTime);
+        try
+        {
+            return Uninterruptibles.getUninterruptibly(resultFuture);
+        }
+        catch (ExecutionException e)
+        {
+            // Preserve the execution exception as a suppressed exception
+            // but throw the actual cause since the type is frequently significant in error handling
+            Throwable cause = e.getCause();
+            cause.addSuppressed(e);
+            Throwables.throwAsUncheckedException(cause);
+        }
+        return null;
+    }
+
+    /*
+     * Used for both SERIAL and non-SERIAL reading through Accord. In TransactionalMode.full all reads go through
+     * Accord and are effectively SERIAL reads.
+     */
+    private static Future<ConsensusAttemptResult> readWithAccord(ClusterMetadata cm, Txn txn, int numQueries, IntPredicate isQueryReversed, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    {
         IAccordService accordService = AccordService.instance();
-        TxnResult txnResult = accordService.coordinate(txn, consistencyLevel, queryStartNanoTime);
-        if (txnResult.kind() == retry_new_protocol)
-            return RETRY_NEW_PROTOCOL;
-        TxnData data = (TxnData)txnResult;
-        FilteredPartition partition = data.get(TxnRead.SERIAL_READ);
-        if (partition != null)
-            return serialReadResult(PartitionIterators.singletonIterator(partition.rowIterator(readCommand.isReversed())));
-        else
-            return serialReadResult(EmptyIterators.partition());
+        Pair<TxnId, Future<TxnResult>> result = accordService.coordinateAsync(txn, consistencyLevel, queryStartNanoTime);
+        return result.right.map(txnResult -> {
+            if (txnResult.kind() == retry_new_protocol)
+                return RETRY_NEW_PROTOCOL;
+            if (txnResult.kind() == range_read)
+                return serialReadResult(((TxnRangeReadResult)txnResult).partitions);
+            TxnData data = (TxnData) txnResult;
+
+            List<PartitionIterator> partitionIterators = new ArrayList<>(numQueries);
+            for (Map.Entry<TxnDataName, TxnDataValue> e : data.entrySet())
+            {
+                int queryIndex = Integer.valueOf(e.getKey().part(0));
+                TxnDataKeyValue value = ((TxnDataKeyValue)e.getValue());
+                partitionIterators.add(PartitionIterators.singletonIterator(value.rowIterator(isQueryReversed.test(queryIndex))));
+            }
+            if (!partitionIterators.isEmpty())
+                return serialReadResult(partitionIterators.size() == 1 ? partitionIterators.get(0) : PartitionIterators.concat(partitionIterators));
+            else
+                return serialReadResult(EmptyIterators.partition());
+        });
     }
 
     private static ConsensusAttemptResult legacyReadWithPaxos(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
@@ -2148,7 +2231,18 @@ public class StorageProxy implements StorageProxyMBean
         long start = nanoTime();
         try
         {
-            PartitionIterator result = fetchRows(group.queries, consistencyLevel, coordinator, queryStartNanoTime);
+            TableParams tableParams = group.queries.get(0).metadata().params;
+            TransactionalMode transactionalMode = tableParams.transactionalMode;
+            TransactionalMigrationFromMode transactionalMigrationFromMode = tableParams.transactionalMigrationFrom;
+            ClusterMetadata cm = ClusterMetadata.current();
+            if (transactionalMigrationFromMode != TransactionalMigrationFromMode.none && transactionalMode.readsThroughAccord && transactionalMigrationFromMode.writesThroughAccord() && transactionalMigrationFromMode.readsThroughAccord())
+                throw new UnsupportedOperationException("Live migration is not supported, can't safely read when migrating from " + transactionalMigrationFromMode + " to " + transactionalMode);
+            PartitionIterator result;
+            if (transactionalMode.readsThroughAccord && coordinator.isEventuallyConsistent())
+                result = readWithAccord(cm, group, consistencyLevel, queryStartNanoTime).serialReadResult;
+            else
+                result = fetchRows(group.queries, consistencyLevel, coordinator, queryStartNanoTime);
+
             // Note that the only difference between the command in a group must be the partition key on which
             // they applied.
             boolean enforceStrictLiveness = group.queries.get(0).metadata().enforceStrictLiveness();
@@ -2411,6 +2505,7 @@ public class StorageProxy implements StorageProxyMBean
 
     public static PartitionIterator getRangeSlice(PartitionRangeReadCommand command,
                                                   ConsistencyLevel consistencyLevel,
+                                                  ReadCoordinator readCoordinator,
                                                   long queryStartNanoTime)
     {
         if (DatabaseDescriptor.getPartitionDenylistEnabled() && DatabaseDescriptor.getDenylistRangeReadsEnabled())
@@ -2425,7 +2520,7 @@ public class StorageProxy implements StorageProxyMBean
                                                                 tokens));
             }
         }
-        return RangeCommands.partitions(command, consistencyLevel, queryStartNanoTime);
+        return RangeCommands.partitions(command, consistencyLevel, readCoordinator, queryStartNanoTime);
     }
 
     public Map<String, List<String>> getSchemaVersions()
@@ -3166,7 +3261,7 @@ public class StorageProxy implements StorageProxyMBean
         RowIterator casResult;
 
         @Nonnull
-        PartitionIterator serialReadResult;
+        public PartitionIterator serialReadResult;
 
         boolean shouldRetryOnNewConsensusProtocol;
 
