@@ -196,19 +196,6 @@ public class AccordMigrationTest extends AccordTestBase
         SHARED_CLUSTER.coordinators().forEach(coordinator -> coordinator.execute(format("TRUNCATE TABLE %s.%s", SYSTEM_KEYSPACE_NAME, PAXOS), ALL));
     }
 
-    private static String nodetool(ICoordinator coordinator, String... commandAndArgs)
-    {
-        NodeToolResult nodetoolResult = coordinator.instance().nodetoolResult(commandAndArgs);
-        if (!nodetoolResult.getStdout().isEmpty())
-            System.out.println(nodetoolResult.getStdout());
-        if (!nodetoolResult.getStderr().isEmpty())
-            System.err.println(nodetoolResult.getStderr());
-        if (nodetoolResult.getError() != null)
-            fail("Failed nodetool " + Arrays.asList(commandAndArgs), nodetoolResult.getError());
-        // TODO why does standard out end up in stderr in nodetool?
-        return nodetoolResult.getStdout();
-    }
-
     private static int getKeyBetweenTokens(Token left, Token right)
     {
         return getKeysBetweenTokens(left, right).next();

@@ -259,25 +259,6 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
         truncateSystemTables();
     }
 
-    private static ListenableFuture<String> nodetoolAsync(ICoordinator coordinator, String... commandAndArgs)
-    {
-        ListenableFutureTask<String> task = ListenableFutureTask.create(() -> {
-            NodeToolResult nodetoolResult = coordinator.instance().nodetoolResult(commandAndArgs);
-            if (!nodetoolResult.getStdout().isEmpty())
-                System.out.println(nodetoolResult.getStdout());
-            if (!nodetoolResult.getStderr().isEmpty())
-                System.err.println(nodetoolResult.getStderr());
-            if (nodetoolResult.getError() != null)
-                fail("Failed nodetool " + Arrays.asList(commandAndArgs), nodetoolResult.getError());
-            // TODO why does standard out end up in stderr in nodetool?
-            return nodetoolResult.getStdout();
-        });
-        Thread asyncThread = new Thread(task, "NodeTool: " + Arrays.asList(commandAndArgs));
-        asyncThread.setDaemon(true);
-        asyncThread.start();
-        return task;
-    }
-
     private ListenableFuture<Void> alterTableTransactionalModeAsync(TransactionalMode mode)
     {
         ListenableFutureTask<Void> task = ListenableFutureTask.create(() -> {

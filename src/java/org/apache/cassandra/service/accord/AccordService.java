@@ -112,6 +112,7 @@ import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
 import org.apache.cassandra.service.accord.interop.AccordInteropAdapter.AccordInteropFactory;
 import org.apache.cassandra.service.accord.repair.RepairSyncPointAdapter;
 import org.apache.cassandra.service.accord.txn.TxnResult;
+import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.TableMigrationState;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ClusterMetadataService;
@@ -400,7 +401,10 @@ public class AccordService implements IAccordService, Shutdownable
         keysOrRanges = (S)intersectionWithAccordManagedRanges(keysOrRanges);
         // It's possible none of them were Accord managed and we aren't going to treat that as an error
         if (keysOrRanges.isEmpty())
+        {
+            logger.info("Skipping barrier because there are no ranges managed by Accord");
             return keysOrRanges;
+        }
 
         AccordClientRequestMetrics metrics = isForWrite ? accordWriteMetrics : accordReadMetrics;
         TxnId txnId = null;
@@ -503,7 +507,7 @@ public class AccordService implements IAccordService, Shutdownable
         // Barriers can be needed just because it's an Accord managed range, but it could also be a migration back to Paxos
         // in which case we do want to barrier the migrating/migrated ranges even though the target for the migration is not Accord
         // In either case Accord should be aware of those ranges and not generate a topology mismatch
-        if (tm.params.transactionalMode.writesThroughAccord || tm.params.transactionalMigrationFrom.writesThroughAccord())
+        if (tm.params.transactionalMode != TransactionalMode.off || tm.params.transactionalMigrationFrom.from != TransactionalMode.off)
         {
             TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tm.id);
             // null is fine could be completely migrated or was always an Accord table on creation
@@ -570,6 +574,7 @@ public class AccordService implements IAccordService, Shutdownable
             }
             catch (RequestExecutionException | CoordinationFailed newFailures)
             {
+                logger.error("Had failure on barrier", newFailures);
                 existingFailures = FailureAccumulator.append(existingFailures, newFailures, AccordService::isTimeout);
 
                 try
@@ -595,6 +600,7 @@ public class AccordService implements IAccordService, Shutdownable
         }
         if (success == null)
         {
+            logger.error("Ran out of retries for barrier");
             checkState(existingFailures != null, "Didn't have success, but also didn't have failures");
             Throwables.throwIfUnchecked(existingFailures);
             throw new RuntimeException(existingFailures);
