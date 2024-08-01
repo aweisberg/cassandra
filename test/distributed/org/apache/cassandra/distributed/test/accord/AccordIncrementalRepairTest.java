@@ -155,6 +155,8 @@ public class AccordIncrementalRepairTest extends AccordTestBase
     @After
     public void tearDown()
     {
+        for (IInvokableInstance instance : SHARED_CLUSTER)
+            instance.runOnInstance(() -> SimpleProgressLog.PAUSE_FOR_TEST = false);
         SHARED_CLUSTER.filters().reset();
     }
 
@@ -292,7 +294,7 @@ public class AccordIncrementalRepairTest extends AccordTestBase
             });
         SHARED_CLUSTER.filters().reset();
         awaitEndpointUp(SHARED_CLUSTER.get(1), SHARED_CLUSTER.get(3));
-        SHARED_CLUSTER.get(1).nodetool("repair", KEYSPACE);
+        nodetool(SHARED_CLUSTER.get(1), "repair", KEYSPACE);
 
         SHARED_CLUSTER.forEach(instance -> {
             instance.runOnInstance(() -> {
@@ -345,7 +347,7 @@ public class AccordIncrementalRepairTest extends AccordTestBase
             agent().reset();
         }));
 
-        SHARED_CLUSTER.get(1).nodetool("repair", KEYSPACE);
+        nodetool(SHARED_CLUSTER.get(1), "repair", KEYSPACE);
         SHARED_CLUSTER.forEach(instance -> instance.runOnInstance(() -> {
             Assert.assertFalse( agent().executedBarriers().isEmpty());
             ColumnFamilyStore cfs = Keyspace.open(keyspace).getColumnFamilyStore(table);
@@ -404,7 +406,7 @@ public class AccordIncrementalRepairTest extends AccordTestBase
 
         SHARED_CLUSTER.filters().reset();
         awaitEndpointUp(SHARED_CLUSTER.get(1), SHARED_CLUSTER.get(3));
-        SHARED_CLUSTER.get(1).nodetool("repair", "--accord-only", KEYSPACE);
+        nodetool(SHARED_CLUSTER.get(1), "repair", "--accord-only", KEYSPACE);
 
         SHARED_CLUSTER.forEach(instance -> {
             logger().info("checking instance {}", instance.broadcastAddress());
