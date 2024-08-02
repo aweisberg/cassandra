@@ -242,9 +242,9 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     @Override
     public void sendReadRepairMutation(Message<Mutation> message, InetAddressAndPort to, RequestCallback<Object> callback)
     {
+        checkArgument(message.payload.allowsPotentialTransactionConflicts());
         Node.Id id = endpointMapper.mappedId(to);
-        Mutation mutation = message.payload;
-        AccordInteropReadRepair readRepair = new AccordInteropReadRepair(id, executes, txnId, readScope, executeAt.epoch(), mutation);
+        AccordInteropReadRepair readRepair = new AccordInteropReadRepair(id, executes, txnId, readScope, executeAt.epoch(), message.payload);
         node.send(id, readRepair, executor, new AccordInteropReadRepair.ReadRepairCallback(id, to, message, callback, this));
     }
 
@@ -437,13 +437,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         return readCommand.allowOutOfRangeReads();
     }
 
-    @Override
-    public Mutation maybeAllowOutOfRangeMutations(Mutation m)
-    {
-        return m.allowOutOfRangeMutations();
-    }
-
-    // Prrovide request callbacks with a way to send maximal commits on Insufficient responses
+    // Provide request callbacks with a way to send maximal commits on Insufficient responses
     @Override
     public void sendMaximalCommit(Id to)
     {

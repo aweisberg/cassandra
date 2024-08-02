@@ -142,7 +142,7 @@ public final class VirtualMutation implements IMutation
      * Accord doesn't support reading/writing virtual tables yet so updating them non-transactionally is always safe
      */
     @Override
-    public boolean allowPotentialTransactionConflicts()
+    public boolean allowsPotentialTransactionConflicts()
     {
         return true;
     }

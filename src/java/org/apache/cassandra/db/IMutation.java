@@ -74,11 +74,6 @@ public interface IMutation
         return size;
     }
 
-    default boolean allowsOutOfRangeMutations()
-    {
-        return false;
-    }
-
     /**
      * True if this mutation is being applied by a transaction system or doesn't need to be
      * and conflicts between this mutation and transactions systems that are managing all or part of this table
@@ -89,7 +84,7 @@ public interface IMutation
      * like Accord that can't safely read data that is written non-transactionally.
      *
      */
-    default boolean allowPotentialTransactionConflicts()
+    default boolean allowsPotentialTransactionConflicts()
     {
         return false;
     }

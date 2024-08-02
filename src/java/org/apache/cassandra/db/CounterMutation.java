@@ -189,7 +189,7 @@ public class CounterMutation implements IMutation
      * anyways and it's safe to continue non-transactionally updating them
      */
     @Override
-    public boolean allowPotentialTransactionConflicts()
+    public boolean allowsPotentialTransactionConflicts()
     {
         return true;
     }

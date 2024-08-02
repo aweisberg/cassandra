@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
+import com.google.common.collect.Maps;
+
 import accord.api.Data;
 import accord.api.Update;
 import accord.api.Write;
@@ -117,6 +119,7 @@ public class UnrecoverableRepairUpdate<E extends Endpoints<E>, P extends Replica
         this.keys = keys;
         this.dk = dk;
         this.mutations = mutations;
+        mutations.values().forEach(Mutation::allowPotentialTransactionConflicts);
         this.writePlan = writePlan;
         this.updateKey = new Key(nodeId.id, nextCounter.getAndIncrement());
     }

@@ -135,7 +135,7 @@ public class ConsensusMigrationMutationHelper
 
     public static <T extends IMutation> Pair<T, T> splitMutationIntoAccordAndNormal(T mutation, ClusterMetadata cm)
     {
-        if (mutation.allowPotentialTransactionConflicts())
+        if (mutation.allowsPotentialTransactionConflicts())
             return Pair.create(null, mutation);
 
         Token token = mutation.key().getToken();
@@ -184,7 +184,7 @@ public class ConsensusMigrationMutationHelper
     private static Pair<IMutation, WriteResponseHandlerWrapper> splitWrapperIntoAccordAndNormal(WriteResponseHandlerWrapper wrapper, ClusterMetadata cm)
     {
         Mutation mutation = wrapper.mutation;
-        if (mutation.allowPotentialTransactionConflicts())
+        if (mutation.allowsPotentialTransactionConflicts())
             return Pair.create(null, wrapper);
 
         Token token = mutation.key().getToken();
@@ -312,7 +312,7 @@ public class ConsensusMigrationMutationHelper
 
     public static void validateSafeToExecuteNonTransactionally(IMutation mutation) throws RetryOnDifferentSystemException
     {
-        if (mutation.allowPotentialTransactionConflicts())
+        if (mutation.allowsPotentialTransactionConflicts())
             return;
 
         // System keyspaces are never managed by Accord
@@ -345,17 +345,6 @@ public class ConsensusMigrationMutationHelper
         if (throwRetryOnDifferentSystem)
             throw new RetryOnDifferentSystemException();
     }
-
-//    public static boolean tokenShouldBeReadThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
-//    {
-//        boolean transactionalModeReadsThroughAccord = tm.params.transactionalMode.readsThroughAccord;
-//        TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
-//        boolean migrationFromReadsThroughAccord = transactionalMigrationFromMode.readsThroughAccord();
-//        if (transactionalModeReadsThroughAccord && migrationFromReadsThroughAccord)
-//            return true;
-//
-//
-//    }
 
     public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableMetadata tm, @Nonnull Token token)
     {

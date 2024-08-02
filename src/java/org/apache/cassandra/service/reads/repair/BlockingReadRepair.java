@@ -193,12 +193,17 @@ public class BlockingReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.Fo
     @Override
     public void repairPartition(DecoratedKey dk, Map<Replica, Mutation> mutations, ReplicaPlan.ForWrite writePlan)
     {
-        // non-Accord reads only ever touch one table and this mutation is scoped to a single partition/token
-        // so all mutations need to be applied either transactionally or non-transactionally
-        // There is no retry loop here because read repair is relatively rare so it racing with changes to migrating
-        // ranges should also be pretty rare so it isn't worth the added complexity
+        // non-Accord reads only ever touch one table and key so all mutations need to be applied either transactionally
+        // or non-transactionally (not a mix). There is no retry loop here because read repair is relatively rare so it racing
+        // with changes to migrating ranges should also be pretty rare so it isn't worth the added complexity. If you were
+        // to add a retry loop you would need to be careful to correctly set/unset allowPotentialTransactionConflicts in the mutations
+        // since that is set if it is routed to Accord
+        //
+        // If this is an Accord transaction that is in interoperability mode and executing a read repair
+        // then we take the non-transactional path and the mutations are intercepted in ReadCoordinator.sendRepairMutation
+        // which will ensure the repair mutation runs in the command store thread after preceding transactions are done
         ClusterMetadata cm = ClusterMetadata.current();
-        if (ConsensusMigrationMutationHelper.tokenShouldBeWrittenThroughAccord(cm, getTableMetadata(cm, command.metadata().id), dk.getToken()))
+        if (coordinator.isEventuallyConsistent() && ConsensusMigrationMutationHelper.tokenShouldBeWrittenThroughAccord(cm, getTableMetadata(cm, command.metadata().id), dk.getToken()))
             repairTransactionally(dk, mutations, writePlan);
         else
             repairNonTransactionally(dk, mutations, writePlan);
@@ -206,10 +211,8 @@ public class BlockingReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.Fo
 
     private void repairTransactionally(DecoratedKey dk, Map<Replica, Mutation> accordMutations, ForWrite writePlan)
     {
-        Collection<PartitionUpdate> partitionUpdates = Mutation.merge(accordMutations.values()).getPartitionUpdates();
-        checkState(partitionUpdates.size() == 1, "Expect only one PartitionUpdate");
-        PartitionUpdate update = partitionUpdates.iterator().next();
-        PartitionKey partitionKey = PartitionKey.of(update);
+        checkState(coordinator.isEventuallyConsistent(), "Should only repair transactionally for an eventually consistent read coordinator");
+        PartitionKey partitionKey = new PartitionKey(command.metadata().id, dk);
         Keys key = Keys.of(partitionKey);
         // This is going create a new BlockingReadRepair inside an Accord transaction which will go down
         // the !isEventuallyConsistent path and apply the repairs through Accord command stores using AccordInteropExecution
@@ -275,5 +278,11 @@ public class BlockingReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.Fo
         delegateRR.repairPartition(dk, mutations, writePlan);
         delegateRR.maybeSendAdditionalWrites();
         delegateRR.awaitWrites();
+    }
+
+    @Override
+    public boolean coordinatorAllowsPotentialTransactionConflicts()
+    {
+        return coordinator.allowsPotentialTransactionConflicts();
     }
 }
