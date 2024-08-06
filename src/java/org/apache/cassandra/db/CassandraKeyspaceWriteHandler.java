@@ -86,7 +86,7 @@ public class CassandraKeyspaceWriteHandler implements KeyspaceWriteHandler
                 Set<TableId> ids = new HashSet<>();
                 for (PartitionUpdate update : mutation.getPartitionUpdates())
                 {
-                    if (update.metadata().params.memtable.factory().writesShouldSkipCommitLog())
+                    if (!update.metadata().params.memtable.factory().writesShouldSkipCommitLog())
                         ids.add(update.metadata().id);
                 }
                 mutation = mutation.filter(ids::contains);

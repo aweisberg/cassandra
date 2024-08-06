@@ -30,7 +30,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -50,7 +49,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import accord.primitives.Txn;
-import accord.primitives.TxnId;
 import org.apache.cassandra.batchlog.Batch;
 import org.apache.cassandra.batchlog.BatchlogManager;
 import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
@@ -134,6 +132,7 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.IAccordService;
+import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
 import org.apache.cassandra.service.accord.txn.TxnDataName;
@@ -146,6 +145,7 @@ import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper;
+import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.SplitConsumer;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.service.paxos.Ballot;
@@ -180,6 +180,7 @@ import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 import static accord.primitives.Txn.Kind.EphemeralRead;
 import static accord.primitives.Txn.Kind.Read;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Iterables.concat;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -1246,9 +1247,26 @@ public class StorageProxy implements StorageProxyMBean
         ClientWriteRequestMetrics metricsForLevel = writeMetricsForLevel(consistencyLevel);
         metricsForLevel.mutationSize.update(size);
         if (augmented != null || mutateAtomically || updatesView)
-            mutateAtomically(augmented != null ? augmented : (Collection<Mutation>)mutations, consistencyLevel, updatesView, queryStartNanoTime);
+            mutateAtomically(augmented != null ? augmented : (List<Mutation>)mutations, consistencyLevel, updatesView, queryStartNanoTime);
         else
             dispatchMutationsWithRetryOnDifferentSystem(mutations, consistencyLevel, queryStartNanoTime);
+    }
+
+    private static ConsistencyLevel consistencyLevelForBatchLog(ConsistencyLevel consistencyLevel, boolean requireQuorumForRemove)
+    {
+        // If we are requiring quorum nodes for removal, we upgrade consistency level to QUORUM unless we already
+        // require ALL, or EACH_QUORUM. This is so that *at least* QUORUM nodes see the update.
+        ConsistencyLevel batchConsistencyLevel = requireQuorumForRemove
+                                                 ? ConsistencyLevel.QUORUM
+                                                 : consistencyLevel;
+
+        switch (consistencyLevel)
+        {
+            case ALL:
+            case EACH_QUORUM:
+                batchConsistencyLevel = consistencyLevel;
+        }
+        return batchConsistencyLevel;
     }
 
     /**
@@ -1258,11 +1276,11 @@ public class StorageProxy implements StorageProxyMBean
      * After: remove the batchlog entry (after writing hints for the batch rows, if necessary).
      *
      * @param mutations the Mutations to be applied across the replicas
-     * @param consistency_level the consistency level for the operation
+     * @param consistencyLevel the consistency level for the operation
      * @param requireQuorumForRemove at least a quorum of nodes will see update before deleting batchlog
      * @param queryStartNanoTime the value of nanoTime() when the query started to be processed
      */
-    public static void mutateAtomically(Collection<Mutation> mutations,
+    public static void mutateAtomically(List<Mutation> mutations,
                                         ConsistencyLevel consistencyLevel,
                                         boolean requireQuorumForRemove,
                                         long queryStartNanoTime)
@@ -1276,58 +1294,55 @@ public class StorageProxy implements StorageProxyMBean
 
         try
         {
-
-            // If we are requiring quorum nodes for removal, we upgrade consistency level to QUORUM unless we already
-            // require ALL, or EACH_QUORUM. This is so that *at least* QUORUM nodes see the update.
-            ConsistencyLevel batchConsistencyLevel = requireQuorumForRemove
-                                                     ? ConsistencyLevel.QUORUM
-                                                     : consistencyLevel;
-
-            switch (consistencyLevel)
-            {
-                case ALL:
-                case EACH_QUORUM:
-                    batchConsistencyLevel = consistencyLevel;
-            }
-
-            ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forBatchlogWrite(batchConsistencyLevel == ConsistencyLevel.ANY);
-
+            ConsistencyLevel batchConsistencyLevel = consistencyLevelForBatchLog(consistencyLevel, requireQuorumForRemove);
+            // This can't be updated for each iteration because cleanup has to go to the correct replicas which is where the batchlog is originally written
+            ReplicaPlan.ForWrite batchlogReplicaPlan = ReplicaPlans.forBatchlogWrite(ClusterMetadata.current(), batchConsistencyLevel == ConsistencyLevel.ANY);
             final TimeUUID batchUUID = nextTimeUUID();
             boolean wroteToBatchLog = false;
             while (true)
             {
-                ClusterMetadata cm = ClusterMetadata.current();
                 try
                 {
-                    BatchlogCleanup cleanup = new BatchlogCleanup(mutations.size(),
-                                                                  () -> asyncRemoveFromBatchlog(replicaPlan, batchUUID));
+                    ClusterMetadata cm = ClusterMetadata.current();
                     List<WriteResponseHandlerWrapper> wrappers = new ArrayList<>(mutations.size());
+                    List<Mutation> accordMutations = new ArrayList<>(mutations.size());
+                    BatchlogCleanup cleanup = new BatchlogCleanup(() -> asyncRemoveFromBatchlog(batchlogReplicaPlan, batchUUID));
 
-                    // add a handler for each mutation - includes checking availability, but doesn't initiate any writes, yet
-                    for (Mutation mutation : mutations)
-                    {
-                        WriteResponseHandlerWrapper wrapper = wrapBatchResponseHandler(mutation,
-                                                                                       consistencyLevel,
+                    // add a handler for each mutation that will not be written on Accord - includes checking availability, but doesn't initiate any writes, yet
+                    SplitConsumer<Mutation> splitConsumer = (accordMutation, normalMutation, originalMutations, mutationIndex) -> {
+                        Mutation eitherMutation = normalMutation != null ? normalMutation : accordMutation;
+                        Keyspace keyspace = Keyspace.open(eitherMutation.getKeyspaceName());
+                        Token tk = eitherMutation.key().getToken();
+
+                        // Always construct the replica plan to check availability
+                        ReplicaPlan.ForWrite dataReplicaPlan = ReplicaPlans.forWrite(cm, keyspace, consistencyLevel, tk, ReplicaPlans.writeNormal);
+
+                        if (dataReplicaPlan.lookup(FBUtilities.getBroadcastAddressAndPort()) != null)
+                            writeMetrics.localRequests.mark();
+                        else
+                            writeMetrics.remoteRequests.mark();
+
+                        if (accordMutation != null)
+                            accordMutations.add(accordMutation);
+
+                        if (normalMutation == null)
+                            return;
+
+                        WriteResponseHandlerWrapper wrapper = wrapBatchResponseHandler(normalMutation,
+                                                                                       dataReplicaPlan,
                                                                                        batchConsistencyLevel,
                                                                                        WriteType.BATCH,
                                                                                        cleanup,
                                                                                        queryStartNanoTime);
-                        // exit early if we can't fulfill the CL at this time.
                         wrappers.add(wrapper);
-                    }
-
-                    // TODO (review): A lot of the code duplication in splitting is from WriteResponseHandlerWrapper, but we could split before making the wrappers
-                    // Where this is tricky is that we have to defer the ack for cleanup in the wrapper if it also depends on Accord and that is something the custom splitting code does
-                    // in addition to papering over the different between Mutation and WriteResponseHandlerWrapper
-                    // Want to do a cleanup pass here, but not exactly sure what it should look like
-                    Pair<List<? extends IMutation>, List<WriteResponseHandlerWrapper>> accordAndNormal = ConsensusMigrationMutationHelper.splitWrappersIntoAccordAndNormal(cm, wrappers);
-                    List<? extends IMutation> accordMutations = accordAndNormal.left;
-                    List<WriteResponseHandlerWrapper> normalWrappers = accordAndNormal.right;
+                    };
+                    ConsensusMigrationMutationHelper.splitMutationsIntoAccordAndNormal(cm, mutations,  splitConsumer);
+                    cleanup.setMutationsWaitingFor(wrappers.size() + (accordMutations.isEmpty() ? 0 : 1));
 
                     // If the entire batch can execute on Accord then we can skip the batch log entirely
                     // Write to the batch log first in case it fails so we don't end up with Accord applying
                     // part of the batch independently
-                    if (normalWrappers != null && !wroteToBatchLog)
+                    if (!wrappers.isEmpty() && !wroteToBatchLog)
                     {
                         // write to the batchlog, including writes that will be routed to Accord to preserve the behavior
                         // of the batch log where if part of a batch is visible then eventually the entire batch is visible.
@@ -1335,19 +1350,19 @@ public class StorageProxy implements StorageProxyMBean
                         // with the mutations delivered by the batch log since an unacknowledged Accord txn won't be retried
                         // unless those mutations are also written to the batch log
                         // Only write to the log once and reuse the batchUUID for every attempt to route the mutations correctly
-                        syncWriteToBatchlog(mutations, replicaPlan, batchUUID, queryStartNanoTime);
+                        syncWriteToBatchlog(mutations, batchlogReplicaPlan, batchUUID, queryStartNanoTime);
                         wroteToBatchLog = true;
                     }
 
                     // Start Accord executing so it executes while the mutations are synchronously applied
-                    Pair<TxnId, Future<TxnResult>> accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, queryStartNanoTime) : null;
+                    AsyncTxnResult accordResult = !accordMutations.isEmpty() ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, queryStartNanoTime) : null;
 
                     Throwable failure = null;
                     try
                     {
                         // now actually perform the writes and wait for them to complete
-                        if (normalWrappers != null)
-                            syncWriteBatchedMutations(normalWrappers, Stage.MUTATION);
+                        if (!wrappers.isEmpty())
+                            syncWriteBatchedMutations(wrappers, Stage.MUTATION);
                     }
                     catch (RetryOnDifferentSystemException | CoordinatorBehindException e)
                     {
@@ -1364,13 +1379,15 @@ public class StorageProxy implements StorageProxyMBean
                         // TODO (review): It's notable here that the Accord portion of the batch will not be hinted
                         // while the regular mutations are hinted on failure and also going to be replayed later from
                         // the batch log. It wouldn't be difficult to add hinting here, but it does seem a little
-                        // redundant with the bathc log
+                        // redundant with the batch log
                         if (accordResult != null)
                         {
                             IAccordService accord = AccordService.instance();
                             TxnResult.Kind kind = accord.getTxnResult(accordResult, true, consistencyLevel, queryStartNanoTime).kind();
                             if (kind == retry_new_protocol)
                                 throw new RetryOnDifferentSystemException();
+                            // Only +1 ack needed for the Accord txn
+                            cleanup.ackMutation();
                         }
                     }
                     catch (RetryOnDifferentSystemException | CoordinatorBehindException e)
@@ -1383,10 +1400,6 @@ public class StorageProxy implements StorageProxyMBean
                     }
                     if (failure != null)
                         throw unchecked(failure);
-
-                    // Both Accord and regular mutations have all succeeded so allow any deferred batch log cleanup to occur
-                    for (WriteResponseHandlerWrapper wrapper : wrappers)
-                        wrapper.handler.maybeAckMutationForCleanup();
                     break;
                 }
                 catch (RetryOnDifferentSystemException e)
@@ -1509,7 +1522,7 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
-    private static void syncWriteBatchedMutations(List<WriteResponseHandlerWrapper> wrappers, Stage stage)
+    private static void syncWriteBatchedMutations(Iterable<WriteResponseHandlerWrapper> wrappers, Stage stage)
     throws WriteTimeoutException, OverloadedException
     {
         String localDataCenter = DatabaseDescriptor.getEndpointSnitch().getLocalDatacenter();
@@ -1567,22 +1580,12 @@ public class StorageProxy implements StorageProxyMBean
 
     // same as performWrites except does not initiate writes (but does perform availability checks).
     private static WriteResponseHandlerWrapper wrapBatchResponseHandler(Mutation mutation,
-                                                                        ConsistencyLevel consistencyLevel,
+                                                                        ReplicaPlan.ForWrite replicaPlan,
                                                                         ConsistencyLevel batchConsistencyLevel,
                                                                         WriteType writeType,
                                                                         BatchlogResponseHandler.BatchlogCleanup cleanup,
                                                                         long queryStartNanoTime)
     {
-        Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
-        Token tk = mutation.key().getToken();
-
-        ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forWrite(keyspace, consistencyLevel, tk, ReplicaPlans.writeNormal);
-
-        if (replicaPlan.lookup(FBUtilities.getBroadcastAddressAndPort()) != null)
-            writeMetrics.localRequests.mark();
-        else
-            writeMetrics.remoteRequests.mark();
-
         AbstractReplicationStrategy rs = replicaPlan.replicationStrategy();
         AbstractWriteResponseHandler<IMutation> writeHandler = rs.getWriteResponseHandler(replicaPlan, null, writeType, mutation, queryStartNanoTime);
         BatchlogResponseHandler<IMutation> batchHandler = new BatchlogResponseHandler<>(writeHandler, batchConsistencyLevel.blockFor(rs), cleanup, queryStartNanoTime);
@@ -1613,13 +1616,15 @@ public class StorageProxy implements StorageProxyMBean
     // used by atomic_batch_mutate to decouple availability check from the write itself, caches consistency level and endpoints.
     public static class WriteResponseHandlerWrapper
     {
+        @Nonnull
         public final BatchlogResponseHandler<IMutation> handler;
-        // Will be null if the entire mutation ends up running on Accord
-        @Nullable
+        @Nonnull
         public final Mutation mutation;
 
-        public WriteResponseHandlerWrapper(BatchlogResponseHandler<IMutation> handler, @Nullable Mutation mutation)
+        public WriteResponseHandlerWrapper(@Nonnull BatchlogResponseHandler<IMutation> handler, @Nonnull Mutation mutation)
         {
+            checkNotNull(handler);
+            checkNotNull(mutation);
             this.handler = handler;
             this.mutation = mutation;
         }
@@ -2066,15 +2071,15 @@ public class StorageProxy implements StorageProxyMBean
         return null;
     }
 
-    public static Future<ConsensusAttemptResult> readWithAccord(ClusterMetadata cm, PartitionRangeReadCommand command, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+
+    public static AsyncTxnResult readWithAccord(ClusterMetadata cm, PartitionRangeReadCommand command, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
     {
         consistencyLevel = command.metadata().params.transactionalMode.readCLForStrategy(consistencyLevel, cm, command.metadata().id, new Range<>(command.dataRange().startKey().getToken(), command.dataRange().stopKey().getToken()));
         TxnRead read = new TxnRangeRead(command, consistencyLevel);
         Txn.Kind kind = Txn.Kind.Read;
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.RANGE_QUERY, null);
-        IntPredicate alwaysTrue = ignored -> true;
-        IntPredicate alwaysFalse = ignored -> false;
-        return readWithAccord(cm, txn, 1, command.isReversed() ? alwaysTrue : alwaysFalse, consistencyLevel, queryStartNanoTime);
+        IAccordService accordService = AccordService.instance();
+        return accordService.coordinateAsync(txn, consistencyLevel, queryStartNanoTime);
     }
 
     private static ConsensusAttemptResult readWithAccord(ClusterMetadata cm, SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
@@ -2088,49 +2093,37 @@ public class StorageProxy implements StorageProxyMBean
         if (transactionalMode == TransactionalMode.full && DatabaseDescriptor.getAccordEphemeralReadEnabledEnabled() && group.queries.size() == 1)
             kind = EphemeralRead;
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.ALL, null);
-        Future<ConsensusAttemptResult> resultFuture = readWithAccord(cm, txn, group.queries.size(), index -> group.queries.get(index).isReversed(), consistencyLevel, queryStartNanoTime);
-        try
-        {
-            return Uninterruptibles.getUninterruptibly(resultFuture);
-        }
-        catch (ExecutionException e)
-        {
-            // Preserve the execution exception as a suppressed exception
-            // but throw the actual cause since the type is frequently significant in error handling
-            Throwable cause = e.getCause();
-            cause.addSuppressed(e);
-            Throwables.throwAsUncheckedException(cause);
-        }
-        return null;
+        AsyncTxnResult asyncTxnResult = AccordService.instance().coordinateAsync(txn, consistencyLevel, queryStartNanoTime);
+        return getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, group.queries.size(), index -> group.queries.get(index).isReversed(), consistencyLevel, queryStartNanoTime);
     }
 
     /*
-     * Used for both SERIAL and non-SERIAL reading through Accord. In TransactionalMode.full all reads go through
-     * Accord and are effectively SERIAL reads.
+     * Used for both the SERIAL and non-SERIAL read path into Accord
      */
-    private static Future<ConsensusAttemptResult> readWithAccord(ClusterMetadata cm, Txn txn, int numQueries, IntPredicate isQueryReversed, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    public static ConsensusAttemptResult getConsensusAttemptResultFromAsyncTxnResult(AsyncTxnResult asyncTxnResult, int numQueries, IntPredicate isQueryReversed, ConsistencyLevel cl, long queryStartNanoTime)
     {
-        IAccordService accordService = AccordService.instance();
-        Pair<TxnId, Future<TxnResult>> result = accordService.coordinateAsync(txn, consistencyLevel, queryStartNanoTime);
-        return result.right.map(txnResult -> {
-            if (txnResult.kind() == retry_new_protocol)
-                return RETRY_NEW_PROTOCOL;
-            if (txnResult.kind() == range_read)
-                return serialReadResult(((TxnRangeReadResult)txnResult).partitions);
-            TxnData data = (TxnData) txnResult;
+        TxnResult txnResult = AccordService.instance().getTxnResult(asyncTxnResult, false, cl, queryStartNanoTime);
+        // TODO (required): Converge on a single approach to RETRY_NEW_PROTOCOL, this works for now because reads don't support it anyways
+        if (txnResult.kind() == retry_new_protocol)
+            return RETRY_NEW_PROTOCOL;
+        if (txnResult.kind() == range_read)
+            return serialReadResult(((TxnRangeReadResult)txnResult).partitions);
+        TxnData data = (TxnData) txnResult;
 
-            List<PartitionIterator> partitionIterators = new ArrayList<>(numQueries);
-            for (Map.Entry<TxnDataName, TxnDataValue> e : data.entrySet())
-            {
-                int queryIndex = Integer.valueOf(e.getKey().part(0));
-                TxnDataKeyValue value = ((TxnDataKeyValue)e.getValue());
-                partitionIterators.add(PartitionIterators.singletonIterator(value.rowIterator(isQueryReversed.test(queryIndex))));
-            }
-            if (!partitionIterators.isEmpty())
-                return serialReadResult(partitionIterators.size() == 1 ? partitionIterators.get(0) : PartitionIterators.concat(partitionIterators));
-            else
-                return serialReadResult(EmptyIterators.partition());
-        });
+        List<PartitionIterator> partitionIterators = new ArrayList<>(numQueries);
+        for (int i = 0; i < numQueries; i++)
+            partitionIterators.add(null);
+        for (Map.Entry<TxnDataName, TxnDataValue> e : data.entrySet())
+        {
+            int queryIndex = Integer.valueOf(e.getKey().part(0));
+            TxnDataKeyValue value = ((TxnDataKeyValue)e.getValue());
+            // Preserve the order of the iterators, not 100% sure this is necessary
+            partitionIterators.set(queryIndex, PartitionIterators.singletonIterator(value.rowIterator(isQueryReversed.test(queryIndex))));
+        }
+        if (!data.isEmpty())
+            return serialReadResult(partitionIterators.size() == 1 ? partitionIterators.get(0) : PartitionIterators.concat(partitionIterators));
+        else
+            return serialReadResult(EmptyIterators.partition());
     }
 
     private static ConsensusAttemptResult legacyReadWithPaxos(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, long queryStartNanoTime)
@@ -2239,7 +2232,11 @@ public class StorageProxy implements StorageProxyMBean
                 throw new UnsupportedOperationException("Live migration is not supported, can't safely read when migrating from " + transactionalMigrationFromMode + " to " + transactionalMode);
             PartitionIterator result;
             if (transactionalMode.readsThroughAccord && coordinator.isEventuallyConsistent())
-                result = readWithAccord(cm, group, consistencyLevel, queryStartNanoTime).serialReadResult;
+            {
+                ConsensusAttemptResult consensusAttemptResult = readWithAccord(cm, group, consistencyLevel, queryStartNanoTime);
+                checkState(!consensusAttemptResult.shouldRetryOnNewConsensusProtocol, "Live migration is not supported with reads yet");
+                result = consensusAttemptResult.serialReadResult;
+            }
             else
                 result = fetchRows(group.queries, consistencyLevel, coordinator, queryStartNanoTime);
 
@@ -3261,9 +3258,9 @@ public class StorageProxy implements StorageProxyMBean
         RowIterator casResult;
 
         @Nonnull
-        public PartitionIterator serialReadResult;
+        public final PartitionIterator serialReadResult;
 
-        boolean shouldRetryOnNewConsensusProtocol;
+        public final boolean shouldRetryOnNewConsensusProtocol;
 
         private ConsensusAttemptResult(@Nullable RowIterator casResult, @Nullable PartitionIterator serialReadResult, boolean shouldRetryOnNewConsensusProtocol)
         {

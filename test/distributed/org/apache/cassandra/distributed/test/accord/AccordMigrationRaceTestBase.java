@@ -20,7 +20,6 @@ package org.apache.cassandra.distributed.test.accord;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.Arrays;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -62,7 +61,6 @@ import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IMessage;
 import org.apache.cassandra.distributed.api.IMessageSink;
-import org.apache.cassandra.distributed.api.NodeToolResult;
 import org.apache.cassandra.distributed.api.QueryResults;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.impl.Instance;
@@ -110,7 +108,6 @@ import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTe
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.apache.cassandra.exceptions.RequestFailureReason.RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM;
 import static org.apache.cassandra.utils.Throwables.runUnchecked;
-import static org.assertj.core.api.Fail.fail;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 

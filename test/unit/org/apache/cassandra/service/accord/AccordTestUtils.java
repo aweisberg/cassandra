@@ -94,6 +94,7 @@ import org.apache.cassandra.service.accord.api.AccordAgent;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnKeyRead;
+import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
@@ -325,7 +326,7 @@ public class AccordTestUtils
 
     public static Txn createTxn(Txn.Kind kind, Seekables<?, ?> seekables)
     {
-        return AGENT.emptyTxn(kind, seekables);
+        return new Txn.InMemory(kind, seekables, TxnKeyRead.EMPTY, TxnQuery.NONE, null);
     }
 
     public static Ranges fullRange(Txn txn)

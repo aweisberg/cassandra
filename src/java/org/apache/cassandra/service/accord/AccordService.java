@@ -197,13 +197,13 @@ public class AccordService implements IAccordService, Shutdownable
         }
 
         @Override
-        public @Nonnull Pair<TxnId, Future<TxnResult>> coordinateAsync(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, long queryStartNanos)
+        public @Nonnull AsyncTxnResult coordinateAsync(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, long queryStartNanos)
         {
             throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
         }
 
         @Override
-        public TxnResult getTxnResult(Pair<TxnId, Future<TxnResult>> txnResult, boolean isWrite, ConsistencyLevel consistencyLevel, long queryStartNanos)
+        public TxnResult getTxnResult(AsyncTxnResult asyncTxnResult, boolean isWrite, ConsistencyLevel consistencyLevel, long queryStartNanos)
         {
             throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
         }
@@ -395,9 +395,6 @@ public class AccordService implements IAccordService, Shutdownable
 
     private <S extends Seekables<?, ?>> Seekables barrier(@Nonnull S keysOrRanges, long epoch, long queryStartNanos, long timeoutNanos, BarrierType barrierType, boolean isForWrite, BiFunction<Node, S, AsyncResult<SyncPoint<S>>> syncPoint)
     {
-        // TODO (review): So do we get what we really want picking a random cluster metadata and only doing a barrier on a subset of what was asked?
-        // We will definitely return a result indicating exactly what we ended up doing the barrier on so it's not misleading and won't falsely
-        // make progress when it shouldn't and now we don't have to be as precise as an operator specifying what to do the barrier on
         keysOrRanges = (S)intersectionWithAccordManagedRanges(keysOrRanges);
         // It's possible none of them were Accord managed and we aren't going to treat that as an error
         if (keysOrRanges.isEmpty())
@@ -645,32 +642,33 @@ public class AccordService implements IAccordService, Shutdownable
     @Override
     public @Nonnull TxnResult coordinate(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, long queryStartNanos)
     {
-        Pair<TxnId, Future<TxnResult>> txnResult = coordinateAsync(txn, consistencyLevel, queryStartNanos);
-        return getTxnResult(txnResult, txn.isWrite(), consistencyLevel, queryStartNanos);
+        AsyncTxnResult asyncTxnResult = coordinateAsync(txn, consistencyLevel, queryStartNanos);
+        return getTxnResult(asyncTxnResult, txn.isWrite(), consistencyLevel, queryStartNanos);
     }
 
     @Override
-    public @Nonnull Pair<TxnId, Future<TxnResult>> coordinateAsync(Txn txn, ConsistencyLevel consistencyLevel, long queryStartNanos)
+    public @Nonnull AsyncTxnResult coordinateAsync(Txn txn, ConsistencyLevel consistencyLevel, long queryStartNanos)
     {
         TxnId txnId = node.nextTxnId(txn.kind(), txn.keys().domain());
         AccordClientRequestMetrics metrics = txn.isWrite() ? accordWriteMetrics : accordReadMetrics;
         metrics.keySize.update(txn.keys().size());
         AsyncResult<Result> asyncResult = node.coordinate(txnId, txn);
-        AsyncPromise<TxnResult> resultFuture = new AsyncPromise<>();
+        AsyncTxnResult asyncTxnResult = new AsyncTxnResult(txnId);
         asyncResult.addCallback((success, failure) -> {
             Throwable cause = failure != null ? Throwables.getRootCause(failure) : null;
             long durationNanos = nanoTime() - queryStartNanos;
             metrics.addNano(durationNanos);
             if (success != null)
             {
-                resultFuture.trySuccess((TxnResult)success);
+                asyncTxnResult.trySuccess((TxnResult)success);
                 return;
             }
 
             if (cause instanceof Timeout)
             {
-                metrics.timeouts.mark();
-                resultFuture.tryFailure(newTimeout(txnId, txn.isWrite(), consistencyLevel));
+                // Don't mark the metric here, should be done in getTxnResult to ensure it only happens once
+                // since both Accord and the thread blocked on the result can trigger a timeout
+                asyncTxnResult.tryFailure(newTimeout(txnId, txn.isWrite(), consistencyLevel));
                 return;
             }
             if (cause instanceof Preempted)
@@ -679,36 +677,43 @@ public class AccordService implements IAccordService, Shutdownable
                 //TODO need to improve
                 // Coordinator "could" query the accord state to see whats going on but that doesn't exist yet.
                 // Protocol also doesn't have a way to denote "unknown" outcome, so using a timeout as the closest match
-                resultFuture.tryFailure(newPreempted(txnId, txn.isWrite(), consistencyLevel));
+                asyncTxnResult.tryFailure(newPreempted(txnId, txn.isWrite(), consistencyLevel));
                 return;
             }
             if (cause instanceof TopologyMismatch)
             {
                 metrics.topologyMismatches.mark();
-                resultFuture.tryFailure(RequestValidations.invalidRequest(cause.getMessage()));
+                asyncTxnResult.tryFailure(RequestValidations.invalidRequest(cause.getMessage()));
                 return;
             }
             metrics.failures.mark();
-            resultFuture.tryFailure(new RuntimeException(cause));
+            asyncTxnResult.tryFailure(new RuntimeException(cause));
         });
-        return Pair.create(txnId, resultFuture);
+        return asyncTxnResult;
     }
 
     @Override
-    public TxnResult getTxnResult(Pair<TxnId, Future<TxnResult>> txnResult, boolean isWrite, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanos)
+    public TxnResult getTxnResult(AsyncTxnResult asyncTxnResult, boolean isWrite, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanos)
     {
         AccordClientRequestMetrics metrics = isWrite ? accordWriteMetrics : accordReadMetrics;
         try
         {
             long deadlineNanos = queryStartNanos + DatabaseDescriptor.getTransactionTimeout(NANOSECONDS);
-            TxnResult result = txnResult.right.get(deadlineNanos - nanoTime(), NANOSECONDS);
+            TxnResult result = asyncTxnResult.get(deadlineNanos - nanoTime(), NANOSECONDS);
             return result;
         }
         catch (ExecutionException e)
         {
-            // Metrics have already been handled just need to propagate the error
+            // Metrics except timeout have already been handled
             Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException)
+            if (cause instanceof RequestTimeoutException)
+            {
+                // Mark here instead of in coordinate async since this is where the request timeout actually occurs
+                metrics.timeouts.mark();
+                cause.addSuppressed(e);
+                throw (RequestTimeoutException) cause;
+            }
+            else if (cause instanceof RuntimeException)
                 throw (RuntimeException)cause;
             else
                 throw new RuntimeException(cause);
@@ -720,9 +725,8 @@ public class AccordService implements IAccordService, Shutdownable
         }
         catch (TimeoutException e)
         {
-            // TODO (review): This is j.u.c timeout so maybe this should mark?
             metrics.timeouts.mark();
-            throw newTimeout(txnResult.left, isWrite, consistencyLevel);
+            throw newTimeout(asyncTxnResult.txnId, isWrite, consistencyLevel);
         }
     }
 

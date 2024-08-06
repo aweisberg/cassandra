@@ -48,7 +48,7 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.StorageProxy;
-import org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult;
+import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.service.reads.DataResolver;
@@ -59,7 +59,6 @@ import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
-import org.apache.cassandra.utils.concurrent.Future;
 
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 
@@ -217,8 +216,8 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
             //TODO (nicetohave): This is very inefficient because it will not map the the command store owned ranges
             // so every command store will return results and most will be discarded due to the limit
             // Really we want to split the ranges by command stores owned ranges and then query one at a time
-            Future<ConsensusAttemptResult> result = StorageProxy.readWithAccord(cm, rangeCommand, replicaPlan.consistencyLevel(), queryStartNanoTime);
-            return new AccordRangeResponse(result);
+            AsyncTxnResult result = StorageProxy.readWithAccord(cm, rangeCommand, replicaPlan.consistencyLevel(), queryStartNanoTime);
+            return new AccordRangeResponse(result, rangeCommand.isReversed(), replicaPlan.consistencyLevel(), queryStartNanoTime);
         }
         else
         {

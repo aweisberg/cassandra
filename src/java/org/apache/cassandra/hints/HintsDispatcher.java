@@ -52,7 +52,9 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.RequestCallback;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.IAccordService;
+import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.accord.txn.TxnResult;
+import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.SplitMutation;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ownership.DataPlacement;
 import org.apache.cassandra.tcm.ownership.VersionedEndpoints;
@@ -315,17 +317,17 @@ final class HintsDispatcher implements AutoCloseable
     private Callback sendHint(Hint hint)
     {
         ClusterMetadata cm = ClusterMetadata.current();
-        Pair<Mutation, Hint> accordAndNormal = splitHintIntoAccordAndNormal(cm, hint);
-        Mutation accordHintMutation = accordAndNormal.left;
+        SplitHint splitHint = splitHintIntoAccordAndNormal(cm, hint);
+        Mutation accordHintMutation = splitHint.accordMutation;
         long txnStartNanoTime = 0;
-        Pair<TxnId, Future<TxnResult>> accordTxnResult = null;
+        AsyncTxnResult accordTxnResult = null;
         if (accordHintMutation != null)
         {
             txnStartNanoTime = Clock.Global.nanoTime();
             accordTxnResult = accordHintMutation != null ? mutateWithAccordAsync(cm, accordHintMutation, null, txnStartNanoTime) : null;
         }
 
-        Hint normalHint = accordAndNormal.right;
+        Hint normalHint = splitHint.normalHint;
         Callback callback = new Callback(address, hint.creationTime, txnStartNanoTime, accordTxnResult);
         if (normalHint != null)
         {
@@ -355,15 +357,30 @@ final class HintsDispatcher implements AutoCloseable
         return callback;
     }
 
-    private Pair<Mutation, Hint> splitHintIntoAccordAndNormal(ClusterMetadata cm, Hint hint)
+    /**
+     * Result of splitting a hint across Accord and non-transactional boundaries
+     */
+    private class SplitHint
     {
-        Pair<Mutation, Mutation> accordAndNormal = splitMutationIntoAccordAndNormal(hint.mutation, cm);
-        if (accordAndNormal.left == null)
-            return Pair.create(null, hint);
-        if (accordAndNormal.right == null)
-            return Pair.create(accordAndNormal.left, null);
-        Hint normalHint = Hint.create(accordAndNormal.right, hint.creationTime, accordAndNormal.right.smallestGCGS());
-        return Pair.create(accordAndNormal.left, normalHint);
+        private final Mutation accordMutation;
+        private final Hint normalHint;
+
+        public SplitHint(Mutation accordMutation, Hint normalHint)
+        {
+            this.accordMutation = accordMutation;
+            this.normalHint = normalHint;
+        }
+    }
+
+    private SplitHint splitHintIntoAccordAndNormal(ClusterMetadata cm, Hint hint)
+    {
+        SplitMutation<Mutation> splitMutation = splitMutationIntoAccordAndNormal(hint.mutation, cm);
+        if (splitMutation.accordMutation == null)
+            return new SplitHint(null, hint);
+        if (splitMutation.normalMutation == null)
+            return new SplitHint(splitMutation.accordMutation, null);
+        Hint normalHint = Hint.create(splitMutation.normalMutation, hint.creationTime, splitMutation.normalMutation.smallestGCGS());
+        return new SplitHint(splitMutation.accordMutation, normalHint);
     }
 
     /*
@@ -390,21 +407,21 @@ final class HintsDispatcher implements AutoCloseable
         private final InetAddressAndPort to;
         private final long hintCreationNanoTime;
         private final long accordTxnStartNanos;
-        private final Pair<TxnId, Future<TxnResult>> accordTxnResult;
+        private final AsyncTxnResult accordTxnResult;
 
         private Callback(@Nonnull InetAddressAndPort to, long hintCreationTimeMillisSinceEpoch)
         {
             this(to, hintCreationTimeMillisSinceEpoch, -1, null);
         }
 
-        private Callback(@Nullable InetAddressAndPort to, long hintCreationTimeMillisSinceEpoch, long accordTxnStartNanos, @Nullable Pair<TxnId, Future<TxnResult>> accordTxnResult)
+        private Callback(@Nullable InetAddressAndPort to, long hintCreationTimeMillisSinceEpoch, long accordTxnStartNanos, @Nullable AsyncTxnResult accordTxnResult)
         {
             this.to = to != null ? to : ACCORD_HINT_ENDPOINT;
             this.hintCreationNanoTime = approxTime.translate().fromMillisSinceEpoch(hintCreationTimeMillisSinceEpoch);
             this.accordTxnStartNanos = accordTxnStartNanos;
             this.accordTxnResult = accordTxnResult;
             if (accordTxnResult != null)
-                accordTxnResult.right.addListener(this, ImmediateExecutor.INSTANCE);
+                accordTxnResult.addListener(this, ImmediateExecutor.INSTANCE);
             else
                 accordOutcome = SUCCESS;
         }

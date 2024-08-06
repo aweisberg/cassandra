@@ -18,44 +18,45 @@
 
 package org.apache.cassandra.service.reads.range;
 
-import java.util.concurrent.ExecutionException;
+import java.util.function.IntPredicate;
 
-import com.google.common.util.concurrent.Uninterruptibles;
-
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.rows.RowIterator;
+import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult;
+import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.utils.AbstractIterator;
-import org.apache.cassandra.utils.Throwables;
-import org.apache.cassandra.utils.concurrent.Future;
+
+import static com.google.common.base.Preconditions.checkState;
 
 public class AccordRangeResponse extends AbstractIterator<RowIterator> implements IRangeResponse
 {
-    private final Future<ConsensusAttemptResult> resultFuture;
+    private final AsyncTxnResult asyncTxnResult;
+    // Range queries don't support reverse, but dutifully threading it through anyways
+    private final boolean reversed;
+    private final ConsistencyLevel cl;
+    private final long queryStartNanoTime;
     private PartitionIterator result;
 
-    public AccordRangeResponse(Future<ConsensusAttemptResult> resultFuture)
+    public AccordRangeResponse(AsyncTxnResult asyncTxnResult, boolean reversed, ConsistencyLevel cl, long queryStartNanoTime)
     {
-        this.resultFuture = resultFuture;
+        this.asyncTxnResult = asyncTxnResult;
+        this.cl = cl;
+        this.queryStartNanoTime = queryStartNanoTime;
+        this.reversed = reversed;
     }
 
     private void waitForResponse()
     {
         if (result != null)
             return;
-        try
-        {
-            // TODO (required): Handle retry on different system
-            result = Uninterruptibles.getUninterruptibly(resultFuture).serialReadResult;
-        }
-        catch (ExecutionException e)
-        {
-            // Preserve the execution exception as a suppressed exception
-            // but throw the actual cause since the type is frequently significant in error handling
-            Throwable cause = e.getCause();
-            cause.addSuppressed(e);
-            Throwables.throwAsUncheckedException(cause);
-        }
+        IntPredicate alwaysTrue = ignored -> true;
+        IntPredicate alwaysFalse = ignored -> false;
+        // TODO (required): Handle retry on different system
+        ConsensusAttemptResult consensusAttemptResult = StorageProxy.getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, 1, reversed ? alwaysTrue : alwaysFalse, cl, queryStartNanoTime);
+        checkState(!consensusAttemptResult.shouldRetryOnNewConsensusProtocol, "Live migration is not supported yet");
+        result = consensusAttemptResult.serialReadResult;
     }
 
     @Override
@@ -68,9 +69,6 @@ public class AccordRangeResponse extends AbstractIterator<RowIterator> implement
     @Override
     public void close()
     {
-        resultFuture.addCallback((result, failure) -> {
-            if (result != null && result.serialReadResult != null)
-                result.serialReadResult.close();
-        });
+        // It's an in-memory iterator so no need to close whatever might end up in TxnResult
     }
 }

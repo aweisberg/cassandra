@@ -39,7 +39,6 @@ import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.primitives.TxnId;
 import org.apache.cassandra.concurrent.ScheduledExecutorPlus;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -77,14 +76,15 @@ import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.WriteResponseHandler;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.IAccordService;
+import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper;
+import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.SplitMutations;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.ExecutorUtils;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MBeanWrapper;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.TimeUUID;
 import org.apache.cassandra.utils.concurrent.Future;
@@ -399,7 +399,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         private final ClusterMetadata cm;
 
         private List<ReplayWriteResponseHandler<Mutation>> replayHandlers = ImmutableList.of();
-        private Pair<TxnId, Future<TxnResult>> accordResult;
+        private AsyncTxnResult accordResult;
         private long accordTxnStartNanos;
 
         ReplayingBatch(TimeUUID id, int version, List<ByteBuffer> serializedMutations, ClusterMetadata cm) throws IOException
@@ -407,12 +407,12 @@ public class BatchlogManager implements BatchlogManagerMBean
             this.id = id;
             this.writtenAt = id.unix(MILLISECONDS);
             List<Mutation> unsplitMutations = new ArrayList<>(serializedMutations.size());
-            this.replayedBytes = addMutations(unsplitMutations, version, serializedMutations);
+            this.replayedBytes = addMutations(unsplitMutations, writtenAt, version, serializedMutations);
             unsplitGcGs = gcgs(unsplitMutations);
-            Pair<List<Mutation>, List<Mutation>> accordAndNormal = ConsensusMigrationMutationHelper.splitMutationsIntoAccordAndNormal(cm, unsplitMutations);
-            logger.trace("Replaying batch with Accord {} and normal {}", accordAndNormal.left, accordAndNormal.right);
-            normalMutations = accordAndNormal.right;
-            accordMutations = accordAndNormal.left;
+            SplitMutations<Mutation> splitMutations = ConsensusMigrationMutationHelper.splitMutationsIntoAccordAndNormal(cm, unsplitMutations);
+            logger.trace("Replaying batch with Accord {} and normal {}", splitMutations.accordMutations(), splitMutations.normalMutations());
+            normalMutations = splitMutations.normalMutations();
+            accordMutations = splitMutations.accordMutations();
             this.cm = cm;
         }
 
@@ -495,7 +495,7 @@ public class BatchlogManager implements BatchlogManagerMBean
                 throw Throwables.unchecked(failure);
         }
 
-        private int addMutations(List<Mutation> unsplitMutations, int version, List<ByteBuffer> serializedMutations) throws IOException
+        private static int addMutations(List<Mutation> unsplitMutations, long writtenAt, int version, List<ByteBuffer> serializedMutations) throws IOException
         {
             int ret = 0;
             for (ByteBuffer serializedMutation : serializedMutations)
@@ -503,7 +503,7 @@ public class BatchlogManager implements BatchlogManagerMBean
                 ret += serializedMutation.remaining();
                 try (DataInputBuffer in = new DataInputBuffer(serializedMutation, true))
                 {
-                    addMutation(unsplitMutations, Mutation.serializer.deserialize(in, version));
+                    addMutation(unsplitMutations, writtenAt, Mutation.serializer.deserialize(in, version));
                 }
             }
 
@@ -513,7 +513,7 @@ public class BatchlogManager implements BatchlogManagerMBean
         // Remove CFs that have been truncated since. writtenAt and SystemTable#getTruncatedAt() both return millis.
         // We don't abort the replay entirely b/c this can be considered a success (truncated is same as delivered then
         // truncated.
-        private void addMutation(List<Mutation> unsplitMutations, Mutation mutation)
+        private static void addMutation(List<Mutation> unsplitMutations, long writtenAt, Mutation mutation)
         {
             for (TableId tableId : mutation.getTableIds())
                 if (writtenAt <= SystemKeyspace.getTruncatedAt(tableId))

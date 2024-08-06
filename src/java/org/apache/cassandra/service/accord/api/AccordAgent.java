@@ -119,8 +119,12 @@ public class AccordAgent implements Agent
         return getReadRpcTimeout(MICROSECONDS);
     }
 
+    /**
+     * Create an empty transaction that Accord can use for its internal transactions. This is not suitable
+     * for tests since it skips validation done by regular transactions.
+     */
     @Override
-    public Txn emptyTxn(Kind kind, Seekables<?, ?> seekables)
+    public Txn emptySystemTxn(Kind kind, Seekables<?, ?> seekables)
     {
         return new Txn.InMemory(kind, seekables, TxnKeyRead.EMPTY, TxnQuery.UNSAFE_EMPTY, null);
     }

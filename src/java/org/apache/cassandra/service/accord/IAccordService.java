@@ -49,6 +49,7 @@ import org.apache.cassandra.service.accord.api.AccordScheduler;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.Pair;
+import org.apache.cassandra.utils.concurrent.AsyncPromise;
 import org.apache.cassandra.utils.concurrent.Future;
 
 public interface IAccordService
@@ -85,9 +86,19 @@ public interface IAccordService
 
     @Nonnull TxnResult coordinate(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, long queryStartNanos);
 
+    class AsyncTxnResult extends AsyncPromise<TxnResult>
+    {
+        public final TxnId txnId;
+
+        public AsyncTxnResult(TxnId txnId)
+        {
+            this.txnId = txnId;
+        }
+    }
+
     @Nonnull
-    Pair<TxnId, Future<TxnResult>> coordinateAsync(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, long queryStartNanos);
-    TxnResult getTxnResult(Pair<TxnId, Future<TxnResult>> txnResult, boolean isWrite, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanos);
+    AsyncTxnResult coordinateAsync(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, long queryStartNanos);
+    TxnResult getTxnResult(AsyncTxnResult asyncTxnResult, boolean isWrite, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanos);
 
     long currentEpoch();
 

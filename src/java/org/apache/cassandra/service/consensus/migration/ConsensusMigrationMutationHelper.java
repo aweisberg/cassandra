@@ -33,7 +33,6 @@ import org.slf4j.LoggerFactory;
 
 import accord.primitives.Keys;
 import accord.primitives.Txn;
-import accord.primitives.TxnId;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
@@ -46,9 +45,9 @@ import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.service.StorageProxy.WriteResponseHandlerWrapper;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.IAccordService;
+import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.txn.TxnCondition;
 import org.apache.cassandra.service.accord.txn.TxnKeyRead;
@@ -60,9 +59,7 @@ import org.apache.cassandra.service.accord.txn.TxnWrite;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tracing.Tracing;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.Throwables;
-import org.apache.cassandra.utils.concurrent.Future;
 
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.function.Predicate.not;
@@ -107,22 +104,48 @@ public class ConsensusMigrationMutationHelper
         return null;
     }
 
-    public static <T extends IMutation> Pair<List<T>, List<T>> splitMutationsIntoAccordAndNormal(ClusterMetadata cm, List<T> mutations)
+    /**
+     * Result of splitting mutations across Accord and non-transactional boundaries
+     */
+    public static class SplitMutations<T extends IMutation> implements SplitConsumer<T>
     {
-        List<T> accordMutations = null;
-        List<T> normalMutations = null;
-        for (int i=0,mi=mutations.size(); i<mi; i++)
+        @Nullable
+        private List<T> accordMutations;
+
+        @Nullable
+        private List<T> normalMutations;
+
+        private SplitMutations() {}
+
+        public List<T> accordMutations()
         {
-            T mutation = mutations.get(i);
-            Pair<T, T> accordAndNormalMutation = splitMutationIntoAccordAndNormal(mutation, cm);
-            T accordMutation = accordAndNormalMutation.left;
+            return accordMutations;
+        }
+
+        public List<T> normalMutations()
+        {
+            return normalMutations;
+        }
+
+        @Override
+        public void consume(@Nullable T accordMutation, @Nullable T normalMutation, List<T> mutations, int mutationIndex)
+        {
+            // Avoid allocating an ArrayList in common single mutation single system case
+            if (mutations.size() == 1 && (accordMutation != null ^ normalMutation != null))
+            {
+                if (accordMutation != null)
+                    accordMutations = mutations;
+                else
+                    normalMutations = mutations;
+                return;
+            }
+
             if (accordMutation != null)
             {
                 if (accordMutations == null)
                     accordMutations = new ArrayList<>(Math.min(mutations.size(), 10));
                 accordMutations.add(accordMutation);
             }
-            T normalMutation = accordAndNormalMutation.right;
             if (normalMutation != null)
             {
                 if (normalMutations == null)
@@ -130,13 +153,50 @@ public class ConsensusMigrationMutationHelper
                 normalMutations.add(normalMutation);
             }
         }
-        return Pair.create(accordMutations, normalMutations);
     }
 
-    public static <T extends IMutation> Pair<T, T> splitMutationIntoAccordAndNormal(T mutation, ClusterMetadata cm)
+    public interface SplitConsumer<T extends IMutation>
+    {
+        void consume(@Nullable T accordMutation, @Nullable T normalMutation, List<T> mutations, int mutationIndex);
+    }
+
+    public static <T extends IMutation, N> SplitMutations<T> splitMutationsIntoAccordAndNormal(ClusterMetadata cm, List<T> mutations)
+    {
+        SplitMutations<T> splitMutations = new SplitMutations<>();
+        splitMutationsIntoAccordAndNormal(cm, mutations, splitMutations);
+        return splitMutations;
+    }
+
+    public static <T extends IMutation> void splitMutationsIntoAccordAndNormal(ClusterMetadata cm, List<T> mutations, SplitConsumer<T> splitConsumer)
+    {
+        for (int i=0,mi=mutations.size(); i<mi; i++)
+        {
+            SplitMutation<T> splitMutation = splitMutationIntoAccordAndNormal(mutations.get(i), cm);
+            splitConsumer.consume(splitMutation.accordMutation, splitMutation.normalMutation, mutations, i);
+        }
+    }
+
+    /**
+     * Result of splitting a mutation across Accord and non-transactional boundaries
+     */
+    public static class SplitMutation<T extends IMutation>
+    {
+        @Nullable
+        public final T accordMutation;
+        @Nullable
+        public final T normalMutation;
+
+        public SplitMutation(@Nullable T accordMutation, @Nullable T normalMutation)
+        {
+            this.accordMutation = accordMutation;
+            this.normalMutation = normalMutation;
+        }
+    }
+
+    public static <T extends IMutation> SplitMutation<T> splitMutationIntoAccordAndNormal(T mutation, ClusterMetadata cm)
     {
         if (mutation.allowsPotentialTransactionConflicts())
-            return Pair.create(null, mutation);
+            return new SplitMutation<>(null, mutation);
 
         Token token = mutation.key().getToken();
         Predicate<TableId> isAccordUpdate = tableId -> {
@@ -152,71 +212,15 @@ public class ConsensusMigrationMutationHelper
             checkState((accordMutation == null ? false : accordMutation.hasUpdateForTable(pu.metadata().id))
                        || (normalMutation == null ? false : normalMutation.hasUpdateForTable(pu.metadata().id)),
                        "All partition updates should still be present after splitting");
-        return Pair.create(accordMutation, normalMutation);
+        return new SplitMutation(accordMutation, normalMutation);
     }
 
-    public static Pair<List<? extends IMutation>, List<WriteResponseHandlerWrapper>> splitWrappersIntoAccordAndNormal(ClusterMetadata cm, List<WriteResponseHandlerWrapper> wrappers)
-    {
-        List<IMutation> accordMutations = null;
-        List<WriteResponseHandlerWrapper> normalWrappers = null;
-        for (int i=0,mi=wrappers.size(); i<mi; i++)
-        {
-            WriteResponseHandlerWrapper wrapper = wrappers.get(i);
-            Pair<IMutation, WriteResponseHandlerWrapper> accordAndNormalMutation = splitWrapperIntoAccordAndNormal(wrapper, cm);
-            IMutation accordMutation = accordAndNormalMutation.left;
-            if (accordMutation != null)
-            {
-                if (accordMutations == null)
-                    accordMutations = new ArrayList<>(Math.min(wrappers.size(), 10));
-                accordMutations.add(accordMutation);
-            }
-            WriteResponseHandlerWrapper normalWrapper = accordAndNormalMutation.right;
-            if (normalWrapper != null)
-            {
-                if (normalWrappers == null)
-                    normalWrappers = new ArrayList<>(Math.min(wrappers.size(), 10));
-                normalWrappers.add(normalWrapper);
-            }
-        }
-        return Pair.create(accordMutations, normalWrappers);
-    }
-
-    private static Pair<IMutation, WriteResponseHandlerWrapper> splitWrapperIntoAccordAndNormal(WriteResponseHandlerWrapper wrapper, ClusterMetadata cm)
-    {
-        Mutation mutation = wrapper.mutation;
-        if (mutation.allowsPotentialTransactionConflicts())
-            return Pair.create(null, wrapper);
-
-        Token token = mutation.key().getToken();
-        Predicate<TableId> isAccordUpdate = tableId -> {
-            TableMetadata tm = getTableMetadata(cm, tableId);
-            if (tm == null)
-                return false;
-            return tokenShouldBeWrittenThroughAccord(cm, tm, token);
-        };
-
-        IMutation accordMutation = mutation.filter(isAccordUpdate);
-        Mutation normalMutation = mutation.filter(not(isAccordUpdate));
-        for (PartitionUpdate pu : mutation.getPartitionUpdates())
-            checkState((accordMutation == null ? false : accordMutation.hasUpdateForTable(pu.metadata().id))
-                       || (normalMutation == null ? false : normalMutation.hasUpdateForTable(pu.metadata().id)),
-                       "All partition updates should still be present after splitting");
-        if (accordMutation == null)
-            return Pair.create(null, wrapper);
-        if (normalMutation == null)
-            return Pair.create( accordMutation, null);
-        // Since this now depends on an Accord txn need to wait for that to complete first
-        wrapper.handler.deferCleanup();
-        return Pair.create(accordMutation, new WriteResponseHandlerWrapper(wrapper.handler, normalMutation));
-    }
-
-    public static Pair<TxnId, Future<TxnResult>> mutateWithAccordAsync(ClusterMetadata cm, Mutation mutation, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    public static AsyncTxnResult mutateWithAccordAsync(ClusterMetadata cm, Mutation mutation, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
     {
         return mutateWithAccordAsync(cm, ImmutableList.of(mutation), consistencyLevel, queryStartNanoTime);
     }
 
-
-    public static Pair<TxnId, Future<TxnResult>> mutateWithAccordAsync(ClusterMetadata cm, Collection<? extends IMutation> mutations, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
+    public static AsyncTxnResult mutateWithAccordAsync(ClusterMetadata cm, Collection<? extends IMutation> mutations, @Nullable ConsistencyLevel consistencyLevel, long queryStartNanoTime)
     {
         int fragmentIndex = 0;
         List<TxnWrite.Fragment> fragments = new ArrayList<>(mutations.size());
@@ -248,12 +252,12 @@ public class ConsensusMigrationMutationHelper
                 // Keep attempting to route the mutations until they all succeed on the correct system
                 // TODO (review): Metrics are going to double count when we split between the two systems
                 // but they will be split across different accord/non-accord metrics
-                Pair<List<IMutation>, List<IMutation>> accordAndNormal = splitMutationsIntoAccordAndNormal(cm, (List<IMutation>)mutations);
-                List<? extends IMutation> accordMutations = accordAndNormal.left;
+                SplitMutations splitMutations = splitMutationsIntoAccordAndNormal(cm, (List<IMutation>)mutations);
+                List<? extends IMutation> accordMutations = splitMutations.accordMutations();
                 // TODO this can race with migration to/from Accord and Accord doesn't know what range we are referring to or it just hasn't updated to the epoch we are aware of
                 // client side retry can still succeed but the error could be exposed
-                Pair<TxnId, Future<TxnResult>> accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, queryStartNanoTime) : null;
-                List<? extends IMutation> normalMutations = accordAndNormal.right;
+                AsyncTxnResult accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, queryStartNanoTime) : null;
+                List<? extends IMutation> normalMutations = splitMutations.normalMutations();
 
                 Throwable failure = null;
                 try

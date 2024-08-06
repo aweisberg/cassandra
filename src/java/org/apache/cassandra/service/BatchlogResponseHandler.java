@@ -28,11 +28,10 @@ import org.apache.cassandra.net.Message;
 
 public class BatchlogResponseHandler<T> extends AbstractWriteResponseHandler<T>
 {
-    AbstractWriteResponseHandler<T> wrapped;
-    BatchlogCleanup cleanup;
+    final AbstractWriteResponseHandler<T> wrapped;
+    final BatchlogCleanup cleanup;
     protected volatile int requiredBeforeFinish;
-    // Defer cleanup until `maybeAckMutationForCleanup` is called
-    private boolean deferCleanup = false;
+
     private static final AtomicIntegerFieldUpdater<BatchlogResponseHandler> requiredBeforeFinishUpdater
             = AtomicIntegerFieldUpdater.newUpdater(BatchlogResponseHandler.class, "requiredBeforeFinish");
 
@@ -52,7 +51,7 @@ public class BatchlogResponseHandler<T> extends AbstractWriteResponseHandler<T>
     public void onResponse(Message<T> msg)
     {
         wrapped.onResponse(msg);
-        if (requiredBeforeFinishUpdater.decrementAndGet(this) == 0 && !deferCleanup)
+        if (requiredBeforeFinishUpdater.decrementAndGet(this) == 0)
             cleanup.ackMutation();
     }
 
@@ -69,26 +68,6 @@ public class BatchlogResponseHandler<T> extends AbstractWriteResponseHandler<T>
     public void get() throws WriteTimeoutException, WriteFailureException
     {
         wrapped.get();
-    }
-
-    /**
-     * Defer cleanup until it is manually invoked because there are external dependencies
-     * like an Accord transaction executing part of the batch.
-     */
-    public void deferCleanup()
-    {
-        deferCleanup = true;
-    }
-
-    /*
-     * Clean up might depend on an Accord txn completing so expose this so that Accord can ack the cleanup once
-     * its transaction is complete
-     */
-    public void maybeAckMutationForCleanup()
-    {
-        // Only ack if the ack was actually deferred otherwise it will have already been cleaned up
-        if (deferCleanup)
-            cleanup.ackMutation();
     }
 
     protected int blockFor()
@@ -125,6 +104,11 @@ public class BatchlogResponseHandler<T> extends AbstractWriteResponseHandler<T>
             this.callback = callback;
         }
 
+        public BatchlogCleanup(BatchlogCleanupCallback callback)
+        {
+            this.callback = callback;
+        }
+
         public int decrement()
         {
             return mutationsWaitingForUpdater.decrementAndGet(this);
@@ -134,6 +118,11 @@ public class BatchlogResponseHandler<T> extends AbstractWriteResponseHandler<T>
         {
             if (decrement() == 0)
                 callback.invoke();
+        }
+
+        public void setMutationsWaitingFor(int mutationsWaitingFor)
+        {
+            mutationsWaitingForUpdater.lazySet(this, mutationsWaitingFor);
         }
     }
 
