@@ -60,6 +60,8 @@ public final class HintsServiceMetrics
     public static final Meter hintsSucceeded = Metrics.meter(factory.createMetricName("HintsSucceeded"));
     public static final Meter hintsFailed    = Metrics.meter(factory.createMetricName("HintsFailed"));
     public static final Meter hintsTimedOut  = Metrics.meter(factory.createMetricName("HintsTimedOut"));
+    public static final Meter hintsRetryDifferentSystem  = Metrics.meter(factory.createMetricName("HintsRetryDifferentSystem"));
+
 
     /** Histogram of all hint delivery delays */
     private static final Histogram globalDelayHistogram = Metrics.histogram(factory.createMetricName("Hint_delays"), false);
