@@ -1241,8 +1241,7 @@ public class StorageProxy implements StorageProxyMBean
                               .viewManager
                               .updatesAffectView(mutations, true);
 
-        // TODO (review): This is not the same as augmented? Doesn't seem right
-        long size = IMutation.dataSize(mutations);
+        long size = IMutation.dataSize(augmented != null ? augmented : mutations);
         writeMetrics.mutationSize.update(size);
         ClientWriteRequestMetrics metricsForLevel = writeMetricsForLevel(consistencyLevel);
         metricsForLevel.mutationSize.update(size);

@@ -31,6 +31,7 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.locator.EndpointsForToken;
 import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.Keyspaces;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
@@ -85,17 +86,28 @@ public class ConsensusRequestRouter
         return pickPaxos();
     }
 
+    /*
+     * Accord never handles local tables, but if the table doesn't exist then we need to generate the correct
+     * InvalidRequestException.
+     */
     private static TableMetadata metadata(ClusterMetadata cm, String keyspace, String table)
     {
         Optional<KeyspaceMetadata> ksm = cm.schema.maybeGetKeyspaceMetadata(keyspace);
         if (ksm.isEmpty())
         {
-            KeyspaceMetadata ksm2 = Schema.instance.getKeyspaceMetadata(keyspace);
+            // It's a non-distributed table which is fine, but we want to error if it doesn't exist
+            // We should never actually reach here unless there is a race with dropping the table
+            Keyspaces localKeyspaces = Schema.instance.localKeyspaces();
+            KeyspaceMetadata ksm2 = localKeyspaces.getNullable(keyspace);
             if (ksm2 == null)
                 throw new InvalidRequestException("Keyspace " + keyspace + " does not exist");
+            // Explicitly including views in case they get used in non-distributed tables
+            TableMetadata tbm2 = ksm2.getTableOrViewNullable(table);
+            if (tbm2 == null)
+                throw new InvalidRequestException("Table " + keyspace + "." + table + " does not exist");
             return null;
         }
-        TableMetadata tbm = ksm.get().getTableOrViewNullable(table);
+        TableMetadata tbm = ksm.get().getTableNullable(table);
         if (tbm == null)
             throw new InvalidRequestException("Table " + keyspace + "." + table + " does not exist");
 
@@ -127,7 +139,8 @@ public class ConsensusRequestRouter
         {
             // It's a non-distributed table which is fine, but we want to error if it doesn't exist
             // We should never actually reach here unless there is a race with dropping the table
-            TableMetadata tm2 = Schema.instance.getTableMetadata(tableId);
+            Keyspaces localKeyspaces = Schema.instance.localKeyspaces();
+            TableMetadata tm2 = localKeyspaces.getTableOrViewNullable(tableId);
             if (tm2 == null)
                 throw new InvalidRequestException("Table with id " + tableId + " does not exist");
             return null;

@@ -34,7 +34,6 @@ import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.primitives.TxnId;
 import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
 import org.apache.cassandra.concurrent.ImmediateExecutor;
 import org.apache.cassandra.concurrent.Stage;
@@ -61,9 +60,7 @@ import org.apache.cassandra.tcm.ownership.VersionedEndpoints;
 import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.MonotonicClock;
 import org.apache.cassandra.utils.NoSpamLogger;
-import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Condition;
-import org.apache.cassandra.utils.concurrent.Future;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
@@ -309,11 +306,6 @@ final class HintsDispatcher implements AutoCloseable
         return Action.CONTINUE;
     }
 
-    // TODO (review): Could add the loop, but how often will it be needed?
-    // While this could loop if splitting the mutation misroutes there isn't a strong need because Hints will retry anyways
-    // It will cause hint delivery for this endpoint to pause until it is rescheduled again
-    // Given the structure of page at a time delivery it's also a little tricky because we would really need to iterate over the entire page
-    // again only applying the hints that ended up needing to be re-routed
     private Callback sendHint(Hint hint)
     {
         ClusterMetadata cm = ClusterMetadata.current();

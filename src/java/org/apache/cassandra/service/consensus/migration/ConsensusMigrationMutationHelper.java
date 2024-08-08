@@ -249,13 +249,8 @@ public class ConsensusMigrationMutationHelper
             ClusterMetadata cm = ClusterMetadata.current();
             try
             {
-                // Keep attempting to route the mutations until they all succeed on the correct system
-                // TODO (review): Metrics are going to double count when we split between the two systems
-                // but they will be split across different accord/non-accord metrics
                 SplitMutations splitMutations = splitMutationsIntoAccordAndNormal(cm, (List<IMutation>)mutations);
                 List<? extends IMutation> accordMutations = splitMutations.accordMutations();
-                // TODO this can race with migration to/from Accord and Accord doesn't know what range we are referring to or it just hasn't updated to the epoch we are aware of
-                // client side retry can still succeed but the error could be exposed
                 AsyncTxnResult accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, queryStartNanoTime) : null;
                 List<? extends IMutation> normalMutations = splitMutations.normalMutations();
 
