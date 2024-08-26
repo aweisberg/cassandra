@@ -2341,7 +2341,13 @@ public class StorageProxy implements StorageProxyMBean
         try
         {
             ClusterMetadata cm = ClusterMetadata.current();
-            TableParams tableParams = getTableMetadata(cm, group.queries.get(0).metadata().id).params;
+            TableId tableId = group.queries.get(0).metadata().id;
+            // Returns null for local tables
+            TableMetadata tableMetadata = getTableMetadata(cm, tableId);
+            if (tableMetadata == null)
+                tableMetadata = Schema.instance.localKeyspaces().getTableOrViewNullable(tableId);
+            TableParams tableParams = tableMetadata.params;
+
             TransactionalMode transactionalMode = tableParams.transactionalMode;
             TransactionalMigrationFromMode transactionalMigrationFromMode = tableParams.transactionalMigrationFrom;
             if (transactionalMigrationFromMode != TransactionalMigrationFromMode.none && transactionalMode.readsThroughAccord && transactionalMigrationFromMode.writesThroughAccord() && transactionalMigrationFromMode.readsThroughAccord())
@@ -2359,7 +2365,7 @@ public class StorageProxy implements StorageProxyMBean
 
             // Note that the only difference between the command in a group must be the partition key on which
             // they applied.
-            boolean enforceStrictLiveness = group.queries.get(0).metadata().enforceStrictLiveness();
+            boolean enforceStrictLiveness = tableMetadata.enforceStrictLiveness();
             // If we have more than one command, then despite each read command honoring the limit, the total result
             // might not honor it and so we should enforce it
             if (group.queries.size() > 1)
