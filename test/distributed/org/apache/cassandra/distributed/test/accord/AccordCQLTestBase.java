@@ -22,9 +22,12 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,6 +62,7 @@ import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.AccordTestUtils;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.cassandra.utils.Pair;
 import org.assertj.core.api.Assertions;
 
 import static java.util.Collections.singletonList;
@@ -67,6 +71,7 @@ import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public abstract class AccordCQLTestBase extends AccordTestBase
 {
@@ -89,6 +94,90 @@ public abstract class AccordCQLTestBase extends AccordTestBase
     {
         AccordTestBase.setupCluster(builder -> builder, 2);
         SHARED_CLUSTER.schemaChange("CREATE TYPE " + KEYSPACE + ".person (height int, age int)");
+    }
+
+    @Test
+    public void testRangeReadPageOne() throws Exception
+    {
+        testRangeRead(1);
+    }
+
+    @Test
+    public void testRangeReadSmallPage() throws Exception
+    {
+        testRangeRead(2);
+    }
+
+    @Test
+    public void testRangeReadExactPage() throws Exception
+    {
+        testRangeRead(100);
+    }
+
+    @Test
+    public void testRangeReadLargePage() throws Exception
+    {
+        testRangeRead(200);
+    }
+
+    @Test
+    public void testRangeReadClosePageLT() throws Exception
+    {
+        testRangeRead(99);
+    }
+
+    @Test
+    public void testRangeReadClosePageGT() throws Exception
+    {
+        testRangeRead(101);
+    }
+
+    private void testRangeRead(int pageSize) throws Exception
+    {
+        test(cluster -> {
+            System.out.println("testRangeRead(" + pageSize + ")");
+            Random r = new Random(0);
+            Map<Pair<Integer, Integer>, Object[]> insertedRows = new HashMap<>();
+            for (int i = 0; i < 10; i++)
+            {
+                int k = r.nextInt();
+                for (int j = 0; j < 10; j++)
+                {
+                    cluster.coordinator(1).execute("INSERT INTO " + qualifiedAccordTableName + "(k, c, v) VALUES (?, ?, ?);", ConsistencyLevel.ALL, k, j, i + j);
+                    insertedRows.put(Pair.create(k, j), new Object[] {k, j, i + j});
+                }
+            }
+
+            Iterator<Object[]> iterator = cluster.coordinator(1).executeWithPaging("SELECT * FROM " + qualifiedAccordTableName + " WHERE TOKEN(k) > " + Long.MIN_VALUE + " AND TOKEN(k) < " + Long.MAX_VALUE, ConsistencyLevel.ALL, pageSize);
+            List<Object[]> resultRows = ImmutableList.copyOf(iterator);
+            System.out.println("Found rows:");
+            resultRows.forEach(row -> System.out.println(Arrays.toString(row)));
+            Integer lastPartitionKey = null;
+            int currentRowKey = 0;
+            for (Object[] row : resultRows)
+            {
+                assertEquals(currentRowKey, row[1]);
+
+                if (lastPartitionKey == null)
+                    lastPartitionKey = (Integer)row[0];
+                else
+                    assertEquals(lastPartitionKey, row[0]);
+
+                if (currentRowKey == 9)
+                {
+                    currentRowKey = 0;
+                    lastPartitionKey = null;
+                }
+                else
+                    currentRowKey++;
+
+                Object[] expected = insertedRows.remove(Pair.create(row[0], row[1]));
+                assertEquals(expected, row);
+            }
+            System.out.println("Didn't find expected rows:");
+            insertedRows.entrySet().forEach(row -> System.out.println(row));
+            assertTrue(insertedRows.isEmpty());
+        });
     }
 
     @Test
