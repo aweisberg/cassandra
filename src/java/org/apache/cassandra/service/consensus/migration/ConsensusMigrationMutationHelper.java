@@ -218,7 +218,7 @@ public class ConsensusMigrationMutationHelper
             return new SplitMutation<>(null, mutation);
 
         Token token = mutation.key().getToken();
-        Predicate<TableId> isAccordUpdate = tableId -> tokenShouldBeWrittenThroughAccord(cm, tableId, token);
+        Predicate<TableId> isAccordUpdate = tableId -> tokenShouldBeWrittenThroughAccord(cm, tableId, token, TransactionalMode::writesThroughAccord, TransactionalMigrationFromMode::readsThroughAccord);
 
         T accordMutation = (T)mutation.filter(isAccordUpdate);
         T normalMutation = (T)mutation.filter(not(isAccordUpdate));
@@ -290,7 +290,7 @@ public class ConsensusMigrationMutationHelper
         {
             TableId tableId = pu.metadata().id;
             ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
-            if (tokenShouldBeWrittenThroughAccord(cm, tableId, dk.getToken()))
+            if (tokenShouldBeWrittenThroughAccord(cm, tableId, dk.getToken(), TransactionalMode::writesThroughAccord, TransactionalMigrationFromMode::readsThroughAccord))
             {
                 throwRetryOnDifferentSystem = true;
                 if (markedColumnFamilies == null)
@@ -305,15 +305,19 @@ public class ConsensusMigrationMutationHelper
             throw new RetryOnDifferentSystemException();
     }
 
-    public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm, @Nonnull TableId tableId, @Nonnull Token token)
+    public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm,
+                                                            @Nonnull TableId tableId,
+                                                            @Nonnull Token token,
+                                                            Predicate<TransactionalMode> writesThroughAccord,
+                                                            Predicate<TransactionalMigrationFromMode> writesThroughAccordFrom)
     {
         TableMetadata tm = getTableMetadata(cm, tableId);
         if (tm == null)
             return false;
 
-        boolean transactionalModeWritesThroughAccord = tm.params.transactionalMode.writesThroughAccord;
+        boolean transactionalModeWritesThroughAccord = writesThroughAccord.test(tm.params.transactionalMode);
         TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
-        boolean migrationFromWritesThroughAccord = transactionalMigrationFromMode.writesThroughAccord();
+        boolean migrationFromWritesThroughAccord = writesThroughAccordFrom.test(transactionalMigrationFromMode);
         if (transactionalModeWritesThroughAccord && migrationFromWritesThroughAccord)
             return true;
 

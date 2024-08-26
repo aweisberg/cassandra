@@ -192,6 +192,16 @@ public enum TransactionalMode
         return cqlParam;
     }
 
+    public boolean writesThroughAccord()
+    {
+        return writesThroughAccord;
+    }
+
+    public boolean readRepairsThroughAccord()
+    {
+        return blockingReadRepairThroughAccord;
+    }
+
     public static TransactionalMode fromOrdinal(int ordinal)
     {
         return values()[ordinal];

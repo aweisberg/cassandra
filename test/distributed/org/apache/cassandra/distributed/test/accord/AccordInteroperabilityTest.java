@@ -19,7 +19,11 @@
 package org.apache.cassandra.distributed.test.accord;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
+import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -28,6 +32,9 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.ICoordinator;
 import org.apache.cassandra.distributed.shared.AssertUtils;
+import org.apache.cassandra.net.Verb;
+
+import static org.junit.Assert.assertEquals;
 
 public class AccordInteroperabilityTest extends AccordTestBase
 {
@@ -39,10 +46,25 @@ public class AccordInteroperabilityTest extends AccordTestBase
         return logger;
     }
 
+    private static final Map<Verb, AtomicLong> messageCounts = new ConcurrentHashMap<>();
+
     @BeforeClass
     public static void setupClass() throws IOException
     {
         AccordTestBase.setupCluster(builder -> builder, 3);
+        SHARED_CLUSTER.setMessageSink((to, message) ->
+                                      {
+                                          Verb verb = Verb.fromId(message.verb());
+                                          logger.info("verb {} to {} message {}", verb, to, message);
+                                          messageCounts.computeIfAbsent(verb, ignored -> new AtomicLong()).incrementAndGet();
+                                          SHARED_CLUSTER.get(to).receiveMessage(message);
+                                      });
+    }
+
+    @After
+    public void tearDown()
+    {
+        messageCounts.clear();
     }
 
     @Test
@@ -59,5 +81,26 @@ public class AccordInteroperabilityTest extends AccordTestBase
                  assertRowSerial(cluster, "SELECT c, v FROM " + qualifiedAccordTableName + " WHERE k=0 ORDER BY c DESC LIMIT 4", AssertUtils.row(10, 100), AssertUtils.row(9, 90), AssertUtils.row(8, 80), AssertUtils.row(7, 70));
              }
          );
+    }
+
+    @Test
+    public void testApplyIsInteropApply() throws Throwable
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c)) WITH transactional_mode='mixed_reads'",
+             cluster -> {
+                cluster.coordinator(1).execute("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (1, 2, 3)", ConsistencyLevel.QUORUM);
+                assertEquals(3, messageCounts.get(Verb.ACCORD_INTEROP_APPLY_REQ).get());
+             });
+    }
+
+    @Test
+    public void testReadIsAtQuorum() throws Throwable
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c)) WITH transactional_mode='unsafe_writes'",
+             cluster -> {
+                 cluster.coordinator(1).execute("SELECT * FROM " + qualifiedAccordTableName + " WHERE k = 0", ConsistencyLevel.SERIAL);
+                 assertEquals(2, messageCounts.get(Verb.ACCORD_INTEROP_COMMIT_REQ).get());
+                 assertEquals(2, messageCounts.get(Verb.ACCORD_INTEROP_READ_RSP).get());
+             });
     }
 }

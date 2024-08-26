@@ -20,6 +20,9 @@ package org.apache.cassandra.service.accord.interop;
 
 import java.util.function.BiConsumer;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import accord.api.Result;
 import accord.api.Update;
 import accord.coordinate.CoordinationAdapter;
@@ -47,6 +50,7 @@ import static accord.messages.Apply.Kind.Minimal;
 
 public class AccordInteropAdapter extends AbstractTxnAdapter
 {
+    private static final Logger logger = LoggerFactory.getLogger(AccordInteropAdapter.class);
     public static final class AccordInteropFactory implements CoordinationAdapter.Factory
     {
         final AccordInteropAdapter standard, recovery;

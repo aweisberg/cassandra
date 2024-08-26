@@ -51,14 +51,15 @@ import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.UnrecoverableRepairUpdate;
+import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper;
+import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.concurrent.Future;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
-import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -200,7 +201,7 @@ public class BlockingReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.Fo
         // then we take the non-transactional path and the mutations are intercepted in ReadCoordinator.sendRepairMutation
         // which will ensure the repair mutation runs in the command store thread after preceding transactions are done
         ClusterMetadata cm = ClusterMetadata.current();
-        if (coordinator.isEventuallyConsistent() && ConsensusMigrationMutationHelper.tokenShouldBeWrittenThroughAccord(cm, command.metadata().id, dk.getToken()))
+        if (coordinator.isEventuallyConsistent() && ConsensusMigrationMutationHelper.tokenShouldBeWrittenThroughAccord(cm, command.metadata().id, dk.getToken(), TransactionalMode::readRepairsThroughAccord, TransactionalMigrationFromMode::readRepairsThroughAccord))
             repairTransactionally(dk, mutations, writePlan);
         else
             repairNonTransactionally(dk, mutations, writePlan);
@@ -213,29 +214,10 @@ public class BlockingReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.Fo
         Keys key = Keys.of(partitionKey);
         // This is going create a new BlockingReadRepair inside an Accord transaction which will go down
         // the !isEventuallyConsistent path and apply the repairs through Accord command stores using AccordInteropExecution
-        UnrecoverableRepairUpdate<E, P> repairUpdate = UnrecoverableRepairUpdate.create(AccordService.instance().nodeId(), this, key, dk, accordMutations, writePlan);
-        Future<TxnResult> repairFuture;
-        try
-        {
-            Txn txn = new Txn.InMemory(Txn.Kind.Read, key, TxnKeyRead.createNoOpRead(key), TxnQuery.NONE, repairUpdate);
-            repairFuture = Stage.ACCORD_MIGRATION.submit(() -> {
-                try
-                {
-                    return AccordService.instance().coordinate(txn, ConsistencyLevel.ANY, queryStartNanoTime);
-                }
-                finally
-                {
-                    // If we successfully ran the repair txn then the update should definitely
-                    // be there for us to clear which means we are sure it was there to be sent
-                    checkNotNull(UnrecoverableRepairUpdate.removeInflightUpdate(repairUpdate.updateKey));
-                }
-            });
-        }
-        catch (Throwable t)
-        {
-            UnrecoverableRepairUpdate.removeInflightUpdate(repairUpdate.updateKey);
-            throw t;
-        }
+        UnrecoverableRepairUpdate<E, P> repairUpdate = new UnrecoverableRepairUpdate(AccordService.instance().nodeId(), this, key, dk, accordMutations, writePlan);
+
+        Txn txn = new Txn.InMemory(Txn.Kind.Read, key, TxnKeyRead.createNoOpRead(key), TxnQuery.NONE, repairUpdate);
+        Future<TxnResult> repairFuture = Stage.ACCORD_MIGRATION.submit(() -> AccordService.instance().coordinate(txn, ConsistencyLevel.ANY, queryStartNanoTime));
 
         repairs.add(new PendingPartitionRepair()
         {
