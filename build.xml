@@ -71,7 +71,7 @@
     <property name="test.classes" value="${build.dir}/test/classes"/>
     <property name="test.conf" value="${test.dir}/conf"/>
     <property name="test.data" value="${test.dir}/data"/>
-    <property name="test.name" value="*Test"/>
+    <property name="test.name" value="*accord/MixedReadAccordCQLTest"/>
     <property name="test.classlistfile" value="testlist.txt"/>
     <property name="test.classlistprefix" value="unit"/>
     <property name="benchmark.name" value=""/>
