@@ -28,28 +28,33 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.annotation.Nullable;
 
-import accord.api.Key;
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import accord.api.Agent;
 import accord.api.DataStore;
+import accord.api.Key;
 import accord.api.LocalListeners;
 import accord.api.ProgressLog;
-import accord.local.cfk.CommandsForKey;
 import accord.impl.TimestampsForKey;
 import accord.local.Command;
 import accord.local.CommandStore;
+import accord.local.CommandStores;
 import accord.local.DurableBefore;
+import accord.local.KeyHistory;
 import accord.local.NodeTimeService;
 import accord.local.PreLoadContext;
 import accord.local.RedundantBefore;
 import accord.local.SafeCommandStore;
+import accord.local.Status;
+import accord.local.cfk.CommandsForKey;
+import accord.primitives.Deps;
 import accord.primitives.Keys;
 import accord.primitives.Ranges;
 import accord.primitives.RoutableKey;
@@ -59,6 +64,8 @@ import accord.utils.Invariants;
 import accord.utils.ReducingRangeMap;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
+import accord.utils.async.AsyncResult;
+import accord.utils.async.AsyncResults;
 import org.apache.cassandra.cache.CacheSize;
 import org.apache.cassandra.concurrent.ExecutorPlus;
 import org.apache.cassandra.concurrent.Stage;
@@ -70,6 +77,8 @@ import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.async.AsyncOperation;
 import org.apache.cassandra.service.accord.events.CacheEvents;
 import org.apache.cassandra.utils.Clock;
+import org.apache.cassandra.utils.concurrent.AsyncPromise;
+import org.apache.cassandra.utils.concurrent.Future;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static org.apache.cassandra.concurrent.ExecutorFactory.Global.executorFactory;
@@ -109,6 +118,11 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     private AccordSafeCommandStore current = null;
     private long lastSystemTimestampMicros = Long.MIN_VALUE;
     private final CommandsForRangesLoader commandsForRangesLoader;
+
+    private AsyncResult<?> pendingRedundantBeforeResult;
+    private RedundantBefore pendingRedundantBefore;
+    private AsyncResult<?> pendingDurableBeforeResult;
+    private DurableBefore pendingDurableBefore;
 
     public AccordCommandStore(int id,
                               NodeTimeService time,
@@ -242,12 +256,13 @@ public class AccordCommandStore extends CommandStore implements CacheSize
 
         AccordKeyspace.loadCommandStoreMetadata(id, ((rejectBefore, durableBefore, redundantBefore, bootstrapBeganAt, safeToRead) -> {
             executor.submit(() -> {
+                updateRangesForEpoch();
                 if (rejectBefore != null)
                     super.setRejectBefore(rejectBefore);
                 if (durableBefore != null)
-                    super.setDurableBefore(durableBefore);
+                    setDurableBefore(DurableBefore.merge(durableBefore, durableBefore()));
                 if (redundantBefore != null)
-                    super.setRedundantBefore(redundantBefore);
+                    setRedundantBefore(RedundantBefore.merge(redundantBefore, redundantBefore()));
                 if (bootstrapBeganAt != null)
                     super.setBootstrapBeganAt(bootstrapBeganAt);
                 if (safeToRead != null)
@@ -538,6 +553,47 @@ public class AccordCommandStore extends CommandStore implements CacheSize
         executor.shutdown();
     }
 
+    @Override
+    public void registerHistoricalTransactions(Deps deps, SafeCommandStore safeStore)
+    {
+        // TODO:
+        // journal.registerHistoricalTransactions(id(), deps);
+
+        if (deps.isEmpty()) return;
+
+        CommandStores.RangesForEpoch ranges = safeStore.ranges();
+        // used in places such as accord.local.CommandStore.fetchMajorityDeps
+        // We find a set of dependencies for a range then update CommandsFor to know about them
+        Ranges allRanges = safeStore.ranges().all();
+        deps.keyDeps.keys().forEach(allRanges, key -> {
+            // TODO (now): batch register to minimise GC
+            deps.keyDeps.forEach(key, (txnId, txnIdx) -> {
+                // TODO (desired, efficiency): this can be made more efficient by batching by epoch
+                if (ranges.coordinates(txnId).contains(key))
+                    return; // already coordinates, no need to replicate
+                if (!ranges.allBefore(txnId.epoch()).contains(key))
+                    return;
+
+                safeStore.get(key).registerHistorical(safeStore, txnId);
+            });
+        });
+        for (int i = 0; i < deps.rangeDeps.rangeCount(); i++)
+        {
+            var range = deps.rangeDeps.range(i);
+            if (!allRanges.intersects(range))
+                continue;
+            deps.rangeDeps.forEach(range, txnId -> {
+                // TODO (desired, efficiency): this can be made more efficient by batching by epoch
+                if (ranges.coordinates(txnId).intersects(range))
+                    return; // already coordinates, no need to replicate
+                if (!ranges.allBefore(txnId.epoch()).intersects(range))
+                    return;
+
+                diskCommandsForRanges().mergeHistoricalTransaction(txnId, Ranges.single(range).slice(allRanges), Ranges::with);
+            });
+        }
+    }
+
     protected void setRejectBefore(ReducingRangeMap<Timestamp> newRejectBefore)
     {
         super.setRejectBefore(newRejectBefore);
@@ -560,18 +616,65 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     }
 
     @Override
-    public void setDurableBefore(DurableBefore newDurableBefore)
+    public AsyncResult<?> mergeAndUpdateDurableBefore(DurableBefore newDurableBefore)
     {
-        super.setDurableBefore(newDurableBefore);
-        AccordKeyspace.updateDurableBefore(this, newDurableBefore);
+        AsyncResult.Settable<Void> result = AsyncResults.settable();
+        AsyncResult<?> pendingDurableBeforeResult = this.pendingDurableBeforeResult;
+        DurableBefore pendingDurableBefore = this.pendingDurableBefore;
+        newDurableBefore = pendingDurableBefore != null ? DurableBefore.merge(newDurableBefore, pendingDurableBefore) : DurableBefore.merge(newDurableBefore, durableBefore());
+        this.pendingDurableBeforeResult = result;
+        this.pendingDurableBefore = newDurableBefore;
+
+        Future<?> pendingWrite = AccordKeyspace.updateDurableBefore(this, newDurableBefore);
+        final DurableBefore newDurableBeforeFinal = newDurableBefore;
+        BiConsumer<Object, Throwable> callback = (ignored, failure) -> {
+            if (failure != null)
+                result.tryFailure(failure);
+            else
+            {
+                super.setDurableBefore(newDurableBeforeFinal);
+                result.trySuccess(null);
+            }
+        };
+
+        // Order completion after previous updates, this is probably stricter than necessary but easy to implement
+        if (pendingDurableBeforeResult != null)
+            pendingDurableBeforeResult.addCallback(() -> pendingWrite.addCallback(callback, executor));
+        else
+            pendingWrite.addCallback(callback, executor);
+
+        return result;
     }
 
     @Override
-    protected void setRedundantBefore(RedundantBefore newRedundantBefore)
+    protected AsyncResult<?> mergeAndUpdateRedundantBefore(RedundantBefore newRedundantBefore)
     {
-        super.setRedundantBefore(newRedundantBefore);
-        // TODO (required): this needs to be synchronous, or at least needs to take effect before we rely upon it
-        AccordKeyspace.updateRedundantBefore(this, newRedundantBefore);
+        AsyncResult.Settable<Void> result = AsyncResults.settable();
+        AsyncResult<?> pendingRedundantBeforeResult = this.pendingRedundantBeforeResult;
+        RedundantBefore pendingRedundantBefore = this.pendingRedundantBefore;
+        newRedundantBefore = pendingRedundantBefore != null ? RedundantBefore.merge(newRedundantBefore, pendingRedundantBefore) : RedundantBefore.merge(newRedundantBefore, redundantBefore());
+        this.pendingRedundantBeforeResult = result;
+        this.pendingRedundantBefore = newRedundantBefore;
+
+        Future<?> pendingWrite = AccordKeyspace.updateRedundantBefore(this, newRedundantBefore);
+        final RedundantBefore newRedundantBeforeFinal = newRedundantBefore;
+        BiConsumer<Object, Throwable> callback = (ignored, failure) -> {
+            if (failure != null)
+                result.tryFailure(failure);
+            else
+            {
+                super.setRedundantBefore(newRedundantBeforeFinal);
+                result.trySuccess(null);
+            }
+        };
+
+        // Order completion after previous updates, this is probably stricter than necessary but easy to implement
+        if (pendingRedundantBeforeResult != null)
+            pendingRedundantBeforeResult.addCallback(() -> pendingWrite.addCallback(callback, executor));
+        else
+            pendingWrite.addCallback(callback, executor);
+
+        return result;
     }
 
     public NavigableMap<TxnId, Ranges> bootstrapBeganAt() { return super.bootstrapBeganAt(); }
@@ -580,6 +683,47 @@ public class AccordCommandStore extends CommandStore implements CacheSize
     public void appendCommands(List<SavedCommand.SavedDiff> commands, List<Command> sanityCheck, Runnable onFlush)
     {
         journal.appendCommand(id, commands, sanityCheck, onFlush);
+    }
+
+    public void initializeFromReplay(Command prev, Command next, boolean load) throws InterruptedException
+    {
+        // Some commands are going to be loaded asynchronously to satisfy context. Load only last one version for each command.
+        if (load)
+            commandCache.maybeLoad(next.txnId(), next);
+
+        PreLoadContext context = PreLoadContext.EMPTY_PRELOADCONTEXT;
+        if (CommandsForKey.manages(next.txnId()))
+        {
+            Keys keys = (Keys) next.keysOrRanges();
+            if (keys == null || next.hasBeen(Status.Truncated)) keys = (Keys) prev.keysOrRanges();
+            if (keys != null)
+                context = PreLoadContext.contextFor(next.txnId(), keys, KeyHistory.COMMANDS);
+        }
+        else if (!CommandsForKey.managesExecution(next.txnId()) && next.hasBeen(Status.Stable) && !next.hasBeen(Status.Truncated) && !prev.hasBeen(Status.Stable))
+        {
+            TxnId txnId = next.txnId();
+            Keys keys = next.asCommitted().waitingOn.keys;
+            if (!keys.isEmpty())
+                context = PreLoadContext.contextFor(txnId, keys, KeyHistory.COMMANDS);
+        }
+
+        AsyncPromise<Void> condition = new AsyncPromise<>();
+        execute(context,
+                safeStore -> {
+                    safeStore.replay(() -> {
+                        safeStore.updateMaxConflicts(prev, next);
+                        safeStore.updateCommandsForKey(prev, next);
+                    });
+                })
+        .begin((unused, throwable) -> {
+            if (throwable != null)
+                condition.setSuccess(null);
+            else
+                condition.setFailure(throwable);
+        });
+
+        // TODO (desired): explore how we can allow concurrent loading without causing cache races.
+        condition.await();
     }
 
     @VisibleForTesting
