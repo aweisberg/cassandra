@@ -68,6 +68,7 @@ import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.fail;
 
 public abstract class AccordCQLTestBase extends AccordTestBase
 {
@@ -96,6 +97,93 @@ public abstract class AccordCQLTestBase extends AccordTestBase
     protected void test(FailingConsumer<Cluster> fn) throws Exception
     {
         test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, primary key (k, c)) WITH " + transactionalMode.asCqlParam(), fn);
+    }
+
+    @Test
+    public void testPartitionMultiRowReturn() throws Exception
+    {
+        test(cluster -> {
+            for (int i = 0; i < 3; i++)
+                cluster.coordinator(1).execute(wrapInTxn("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (?, ?, ?)"), ConsistencyLevel.ALL, 42, 43 + i, 44 + i);
+
+            String txn = "BEGIN TRANSACTION " +
+                             "SELECT * " +
+                             "FROM " + qualifiedAccordTableName + " " +
+                             "WHERE k = 42;" +
+                         "COMMIT TRANSACTION;";
+            SimpleQueryResult result = cluster.coordinator(1).executeWithResult(txn, ConsistencyLevel.SERIAL);
+            assertThat(result).hasSize(3)
+                              .contains(42, 43, 44)
+                              .contains(42, 44, 45)
+                              .contains(42, 45, 46);
+        });
+    }
+
+    @Test
+    public void testSaiMultiRowReturn() throws Exception
+    {
+        test(cluster -> {
+            cluster.schemaChange("CREATE INDEX ON " + qualifiedAccordTableName + "(v) USING 'sai';");
+            for (int i = 0; i < 3; i++)
+                cluster.coordinator(1).execute(wrapInTxn("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (?, ?, ?)"), ConsistencyLevel.ALL, 42, 43 + i, 44 + i);
+
+            String txn = "BEGIN TRANSACTION " +
+                         "SELECT * " +
+                         "FROM " + qualifiedAccordTableName + " " +
+                         "WHERE k = 42 AND v = 45;" +
+                         "COMMIT TRANSACTION;";
+            SimpleQueryResult result = cluster.coordinator(1).executeWithResult(txn, ConsistencyLevel.SERIAL);
+            assertThat(result).hasSize(1)
+                              .contains(42, 44, 45);
+        });
+    }
+
+    // This fails and it is expected, mostly just here as documentation until it is fixed
+    @Test
+    public void testSasiMultiRowReturn() throws Exception
+    {
+        test(cluster -> {
+            cluster.schemaChange("CREATE INDEX ON " + qualifiedAccordTableName + "(v) USING 'org.apache.cassandra.index.sasi.SASIIndex';");
+            for (int i = 0; i < 3; i++)
+                cluster.coordinator(1).execute(wrapInTxn("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (?, ?, ?)"), ConsistencyLevel.ALL, 42, 43 + i, 44 + i);
+
+            String txn = "BEGIN TRANSACTION " +
+                         "SELECT * " +
+                         "FROM " + qualifiedAccordTableName + " " +
+                         "WHERE k = 42 AND v = 45;" +
+                         "COMMIT TRANSACTION;";
+            try
+            {
+                SimpleQueryResult result = cluster.coordinator(1).executeWithResult(txn, ConsistencyLevel.SERIAL);
+                fail("Expect this to fail right now");
+                assertThat(result).hasSize(1)
+                                  .contains(42, 44, 45);
+            }
+            catch (RuntimeException e)
+            {
+                if (!e.getMessage().contains("class org.apache.cassandra.db.SinglePartitionReadCommand cannot be cast to class org.apache.cassandra.db.PartitionRangeReadCommand"))
+                    throw e;
+            }
+        });
+    }
+
+    @Test
+    public void testLegacy2iMultiRowReturn() throws Exception
+    {
+        test(cluster -> {
+            cluster.schemaChange("CREATE INDEX ON " + qualifiedAccordTableName + "(v);");
+            for (int i = 0; i < 3; i++)
+                cluster.coordinator(1).execute(wrapInTxn("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (?, ?, ?)"), ConsistencyLevel.ALL, 42, 43 + i, 44 + i);
+
+            String txn = "BEGIN TRANSACTION " +
+                         "SELECT * " +
+                         "FROM " + qualifiedAccordTableName + " " +
+                         "WHERE k = 42 AND v = 45;" +
+                         "COMMIT TRANSACTION;";
+            SimpleQueryResult result = cluster.coordinator(1).executeWithResult(txn, ConsistencyLevel.SERIAL);
+            assertThat(result).hasSize(1)
+                              .contains(42, 44, 45);
+        });
     }
 
     @Test
