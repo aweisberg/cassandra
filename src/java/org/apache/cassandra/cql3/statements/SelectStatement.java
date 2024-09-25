@@ -455,16 +455,16 @@ public class SelectStatement implements CQLStatement.SingleKeyspaceCqlStatement,
     {
         RowFilter rowFilter = getRowFilter(options, state);
 
-        if (restrictions.isKeyRange())
+        if (!restrictions.isKeyRange() && restrictions.usesSecondaryIndexing() && rowFilter.isStrict())
+            return getSliceCommands(options, state, columnFilter, rowFilter, limit, nowInSec);
+
+        if (restrictions.isKeyRange() || restrictions.usesSecondaryIndexing())
         {
             if (restrictions.usesSecondaryIndexing() && !SchemaConstants.isLocalSystemKeyspace(table.keyspace))
                 Guardrails.nonPartitionRestrictedIndexQueryEnabled.ensureEnabled(state);
 
             return getRangeCommand(options, state, columnFilter, rowFilter, limit, nowInSec);
         }
-
-        if (restrictions.usesSecondaryIndexing() && !rowFilter.isStrict())
-            return getRangeCommand(options, state, columnFilter, rowFilter, limit, nowInSec);
 
         return getSliceCommands(options, state, columnFilter, rowFilter, limit, nowInSec);
     }
