@@ -55,15 +55,20 @@ import org.apache.cassandra.distributed.api.ICoordinator;
 import org.apache.cassandra.distributed.api.QueryResults;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.shared.AssertUtils;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.AccordTestUtils;
 import org.apache.cassandra.service.consensus.TransactionalMode;
+import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FailingConsumer;
 import org.assertj.core.api.Assertions;
 
+import static java.lang.String.format;
 import static java.util.Collections.singletonList;
 import static org.apache.cassandra.cql3.CQLTester.row;
+import static org.apache.cassandra.cql3.statements.schema.AlterTableStatement.ACCORD_COUNTER_COLUMN_UNSUPPORTED;
+import static org.apache.cassandra.cql3.statements.schema.AlterTableStatement.ACCORD_COUNTER_TABLES_UNSUPPORTED;
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -91,6 +96,105 @@ public abstract class AccordCQLTestBase extends AccordTestBase
     {
         AccordTestBase.setupCluster(builder -> builder, 2);
         SHARED_CLUSTER.schemaChange("CREATE TYPE " + KEYSPACE + ".person (height int, age int)");
+    }
+
+    @Test
+    public void testCounterCreateTableTransactionalModeFails() throws Exception
+    {
+        try
+        {
+            test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v counter, primary key (k, c)) WITH " + transactionalMode.asCqlParam(), cluster -> {});
+            fail("Expected exception");
+        }
+        catch (Throwable t)
+        {
+            assertEquals(IllegalStateException.class.getName(), t.getClass().getName());
+            assertEquals(format(ACCORD_COUNTER_TABLES_UNSUPPORTED, KEYSPACE, accordTableName), t.getMessage());
+        }
+    }
+
+    @Test
+    public void testCounterCreateTableTransactionalMigrationFromModeFails() throws Exception
+    {
+        try
+        {
+            test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v counter, primary key (k, c)) WITH transactional_migration_from = '" + transactionalMode.name() + "'", cluster -> {});
+            fail("Expected exception");
+        }
+        catch (Throwable t)
+        {
+            assertEquals(IllegalStateException.class.getName(), t.getClass().getName());
+            assertEquals(format(ACCORD_COUNTER_TABLES_UNSUPPORTED, KEYSPACE, accordTableName), t.getMessage());
+        }
+    }
+
+    @Test
+    public void testCounterAlterTableTransactionalModeFails() throws Exception
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v counter, primary key (k, c))", cluster -> {
+            try
+            {
+                cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " WITH transactional_mode = '" + transactionalMode.name() + "';", ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(format(ACCORD_COUNTER_TABLES_UNSUPPORTED, KEYSPACE, accordTableName), t.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testCounterAlterTableTransactionalMigrationFromModeFails() throws Exception
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v counter, primary key (k, c))", cluster -> {
+            try
+            {
+                cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " WITH transactional_migration_from = '" + transactionalMode.name() + "';", ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(format(ACCORD_COUNTER_TABLES_UNSUPPORTED, KEYSPACE, accordTableName), t.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testCounterAddColumnFailsWithAccord() throws Exception
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, s int static, v int, primary key (k, c)) WITH " + transactionalMode.asCqlParam(), cluster -> {
+            try
+            {
+                cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " ADD (v2 counter);", ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(format(ACCORD_COUNTER_COLUMN_UNSUPPORTED, KEYSPACE, accordTableName, transactionalMode, TransactionalMigrationFromMode.none), t.getMessage());
+            }
+        });
+    }
+
+    @Test
+    public void testCounterAddColumnFailsWithMigration() throws Exception
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, s int static, v int, primary key (k, c)) WITH " + transactionalMode.asCqlParam(), cluster -> {
+            try
+            {
+                cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " WITH transactional_mode = '" + TransactionalMode.off + "';", ConsistencyLevel.ALL);
+                cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " ADD (v2 counter);", ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(format(ACCORD_COUNTER_COLUMN_UNSUPPORTED, KEYSPACE, accordTableName, TransactionalMode.off, transactionalMode), t.getMessage());
+            }
+        });
     }
 
     @Override
@@ -292,8 +396,8 @@ public abstract class AccordCQLTestBase extends AccordTestBase
             cluster.get(1).runOnInstance(() -> {
                 StringBuilder sb = new StringBuilder("BEGIN TRANSACTION\n");
                 for (int i = 0; i < keyStrings.size() - 1; i++)
-                    sb.append(String.format("LET row%d = (SELECT * FROM %s WHERE k=%s AND c=0);\n", i, currentTable, keyStrings.get(i)));
-                sb.append(String.format("SELECT * FROM %s WHERE k=%s AND c=0;\n", currentTable, keyStrings.get(keyStrings.size() - 1)));
+                    sb.append(format("LET row%d = (SELECT * FROM %s WHERE k=%s AND c=0);\n", i, currentTable, keyStrings.get(i)));
+                sb.append(format("SELECT * FROM %s WHERE k=%s AND c=0;\n", currentTable, keyStrings.get(keyStrings.size() - 1)));
                 sb.append("COMMIT TRANSACTION");
 
                 Unseekables<?> routables = AccordTestUtils.createTxn(sb.toString()).keys().toParticipants();

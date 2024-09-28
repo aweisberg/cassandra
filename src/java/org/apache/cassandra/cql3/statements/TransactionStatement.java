@@ -61,6 +61,7 @@ import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.SinglePartitionReadQuery;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.partitions.FilteredPartition;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.service.ClientState;
@@ -108,6 +109,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
     public static final String SELECT_REFS_NEED_COLUMN_MESSAGE = "SELECT references must specify a column.";
     public static final String TRANSACTIONS_DISABLED_MESSAGE = "Accord transactions are disabled. (See accord.enabled in cassandra.yaml)";
     public static final String ILLEGAL_RANGE_QUERY_MESSAGE = "Range queries are not allowed for reads within a transaction; %s %s";
+    public static final String UNSUPPORTED_MIGRATION = "Transaction Statement is unsupported when migrating away from Accord or before migration to Accord is complete for a range";
 
     static class NamedSelect
     {
@@ -388,7 +390,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
 
             TxnResult txnResult = AccordService.instance().coordinate(txn, options.getConsistency(), requestTime);
             if (txnResult.kind() == retry_new_protocol)
-                throw new IllegalStateException("Transaction statement should never be required to switch consensus protocols");
+                throw new InvalidRequestException(UNSUPPORTED_MIGRATION);
             TxnData data = (TxnData)txnResult;
 
             if (returningSelect != null)
