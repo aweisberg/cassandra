@@ -26,6 +26,11 @@ import accord.local.Node;
 import accord.messages.Request;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.Message;
+import org.apache.cassandra.tcm.ClusterMetadata;
+import org.apache.cassandra.tcm.ClusterMetadataService;
+import org.apache.cassandra.tcm.Epoch;
+import org.apache.cassandra.utils.concurrent.Future;
+import org.apache.cassandra.utils.concurrent.ImmediateFuture;
 
 public class AccordVerbHandler<T extends Request> implements IVerbHandler<T>
 {
@@ -40,8 +45,25 @@ public class AccordVerbHandler<T extends Request> implements IVerbHandler<T>
         this.endpointMapper = endpointMapper;
     }
 
+    private static final Future<ClusterMetadata> EPOCH_ALREADY_FETCHED = ImmediateFuture.success(null);
     @Override
     public void doVerb(Message<T> message) throws IOException
+    {
+        // TODO (desired): need a non-blocking way to inform CMS of an unknown epoch and add callback to it's receipt
+
+        Future<ClusterMetadata> clusterMetadataFuture = ImmediateFuture.success(null);
+        if (ClusterMetadata.current().epoch.getEpoch() < message.payload.waitForEpoch())
+            clusterMetadataFuture = ClusterMetadataService.instance().fetchLogFromPeerOrCMSAsync(ClusterMetadata.current(),
+                                                                                                 message.from(),
+                                                                                                 Epoch.create(message.payload.waitForEpoch()));
+
+        if (clusterMetadataFuture.isDone())
+            doVerbWithClusterMetadata(message);
+        else
+            clusterMetadataFuture.addCallback(clusterMetadata -> doVerbWithClusterMetadata(message), failure -> logger.error("Dropping message beause ClusterMetadata fetching generated an error {}", message, failure));
+    }
+
+    private void doVerbWithClusterMetadata(Message<T> message)
     {
         logger.trace("Receiving {} from {}", message.payload, message.from());
         T request = message.payload;

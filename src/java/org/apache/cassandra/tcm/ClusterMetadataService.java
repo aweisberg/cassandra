@@ -702,6 +702,8 @@ public class ClusterMetadataService
 
     public Future<ClusterMetadata> fetchLogFromPeerOrCMSAsync(ClusterMetadata metadata, InetAddressAndPort from, Epoch awaitAtLeast)
     {
+        if (ClusterMetadata.current().epoch.compareTo(awaitAtLeast) >= 0)
+            return ImmediateFuture.success(null);
         AsyncPromise<ClusterMetadata> future = new AsyncPromise<>();
         ScheduledExecutors.optionalTasks.submit(() -> {
             try
