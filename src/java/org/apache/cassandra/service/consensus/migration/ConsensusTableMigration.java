@@ -239,7 +239,7 @@ public abstract class ConsensusTableMigration
                 logger.warn("Table {} does not have any migration state", cfs.name);
                 return;
             }
-            if(!Range.intersects(ranges, tms.migratingRanges))
+            if (!Range.intersects(ranges, tms.migratingRanges))
             {
                 logger.warn("Table {} with migrating ranges {} does not intersect with any requested ranges {}", cfs.name, tms.migratingRanges, ranges);
                 return;

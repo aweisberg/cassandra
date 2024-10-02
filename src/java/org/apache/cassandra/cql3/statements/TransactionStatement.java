@@ -278,8 +278,11 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         if (autoReads != null)
         {
             for (NamedSelect select : autoReads.values())
-                // don't need keyConsumer as the keys are known to exist due to Modification
-                reads.add(createNamedRead(select, options, state));
+            {
+                TxnNamedRead read = createNamedRead(select, options, state);
+                keyConsumer.accept(read.key());
+                reads.add(read);
+            }
         }
 
         return reads;
@@ -354,9 +357,8 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
             Int2ObjectHashMap<NamedSelect> autoReads = new Int2ObjectHashMap<>();
             AccordUpdate update = createUpdate(state, options, autoReads, keySet::add);
             List<TxnNamedRead> reads = createNamedReads(options, state, autoReads, keySet::add);
-            Keys txnKeys = toKeys(keySet);
             TxnKeyRead read = createTxnRead(reads, null);
-            return new Txn.InMemory(txnKeys, read, TxnQuery.ALL, update);
+            return new Txn.InMemory(toKeys(keySet), read, TxnQuery.ALL, update);
         }
     }
 
