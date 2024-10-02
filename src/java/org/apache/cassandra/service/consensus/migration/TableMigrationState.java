@@ -58,8 +58,8 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static org.apache.cassandra.db.TypeSizes.sizeof;
-import static org.apache.cassandra.dht.Range.normalize;
 import static org.apache.cassandra.dht.NormalizedRanges.normalizedRanges;
+import static org.apache.cassandra.dht.Range.normalize;
 import static org.apache.cassandra.dht.Range.subtract;
 import static org.apache.cassandra.utils.CollectionSerializers.deserializeMap;
 import static org.apache.cassandra.utils.CollectionSerializers.deserializeSet;
@@ -119,10 +119,18 @@ public class TableMigrationState
     public final NormalizedRanges<Token> repairPendingRanges;
 
     /**
-     * Ranges that are migrating could be in either phase when migrating to Accord. PAxos only has one phase.
+     * Ranges that are migrating could be in either phase when migrating to Accord. Paxos only has one phase.
      */
     @Nonnull
     public final NormalizedRanges<Token> migratingAndMigratedRanges;
+
+    /**
+     * Same as migratingAndMigratedRanges if migrating to Paxos, otherwise migratingAndMigratedRanges.subtract(repairPendingRanges)
+     *
+     * Not included in equals or hashCode because it is inferred from other fields
+     */
+    @Nonnull
+    public final NormalizedRanges<Token> accordSafeToReadRanges;
 
     public TableMigrationState(@Nonnull String keyspaceName,
                                @Nonnull String tableName,
@@ -145,6 +153,7 @@ public class TableMigrationState
                               .collect(Collectors.toList()));
         this.migratingRanges = normalizedRanges(migratingRangesByEpoch.values().stream().flatMap(Collection::stream).collect(Collectors.toList()));
         this.migratingAndMigratedRanges = normalizedRanges(ImmutableList.<Range<Token>>builder().addAll(migratedRanges).addAll(migratingRanges).build());
+        this.accordSafeToReadRanges = !repairPendingRanges.isEmpty() ? migratingAndMigratedRanges.subtract(this.repairPendingRanges) : migratingAndMigratedRanges;
     }
 
     static List<Range<Token>> initialRepairPendingRanges(ConsensusMigrationTarget target, List<Range<Token>> initialMigratingRanges)

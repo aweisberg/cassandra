@@ -721,12 +721,14 @@ public class AccordService implements IAccordService, Shutdownable
         // Barriers can be needed just because it's an Accord managed range, but it could also be a migration back to Paxos
         // in which case we do want to barrier the migrating/migrated ranges even though the target for the migration is not Accord
         // In either case Accord should be aware of those ranges and not generate a topology mismatch
-        if (tm.params.transactionalMode != TransactionalMode.off || tm.params.transactionalMigrationFrom.from != TransactionalMode.off)
+        if (tm.params.transactionalMode != TransactionalMode.off || tm.params.transactionalMigrationFrom.migratingFromAccord())
         {
             TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tm.id);
             // null is fine could be completely migrated or was always an Accord table on creation
             if (tms == null)
                 return keysOrRanges;
+            // Use migratingAndMigratedRanges (not accordSafeToReadRanges) because barriers are allowed even if Accord can't perform
+            // a read because they are only finishing/recovering existing Accord transactions
             Ranges migratingAndMigratedRanges = AccordTopology.toAccordRanges(tms.tableId, tms.migratingAndMigratedRanges);
             return keysOrRanges.slice(migratingAndMigratedRanges);
         }

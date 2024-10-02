@@ -86,6 +86,7 @@ import org.apache.cassandra.utils.FBUtilities;
 
 import static accord.primitives.Txn.Kind.EphemeralRead;
 import static accord.primitives.Txn.Kind.Read;
+import static java.lang.String.format;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkFalse;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkNotNull;
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkTrue;
@@ -267,8 +268,11 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         }
 
         for (NamedSelect select : autoReads.values())
-            // don't need keyConsumer as the keys are known to exist due to Modification
-            reads.add(createNamedRead(select, options, state));
+        {
+            TxnNamedRead read = createNamedRead(select, options, state);
+            keyConsumer.accept(read.key());
+            reads.add(read);
+        }
 
         return reads;
     }
@@ -348,10 +352,11 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         {
             Map<TxnDataName, NamedSelect> autoReads = new HashMap<>();
             AccordUpdate update = createUpdate(state, options, autoReads, keySet::add);
-            List<TxnNamedRead> reads = createNamedReads(options, state, autoReads, keySet::add);
-            Keys txnKeys = toKeys(keySet);
-            TxnKeyRead read = createTxnRead(reads, txnKeys, null);
-            return new Txn.InMemory(txnKeys, read, TxnQuery.ALL, update);
+            SortedSet<Key> readKeys = new TreeSet<>();
+            List<TxnNamedRead> reads = createNamedReads(options, state, autoReads, readKeys::add);
+            keySet.addAll(readKeys);
+            TxnKeyRead read = createTxnRead(reads, toKeys(readKeys), null);
+            return new Txn.InMemory(toKeys(keySet), read, TxnQuery.ALL, update);
         }
     }
 

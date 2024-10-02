@@ -90,8 +90,6 @@ import org.apache.cassandra.service.accord.txn.TxnDataRangeValue;
 import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.UnrecoverableRepairUpdate;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
-import org.apache.cassandra.service.consensus.migration.ConsensusTableMigration;
-import org.apache.cassandra.service.consensus.migration.TableMigrationState;
 import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.transport.Dispatcher;
@@ -253,6 +251,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         TxnKeyRead read = (TxnKeyRead) txn.read();
         List<AsyncChain<Data>> results = new ArrayList<>();
         Seekables<?, ?> keys = txn.read().keys();
+        ClusterMetadata cm = ClusterMetadata.current();
         keys.forEach(key -> {
             read.forEachWithKey((PartitionKey) key, fragment -> {
                 SinglePartitionReadCommand command = (SinglePartitionReadCommand) fragment.command();
@@ -261,9 +260,9 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
                 // because they haven't yet updated their cluster metadata.
                 // It would be harmless to do the read, because it will be rejected in `TxnQuery` anyways,
                 // but it's faster to skip the read
-                TableMigrationState tms = ConsensusTableMigration.getTableMigrationState(command.metadata().id);
                 AccordClientRequestMetrics metrics = txn.kind().isWrite() ? accordWriteMetrics : accordReadMetrics;
-                if (ConsensusRequestRouter.instance.isKeyInMigratingOrMigratedRangeFromAccord(command.metadata(), tms, command.partitionKey()))
+                // TODO (required): This doesn't use the metadata from the correct epoch
+                if (!ConsensusRequestRouter.instance.isKeyManagedByAccordForReadAndWrite(cm, command.metadata().id, command.partitionKey()))
                 {
                     metrics.migrationSkippedReads.mark();
                     results.add(AsyncChains.success(TxnData.emptyPartition(fragment.txnDataName(), command)));

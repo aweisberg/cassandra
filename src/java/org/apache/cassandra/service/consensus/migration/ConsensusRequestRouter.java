@@ -38,8 +38,6 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.paxos.Paxos;
 import org.apache.cassandra.tcm.ClusterMetadata;
-import org.apache.cassandra.tcm.ClusterMetadataService;
-import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.FBUtilities;
 
@@ -220,10 +218,18 @@ public class ConsensusRequestRouter
         // Accord -> Paxos - Paxos will ask Accord to migrate in the read at each replica if necessary
         // Paxos -> Accord - Paxos needs to be repaired before Accord runs so do it here
         if (tms.targetProtocol == paxos)
+            // TODO (important): Why are these two cases paxosV2 instead of `pickPaxos`?
+            // Because we only supported PaxosV2 for migration?
+            // Eventually we want to support both so just use pickPaxos and error out on migration from paxosV1 elsewhere?
             return paxosV2;
         else
-            // Should exit exceptionally if the repair is not done
-            ConsensusKeyMigrationState.repairKeyPaxos(naturalReplicas, cm.epoch, key, cfs, consistencyLevel, requestTime, timeoutNanos, isLocallyReplicated, isForWrite);
+        {
+            if (tms.accordSafeToReadRanges.intersects(key.getToken()))
+                // Should exit exceptionally if the repair is not done
+                ConsensusKeyMigrationState.repairKeyPaxos(naturalReplicas, cm.epoch, key, cfs, consistencyLevel, requestTime, timeoutNanos, isLocallyReplicated, isForWrite);
+            else
+                return pickPaxos();
+        }
 
         return pickMigrated(tms.targetProtocol);
     }
@@ -268,31 +274,87 @@ public class ConsensusRequestRouter
         return false;
     }
 
-    public boolean isKeyInMigratingOrMigratedRangeFromAccord(Epoch epoch, TableId tableId, DecoratedKey key)
+    public boolean isKeyManagedByAccordForReadAndWrite(ClusterMetadata cm, TableId tableId, DecoratedKey key)
     {
-        ClusterMetadata cm = ClusterMetadataService.instance().fetchLogFromCMS(epoch);
-        TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
-        return isKeyInMigratingOrMigratedRangeFromAccord(getTableMetadata(cm, tableId), tms, key);
+        return isKeyManagedByAccordForReadAndWrite(getTableMetadata(cm, tableId),
+                                                   cm.consensusMigrationState.tableStates.get(tableId),
+                                                   key);
     }
 
     /*
      * A lightweight check against cluster metadata that doesn't check if the key has already been migrated
-     * using local system table state.
+     * using local system table state. It just assumes that the key migration has already been done.
+     *
+     * This version is for is full read write transactions
      */
-    public boolean isKeyInMigratingOrMigratedRangeFromAccord(TableMetadata metadata, TableMigrationState tms, DecoratedKey key)
+    public boolean isKeyManagedByAccordForReadAndWrite(TableMetadata metadata, TableMigrationState tms, DecoratedKey key)
     {
-        if (!metadata.params.transactionalMigrationFrom.isMigrating())
-            return false;
+        TransactionalMode transactionalMode = metadata.params.transactionalMode;
+        TransactionalMigrationFromMode migrationFrom = metadata.params.transactionalMigrationFrom;
+        Token token = key.getToken();
 
-        // No state means no migration for this table
-        if (tms == null)
-            return false;
+        if (migrationFrom.isMigrating())
+            checkState(tms != null, "Can't have migration in progress without tms");
 
-        if (tms.targetProtocol == ConsensusMigrationTarget.accord)
-            return false;
+        if (transactionalMode.accordIsEnabled)
+        {
+            if (!migrationFrom.isMigrating())
+                return true;
+            if (migrationFrom.migratingFromAccord())
+                return true;
+            // Accord can only read/write the key if it is in a safe to read (repaired) range
+            if (tms.accordSafeToReadRanges.intersects(token))
+                return true;
+        }
+        else
+        {
+            // Once the migration starts only barriers are allowed to run for the key in Accord
+            if (migrationFrom.migratingFromAccord() && !tms.migratingAndMigratedRanges.intersects(token))
+                return true;
+        }
 
-        if (tms.migratingAndMigratedRanges.intersects(key.getToken()))
-            return true;
+        return false;
+    }
+
+    public boolean isKeyManagedByAccordForWrite(ClusterMetadata cm, TableId tableId, DecoratedKey key)
+    {
+        return isKeyManagedByAccordForWrite(getTableMetadata(cm, tableId),
+                                            cm.consensusMigrationState.tableStates.get(tableId),
+                                            key);
+    }
+
+    /*
+     * A lightweight check against cluster metadata that doesn't check if the key has already been migrated
+     * using local system table state. It just assumes that the key migration has already been done.
+     *
+     * This version is for writes through Accord before Accord is able to safely read.
+     */
+    public boolean isKeyManagedByAccordForWrite(TableMetadata metadata, TableMigrationState tms, DecoratedKey key)
+    {
+        TransactionalMode transactionalMode = metadata.params.transactionalMode;
+        TransactionalMigrationFromMode migrationFrom = metadata.params.transactionalMigrationFrom;
+        Token token = key.getToken();
+
+        if (migrationFrom.isMigrating())
+            checkState(tms != null, "Can't have migration in progress without tms");
+
+        if (transactionalMode.accordIsEnabled)
+        {
+            if (!migrationFrom.isMigrating())
+                return true;
+            if (migrationFrom.migratingFromAccord())
+                return true;
+            // Accord can blind write to the key even if it isn't safe to read from it so use migratingAndMigratedRanges
+            if (tms.migratingAndMigratedRanges.intersects(token))
+                return true;
+        }
+        else
+        {
+            // Once the migration away from Accord starts only barriers are allowed to run for the key in Accord
+            // and this method isn't used for barriers
+            if (migrationFrom.migratingFromAccord() && !tms.migratingAndMigratedRanges.intersects(token))
+                return true;
+        }
 
         return false;
     }

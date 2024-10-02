@@ -45,8 +45,10 @@ import org.slf4j.LoggerFactory;
 
 import accord.primitives.Unseekables;
 import accord.topology.Topologies;
+import org.apache.cassandra.config.Config.PaxosVariant;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.functions.types.utils.Bytes;
+import org.apache.cassandra.cql3.statements.TransactionStatement;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.db.marshal.MapType;
@@ -77,6 +79,7 @@ import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public abstract class AccordCQLTestBase extends AccordTestBase
@@ -96,8 +99,95 @@ public abstract class AccordCQLTestBase extends AccordTestBase
     @BeforeClass
     public static void setupClass() throws IOException
     {
-        AccordTestBase.setupCluster(builder -> builder, 2);
+        AccordTestBase.setupCluster(builder -> builder.appendConfig(config -> config.set("paxos_variant", PaxosVariant.v2.name())), 2);
         SHARED_CLUSTER.schemaChange("CREATE TYPE " + KEYSPACE + ".person (height int, age int)");
+    }
+
+    @Test
+    public void testRejectTransactionStatement() throws Throwable
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, primary key (k, c))", cluster -> {
+            ICoordinator coordinator = cluster.coordinator(1);
+            String readQuery = "BEGIN TRANSACTION\n" +
+                               "  SELECT * FROM " + qualifiedAccordTableName + " WHERE k = 0;\n" +
+                               "COMMIT TRANSACTION;";
+            String writeQuery = "BEGIN TRANSACTION\n" +
+                                "  INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (42, 43, 44);\n" +
+                                "COMMIT TRANSACTION;";
+
+            // Not enabled on table or migrating/migrated
+            try
+            {
+                coordinator.execute(readQuery, ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(t.getMessage(), format(TransactionStatement.TRANSACTIONS_DISABLED_ON_TABLE_MESSAGE, "SELECT", "at [2:3]"));
+            }
+
+            try
+            {
+                coordinator.execute(writeQuery, ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(t.getMessage(), format(TransactionStatement.TRANSACTIONS_DISABLED_ON_TABLE_MESSAGE, "INSERT", "at [2:3]"));
+            }
+
+            // Enabled on table but not migrating/migrated
+            coordinator.execute("ALTER TABLE " + qualifiedAccordTableName + " WITH transactional_mode = '" + transactionalMode.name() + "';", ConsistencyLevel.ALL);
+            try
+            {
+                cluster.coordinator(1).execute(readQuery, ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(t.getMessage(), TransactionStatement.UNSUPPORTED_MIGRATION);
+            }
+
+            try
+            {
+                coordinator.execute(writeQuery, ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(t.getMessage(), TransactionStatement.UNSUPPORTED_MIGRATION);
+            }
+
+
+            // Enabled on table but migrating
+            nodetool(coordinator, "consensus_admin", "begin-migration", "-tp", "accord", KEYSPACE, accordTableName);
+            try
+            {
+                coordinator.execute(readQuery, ConsistencyLevel.ALL);
+                fail("Expected exception");
+            }
+            catch (Throwable t)
+            {
+                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
+                assertEquals(t.getMessage(), TransactionStatement.UNSUPPORTED_MIGRATION);
+            }
+
+            // Write query should succeed even if Accord can't read
+            coordinator.execute(writeQuery, ConsistencyLevel.ALL);
+            // Should also work as a non-SERIAL insert
+            coordinator.execute("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (42, 43, 44);", ConsistencyLevel.ALL);
+            // And CAS
+            coordinator.execute("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (42, 43, 44) IF NOT EXISTS;", ConsistencyLevel.SERIAL, ConsistencyLevel.ALL);
+
+            // Enabled on table and migration has done data repair
+            nodetool(coordinator, "repair", "-skip-accord", "-skip-paxos", KEYSPACE, accordTableName);
+            coordinator.execute(readQuery, ConsistencyLevel.ALL);
+            coordinator.execute(writeQuery, ConsistencyLevel.ALL);
+        });
     }
 
     @Test
