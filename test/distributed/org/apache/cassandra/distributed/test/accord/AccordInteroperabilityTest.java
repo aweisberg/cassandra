@@ -43,9 +43,11 @@ import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.io.sstable.SSTableReadsListener;
 import org.apache.cassandra.net.Verb;
 import org.apache.cassandra.service.accord.IAccordService;
+import org.apache.cassandra.service.consensus.TransactionalMode;
 
 import static com.google.common.base.Throwables.getStackTraceAsString;
 import static org.apache.cassandra.Util.dk;
+import static org.apache.cassandra.Util.spinAssertEquals;
 import static org.apache.commons.collections.ListUtils.synchronizedList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -90,10 +92,69 @@ public class AccordInteroperabilityTest extends AccordTestBase
          );
     }
 
-    @Test
-    public void testApplyIsInteropApply() throws Throwable
+    private String testTransactionInsert()
     {
-        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c)) WITH transactional_mode='mixed_reads'",
+        return "BEGIN TRANSACTION\n" +
+               "  INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (42, 2, 3);\n" +
+               "COMMIT TRANSACTION";
+    }
+
+    private String testInsert()
+    {
+        return "INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (42, 2, 3)";
+    }
+
+    @Test
+    public void testTransactionStatementApplyIsInteropApplyUnsafe() throws Throwable
+    {
+        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.unsafe);
+    }
+
+    @Test
+    public void testNonSerialApplyIsInteropApplyUnsafe() throws Throwable
+    {
+        testApplyIsInteropApply(testInsert(), TransactionalMode.unsafe);
+    }
+
+    @Test
+    public void testTransactionStatementApplyIsInteropApplyUnsafeWrites() throws Throwable
+    {
+        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.unsafe_writes);
+    }
+
+    @Test
+    public void testNonSerialApplyIsInteropApplyUnsafeWrites() throws Throwable
+    {
+        testApplyIsInteropApply(testInsert(), TransactionalMode.unsafe_writes);
+    }
+
+    @Test
+    public void testTransactionStatementApplyIsInteropApplyMixedReads() throws Throwable
+    {
+        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.mixed_reads);
+    }
+
+    @Test
+    public void testNonSerialApplyIsInteropMixedReads() throws Throwable
+    {
+        testApplyIsInteropApply(testInsert(), TransactionalMode.mixed_reads);
+    }
+
+    @Test
+    public void testTransactionStatementApplyIsInteropApplyFull() throws Throwable
+    {
+        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.full);
+    }
+
+    @Test
+    public void testNonSerialApplyIsInteropFull() throws Throwable
+    {
+        testApplyIsInteropApply(testInsert(), TransactionalMode.full);
+    }
+
+    private void testApplyIsInteropApply(String query, TransactionalMode transactionalMode) throws Throwable
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c)) WITH " + transactionalMode.asCqlParam(),
              cluster -> {
                  MessageCountingSink messageCountingSink = new MessageCountingSink(SHARED_CLUSTER);
                  List<String> failures = synchronizedList(new ArrayList<>());
@@ -139,21 +200,108 @@ public class AccordInteroperabilityTest extends AccordTestBase
                          messageCountingSink.accept(to, message);
                      }
                  });
-                cluster.coordinator(1).execute("INSERT INTO " + qualifiedAccordTableName + " (k, c, v) VALUES (42, 2, 3)", org.apache.cassandra.distributed.api.ConsistencyLevel.QUORUM);
-                assertEquals(3, messageCounts.get(Verb.ACCORD_INTEROP_APPLY_REQ).get());
-                assertTrue(failures.toString(), failures.isEmpty());
+                 String finalQuery = query;
+                 org.apache.cassandra.distributed.api.ConsistencyLevel consistencyLevel = org.apache.cassandra.distributed.api.ConsistencyLevel.QUORUM;
+                 // Need to switch to CAS for it to run through Accord at all
+                 if (!transactionalMode.nonSerialWritesThroughAccord && !query.startsWith("BEGIN TRANSACTION"))
+                 {
+                     finalQuery = query + " IF NOT EXISTS";
+                     consistencyLevel = org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL;
+                 }
+                 long startingRegularApplyCount = messageCount(Verb.ACCORD_APPLY_REQ);
+                 cluster.coordinator(1).execute(finalQuery, consistencyLevel);
+                 if (transactionalMode.ignoresSuppliedCommitCL)
+                 {
+                     // Apply is async
+                     spinAssertEquals(startingRegularApplyCount + 3, () -> messageCount(Verb.ACCORD_APPLY_REQ));
+                     assertEquals(0, messageCount(Verb.ACCORD_INTEROP_APPLY_REQ));
+                 }
+                 else
+                 {
+                     assertEquals(3, messageCount(Verb.ACCORD_INTEROP_APPLY_REQ));
+                 }
+                 assertTrue(failures.toString(), failures.isEmpty());
              });
     }
 
-    @Test
-    public void testReadIsAtQuorum() throws Throwable
+    private String testTransactionSelect()
     {
-        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c)) WITH transactional_mode='unsafe_writes'",
+        return "BEGIN TRANSACTION\n" +
+               "  SELECT * FROM " + qualifiedAccordTableName + " WHERE k = 0;\n" +
+               "COMMIT TRANSACTION";
+    }
+
+    private String testSelect()
+    {
+        return "SELECT * FROM " + qualifiedAccordTableName + " WHERE k = 0";
+    }
+
+    @Test
+    public void testTransactionStatementReadIsAtQuorumUnsafe() throws Throwable
+    {
+        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.unsafe);
+    }
+
+    @Test
+    public void testNonSerialReadIsAtQuorumUnsafe() throws Throwable
+    {
+        testReadIsAtQuorum(testSelect(), TransactionalMode.unsafe);
+    }
+
+    @Test
+    public void testTransactionStatementReadIsAtQuorumUnsafeWrites() throws Throwable
+    {
+        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.unsafe_writes);
+    }
+
+    @Test
+    public void testNonSerialReadIsAtQuorumUnsafeWrites() throws Throwable
+    {
+        testReadIsAtQuorum(testSelect(), TransactionalMode.unsafe_writes);
+    }
+
+    @Test
+    public void testTransactionStatementReadIsAtQuorumMixedReads() throws Throwable
+    {
+        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.mixed_reads);
+    }
+
+    @Test
+    public void testNonSerialReadIsAtQuorumMixedReads() throws Throwable
+    {
+        testReadIsAtQuorum(testSelect(), TransactionalMode.mixed_reads);
+    }
+
+    @Test
+    public void testTransactionStatementReadIsAtQuorumFull() throws Throwable
+    {
+        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.full);
+    }
+
+    @Test
+    public void testNonSerialReadIsAtQuorumFull() throws Throwable
+    {
+        testReadIsAtQuorum(testSelect(), TransactionalMode.full);
+    }
+
+    private void testReadIsAtQuorum(String query, TransactionalMode transactionalMode) throws Throwable
+    {
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c)) WITH " + transactionalMode.asCqlParam(),
              cluster -> {
                  SHARED_CLUSTER.setMessageSink(new MessageCountingSink(SHARED_CLUSTER));
-                 cluster.coordinator(1).execute("SELECT * FROM " + qualifiedAccordTableName + " WHERE k = 0", org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL);
-                 assertEquals(2, messageCounts.get(Verb.ACCORD_INTEROP_COMMIT_REQ).get());
-                 assertEquals(2, messageCounts.get(Verb.ACCORD_INTEROP_READ_RSP).get());
+                 cluster.coordinator(1).execute(query, org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL);
+                 if (transactionalMode.ignoresSuppliedReadCL())
+                 {
+                     // Tricky to check for regular commit because a lot of background Accord things create commits
+                     assertEquals(0, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
+                     assertEquals(0, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
+                     assertEquals(1, messageCount(Verb.ACCORD_READ_RSP));
+                 }
+                 else
+                 {
+                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
+                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
+                 }
              });
     }
 
