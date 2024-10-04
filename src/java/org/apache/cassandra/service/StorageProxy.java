@@ -2157,7 +2157,7 @@ public class StorageProxy implements StorageProxyMBean
         return lastResult.serialReadResult;
     }
 
-    public static ConsistencyLevel consistencyLevelForAccordRead(ClusterMetadata cm, TableId tableId, Iterable<Token> tokens, @Nullable ConsistencyLevel consistencyLevel)
+    public static ConsistencyLevel consistencyLevelForAccordRead(ClusterMetadata cm, TableId tableId, SinglePartitionReadCommand.Group group, @Nullable ConsistencyLevel consistencyLevel)
     {
         // Null means no specific consistency behavior is required from Accord, it's functionally similar to
         // reading at ONE if you are reading data that wasn't written via Accord
@@ -2167,12 +2167,12 @@ public class StorageProxy implements StorageProxyMBean
         TableParams tableParams = getTableMetadata(cm, tableId).params;
         TransactionalMode mode = tableParams.transactionalMode;
         TransactionalMigrationFromMode migrationFromMode = tableParams.transactionalMigrationFrom;
-        for (Token token : tokens)
+        for (SinglePartitionReadCommand command : group.queries)
         {
             // readCLForMode should return either null or the supplied consistency level
             // in which case we will read everything at that CL since Accord doesn't support per table
             // read consistency
-            ConsistencyLevel readCL = mode.readCLForMode(migrationFromMode, consistencyLevel, cm, tableId, token);
+            ConsistencyLevel readCL = mode.readCLForMode(migrationFromMode, consistencyLevel, cm, tableId, command.partitionKey().getToken());
             if (readCL != null)
                 return readCL;
         }
@@ -2204,7 +2204,7 @@ public class StorageProxy implements StorageProxyMBean
         // If the non-SERIAL write strategy is sending all writes through Accord there is no need to use the supplied consistency
         // level since Accord will manage reading safely
         TransactionalMode transactionalMode = group.metadata().params.transactionalMode;
-        consistencyLevel = consistencyLevelForAccordRead(cm, group.queries.get(0).metadata().id, Iterables.transform(group.queries, command -> command.partitionKey().getToken()), consistencyLevel);
+        consistencyLevel = consistencyLevelForAccordRead(cm, group.queries.get(0).metadata().id, group, consistencyLevel);
         TxnKeyRead read = TxnKeyRead.createSerialRead(group.queries, consistencyLevel);
         Txn.Kind kind = Read;
         if (transactionalMode == TransactionalMode.full && DatabaseDescriptor.getAccordEphemeralReadEnabledEnabled() && group.queries.size() == 1)

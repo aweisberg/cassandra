@@ -84,7 +84,7 @@ public enum TransactionalMode
      *
      * SERIAL reads and CAS will run on Accord. Accord will honor provided consistency levels and do synchronous commit
      * so the results can be read correctly with non-SERIAL CLs, but read repair could interfere with Accord.
-     */
+     **/
     unsafe(true, false, false, false, false),
 
     /*
@@ -156,11 +156,10 @@ public enum TransactionalMode
      * Infer whether Accord can ignore the read CL and bias towards correctness by reading from a quorum
      * if it's needed due to how non-SERIAL writes are done
      */
-    private boolean ignoresSuppliedReadCL()
+    public boolean ignoresSuppliedReadCL()
     {
         return nonSerialWritesThroughAccord && blockingReadRepairThroughAccord;
     }
-
 
     public ConsistencyLevel readCLForMode(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
     {
