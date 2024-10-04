@@ -131,7 +131,7 @@ public enum TransactionalMode
         this.cqlParam = String.format("transactional_mode = '%s'", this.name().toLowerCase());
     }
 
-    public ConsistencyLevel commitCLForStrategy(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
+    public ConsistencyLevel commitCLForMode(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
     {
         if (ignoresSuppliedCommitCL)
         {
@@ -162,7 +162,7 @@ public enum TransactionalMode
     }
 
 
-    public ConsistencyLevel readCLForStrategy(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
+    public ConsistencyLevel readCLForMode(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
     {
         if (ignoresSuppliedReadCL())
         {
@@ -183,7 +183,7 @@ public enum TransactionalMode
         return consistencyLevel;
     }
 
-    public ConsistencyLevel readCLForStrategy(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Range<Token> range)
+    public ConsistencyLevel readCLForMode(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Range<Token> range)
     {
         if (ignoresSuppliedReadCL())
         {
