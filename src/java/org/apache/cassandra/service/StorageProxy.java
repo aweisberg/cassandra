@@ -2159,25 +2159,24 @@ public class StorageProxy implements StorageProxyMBean
         return lastResult.serialReadResult;
     }
 
-    private static ConsistencyLevel consistencyLevelForAccordRead(ClusterMetadata cm, SinglePartitionReadCommand.Group group, @Nullable ConsistencyLevel consistencyLevel)
+    public static ConsistencyLevel consistencyLevelForAccordRead(ClusterMetadata cm, TableId tableId, Iterable<Token> tokens, @Nullable ConsistencyLevel consistencyLevel)
     {
         // Null means no specific consistency behavior is required from Accord, it's functionally similar to
         // reading at ONE if you are reading data that wasn't written via Accord
         if (consistencyLevel == null)
             return null;
 
-        TableId tableId = group.queries.get(0).metadata().id;
         TableParams tableParams = getTableMetadata(cm, tableId).params;
         TransactionalMode mode = tableParams.transactionalMode;
         TransactionalMigrationFromMode migrationFromMode = tableParams.transactionalMigrationFrom;
-        for (SinglePartitionReadCommand command : group.queries)
+        for (Token token : tokens)
         {
-            // readCLForStrategy should return either null or the supplied consistency level
+            // readCLForMode should return either null or the supplied consistency level
             // in which case we will read everything at that CL since Accord doesn't support per table
             // read consistency
-            ConsistencyLevel commitCL = mode.readCLForStrategy(migrationFromMode, consistencyLevel, cm, tableId, command.partitionKey().getToken());
-            if (commitCL != null)
-                return commitCL;
+            ConsistencyLevel readCL = mode.readCLForMode(migrationFromMode, consistencyLevel, cm, tableId, token);
+            if (readCL != null)
+                return readCL;
         }
         return null;
     }
@@ -2189,7 +2188,7 @@ public class StorageProxy implements StorageProxyMBean
         TableMetadata tableMetadata = getTableMetadata(cm, command.metadata().id);
         TableParams tableParams = tableMetadata.params;
         Range<Token> readRange = new Range<>(command.dataRange().startKey().getToken(), command.dataRange().stopKey().getToken());
-        consistencyLevel = tableParams.transactionalMode.readCLForStrategy(tableParams.transactionalMigrationFrom, consistencyLevel, cm, tableMetadata.id, readRange);
+        consistencyLevel = tableParams.transactionalMode.readCLForMode(tableParams.transactionalMigrationFrom, consistencyLevel, cm, tableMetadata.id, readRange);
         TxnRead read = new TxnRangeRead(command, ranges, consistencyLevel);
         Txn.Kind kind = shouldReadEphemerally(read.keys(), tableParams, Read);
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.RANGE_QUERY, null);
@@ -2206,7 +2205,7 @@ public class StorageProxy implements StorageProxyMBean
         // level since Accord will manage reading safely
         TableMetadata tableMetadata = getTableMetadata(cm, group.metadata().id);
         TableParams tableParams = tableMetadata.params;
-        consistencyLevel = consistencyLevelForAccordRead(cm, group, consistencyLevel);
+        consistencyLevel = consistencyLevelForAccordRead(cm, group.queries.get(0).metadata().id, Iterables.transform(group.queries, command -> command.partitionKey().getToken()), consistencyLevel);
         TxnKeyRead read = TxnKeyRead.createSerialRead(group.queries, consistencyLevel);
         Txn.Kind kind = shouldReadEphemerally(read.keys(), tableParams, Read);
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.ALL, null);
