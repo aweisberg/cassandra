@@ -73,12 +73,13 @@ public abstract class MultiNodeSAITestBase extends SingleNodeSAITestBase
             @Override
             public Object[][] execute(String cql, ConsistencyLevel cl, Object[] bindings)
             {
-                // The goal here is to make replicas as out of date as possible, modulo the efforts of repair
-                // and read-repair in the test itself.
                 if (cql.contains("SELECT"))
                     return super.execute(cql, ConsistencyLevel.ALL, FETCH_SIZE, bindings);
 
-                // node_local bypasses Accord which breaks any attempt at testing Accord
+                // The goal here is to make replicas as out of date as possible, modulo the efforts of repair
+                // and read-repair in the test itself. node_local bypasses Accord which breaks any attempt at testing Accord
+                // so if we are running with Accord use QUORUM (which Accord will ignore since it runs with transactional
+                // mode full).
                 ConsistencyLevel consistencyLevel = withAccord ? ConsistencyLevel.QUORUM : ConsistencyLevel.NODE_LOCAL;
                 return super.execute(cql, consistencyLevel, bindings);
             }

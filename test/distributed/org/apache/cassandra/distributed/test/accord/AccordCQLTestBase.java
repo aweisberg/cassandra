@@ -256,18 +256,9 @@ public abstract class AccordCQLTestBase extends AccordTestBase
                          "FROM " + qualifiedAccordTableName + " " +
                          "WHERE k = 42 AND v = 45;" +
                          "COMMIT TRANSACTION;";
-            try
-            {
-                SimpleQueryResult result = cluster.coordinator(1).executeWithResult(txn, ConsistencyLevel.SERIAL);
-                fail("Expect this to fail right now");
-                assertThat(result).hasSize(1)
-                                  .contains(42, 44, 45);
-            }
-            catch (RuntimeException e)
-            {
-                if (!e.getMessage().contains("class org.apache.cassandra.db.SinglePartitionReadCommand cannot be cast to class org.apache.cassandra.db.PartitionRangeReadCommand"))
-                    throw e;
-            }
+            SimpleQueryResult result = cluster.coordinator(1).executeWithResult(txn, ConsistencyLevel.SERIAL);
+            assertThat(result).hasSize(1)
+                              .contains(42, 44, 45);
         });
     }
 

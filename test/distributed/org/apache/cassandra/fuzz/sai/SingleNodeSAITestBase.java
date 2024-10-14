@@ -265,9 +265,6 @@ public abstract class SingleNodeSAITestBase extends IntegrationTestBase
                     if (modelState.rows().size() > 0)
                         logger.debug("Model contains {} matching rows for query {}.", modelState.rows().size(), query);
 
-                    if (run == 0 && i == 300 && j == 0)
-                        System.out.println("oops");
-
                     try
                     {
                         QuiescentChecker.validate(schema,

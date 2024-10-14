@@ -1280,7 +1280,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
      */
     public SinglePartitionReadCommand withoutReconciliation()
     {
-        if (indexQueryPlan() == null)
+        if (rowFilter().isEmpty())
             return this;
         return create(serializedAtEpoch(),
                       isDigestQuery(),
