@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.service.reads;
 
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
@@ -64,7 +65,7 @@ public interface ReadCoordinator
 
     boolean localReadSupported();
     EndpointsForToken forNonLocalStrategyTokenRead(ClusterMetadata metadata, KeyspaceMetadata keyspace, TableId tableId, Token token);
-    default ReadCommand maybeAllowOutOfRangeReads(ReadCommand command)
+    default ReadCommand maybeAllowOutOfRangeReads(ReadCommand command, ConsistencyLevel cl)
     {
         return command;
     }

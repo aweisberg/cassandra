@@ -98,7 +98,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                          boolean isDigest,
                                          int digestVersion,
                                          boolean acceptsTransient,
-                                         boolean allowsOutOfRangeReads,
+                                         boolean allowsPotentialTxnConflicts,
                                          TableMetadata metadata,
                                          long nowInSec,
                                          ColumnFilter columnFilter,
@@ -110,7 +110,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                          boolean trackWarnings,
                                          DataRange dataRange)
     {
-        super(serializedAtEpoch, Kind.SINGLE_PARTITION, isDigest, digestVersion, acceptsTransient, allowsOutOfRangeReads, metadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan, trackWarnings, dataRange);
+        super(serializedAtEpoch, Kind.SINGLE_PARTITION, isDigest, digestVersion, acceptsTransient, allowsPotentialTxnConflicts, metadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan, trackWarnings, dataRange);
         assert partitionKey.getPartitioner() == metadata.partitioner;
         this.partitionKey = partitionKey;
         this.clusteringIndexFilter = clusteringIndexFilter;
@@ -120,7 +120,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                                      boolean isDigest,
                                                      int digestVersion,
                                                      boolean acceptsTransient,
-                                                     boolean allowsOutOfRangeReads,
+                                                     boolean allowsPotentialTxnConflicts,
                                                      TableMetadata metadata,
                                                      long nowInSec,
                                                      ColumnFilter columnFilter,
@@ -153,7 +153,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                               isDigest,
                                               digestVersion,
                                               acceptsTransient,
-                                              allowsOutOfRangeReads,
+                                              allowsPotentialTxnConflicts,
                                               metadata,
                                               nowInSec,
                                               columnFilter,
@@ -372,7 +372,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       isDigestQuery(),
                       digestVersion(),
                       acceptsTransient(),
-                      allowsOutOfRangeReads(),
+                      allowsPotentialTxnConflicts(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -391,7 +391,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       true,
                       digestVersion(),
                       acceptsTransient(),
-                      allowsOutOfRangeReads(),
+                      allowsPotentialTxnConflicts(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -410,7 +410,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       false,
                       0,
                       true,
-                      allowsOutOfRangeReads(),
+                      allowsPotentialTxnConflicts(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -429,7 +429,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       isDigestQuery(),
                       digestVersion(),
                       acceptsTransient(),
-                      allowsOutOfRangeReads(),
+                      allowsPotentialTxnConflicts(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -447,7 +447,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       isDigestQuery(),
                       digestVersion(),
                       acceptsTransient(),
-                      allowsOutOfRangeReads(),
+                      allowsPotentialTxnConflicts(),
                       metadata(),
                       nowInSec,
                       columnFilter(),
@@ -1273,12 +1273,11 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
     }
 
     /*
-     * The execution method does not need to perform reconciliation so the read command
-     * should execute in a mannager suited to not needing reconciliation. Such as when
-     * executing transactionally at a single replica and doing an index scan where the index
-     * scan should not return extra rows and expect post filtering at the coordinator.
+     * When running transactionally we need to use the txn system nowInSeconds, and set whether reconciliation
+     * should be performed based on whether it's part of a multiple replica read. We also allow potential txn conflicts
+     * because we manage those conflicts from the txn system
      */
-    public SinglePartitionReadCommand withoutReconciliation()
+    public SinglePartitionReadCommand withTransactionalSettings(boolean withoutReconciliation, long nowInSeconds)
     {
         if (rowFilter().isEmpty())
             return this;
@@ -1286,11 +1285,11 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       isDigestQuery(),
                       digestVersion(),
                       acceptsTransient(),
-                      allowsOutOfRangeReads(),
+                      true,
                       metadata(),
-                      nowInSec(),
+                      nowInSeconds,
                       columnFilter(),
-                      rowFilter().withoutReconciliation(),
+                      withoutReconciliation ? rowFilter().withoutReconciliation() : rowFilter(),
                       limits(),
                       partitionKey(),
                       clusteringIndexFilter(),
@@ -1435,7 +1434,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                                          boolean trackWarnings,
                                                          DataRange dataRange)
         {
-            super(metadata.epoch, isDigest, digestVersion, true, acceptsTransient, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter, indexQueryPlan, trackWarnings, dataRange);
+            super(metadata.epoch, isDigest, digestVersion, acceptsTransient, true, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter, indexQueryPlan, trackWarnings, dataRange);
         }
 
         @Override

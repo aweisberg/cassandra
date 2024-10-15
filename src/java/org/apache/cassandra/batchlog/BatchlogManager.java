@@ -31,7 +31,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
-
 import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -454,7 +453,7 @@ public class BatchlogManager implements BatchlogManagerMBean
                 if (accordResult != null)
                 {
                     IAccordService accord = AccordService.instance();
-                    TxnResult.Kind kind = accord.getTxnResult(accordResult, true, ConsistencyLevel.QUORUM, accordTxnStart).kind();
+                    TxnResult.Kind kind = accord.getTxnResult(accordResult).kind();
                     if (kind == retry_new_protocol)
                         throw new RetryOnDifferentSystemException();
                 }
