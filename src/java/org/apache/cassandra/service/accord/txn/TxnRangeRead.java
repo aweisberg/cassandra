@@ -172,8 +172,6 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
 
         List<AsyncChain<Data>> results = new ArrayList<>();
         PartitionRangeReadCommand command = (PartitionRangeReadCommand)get();
-        if (cassandraConsistencyLevel == null || cassandraConsistencyLevel == ConsistencyLevel.ONE)
-            command = command.withoutReconciliation();
 
         Ranges intersecting = covering.slice(Ranges.of(range.asRange()), Slice.Minimal);
         for (Range subRange : intersecting)
@@ -228,7 +226,7 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
         PartitionPosition subRangeEndPP = endPP.getToken().equals(subRangeEndToken) ? endPP : subRangeEndToken.maxKeyBound();
         // Need to preserve the fact it is a bounds for paging to work, a range is not left inclusive and will not start from where we left off
         AbstractBounds<PartitionPosition> subRange = isFirstSubrange ? bounds.withNewRight(subRangeEndPP) : new org.apache.cassandra.dht.Range(subRangeStartPP, subRangeEndPP);
-        return command.forSubRangeWithNowInSeconds(nowInSeconds, subRange, startTokenKey.equals(r.start()));
+        return command.withTransactionalSettings(nowInSeconds, subRange, startTokenKey.equals(r.start()), cassandraConsistencyLevel == null || cassandraConsistencyLevel == ConsistencyLevel.ONE);
     }
 
     private AsyncChain<Data> performLocalRead(PartitionRangeReadCommand command, Range r, long nowInSeconds)

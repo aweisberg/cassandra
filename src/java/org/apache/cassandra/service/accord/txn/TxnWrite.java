@@ -137,7 +137,7 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
                    '}';
         }
 
-        public AsyncChain<Void> write(boolean preserveTimestamps, @Nonnull Function<Cell, CellPath> cellToMaybeNewListPath, long timestamp, int nowInSeconds)
+        public AsyncChain<Void> write(boolean preserveTimestamps, @Nonnull Function<Cell, CellPath> cellToMaybeNewListPath, long timestamp, long nowInSeconds)
         {
             PartitionUpdate update = get();
             if (!preserveTimestamps)
@@ -392,7 +392,7 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
 
         long timestamp = safeCfk.current().uniqueHlc(safeStore, txnId, executeAt);
         // TODO (low priority - do we need to compute nowInSeconds, or can we just use executeAt?)
-        int nowInSeconds = (int) TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
+        long nowInSeconds = (long) TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
 
         List<AsyncChain<Void>> results = new ArrayList<>();
 
