@@ -55,7 +55,7 @@ public class AccordRangeResponse extends AbstractIterator<RowIterator> implement
         IntPredicate alwaysTrue = ignored -> true;
         IntPredicate alwaysFalse = ignored -> false;
         // TODO (required): Handle retry on different system
-        ConsensusAttemptResult consensusAttemptResult = StorageProxy.getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, 1, reversed ? alwaysTrue : alwaysFalse, cl, requestTime);
+        ConsensusAttemptResult consensusAttemptResult = StorageProxy.getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, 1, reversed ? alwaysTrue : alwaysFalse);
         checkState(!consensusAttemptResult.shouldRetryOnNewConsensusProtocol, "Live migration is not supported yet");
         result = consensusAttemptResult.serialReadResult;
     }

@@ -99,17 +99,25 @@ public interface IAccordService
     class AsyncTxnResult extends AsyncPromise<TxnResult>
     {
         public final @Nonnull TxnId txnId;
+        @Nullable
+        public final ConsistencyLevel consistencyLevel;
+        public final boolean isWrite;
+        public final Dispatcher.RequestTime requestTime;
 
-        public AsyncTxnResult(@Nonnull TxnId txnId)
+        public AsyncTxnResult(@Nonnull TxnId txnId, @Nullable ConsistencyLevel consistencyLevel, boolean isWrite, @Nonnull Dispatcher.RequestTime requestTime)
         {
             checkNotNull(txnId);
+            checkNotNull(requestTime);
             this.txnId = txnId;
+            this.consistencyLevel = consistencyLevel;
+            this.isWrite = isWrite;
+            this.requestTime = requestTime;
         }
     }
 
     @Nonnull
     AsyncTxnResult coordinateAsync(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime);
-    TxnResult getTxnResult(AsyncTxnResult asyncTxnResult, boolean isWrite, @Nullable ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime);
+    TxnResult getTxnResult(AsyncTxnResult asyncTxnResult);
 
     long currentEpoch();
 

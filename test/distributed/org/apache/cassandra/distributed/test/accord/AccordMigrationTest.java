@@ -103,8 +103,8 @@ import static org.apache.cassandra.Util.dk;
 import static org.apache.cassandra.Util.spinUntilSuccess;
 import static org.apache.cassandra.db.SystemKeyspace.CONSENSUS_MIGRATION_STATE;
 import static org.apache.cassandra.db.SystemKeyspace.PAXOS;
-import static org.apache.cassandra.dht.Range.normalize;
 import static org.apache.cassandra.dht.NormalizedRanges.normalizedRanges;
+import static org.apache.cassandra.dht.Range.normalize;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.ALL;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.ANY;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL;
@@ -347,10 +347,12 @@ public class AccordMigrationTest extends AccordTestBase
                 List<byte[]> keys = expectedMigrations.stream().map(p -> p.left.array()).collect(Collectors.toList());
                 List<Integer> intKeys = expectedMigrations.stream().map(p -> ByteBufferUtil.toInt(p.left)).collect(Collectors.toList());
                 List<UUID> tables = expectedMigrations.stream().map(p -> p.right).collect(Collectors.toList());
-                for (int i = 1; i < SHARED_CLUSTER.size(); i++)
-                {
-                    int instanceIndex = i;
-                    IInvokableInstance instance = SHARED_CLUSTER.get(i);
+                // Notification of all replicas that the key was migrated was removed so they will each have to run
+                // a local barrier first to find out the key was migrated. Not sure if we will add it back somehow.
+//                for (int i = 1; i < SHARED_CLUSTER.size(); i++)
+//                {
+                    int instanceIndex = 1;
+                    IInvokableInstance instance = SHARED_CLUSTER.get(instanceIndex);
                     instance.runOnInstance(() -> {
                         Map<Pair<ByteBuffer, UUID>, ConsensusMigratedAt> cacheMap = ConsensusKeyMigrationState.MIGRATION_STATE_CACHE.asMap();
                         String cacheMessage = format("Instance %d Expected %s migrations but found in cache %s", instanceIndex, intKeys, cacheMap);
@@ -375,7 +377,7 @@ public class AccordMigrationTest extends AccordTestBase
                             assertTrue(tableMessage, foundKey);
                         }
                     });
-                }
+//                }
             }
             catch (Throwable t)
             {

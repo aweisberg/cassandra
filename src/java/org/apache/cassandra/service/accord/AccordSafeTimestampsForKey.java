@@ -127,12 +127,12 @@ public class AccordSafeTimestampsForKey extends SafeTimestampsForKey implements 
         return timestamps.hlcFor(executeAt, isForWriteTxn);
     }
 
-    public static int nowInSecondsFor(TimestampsForKey timestamps, Timestamp executeAt, boolean isForWriteTxn)
+    public static long nowInSecondsFor(TimestampsForKey timestamps, Timestamp executeAt, boolean isForWriteTxn)
     {
         timestamps.validateExecuteAtTime(executeAt, isForWriteTxn);
         // we use the executeAt time instead of the monotonic database timestamp to prevent uneven
         // ttl expiration in extreme cases, ie 1M+ writes/second to a key causing timestamps to overflow
         // into the next second on some keys and not others.
-        return Math.toIntExact(TimeUnit.MICROSECONDS.toSeconds(timestamps.lastExecutedTimestamp().hlc()));
+        return TimeUnit.MICROSECONDS.toSeconds(timestamps.lastExecutedTimestamp().hlc());
     }
 }

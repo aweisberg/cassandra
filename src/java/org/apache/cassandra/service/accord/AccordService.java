@@ -252,7 +252,7 @@ public class AccordService implements IAccordService, Shutdownable
         }
 
         @Override
-        public TxnResult getTxnResult(AsyncTxnResult asyncTxnResult, boolean isWrite, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+        public TxnResult getTxnResult(AsyncTxnResult asyncTxnResult)
         {
             throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
         }
@@ -612,13 +612,13 @@ public class AccordService implements IAccordService, Shutdownable
             AsyncResult<TxnId> asyncResult = syncPoint == null
                                                  ? Barrier.barrier(node, keysOrRanges, route, epoch, barrierType)
                                                  : Barrier.barrier(node, keysOrRanges, route, epoch, barrierType, syncPoint);
+            long deadlineNanos = requestTime.startedAtNanos() + timeoutNanos;
+            TxnId txnId = AsyncChains.getBlocking(asyncResult, deadlineNanos - nanoTime(), NANOSECONDS);
             if (keysOrRanges.domain() == Key)
             {
                 PartitionKey key = (PartitionKey)keysOrRanges.get(0);
-                asyncResult.accept(txnId -> maybeSaveAccordKeyMigrationLocally(key, Epoch.create(txnId.epoch())));
+                maybeSaveAccordKeyMigrationLocally(key, Epoch.create(txnId.epoch()));
             }
-            long deadlineNanos = requestTime.startedAtNanos() + timeoutNanos;
-            AsyncChains.getBlocking(asyncResult, deadlineNanos - nanoTime(), NANOSECONDS);
             logger.debug("Completed barrier attempt in {}ms, {}ms since attempts start, barrier key: {} epoch: {} barrierType: {} isForWrite {}",
                          sw.elapsed(MILLISECONDS),
                          NANOSECONDS.toMillis(nanoTime() - requestTime.startedAtNanos()),
@@ -861,7 +861,7 @@ public class AccordService implements IAccordService, Shutdownable
     public @Nonnull TxnResult coordinate(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
     {
         AsyncTxnResult asyncTxnResult = coordinateAsync(txn, consistencyLevel, requestTime);
-        return getTxnResult(asyncTxnResult, txn.isWrite(), consistencyLevel, requestTime);
+        return getTxnResult(asyncTxnResult);
     }
 
     @Override
@@ -871,7 +871,7 @@ public class AccordService implements IAccordService, Shutdownable
         AccordClientRequestMetrics metrics = txn.isWrite() ? accordWriteMetrics : accordReadMetrics;
         metrics.keySize.update(txn.keys().size());
         AsyncResult<Result> asyncResult = node.coordinate(txnId, txn);
-        AsyncTxnResult asyncTxnResult = new AsyncTxnResult(txnId);
+        AsyncTxnResult asyncTxnResult = new AsyncTxnResult(txnId, consistencyLevel, txn.isWrite(), requestTime);
         asyncResult.addCallback((success, failure) -> {
             long durationNanos = nanoTime() - requestTime.startedAtNanos();
             metrics.addNano(durationNanos);
@@ -916,12 +916,12 @@ public class AccordService implements IAccordService, Shutdownable
     }
 
     @Override
-    public TxnResult getTxnResult(AsyncTxnResult asyncTxnResult, boolean isWrite, @Nullable ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+    public TxnResult getTxnResult(AsyncTxnResult asyncTxnResult)
     {
-        AccordClientRequestMetrics metrics = isWrite ? accordWriteMetrics : accordReadMetrics;
+        AccordClientRequestMetrics metrics = asyncTxnResult.isWrite ? accordWriteMetrics : accordReadMetrics;
         try
         {
-            long deadlineNanos = requestTime.computeDeadline(DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
+            long deadlineNanos = asyncTxnResult.requestTime.computeDeadline(DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
             TxnResult result = asyncTxnResult.get(deadlineNanos - nanoTime(), NANOSECONDS);
             return result;
         }
@@ -949,7 +949,7 @@ public class AccordService implements IAccordService, Shutdownable
         catch (TimeoutException e)
         {
             metrics.timeouts.mark();
-            throw newTimeout(asyncTxnResult.txnId, isWrite, consistencyLevel);
+            throw newTimeout(asyncTxnResult.txnId, asyncTxnResult.isWrite, asyncTxnResult.consistencyLevel);
         }
     }
 

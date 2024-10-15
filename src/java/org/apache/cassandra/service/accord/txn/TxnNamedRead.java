@@ -127,10 +127,12 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         // It's fine for our nowInSeconds to lag slightly our insertion timestamp, as to the user
         // this simply looks like the transaction witnessed TTL'd data and the data then expired
         // immediately after the transaction executed, and this simplifies things a great deal
-        int nowInSeconds = (int) TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
+        long nowInSeconds = TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
         if (consistencyLevel == null || consistencyLevel == ConsistencyLevel.ONE)
-            command = command.withoutReconciliation();
-        return performLocalRead(command, nowInSeconds);
+            command = command.withTransactionalSettings(true, nowInSeconds);
+        else
+            command = command.withTransactionalSettings(false, nowInSeconds);
+        return performLocalRead(command);
     }
 
     public ReadCommand command()
@@ -138,12 +140,10 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         return get();
     }
 
-    private AsyncChain<Data> performLocalRead(SinglePartitionReadCommand command, int nowInSeconds)
+    private AsyncChain<Data> performLocalRead(SinglePartitionReadCommand read)
     {
         Callable<Data> readCallable = () ->
         {
-            SinglePartitionReadCommand read = command.withNowInSec(nowInSeconds);
-
             try (ReadExecutionController controller = read.executionController();
                  PartitionIterator iterator = UnfilteredPartitionIterators.filter(read.executeLocally(controller), read.nowInSec()))
             {
@@ -196,7 +196,7 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
                 @Override
                 public String description()
                 {
-                    return command.toCQLString();
+                    return read.toCQLString();
                 }
             }
         );

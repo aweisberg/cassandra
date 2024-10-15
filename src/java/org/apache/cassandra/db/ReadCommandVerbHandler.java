@@ -164,7 +164,7 @@ public class ReadCommandVerbHandler implements IVerbHandler<ReadCommand>
 
         // Some read commands may be sent using an older Epoch intentionally so validating using the current Epoch
         // doesn't work
-        if (command.allowsOutOfRangeReads())
+        if (command.allowsPotentialTxnConflicts())
             return metadata;
 
         if (command.isTopK())

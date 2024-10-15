@@ -82,7 +82,6 @@ import static org.apache.cassandra.service.accord.txn.TxnDataName.Kind.CAS_READ;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
 
-
 /**
  * Processed CAS conditions and update on potentially multiple rows of the same partition.
  */

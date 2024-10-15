@@ -147,6 +147,7 @@ import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.SplitConsumer;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.SplitMutations;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
+import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.SplitReads;
 import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.service.paxos.Ballot;
 import org.apache.cassandra.service.paxos.Commit;
@@ -186,6 +187,7 @@ import static com.google.common.collect.Iterables.concat;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.apache.cassandra.db.ConsistencyLevel.SERIAL;
+import static org.apache.cassandra.db.partitions.PartitionIterators.singletonIterator;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.casReadMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.casWriteMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetrics;
@@ -212,6 +214,7 @@ import static org.apache.cassandra.service.consensus.migration.ConsensusMigratio
 import static org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.splitMutationsIntoAccordAndNormal;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
+import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.splitReadsIntoAccordAndNormal;
 import static org.apache.cassandra.service.paxos.Ballot.Flag.GLOBAL;
 import static org.apache.cassandra.service.paxos.Ballot.Flag.LOCAL;
 import static org.apache.cassandra.service.paxos.BallotGenerator.Global.nextBallot;
@@ -1267,7 +1270,7 @@ public class StorageProxy implements StorageProxyMBean
                 {
                     writeMetrics.retryDifferentSystem.mark();
                     writeMetricsForLevel(consistencyLevel).retryDifferentSystem.mark();
-                    logger.debug("Retrying mutations on different system because some mutations were misrouted");
+                    logger.debug("Retrying mutations on different system because some mutations were misrouted according to Cassandra");
                     Tracing.trace("Got {} from normal mutations, will retry", e);
                     continue;
                 }
@@ -1291,9 +1294,13 @@ public class StorageProxy implements StorageProxyMBean
                     if (accordResult != null)
                     {
                         IAccordService accord = AccordService.instance();
-                        TxnResult.Kind kind = accord.getTxnResult(accordResult, true, consistencyLevel, requestTime).kind();
+                        TxnResult.Kind kind = accord.getTxnResult(accordResult).kind();
                         if (kind == retry_new_protocol)
+                        {
+                            Tracing.trace("Accord returned retry new protocol");
+                            logger.debug("Retrying mutations on different system because some mutations were misrouted according to Accord");
                             continue;
+                        }
                         Tracing.trace("Successfully wrote Accord mutations");
                     }
                 }
@@ -1501,7 +1508,7 @@ public class StorageProxy implements StorageProxyMBean
                     if (accordResult != null)
                     {
                         IAccordService accord = AccordService.instance();
-                        TxnResult.Kind kind = accord.getTxnResult(accordResult, true, consistencyLevel, requestTime).kind();
+                        TxnResult.Kind kind = accord.getTxnResult(accordResult).kind();
                         if (kind == retry_new_protocol && failure == null)
                             continue;
                         Tracing.trace("Successfully wrote Accord mutations");
@@ -2102,7 +2109,7 @@ public class StorageProxy implements StorageProxyMBean
 
         return consistencyLevel.isSerialConsistency()
              ? readWithConsensus(group, consistencyLevel, requestTime)
-             : readRegular(group, consistencyLevel, requestTime);
+             : dispatchReadWithRetryOnDifferentSystem(group, consistencyLevel, ReadCoordinator.DEFAULT, requestTime);
     }
 
     public static boolean hasJoined()
@@ -2196,7 +2203,7 @@ public class StorageProxy implements StorageProxyMBean
         return accordService.coordinateAsync(txn, consistencyLevel, requestTime);
     }
 
-    private static ConsensusAttemptResult readWithAccord(ClusterMetadata cm, SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+    private static AsyncTxnResult readWithAccordAsync(ClusterMetadata cm, SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
     {
         if (consistencyLevel != null && !IAccordService.SUPPORTED_READ_CONSISTENCY_LEVELS.contains(consistencyLevel))
             throw new InvalidRequestException(consistencyLevel + " is not supported by Accord");
@@ -2210,16 +2217,21 @@ public class StorageProxy implements StorageProxyMBean
         if (transactionalMode == TransactionalMode.full && DatabaseDescriptor.getAccordEphemeralReadEnabledEnabled() && group.queries.size() == 1)
             kind = EphemeralRead;
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.ALL, null);
-        AsyncTxnResult asyncTxnResult = AccordService.instance().coordinateAsync(txn, consistencyLevel, requestTime);
-        return getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, group.queries.size(), index -> group.queries.get(index).isReversed(), consistencyLevel, requestTime);
+        return AccordService.instance().coordinateAsync(txn, consistencyLevel, requestTime);
+    }
+
+    private static ConsensusAttemptResult readWithAccord(ClusterMetadata cm, SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+    {
+        AsyncTxnResult asyncTxnResult = readWithAccordAsync(cm, group, consistencyLevel, requestTime);
+        return getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, group.queries.size(), index -> group.queries.get(index).isReversed());
     }
 
     /*
      * Used for both the SERIAL and non-SERIAL read path into Accord
      */
-    public static ConsensusAttemptResult getConsensusAttemptResultFromAsyncTxnResult(AsyncTxnResult asyncTxnResult, int numQueries, IntPredicate isQueryReversed, ConsistencyLevel cl, Dispatcher.RequestTime requestTime)
+    public static ConsensusAttemptResult getConsensusAttemptResultFromAsyncTxnResult(AsyncTxnResult asyncTxnResult, int numQueries, IntPredicate isQueryReversed)
     {
-        TxnResult txnResult = AccordService.instance().getTxnResult(asyncTxnResult, false, cl, requestTime);
+        TxnResult txnResult = AccordService.instance().getTxnResult(asyncTxnResult);
         // TODO (required): Converge on a single approach to RETRY_NEW_PROTOCOL, this works for now because reads don't support it anyways
         if (txnResult.kind() == retry_new_protocol)
             return RETRY_NEW_PROTOCOL;
@@ -2234,7 +2246,7 @@ public class StorageProxy implements StorageProxyMBean
         else if (data.size() == 1)
         {
             TxnDataKeyValue value = ((TxnDataKeyValue)data.values().iterator().next());
-            return serialReadResult(PartitionIterators.singletonIterator(value.rowIterator(isQueryReversed.test(0))));
+            return serialReadResult(singletonIterator(value.rowIterator(isQueryReversed.test(0))));
         }
         else
         {
@@ -2246,7 +2258,7 @@ public class StorageProxy implements StorageProxyMBean
             {
                 int queryIndex = Integer.valueOf(e.getKey().part(0));
                 TxnDataKeyValue value = ((TxnDataKeyValue)e.getValue());
-                partitionIterators.set(queryIndex, PartitionIterators.singletonIterator(value.rowIterator(isQueryReversed.test(queryIndex))));
+                partitionIterators.set(queryIndex, singletonIterator(value.rowIterator(isQueryReversed.test(queryIndex))));
             }
             return serialReadResult(partitionIterators.size() == 1 ? partitionIterators.get(0) : PartitionIterators.concat(partitionIterators));
         }
@@ -2347,6 +2359,131 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
+    public static PartitionIterator dispatchReadWithRetryOnDifferentSystem(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, ReadCoordinator coordinator, Dispatcher.RequestTime requestTime)
+    throws UnavailableException, ReadFailureException, ReadTimeoutException
+    {
+        while (true)
+        {
+            ClusterMetadata cm = ClusterMetadata.current();
+            try
+            {
+                SplitReads splitReads = splitReadsIntoAccordAndNormal(cm, group);
+                SinglePartitionReadCommand.Group accordReads = splitReads.accordReads;
+                AsyncTxnResult accordResult = accordReads != null ? readWithAccordAsync(cm, accordReads, consistencyLevel, requestTime) : null;
+                SinglePartitionReadCommand.Group normalReads = splitReads.normalReads;
+                Tracing.trace("Split reads into Accord {} and normal {}", accordReads, normalReads);
+
+                Throwable failure = null;
+                PartitionIterator normalPartitions = null;
+                try
+                {
+                    if (normalReads != null)
+                    {
+                        normalPartitions = readRegular(normalReads, consistencyLevel, coordinator, requestTime);
+                        Tracing.trace("Successfully executed normal reads");
+                    }
+                }
+                catch (RetryOnDifferentSystemException e)
+                {
+                    readMetrics.retryDifferentSystem.mark();
+                    readMetricsForLevel(consistencyLevel).retryDifferentSystem.mark();
+                    logger.debug("Retrying reads on different system because some reads were misrouted according to Accord");
+                    Tracing.trace("Got {} from normal reads, will retry", e);
+                    continue;
+                }
+                catch (CoordinatorBehindException e)
+                {
+                    readMetrics.retryCoordinatorBehind.mark();
+                    readMetricsForLevel(consistencyLevel).retryCoordinatorBehind.mark();
+                    logger.debug("Retrying reads now that coordinator has caught up to cluster metadata");
+                    Tracing.trace("Got {} from normal reads, will retry", e);
+                    continue;
+                }
+                catch (Exception e)
+                {
+                    failure = Throwables.merge(failure, e);
+                }
+                
+                // Check if the Accord reads succeeded asynchronously
+                PartitionIterator accordPartitions = null;
+                try
+                {
+                    if (accordResult != null)
+                    {
+                        ConsensusAttemptResult consensusResult = getConsensusAttemptResultFromAsyncTxnResult(accordResult, accordReads.queries.size(), index -> group.queries.get(index).isReversed());
+                        if (consensusResult == RETRY_NEW_PROTOCOL)
+                        {
+                            Tracing.trace("Accord returned retry new protocol");
+                            logger.debug("Retrying reads on different system because some reads were misrouted according to Accord");
+                            continue;
+                        }
+                        Tracing.trace("Successfully executed Accord reads");
+                        accordPartitions = consensusResult.serialReadResult;
+                    }
+                }
+                catch (Exception e)
+                {
+                    failure = Throwables.merge(failure, e);
+                }
+
+                if (failure != null)
+                    throw unchecked(failure);
+                
+                if (normalPartitions != null && (accordPartitions == null || !accordPartitions.hasNext()))
+                    return normalPartitions;
+                else if ((normalPartitions == null || !normalPartitions.hasNext()) && accordPartitions != null)
+                    return accordPartitions;
+                else
+                {
+                    // Merge into partition key order
+                    List<PartitionIterator> partitions = new ArrayList<>(group.queries.size());
+                    RowIterator nextAccordPartition = null;
+                    RowIterator nextNormalPartition = null;
+                    while (nextAccordPartition != null || nextNormalPartition != null || normalPartitions.hasNext() || accordPartitions.hasNext())
+                    {
+                        if (nextAccordPartition == null && accordPartitions.hasNext())
+                            nextAccordPartition = accordPartitions.next();
+                        if (nextNormalPartition == null && normalPartitions.hasNext())
+                            nextNormalPartition = normalPartitions.next();
+
+                        if (nextNormalPartition == null)
+                        {
+                            partitions.add(singletonIterator(nextAccordPartition));
+                            nextAccordPartition = null;
+                        }
+                        else if (nextAccordPartition == null)
+                        {
+                            partitions.add(singletonIterator(nextNormalPartition));
+                            nextNormalPartition = null;
+                        }
+                        else
+                        {
+                            int cmp = nextAccordPartition.partitionKey().compareTo(nextNormalPartition.partitionKey());
+                            checkState(cmp != 0, "Reads should never overlap between systems");
+                            if (cmp < 0)
+                            {
+                                partitions.add(singletonIterator(nextAccordPartition));
+                                nextAccordPartition = null;
+                            }
+                            else
+                            {
+                                partitions.add(singletonIterator(nextNormalPartition));
+                                nextNormalPartition = null;
+                            }
+                        }
+                    }
+                    return PartitionIterators.concat(partitions);
+                }
+            }
+            catch (Exception t)
+            {
+                // Unexpected error so it would be helpful to have details
+                Tracing.trace("{}", getStackTraceAsToString(t));
+                throw t;
+            }
+        }
+    }
+
     @SuppressWarnings("resource")
     public static PartitionIterator readRegular(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, ReadCoordinator coordinator, Dispatcher.RequestTime requestTime)
     throws UnavailableException, ReadFailureException, ReadTimeoutException
@@ -2425,11 +2562,6 @@ public class StorageProxy implements StorageProxyMBean
             for (ReadCommand command : group.queries)
                 Keyspace.openAndGetStore(command.metadata()).metric.coordinatorReadLatency.update(latency, TimeUnit.NANOSECONDS);
         }
-    }
-
-    public static PartitionIterator readRegular(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
-    {
-        return readRegular(group, consistencyLevel, ReadCoordinator.DEFAULT, requestTime);
     }
 
     public static void recordReadRegularAbort(ConsistencyLevel consistencyLevel, Throwable cause)

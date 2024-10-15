@@ -246,7 +246,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         node.send(id, readRepair, executor, new AccordInteropReadRepair.ReadRepairCallback(id, to, message, callback, this));
     }
 
-    private List<AsyncChain<Data>> keyReadChains(int nowInSeconds, Dispatcher.RequestTime requestTime)
+    private List<AsyncChain<Data>> keyReadChains(long nowInSeconds, Dispatcher.RequestTime requestTime)
     {
         TxnKeyRead read = (TxnKeyRead) txn.read();
         List<AsyncChain<Data>> results = new ArrayList<>();
@@ -269,6 +269,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
                     return;
                 }
 
+                // TODO (cleanup): Do we need to set nowInSeconds here? It will be set when the read is executed as well
                 Group group = Group.one(command.withNowInSec(nowInSeconds));
                 results.add(AsyncChains.ofCallable(Stage.ACCORD_MIGRATION.executor(), () -> {
                     TxnData result = new TxnData();
@@ -291,7 +292,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         return results;
     }
 
-    private List<AsyncChain<Data>> rangeReadChains(int nowInSeconds, Dispatcher.RequestTime requestTime)
+    private List<AsyncChain<Data>> rangeReadChains(long nowInSeconds, Dispatcher.RequestTime requestTime)
     {
         TxnKeyRead read = (TxnKeyRead) txn.read();
         Seekables<?, ?> keys = txn.read().keys();
@@ -341,7 +342,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
 
     private AsyncChain<Data> readChains()
     {
-        int nowInSeconds = (int) TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
+        long nowInSeconds = TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
         // TODO (expected): use normal query nano time
         Dispatcher.RequestTime requestTime = Dispatcher.RequestTime.forImmediateExecution();
 
@@ -433,7 +434,15 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     @Override
     public ReadCommand maybeAllowOutOfRangeReads(ReadCommand readCommand)
     {
-        return readCommand.allowOutOfRangeReads();
+        // Really just want to enable allowPotentialTxnConflicts without changing anything else
+        // but didn't want to add another method for constructing a modified read command
+        if (readCommand instanceof SinglePartitionReadCommand)
+            return ((SinglePartitionReadCommand)readCommand).withTransactionalSettings(false, readCommand.nowInSec());
+        else
+        {
+            PartitionRangeReadCommand rangeCommand = ((PartitionRangeReadCommand)readCommand);
+            return rangeCommand.withTransactionalSettings(readCommand.nowInSec(), rangeCommand.dataRange().keyRange(), true);
+        }
     }
 
     // Provide request callbacks with a way to send maximal commits on Insufficient responses

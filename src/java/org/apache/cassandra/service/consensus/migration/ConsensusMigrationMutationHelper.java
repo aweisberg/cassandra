@@ -259,11 +259,11 @@ public class ConsensusMigrationMutationHelper
         IAccordService accordService = AccordService.instance();
         try
         {
-            return accordService.coordinateAsync(txn, consistencyLevel, requestTime);
+            return accordService.coordinateAsync(txn, clForCommit, requestTime);
         }
         catch (CoordinationFailed coordinationFailed)
         {
-            AsyncTxnResult failure = new AsyncTxnResult(coordinationFailed.txnId());
+            AsyncTxnResult failure = new AsyncTxnResult(coordinationFailed.txnId(), clForCommit, true, requestTime);
             failure.setFailure(coordinationFailed.wrap());
             return failure;
         }
@@ -274,12 +274,13 @@ public class ConsensusMigrationMutationHelper
         if (mutation.allowsPotentialTransactionConflicts())
             return;
 
+        String keyspace = mutation.getKeyspaceName();
         // System keyspaces are never managed by Accord
-        if (SchemaConstants.isSystemKeyspace(mutation.getKeyspaceName()))
+        if (SchemaConstants.isSystemKeyspace(keyspace))
             return;
 
         // Local keyspaces are never managed by Accord
-        if (Schema.instance.localKeyspaces().containsKeyspace(mutation.getKeyspaceName()))
+        if (Schema.instance.localKeyspaces().containsKeyspace(keyspace))
             return;
 
         ClusterMetadata cm = ClusterMetadata.current();

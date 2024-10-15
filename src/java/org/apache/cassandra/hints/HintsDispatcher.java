@@ -534,7 +534,7 @@ final class HintsDispatcher implements AutoCloseable
             try
             {
                 IAccordService accord = AccordService.instance();
-                TxnResult.Kind kind = accord.getTxnResult(accordTxnResult, true, null, requestTime).kind();
+                TxnResult.Kind kind = accord.getTxnResult(accordTxnResult).kind();
                 if (kind == retry_new_protocol)
                     accordOutcome = RETRY_DIFFERENT_SYSTEM;
                 else

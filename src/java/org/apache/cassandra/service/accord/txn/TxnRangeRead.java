@@ -152,7 +152,7 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
         // It's fine for our nowInSeconds to lag slightly our insertion timestamp, as to the user
         // this simply looks like the transaction witnessed TTL'd data and the data then expired
         // immediately after the transaction executed, and this simplifies things a great deal
-        int nowInSeconds = (int) TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
+        long nowInSeconds = TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
 
         List<AsyncChain<Data>> results = new ArrayList<>();
         PartitionRangeReadCommand command = (PartitionRangeReadCommand)get();
@@ -166,7 +166,7 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
         return AsyncChains.reduce(results, Data::merge);
     }
 
-    private AsyncChain<Data> performLocalRead(PartitionRangeReadCommand command, Range r, int nowInSeconds)
+    private AsyncChain<Data> performLocalRead(PartitionRangeReadCommand command, Range r, long nowInSeconds)
     {
         Callable<Data> readCallable = () ->
         {
@@ -203,7 +203,7 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
             PartitionPosition subRangeEndPP = endPP.getToken().equals(subRangeEndToken) ? endPP : subRangeEndToken.maxKeyBound();
             // Need to preserve the fact it is a bounds for paging to work, a range is not left inclusive and will not start from where we left off
             AbstractBounds<PartitionPosition> subRange = isFirstSubrange ? bounds.withNewRight(subRangeEndPP) : new org.apache.cassandra.dht.Range(subRangeStartPP, subRangeEndPP);
-            PartitionRangeReadCommand read = command.forSubRangeWithNowInSeconds(nowInSeconds, subRange, startTokenKey.equals(r.start()));
+            PartitionRangeReadCommand read = command.withTransactionalSettings(nowInSeconds, subRange, startTokenKey.equals(r.start()));
 
             try (ReadExecutionController controller = read.executionController();
                  UnfilteredPartitionIterator partition = read.executeLocally(controller);
