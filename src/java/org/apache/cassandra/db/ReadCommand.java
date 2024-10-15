@@ -86,11 +86,12 @@ import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.ClientWarn;
+import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.tracing.Tracing;
-import org.apache.cassandra.utils.CassandraUInt;
 import org.apache.cassandra.transport.Dispatcher;
+import org.apache.cassandra.utils.CassandraUInt;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.NoSpamLogger;
 import org.apache.cassandra.utils.ObjectSizes;
@@ -124,7 +125,7 @@ public abstract class ReadCommand extends AbstractReadQuery
     private final boolean isDigestQuery;
     private final boolean acceptsTransient;
     private final Epoch serializedAtEpoch;
-    private boolean allowsOutOfRangeReads;
+    private final boolean allowsPotentialTxnConflicts;
     // if a digest query, the version for which the digest is expected. Ignored if not a digest.
     private int digestVersion;
 
@@ -170,7 +171,7 @@ public abstract class ReadCommand extends AbstractReadQuery
                           boolean isDigestQuery,
                           int digestVersion,
                           boolean acceptsTransient,
-                          boolean allowsOutOfRangeReads,
+                          boolean allowsPotentialTxnConflicts,
                           TableMetadata metadata,
                           long nowInSec,
                           ColumnFilter columnFilter,
@@ -189,7 +190,7 @@ public abstract class ReadCommand extends AbstractReadQuery
         this.digestVersion = digestVersion;
         this.acceptsTransient = acceptsTransient;
         this.indexQueryPlan = indexQueryPlan;
-        this.allowsOutOfRangeReads = allowsOutOfRangeReads;
+        this.allowsPotentialTxnConflicts = allowsPotentialTxnConflicts;
         this.trackWarnings = trackWarnings;
         this.serializedAtEpoch = serializedAtEpoch;
         this.dataRange = dataRange;
@@ -458,6 +459,7 @@ public abstract class ReadCommand extends AbstractReadQuery
         try
         {
             ColumnFamilyStore cfs = Keyspace.openAndGetStore(metadata());
+            ConsensusRequestRouter.validateSafeToReadNonTransactionally(this);
             Index.QueryPlan indexQueryPlan = indexQueryPlan();
 
             Index.Searcher searcher = null;
@@ -545,15 +547,9 @@ public abstract class ReadCommand extends AbstractReadQuery
         return ReadExecutionController.forCommand(this, false);
     }
 
-    public ReadCommand allowOutOfRangeReads()
+    public boolean allowsPotentialTxnConflicts()
     {
-        allowsOutOfRangeReads = true;
-        return this;
-    }
-
-    public boolean allowsOutOfRangeReads()
-    {
-        return allowsOutOfRangeReads;
+        return allowsPotentialTxnConflicts;
     }
 
     /**
@@ -1174,7 +1170,7 @@ public abstract class ReadCommand extends AbstractReadQuery
                     | indexFlag(null != command.indexQueryPlan())
                     | acceptsTransientFlag(command.acceptsTransient())
                     | needsReconciliationFlag(command.rowFilter().needsReconciliation())
-                    | allowsOutOfRangeReadsFlag(command.allowsOutOfRangeReads)
+                    | allowsOutOfRangeReadsFlag(command.allowsPotentialTxnConflicts)
             );
             if (command.isDigestQuery())
                 out.writeUnsignedVInt32(command.digestVersion());
