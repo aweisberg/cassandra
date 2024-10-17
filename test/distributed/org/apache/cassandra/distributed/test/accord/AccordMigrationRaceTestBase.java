@@ -81,6 +81,7 @@ import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState;
+import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
@@ -307,6 +308,8 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
     @Test
     public void testSplitAndRetryNonSerialUnloggedBatchSingleTableHinting() throws Throwable
     {
+        ConsensusMigrationMutationHelper.specialTestFlag = true;
+        SHARED_CLUSTER.forEach(instance -> instance.runOnInstance(() -> ConsensusMigrationMutationHelper.specialTestFlag = true));
         // Accord doesn't hint if a write times out
         if (!migrateAwayFromAccord)
             testSplitAndRetryHintDelivery(singleTableBatchInsert(false, PKEY_ACCORD, PKEY_NORMAL, 1), this::validateSingleTable);
