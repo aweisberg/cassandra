@@ -35,6 +35,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableMap;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.CassandraRelevantProperties;
@@ -64,6 +66,7 @@ import static org.apache.cassandra.utils.MonotonicClock.Global.approxTime;
 
 public class Mutation implements IMutation, Supplier<Mutation>
 {
+    private static final Logger logger = LoggerFactory.getLogger(Mutation.class);
     public static final MutationSerializer serializer = new MutationSerializer();
     public static final int ALLOW_POTENTIAL_TRANSACTION_CONFLICTS = 0x01;
 
@@ -549,6 +552,8 @@ public class Mutation implements IMutation, Supplier<Mutation>
         {
             Map<TableId, PartitionUpdate> modifications = mutation.modifications;
 
+            if (mutation.getKeyspaceName().equals("distributed_test_keyspace"))
+                logger.info("Ariel Serializing {}", mutation);
             if (version >= VERSION_51)
             {
                 int flags = 0;
@@ -585,6 +590,8 @@ public class Mutation implements IMutation, Supplier<Mutation>
                 assert size > 0;
 
                 PartitionUpdate update = PartitionUpdate.serializer.deserialize(teeIn, version, flag);
+                if (update.metadata().keyspace.equals("distributed_test_keyspace"))
+                    logger.info("Ariel deserializing mutation");
                 if (size == 1)
                 {
                     m = new Mutation(update, allowPotentialTransactionConflicts);

@@ -18,6 +18,7 @@
 
 package org.apache.cassandra.service.consensus.migration;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.BiPredicate;
@@ -48,6 +49,7 @@ import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.consensus.TransactionalMode;
+import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.KeyMigrationState;
 import org.apache.cassandra.service.paxos.Paxos;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.transport.Dispatcher;
@@ -426,10 +428,10 @@ public class ConsensusRequestRouter
         TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
 
         // Null with a transaction mode that reads through Accord indicates a completed migration or table created
-        // to use Accdord initially
+        // to use Accord initially
         if (tms == null)
         {
-            checkState(transactionalMigrationFromMode == TransactionalMigrationFromMode.off);
+            checkState(transactionalMigrationFromMode == TransactionalMigrationFromMode.none);
             if (transactionalMode.nonSerialReadsThroughAccord)
                 throw new RetryOnDifferentSystemException();
         }
@@ -541,36 +543,90 @@ public class ConsensusRequestRouter
         }
     }
 
-    public static SplitReads splitReadsIntoAccordAndNormal(ClusterMetadata cm, SinglePartitionReadCommand.Group read)
+    public static SplitReads splitReadsIntoAccordAndNormal(ClusterMetadata cm, SinglePartitionReadCommand.Group reads, Dispatcher.RequestTime requestTime)
     {
-        List<SinglePartitionReadCommand> accordReads;
-        List<SinglePartitionReadCommand> normalReads;
+        List<SinglePartitionReadCommand> accordReads = null;
+        List<SinglePartitionReadCommand> normalReads = null;
 
-        for (SinglePartitionReadCommand command : read.queries)
+        TableMetadata tm = getTableMetadata(cm, reads.queries.get(0).metadata().id);
+        if (tm == null || (!tm.params.transactionalMode.nonSerialReadsThroughAccord && !tm.params.transactionalMigrationFrom.nonSerialReadsThroughAccord()))
+            return new SplitReads(null, reads);
+
+        TransactionalMode transactionalMode = tm.params.transactionalMode;
+        TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
+        TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tm.id);
+
+        for (SinglePartitionReadCommand command : reads.queries)
         {
-
+            if (tokenShouldBeReadThroughAccord(tms, command.partitionKey().getToken(), transactionalMode, transactionalMigrationFromMode))
+            {
+                if (accordReads == null)
+                    accordReads = new ArrayList<>(reads.queries.size());
+                accordReads.add(command);
+            }
+            else
+            {
+                if (normalReads == null)
+                    normalReads = new ArrayList<>(reads.queries.size());
+                normalReads.add(command);
+            }
         }
+
+        // When migrating from Accord -> Paxos we need to do the Accord barrier to have acknowledged Accord writes
+        // be visible to non-SERIAL reads, but from Paxos -> Accord we don't need to because read only transactions
+        // don't have recovery determinism issues and Accord will honor read consistency levels and match the behavior
+        // of non-serially reading Paxos transactions. Since it's a non-SERIAL read there is no guarantee of seeing
+        // in-flight Paxos operations, for that you would need to read at SERIAL.
+        // If the migration direction is from a mode that used to read through Accord then Accord would be
+        // doing async commit so we need barriers if this mode is no longer reading through Accord.
+        if (transactionalMigrationFromMode.isMigrating() && transactionalMigrationFromMode.nonSerialReadsThroughAccord() && !transactionalMode.nonSerialReadsThroughAccord && normalReads != null)
+        {
+            checkState(!normalReads.isEmpty());
+            List<DecoratedKey> keysNeedingBarrier = null;
+            long maxRequiredEpoch = Long.MIN_VALUE;
+            for (SinglePartitionReadCommand readCommand : normalReads)
+            {
+                DecoratedKey key = readCommand.partitionKey();
+                KeyMigrationState kms = ConsensusKeyMigrationState.getKeyMigrationState(cm, tms, key);
+                if (!kms.paxosReadSatisfiedByKeyMigration())
+                {
+                    if (keysNeedingBarrier == null)
+                        keysNeedingBarrier = new ArrayList<>(normalReads.size());
+                    keysNeedingBarrier.add(key);
+                    maxRequiredEpoch = Math.max(tms.minMigrationEpoch(key.getToken()).getEpoch(), maxRequiredEpoch);
+                }
+            }
+
+            if (keysNeedingBarrier != null)
+            {
+                checkState(!keysNeedingBarrier.isEmpty());
+                checkState(maxRequiredEpoch != Long.MIN_VALUE);
+                // Local barriers don't support multiple keys so create a global one unless there is a single key
+                // See BarrierType enum for explanation of global vs local
+                boolean global = keysNeedingBarrier.size() > 1 ? true : false;
+                ConsensusKeyMigrationState.repairKeysAccord(keysNeedingBarrier, tm.id, maxRequiredEpoch, requestTime, global, false);
+            }
+        }
+
+        SinglePartitionReadCommand.Group accordGroup = accordReads != null ? SinglePartitionReadCommand.Group.create(accordReads, reads.limits()) : null;
+        SinglePartitionReadCommand.Group normalGroup = normalReads != null ? SinglePartitionReadCommand.Group.create(normalReads, reads.limits()) : null;
+        return new SplitReads(accordGroup, normalGroup);
     }
 
-    public static boolean tokenShouldBeReadThroughAccord(@Nonnull ClusterMetadata cm,
-                                                         @Nonnull TableId tableId,
-                                                         @Nonnull Token token)
+    private static boolean tokenShouldBeReadThroughAccord(TableMigrationState tms,
+                                                          @Nonnull Token token,
+                                                          @Nonnull TransactionalMode transactionalMode,
+                                                          TransactionalMigrationFromMode transactionalMigrationFromMode)
     {
-        TableMetadata tm = getTableMetadata(cm, tableId);
-        if (tm == null)
-            return false;
-
-        boolean transactionalModeReadsThroughAccord = tm.params.transactionalMode.nonSerialReadsThroughAccord;
-        TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
+        boolean transactionalModeReadsThroughAccord = transactionalMode.nonSerialReadsThroughAccord;
         boolean migrationFromReadsThroughAccord = transactionalMigrationFromMode.nonSerialReadsThroughAccord();
+
         if (transactionalModeReadsThroughAccord && migrationFromReadsThroughAccord)
             return true;
 
         // Could be migrating or could be completely migrated, if it's migrating check if the key for this mutation
         if (transactionalModeReadsThroughAccord || migrationFromReadsThroughAccord)
         {
-            TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tm.id);
-
             if (tms == null)
             {
                 if (transactionalMigrationFromMode == TransactionalMigrationFromMode.none)
@@ -582,16 +638,11 @@ public class ConsensusRequestRouter
                     return migrationFromReadsThroughAccord;
             }
 
-            // This logic is driven by the fact that Paxos is not picky about how data is written since it's txn recovery
-            // is deterministic in the face of non-deterministic reads because consensus is agreeing on the writes that will be done to the database
-            // Accord agrees on what computation will produce those writes and then asynchronously executes those computations, potentially multiple times
-            // with different results if Accord reads non-transactionally written data that could be seen differently by different coordinators
-
-            // If the current mode writes through Accord then we should always write though Accord for ranges managed by Accord.
-            // Accord needs to do synchronous commit and respect the consistency level so that Accord will later be able to
-            // read its own writes
+            // In theory we can start reading from Accord immediately because we know these transactions are 100%
+            // read only but then that impacts performance more so wait for the range to be completely migrated
+            // when it can potentially do single replica reads
             if (transactionalModeReadsThroughAccord)
-                return tms.accordSafeToReadRanges.intersects(token);
+                return tms.migratedRanges.intersects(token);
 
             // If we are migrating from a mode that used to write to Accord then any range that isn't migrating/migrated
             // should continue to write through Accord.

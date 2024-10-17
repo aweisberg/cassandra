@@ -22,8 +22,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,8 +45,10 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.google.common.cache.CacheLoader;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Iterators;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -182,7 +186,6 @@ import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 import static accord.primitives.Txn.Kind.EphemeralRead;
 import static accord.primitives.Txn.Kind.Read;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Iterables.concat;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -1256,6 +1259,7 @@ public class StorageProxy implements StorageProxyMBean
                 AsyncTxnResult accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, requestTime) : null;
                 List<? extends IMutation> normalMutations = splitMutations.normalMutations();
                 Tracing.trace("Split mutations into Accord {} and normal {}", accordMutations, normalMutations);
+                logger.info("Ariel Split mutations into Accord {} and normal {}", accordMutations, normalMutations);
 
                 Throwable failure = null;
                 try
@@ -1846,13 +1850,19 @@ public class StorageProxy implements StorageProxyMBean
         if (insertLocal)
         {
             checkNotNull(localReplica);
+            if (message.payload.getKeyspaceName().equals("distributed_test_keyspace"))
+                logger.info("Ariel queuing perform locally mutation {}", mutation);
             performLocally(stage, localReplica, mutation::apply, responseHandler, mutation, requestTime);
         }
 
         if (localDc != null)
         {
             for (Replica destination : localDc)
+            {
+                if (message.payload.getKeyspaceName().equals("distributed_test_keyspace"))
+                    logger.info("Ariel sending mutation {}", mutation);
                 MessagingService.instance().sendWriteWithCallback(message, destination, responseHandler);
+            }
         }
         if (dcGroups != null)
         {
@@ -2367,7 +2377,7 @@ public class StorageProxy implements StorageProxyMBean
             ClusterMetadata cm = ClusterMetadata.current();
             try
             {
-                SplitReads splitReads = splitReadsIntoAccordAndNormal(cm, group);
+                SplitReads splitReads = splitReadsIntoAccordAndNormal(cm, group, requestTime);
                 SinglePartitionReadCommand.Group accordReads = splitReads.accordReads;
                 AsyncTxnResult accordResult = accordReads != null ? readWithAccordAsync(cm, accordReads, consistencyLevel, requestTime) : null;
                 SinglePartitionReadCommand.Group normalReads = splitReads.normalReads;
@@ -2437,42 +2447,12 @@ public class StorageProxy implements StorageProxyMBean
                 {
                     // Merge into partition key order
                     List<PartitionIterator> partitions = new ArrayList<>(group.queries.size());
-                    RowIterator nextAccordPartition = null;
-                    RowIterator nextNormalPartition = null;
-                    while (nextAccordPartition != null || nextNormalPartition != null || normalPartitions.hasNext() || accordPartitions.hasNext())
+                    Iterator<RowIterator> mergeIterator = Iterators.mergeSorted(ImmutableList.of(normalPartitions, accordPartitions), Comparator.comparing(RowIterator::partitionKey));
+                    while (mergeIterator.hasNext())
                     {
-                        if (nextAccordPartition == null && accordPartitions.hasNext())
-                            nextAccordPartition = accordPartitions.next();
-                        if (nextNormalPartition == null && normalPartitions.hasNext())
-                            nextNormalPartition = normalPartitions.next();
-
-                        if (nextNormalPartition == null)
-                        {
-                            partitions.add(singletonIterator(nextAccordPartition));
-                            nextAccordPartition = null;
-                        }
-                        else if (nextAccordPartition == null)
-                        {
-                            partitions.add(singletonIterator(nextNormalPartition));
-                            nextNormalPartition = null;
-                        }
-                        else
-                        {
-                            int cmp = nextAccordPartition.partitionKey().compareTo(nextNormalPartition.partitionKey());
-                            checkState(cmp != 0, "Reads should never overlap between systems");
-                            if (cmp < 0)
-                            {
-                                partitions.add(singletonIterator(nextAccordPartition));
-                                nextAccordPartition = null;
-                            }
-                            else
-                            {
-                                partitions.add(singletonIterator(nextNormalPartition));
-                                nextNormalPartition = null;
-                            }
-                        }
+                        partitions.add(singletonIterator(mergeIterator.next()));
                     }
-                    return PartitionIterators.concat(partitions);
+                    return maybeEnforceLimits(PartitionIterators.concat(partitions), group);
                 }
             }
             catch (Exception t)
@@ -2484,45 +2464,26 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
+    public static PartitionIterator maybeEnforceLimits(PartitionIterator iterator, SinglePartitionReadCommand.Group group)
+    {
+        // Note that the only difference between the command in a group must be the partition key on which
+        // they applied.
+        boolean enforceStrictLiveness = group.queries.get(0).metadata().enforceStrictLiveness();
+        // If we have more than one command, then despite each read command honoring the limit, the total result
+        // might not honor it and so we should enforce it
+        if (group.queries.size() > 1)
+            return group.limits().filter(iterator, group.nowInSec(), group.selectsFullPartition(), enforceStrictLiveness);
+        return iterator;
+    }
+
     @SuppressWarnings("resource")
-    public static PartitionIterator readRegular(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, ReadCoordinator coordinator, Dispatcher.RequestTime requestTime)
+    private static PartitionIterator readRegular(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, ReadCoordinator coordinator, Dispatcher.RequestTime requestTime)
     throws UnavailableException, ReadFailureException, ReadTimeoutException
     {
         long start = nanoTime();
         try
         {
-            ClusterMetadata cm = ClusterMetadata.current();
-            TableId tableId = group.queries.get(0).metadata().id;
-            // Returns null for local tables
-            TableMetadata tableMetadata = getTableMetadata(cm, tableId);
-            if (tableMetadata == null)
-                tableMetadata = Schema.instance.localKeyspaces().getTableOrViewNullable(tableId);
-            TableParams tableParams = tableMetadata.params;
-
-            TransactionalMode transactionalMode = tableParams.transactionalMode;
-//            TransactionalMigrationFromMode transactionalMigrationFromMode = tableParams.transactionalMigrationFrom;
-            // TODO (required): Tests would fail with this and we need to add live migration support anyways so for now allow it
-//            if (transactionalMigrationFromMode != TransactionalMigrationFromMode.none)
-//                throw new UnsupportedOperationException("Live migration is not supported, can't safely read when migrating from " + transactionalMigrationFromMode + " to " + transactionalMode);
-
-            PartitionIterator result;
-            if (transactionalMode.nonSerialReadsThroughAccord && coordinator.isEventuallyConsistent())
-            {
-                ConsensusAttemptResult consensusAttemptResult = readWithAccord(cm, group, consistencyLevel, requestTime);
-                checkState(!consensusAttemptResult.shouldRetryOnNewConsensusProtocol, "Live migration is not supported with non-SERIAL reads yet");
-                result = consensusAttemptResult.serialReadResult;
-            }
-            else
-                result = fetchRows(group.queries, consistencyLevel, coordinator, requestTime);
-
-            // Note that the only difference between the command in a group must be the partition key on which
-            // they applied.
-            boolean enforceStrictLiveness = tableMetadata.enforceStrictLiveness();
-            // If we have more than one command, then despite each read command honoring the limit, the total result
-            // might not honor it and so we should enforce it
-            if (group.queries.size() > 1)
-                result = group.limits().filter(result, group.nowInSec(), group.selectsFullPartition(), enforceStrictLiveness);
-            return result;
+            return fetchRows(group.queries, consistencyLevel, coordinator, requestTime);
         }
         catch (UnavailableException e)
         {
@@ -2608,8 +2569,11 @@ public class StorageProxy implements StorageProxyMBean
      * 3. Wait for a response from R replicas
      * 4. If the digests (if any) match the data return the data
      * 5. else carry out read repair by getting data from all the nodes.
+     *
+     * This should not be called directly because it bypasses statistics and error handling. It is public
+     * so it can be used by Accord to fetch rows and the statistics will be tracked by Accord.
      */
-    private static PartitionIterator fetchRows(List<SinglePartitionReadCommand> commands,
+    public static PartitionIterator fetchRows(List<SinglePartitionReadCommand> commands,
                                                ConsistencyLevel consistencyLevel,
                                                ReadCoordinator coordinator,
                                                Dispatcher.RequestTime requestTime)

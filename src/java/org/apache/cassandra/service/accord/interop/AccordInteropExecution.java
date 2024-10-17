@@ -273,7 +273,9 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
                 Group group = Group.one(command.withNowInSec(nowInSeconds));
                 results.add(AsyncChains.ofCallable(Stage.ACCORD_MIGRATION.executor(), () -> {
                     TxnData result = new TxnData();
-                    try (PartitionIterator iterator = StorageProxy.readRegular(group, consistencyLevel, this, requestTime))
+                    // Enforcing limits is redundant since we only have a group of size 1, but checking anyways
+                    // documents the requirement here
+                    try (PartitionIterator iterator = StorageProxy.maybeEnforceLimits(StorageProxy.fetchRows(group.queries, consistencyLevel, this, requestTime), group))
                     {
                         if (iterator.hasNext())
                         {

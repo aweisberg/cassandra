@@ -210,7 +210,7 @@ public class AccordInteroperabilityTest extends AccordTestBase
                  }
                  long startingRegularApplyCount = messageCount(Verb.ACCORD_APPLY_REQ);
                  cluster.coordinator(1).execute(finalQuery, consistencyLevel);
-                 if (transactionalMode.ignoresSuppliedCommitCL)
+                 if (transactionalMode.ignoresSuppliedCommitCL())
                  {
                      // Apply is async
                      spinAssertEquals(startingRegularApplyCount + 3, () -> messageCount(Verb.ACCORD_APPLY_REQ));
@@ -339,6 +339,8 @@ public class AccordInteroperabilityTest extends AccordTestBase
                      }
                      catch (Throwable t)
                      {
+                         if (!InvalidRequestException.class.getName().equals(t.getClass().getName()))
+                             System.out.println("oops");
                          assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
                          assertEquals(cl + " is not supported by Accord", t.getMessage());
                      }

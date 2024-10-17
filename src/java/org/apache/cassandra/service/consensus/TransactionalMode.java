@@ -69,7 +69,7 @@ import static org.apache.cassandra.dht.NormalizedRanges.normalizedRanges;
 public enum TransactionalMode
 {
     // Running on Paxos V1 or V2 with Accord disabled
-    off(false, false, false, false, false),
+    off(false, false, false, false),
 
     // TODO (maybe): These unsafe modes don't have Accord do async commit and single replica reads so how useful are they besides preserving non-SERIAL performance?
     // These modes are unsafe when Accord and non-SERIAL reads and writes interact with the same data
@@ -85,7 +85,7 @@ public enum TransactionalMode
      * SERIAL reads and CAS will run on Accord. Accord will honor provided consistency levels and do synchronous commit
      * so the results can be read correctly with non-SERIAL CLs, but read repair could interfere with Accord.
      **/
-    unsafe(true, false, false, false, false),
+    unsafe(true, false, false, false),
 
     /*
      * Enables Accord and makes it safe to perform non-SERIAL reads of Accord data without guaranteeing that they will
@@ -95,7 +95,7 @@ public enum TransactionalMode
      * This mode makes it safe to perform non-SERIAL or SERIAL reads of Accord data, but unsafe
      * to write data that Accord may attempt to read.
      */
-    unsafe_writes(true, false, false, false, true),
+    unsafe_writes(true, false, false, true),
 
     // These modes always provide correct execution with mixed_reads allow non-transaction non-SERIAL operations
     // at the expense of slower Accord transactions, and full allowing faster transaction execution, but forcing
@@ -106,34 +106,39 @@ public enum TransactionalMode
      * writes at the provided consistency level so they can be read via non-SERIAL consistency levels.
      * This mode makes it safe to read/write data that Accord will read/write.
      */
-    mixed_reads(true, false, true, false, true),
+    mixed_reads(true, true, false, true),
 
     /*
      * Execute writes through Accord skipping StorageProxy's normal write path. Ignores the provided consistency level
      * which makes Accord commit writes at ANY similar to Paxos with commit consistency level ANY.
      */
-    full(true, true, true, true, true);
+    full(true, true, true, true);
 
     public final boolean accordIsEnabled;
-    public final boolean ignoresSuppliedCommitCL;
     public final boolean nonSerialWritesThroughAccord;
     public final boolean nonSerialReadsThroughAccord;
     public final boolean blockingReadRepairThroughAccord;
     private final String cqlParam;
 
-    TransactionalMode(boolean accordIsEnabled, boolean ignoreSuppliedCommitCL, boolean nonSerialWritesThroughAccord, boolean nonSerialReadsThroughAccord, boolean blockingReadRepairThroughAccord)
+    TransactionalMode(boolean accordIsEnabled, boolean nonSerialWritesThroughAccord, boolean nonSerialReadsThroughAccord, boolean blockingReadRepairThroughAccord)
     {
         this.accordIsEnabled = accordIsEnabled;
-        this.ignoresSuppliedCommitCL = ignoreSuppliedCommitCL;
         this.nonSerialWritesThroughAccord = nonSerialWritesThroughAccord;
         this.nonSerialReadsThroughAccord = nonSerialReadsThroughAccord;
         this.blockingReadRepairThroughAccord = blockingReadRepairThroughAccord;
         this.cqlParam = String.format("transactional_mode = '%s'", this.name().toLowerCase());
+        checkState((nonSerialReadsThroughAccord && nonSerialWritesThroughAccord) || !nonSerialReadsThroughAccord, "Doesn't make sense to do non-SERIAL reads through Accord without also doing non-SERIAL writes through Accord");
+    }
+
+    // This can be inferred from whether non-SERIAL reads are done through Accord
+    public boolean ignoresSuppliedCommitCL()
+    {
+        return nonSerialReadsThroughAccord;
     }
 
     public ConsistencyLevel commitCLForMode(TransactionalMigrationFromMode fromMode, ConsistencyLevel consistencyLevel, ClusterMetadata cm, TableId tableId, Token token)
     {
-        if (ignoresSuppliedCommitCL)
+        if (ignoresSuppliedCommitCL())
         {
             TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
             checkState(tms != null || fromMode == TransactionalMigrationFromMode.none);

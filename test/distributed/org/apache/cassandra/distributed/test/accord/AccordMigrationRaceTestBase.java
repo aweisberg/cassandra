@@ -81,6 +81,7 @@ import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState;
+import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
@@ -304,6 +305,8 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
     @Test
     public void testSplitAndRetryNonSerialUnloggedBatchSingleTableHinting() throws Throwable
     {
+        ConsensusMigrationMutationHelper.specialTestFlag = true;
+        SHARED_CLUSTER.forEach(instance -> instance.runOnInstance(() -> ConsensusMigrationMutationHelper.specialTestFlag = true));
         // Accord doesn't hint if a write times out
         if (!migrateAwayFromAccord)
             testSplitAndRetryHintDelivery(singleTableBatchInsert(false, PKEY_ACCORD, PKEY_NORMAL, 1), this::validateSingleTable);
@@ -657,16 +660,34 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
                      {
                          // Expect two retry on different system responses when migrating from Paxos to Accord, one from each
                          // node that knows it is on the wrong system
-                         Util.spinUntilTrue(() -> messageSink.messages.stream().filter(p -> {
-                             if (p.right.verb() != Verb.FAILURE_RSP.id)
+                         try
+                         {
+                             Util.spinUntilTrue(() -> messageSink.messages.stream().filter(p -> {
+                                 if (p.right.verb() != Verb.FAILURE_RSP.id)
+                                     return false;
+                                 if (!p.left.equals(outOfSyncInstance.broadcastAddress()))
+                                     return false;
+                                 RequestFailureReason reason = ((RequestFailure) Instance.deserializeMessage(p.right).payload).reason;
+                                 if (reason == RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM)
+                                     return true;
                                  return false;
-                             if (!p.left.equals(outOfSyncInstance.broadcastAddress()))
+                             }).count() == 2, 20);
+                         }
+                         catch (Throwable t)
+                         {
+                             long count = messageSink.messages.stream().filter(p -> {
+                                 if (p.right.verb() != Verb.FAILURE_RSP.id)
+                                     return false;
+                                 if (!p.left.equals(outOfSyncInstance.broadcastAddress()))
+                                     return false;
+                                 RequestFailureReason reason = ((RequestFailure) Instance.deserializeMessage(p.right).payload).reason;
+                                 if (reason == RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM)
+                                     return true;
                                  return false;
-                             RequestFailureReason reason = ((RequestFailure) Instance.deserializeMessage(p.right).payload).reason;
-                             if (reason == RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM)
-                                 return true;
-                             return false;
-                         }).count() == 2, 20);
+                             }).count();
+                             logger.error("Ariel Count after failure was {}", count);
+                             throw t;
+                         }
                      }
                      // After this hints should deliver and the final validation should succeed
                      // if we don't unpause enactment

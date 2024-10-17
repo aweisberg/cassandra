@@ -220,7 +220,7 @@ public class ConsensusMigrationMutationHelper
             return new SplitMutation<>(null, mutation);
 
         Token token = mutation.key().getToken();
-        Predicate<TableId> isAccordUpdate = tableId -> tokenShouldBeWrittenThroughAccord(cm, tableId, token, TransactionalMode::nonSerialWritesThroughAccord, TransactionalMigrationFromMode::nonSerialReadsThroughAccord);
+        Predicate<TableId> isAccordUpdate = tableId -> tokenShouldBeWrittenThroughAccord(cm, tableId, token, TransactionalMode::nonSerialWritesThroughAccord, TransactionalMigrationFromMode::nonSerialWritesThroughAccord);
 
         T accordMutation = (T)mutation.filter(isAccordUpdate);
         T normalMutation = (T)mutation.filter(not(isAccordUpdate));
@@ -269,8 +269,20 @@ public class ConsensusMigrationMutationHelper
         }
     }
 
+    public static boolean specialTestFlag = false;
+
     public static void validateSafeToExecuteNonTransactionally(IMutation mutation) throws RetryOnDifferentSystemException
     {
+        boolean debug = false;
+        if (mutation.getKeyspaceName().equals("distributed_test_keyspace") && mutation.getPartitionUpdates().iterator().next().metadata().name.equals("accordtbl14"))
+        {
+            logger.info("Ariel Validating muation {}", mutation);
+            if (specialTestFlag)
+            {
+                debug = true;
+                System.out.println("true");
+            }
+        }
         if (mutation.allowsPotentialTransactionConflicts())
             return;
 
@@ -295,7 +307,7 @@ public class ConsensusMigrationMutationHelper
         {
             TableId tableId = pu.metadata().id;
             ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
-            if (tokenShouldBeWrittenThroughAccord(cm, tableId, dk.getToken(), TransactionalMode::nonSerialWritesThroughAccord, TransactionalMigrationFromMode::nonSerialReadsThroughAccord))
+            if (tokenShouldBeWrittenThroughAccord(cm, tableId, dk.getToken(), TransactionalMode::nonSerialWritesThroughAccord, TransactionalMigrationFromMode::nonSerialWritesThroughAccord, debug))
             {
                 throwRetryOnDifferentSystem = true;
                 if (markedColumnFamilies == null)
@@ -315,6 +327,15 @@ public class ConsensusMigrationMutationHelper
                                                             @Nonnull Token token,
                                                             Predicate<TransactionalMode> nonSerialWritesThroughAccord,
                                                             Predicate<TransactionalMigrationFromMode> nonSerialWritesThroughAccordFrom)
+    {
+        return tokenShouldBeWrittenThroughAccord(cm, tableId, token, nonSerialWritesThroughAccord, nonSerialWritesThroughAccordFrom, false);
+    }
+    public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm,
+                                                            @Nonnull TableId tableId,
+                                                            @Nonnull Token token,
+                                                            Predicate<TransactionalMode> nonSerialWritesThroughAccord,
+                                                            Predicate<TransactionalMigrationFromMode> nonSerialWritesThroughAccordFrom,
+                                                            boolean debug)
     {
         TableMetadata tm = getTableMetadata(cm, tableId);
         if (tm == null)
@@ -351,7 +372,11 @@ public class ConsensusMigrationMutationHelper
             // Accord needs to do synchronous commit and respect the consistency level so that Accord will later be able to
             // read its own writes
             if (transactionalModeWritesThroughAccord)
+            {
+                if (debug)
+                    logger.info("Ariel Migrating and migrated ranges {} checking token {}", tms.migratingAndMigratedRanges, token);
                 return tms.migratingAndMigratedRanges.intersects(token);
+            }
 
             // If we are migrating from a mode that used to write to Accord then any range that isn't migrating/migrated
             // should continue to write through Accord.
