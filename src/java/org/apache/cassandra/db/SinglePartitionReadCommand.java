@@ -1279,8 +1279,6 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
      */
     public SinglePartitionReadCommand withTransactionalSettings(boolean withoutReconciliation, long nowInSeconds)
     {
-        if (rowFilter().isEmpty())
-            return this;
         return create(serializedAtEpoch(),
                       isDigestQuery(),
                       digestVersion(),
