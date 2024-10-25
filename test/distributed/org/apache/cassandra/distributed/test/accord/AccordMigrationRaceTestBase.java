@@ -20,6 +20,7 @@ package org.apache.cassandra.distributed.test.accord;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import com.google.common.base.Stopwatch;
+import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListenableFutureTask;
 import org.junit.After;
@@ -42,6 +44,7 @@ import org.slf4j.LoggerFactory;
 import accord.api.RoutingKey;
 import accord.messages.PreAccept;
 import accord.primitives.PartialKeyRoute;
+import accord.primitives.Ranges;
 import accord.primitives.Routable.Domain;
 import accord.primitives.Route;
 import org.apache.cassandra.ServerTestUtils;
@@ -53,6 +56,8 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
+import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
@@ -76,12 +81,20 @@ import org.apache.cassandra.metrics.ClientRequestsMetricsHolder;
 import org.apache.cassandra.metrics.HintsServiceMetrics;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.Verb;
+import org.apache.cassandra.repair.RepairJobDesc;
+import org.apache.cassandra.repair.RepairResult;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.accord.AccordService;
+import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey;
+import org.apache.cassandra.service.accord.api.AccordRoutingKey.TokenKey;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState;
+import org.apache.cassandra.service.consensus.migration.ConsensusMigrationRepairResult;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
+import org.apache.cassandra.service.consensus.migration.ConsensusTableMigration;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.FBUtilities;
@@ -93,6 +106,7 @@ import org.eclipse.jetty.util.ConcurrentHashSet;
 import static java.lang.String.format;
 import static org.apache.cassandra.Util.expectException;
 import static org.apache.cassandra.Util.spinAssertEquals;
+import static org.apache.cassandra.Util.spinUntilSuccess;
 import static org.apache.cassandra.config.CassandraRelevantProperties.HINT_DISPATCH_INTERVAL_MS;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.ALL;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.getNextEpoch;
@@ -440,7 +454,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
                  forEach(() -> HintsService.instance.pauseDispatch());
 
                  // Node 3 is always the out of sync node
-                 IInvokableInstance outOfSyncInstance = setUpOutOfSyncNode(cluster);
+                 IInvokableInstance outOfSyncInstance = setUpOutOfSyncNode(cluster, scenario);
 
                  // Force the batchlog Accord txn to run after this write txn in the new epoch where it
                  // will trigger RetryDifferentSystem
@@ -689,7 +703,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
     /*
      * Set up 3 to be behind and unaware of the migration while 1 and 2 are aware
      */
-    private IInvokableInstance setUpOutOfSyncNode(Cluster cluster) throws Throwable
+    private IInvokableInstance setUpOutOfSyncNode(Cluster cluster, Scenario scenario) throws Throwable
     {
         IInvokableInstance i1 = cluster.get(1);
         IInvokableInstance i2 = cluster.get(2);
@@ -715,7 +729,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
             nextEpoch = getNextEpoch(i1);
             pausedBeforeEnacting = pauseBeforeEnacting(i3, nextEpoch);
             i2PausedAfterEnacting = pauseAfterEnacting(i2, nextEpoch);
-            // In the reverse direction doing the alter automatically reverses the migratin without a need to call begin migration on any ranges
+            // In the reverse direction doing the alter automatically reverses the migration without a need to call begin migration on any ranges
             result = alterTableTransactionalModeAsync(TransactionalMode.off);
         }
 
@@ -746,6 +760,32 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
         unpauseEnactment(i2);
         // nodetool should be able to complete now
         result.get();
+
+        // Need to complete the migration for its eventual execution in the next epoch to be discovered to be misrouted
+        // now that we continue to write through Accord during migration away from Accord
+        // Faking the completed repair is the only way to get it in a state where two coordinators know about the new
+        // epoch and one doesn't
+        if (migrateAwayFromAccord && scenario.deliversViaHint && scenario.passesThroughBatchlog)
+        {
+            String keyspace = KEYSPACE;
+            String table = accordTableName;
+            long midTokenLong = midToken.getLongValue();
+            long maxTokenLong = maxToken.getLongValue();
+            SHARED_CLUSTER.get(1).runOnInstance(() ->
+                {
+                    Epoch startEpoch = ClusterMetadata.current().epoch;
+                    Epoch epochAfterRepair = startEpoch.nextEpoch();
+                    TableId tableId = Schema.instance.getTableMetadata(keyspace, table).id;
+                    List<Range<Token>> ranges = ImmutableList.of(new Range<>(new LongToken(midTokenLong), new LongToken(maxTokenLong)));
+                    RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
+                    TokenRange range = new TokenRange(new TokenKey(tableId, new LongToken(midTokenLong)), new TokenKey(tableId, new LongToken(maxTokenLong)));
+                    Ranges accordRanges = Ranges.of(range);
+                    ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
+                    ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
+                    spinUntilSuccess(() -> ClusterMetadata.current().epoch.equals(epochAfterRepair));
+                });
+        }
+
         return i3;
     }
 
