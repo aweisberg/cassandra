@@ -272,20 +272,8 @@ public class ConsensusMigrationMutationHelper
         }
     }
 
-    public static boolean specialTestFlag = false;
-
     public static void validateSafeToExecuteNonTransactionally(IMutation mutation) throws RetryOnDifferentSystemException
     {
-        boolean debug = false;
-        if (mutation.getKeyspaceName().equals("distributed_test_keyspace") && mutation.getPartitionUpdates().iterator().next().metadata().name.equals("accordtbl14"))
-        {
-            logger.info("Ariel Validating muation {}", mutation);
-            if (specialTestFlag)
-            {
-                debug = true;
-                System.out.println("true");
-            }
-        }
         if (mutation.allowsPotentialTransactionConflicts())
             return;
 
@@ -310,7 +298,7 @@ public class ConsensusMigrationMutationHelper
         {
             TableId tableId = pu.metadata().id;
             ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
-            if (tokenShouldBeWrittenThroughAccord(cm, tableId, dk.getToken(), TransactionalMode::nonSerialWritesThroughAccord, TransactionalMigrationFromMode::nonSerialWritesThroughAccord, debug))
+            if (tokenShouldBeWrittenThroughAccord(cm, tableId, dk.getToken(), TransactionalMode::nonSerialWritesThroughAccord, TransactionalMigrationFromMode::nonSerialWritesThroughAccord))
             {
                 throwRetryOnDifferentSystem = true;
                 if (markedColumnFamilies == null)
@@ -330,15 +318,6 @@ public class ConsensusMigrationMutationHelper
                                                             @Nonnull Token token,
                                                             Predicate<TransactionalMode> nonSerialWritesThroughAccord,
                                                             Predicate<TransactionalMigrationFromMode> nonSerialWritesThroughAccordFrom)
-    {
-        return tokenShouldBeWrittenThroughAccord(cm, tableId, token, nonSerialWritesThroughAccord, nonSerialWritesThroughAccordFrom, false);
-    }
-    public static boolean tokenShouldBeWrittenThroughAccord(@Nonnull ClusterMetadata cm,
-                                                            @Nonnull TableId tableId,
-                                                            @Nonnull Token token,
-                                                            Predicate<TransactionalMode> nonSerialWritesThroughAccord,
-                                                            Predicate<TransactionalMigrationFromMode> nonSerialWritesThroughAccordFrom,
-                                                            boolean debug)
     {
         TableMetadata tm = getTableMetadata(cm, tableId);
         if (tm == null)
@@ -372,25 +351,19 @@ public class ConsensusMigrationMutationHelper
             // with different results if Accord reads non-transactionally written data that could be seen differently by different coordinators
 
             // If the current mode writes through Accord then we should always write though Accord for ranges managed by Accord.
-            // Accord needs to do synchronous commit and respect the consistency level so that Accord will later be able to
-            // read its own writes
+            // Accord needs to do synchronous commit and respect the consistency level so non-SERIAL reads can read Accord's
+            // writes.
             if (transactionalModeWritesThroughAccord)
             {
-                if (debug)
-                    logger.info("Ariel Migrating and migrated ranges {} checking token {}", tms.migratingAndMigratedRanges, token);
                 return tms.migratingAndMigratedRanges.intersects(token);
             }
 
-            // If we are migrating from a mode that used to write to Accord then any range that isn't migrating/migrated
-            // should continue to write through Accord.
-            // It's not completely symmetrical because Paxos is able to read Accord's writes by performing a single key barrier
-            // and regular mutations will be able to do the same thing (needs to be added along with non-transactional reads)
-            // This means that migrating ranges don't need to be written through Accord because we are running Paxos now
-            // and not Accord. When migrating to Accord we need to do all the writes through Accord even if we aren't
-            // reading through Accord so that repair + Accord metadata is sufficient for Accord to be able to read
-            // safely and deterministically from any coordinator
+            // If we are migrating from a mode that used to write to Accord then any range that isn't migrated
+            // should continue to write through Accord. Accord might still be executing txns pre-migration so continue
+            // to route writes through Accord until migration is completed.
             if (migrationFromWritesThroughAccord)
-                return !tms.migratingAndMigratedRanges.intersects(token);
+//                return !tms.migratingAndMigratedRanges.intersects(token);
+                return !tms.migratedRanges.intersects(token);
         }
         return false;
     }

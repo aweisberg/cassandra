@@ -1261,7 +1261,6 @@ public class StorageProxy implements StorageProxyMBean
                 AsyncTxnResult accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, requestTime) : null;
                 List<? extends IMutation> normalMutations = splitMutations.normalMutations();
                 Tracing.trace("Split mutations into Accord {} and normal {}", accordMutations, normalMutations);
-                logger.info("Ariel Split mutations into Accord {} and normal {}", accordMutations, normalMutations);
 
                 Throwable failure = null;
                 try
@@ -1852,19 +1851,13 @@ public class StorageProxy implements StorageProxyMBean
         if (insertLocal)
         {
             checkNotNull(localReplica);
-            if (message.payload.getKeyspaceName().equals("distributed_test_keyspace"))
-                logger.info("Ariel queuing perform locally mutation {}", mutation);
             performLocally(stage, localReplica, mutation::apply, responseHandler, mutation, requestTime);
         }
 
         if (localDc != null)
         {
             for (Replica destination : localDc)
-            {
-                if (message.payload.getKeyspaceName().equals("distributed_test_keyspace"))
-                    logger.info("Ariel sending mutation {}", mutation);
                 MessagingService.instance().sendWriteWithCallback(message, destination, responseHandler);
-            }
         }
         if (dcGroups != null)
         {
