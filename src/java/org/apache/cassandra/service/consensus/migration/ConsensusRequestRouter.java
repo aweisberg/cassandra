@@ -36,7 +36,6 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
-import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.dht.AbstractBounds;
@@ -375,9 +374,9 @@ public class ConsensusRequestRouter
         }
         else
         {
-            // Once the migration away from Accord starts only barriers are allowed to run for the key in Accord
-            // and this method isn't used for barriers
-            if (migrationFrom.migratingFromAccord() && !tms.migratingAndMigratedRanges.intersects(token))
+            // We can always allow writes through Accord and it's necessary to do that so that
+            // andy premigration txns aren't exposed to non-transactional writes
+            if (migrationFrom.nonSerialWritesThroughAccord() && !tms.migratedRanges.intersects(token))
                 return true;
         }
 
@@ -461,7 +460,7 @@ public class ConsensusRequestRouter
 
         boolean isExclusivelyReadableFromAccord;
         if (command.isRangeRequest())
-            isExclusivelyReadableFromAccord = isBoundsExclusivelyManagedByAccordForRead(transactionalMode, transactionalMigrationFromMode, tms, ((PartitionRangeReadCommand)command).dataRange().keyRange());
+            isExclusivelyReadableFromAccord = isBoundsExclusivelyManagedByAccordForRead(transactionalMode, transactionalMigrationFromMode, tms, command.dataRange().keyRange());
         else
             isExclusivelyReadableFromAccord = isTokenExclusivelyManagedByAccordForRead(transactionalMode, transactionalMigrationFromMode, tms, ((SinglePartitionReadCommand)command).partitionKey().getToken());
 

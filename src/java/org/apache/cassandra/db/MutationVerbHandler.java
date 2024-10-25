@@ -17,9 +17,6 @@
  */
 package org.apache.cassandra.db;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.ForwardingInfo;
@@ -34,7 +31,6 @@ import static org.apache.cassandra.utils.MonotonicClock.Global.approxTime;
 
 public class MutationVerbHandler extends AbstractMutationVerbHandler<Mutation>
 {
-    private static final Logger logger = LoggerFactory.getLogger(MutationVerbHandler.class);
     public static final MutationVerbHandler instance = new MutationVerbHandler();
 
     private void respond(Message<?> respondTo, InetAddressAndPort respondToAddress)
@@ -50,8 +46,6 @@ public class MutationVerbHandler extends AbstractMutationVerbHandler<Mutation>
 
     public void doVerb(Message<Mutation> message)
     {
-        if (message.payload.getKeyspaceName().equals("distributed_test_keyspace"))
-            logger.info("Ariel Received mutation {}", message.payload);
         if (approxTime.now() > message.expiresAtNanos())
         {
             Tracing.trace("Discarding mutation from {} (timed out)", message.from());
