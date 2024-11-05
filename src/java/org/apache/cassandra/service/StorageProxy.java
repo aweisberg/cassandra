@@ -2191,7 +2191,8 @@ public class StorageProxy implements StorageProxyMBean
         return null;
     }
 
-    public static AsyncTxnResult readWithAccord(ClusterMetadata cm, PartitionRangeReadCommand command, List<AbstractBounds<PartitionPosition>> ranges, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)    {
+    public static AsyncTxnResult readWithAccord(ClusterMetadata cm, PartitionRangeReadCommand command, List<AbstractBounds<PartitionPosition>> ranges, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+    {
         if (consistencyLevel != null && !IAccordService.SUPPORTED_READ_CONSISTENCY_LEVELS.contains(consistencyLevel))
             throw new InvalidRequestException(consistencyLevel + " is not supported by Accord");
 
