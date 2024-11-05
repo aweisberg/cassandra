@@ -31,7 +31,7 @@ import org.apache.cassandra.utils.AbstractIterator;
 
 import static com.google.common.base.Preconditions.checkState;
 
-public class AccordRangeResponse extends AbstractIterator<RowIterator> implements IRangeResponse
+public class AccordRangeResponse extends AbstractIterator<RowIterator> implements PartitionIterator
 {
     private final AsyncTxnResult asyncTxnResult;
     // Range queries don't support reverse, but dutifully threading it through anyways

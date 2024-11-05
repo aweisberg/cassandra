@@ -30,11 +30,13 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.partitions.PartitionIterator;
+import org.apache.cassandra.db.partitions.PartitionIterators;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.exceptions.ReadAbortException;
 import org.apache.cassandra.exceptions.ReadFailureException;
@@ -46,12 +48,11 @@ import org.apache.cassandra.locator.ReplicaPlan;
 import org.apache.cassandra.metrics.ClientRangeRequestMetrics;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
-import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
-import org.apache.cassandra.service.consensus.TransactionalMode;
-import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
+import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
+import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.RangeReadTarget;
+import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.RangeReadWithTarget;
 import org.apache.cassandra.service.reads.DataResolver;
 import org.apache.cassandra.service.reads.ReadCallback;
 import org.apache.cassandra.service.reads.ReadCoordinator;
@@ -62,6 +63,7 @@ import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
+import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 
 @VisibleForTesting
@@ -187,6 +189,49 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
         return concurrencyFactor;
     }
 
+    private PartitionIterator executeAccord(ClusterMetadata cm, PartitionRangeReadCommand rangeCommand, ConsistencyLevel cl)
+    {
+        //TODO (nicetohave): This is very inefficient because it will not map to the command store owned ranges
+        // so every command store will return results up to the limit and most could be discarded.
+        // Really we want to split the ranges by command stores owned ranges and then query one at a time
+        // For this to work well it really needs to integrated upwards where the ranges to query are being picked
+        AsyncTxnResult result = StorageProxy.readWithAccord(cm, rangeCommand, ImmutableList.of(rangeCommand.dataRange().keyRange()), cl, requestTime);
+        return new AccordRangeResponse(result, rangeCommand.isReversed(), cl, requestTime);
+    }
+
+    private SingleRangeResponse executeNormal(ReplicaPlan.ForRangeRead replicaPlan, PartitionRangeReadCommand rangeCommand, ReadCoordinator readCoordinator)
+    {
+        // If enabled, request repaired data tracking info from full replicas, but
+        // only if there are multiple full replicas to compare results from.
+        boolean trackRepairedStatus = DatabaseDescriptor.getRepairedDataTrackingForRangeReadsEnabled()
+                                      && replicaPlan.contacts().filter(Replica::isFull).size() > 1;
+
+        ReplicaPlan.SharedForRangeRead sharedReplicaPlan = ReplicaPlan.shared(replicaPlan);
+        ReadRepair<EndpointsForRange, ReplicaPlan.ForRangeRead> readRepair =
+        ReadRepair.create(readCoordinator, command, sharedReplicaPlan, requestTime);
+        DataResolver<EndpointsForRange, ReplicaPlan.ForRangeRead> resolver =
+        new DataResolver<>(readCoordinator, rangeCommand, sharedReplicaPlan, readRepair, requestTime, trackRepairedStatus);
+        ReadCallback<EndpointsForRange, ReplicaPlan.ForRangeRead> handler =
+        new ReadCallback<>(resolver, rangeCommand, sharedReplicaPlan, requestTime);
+
+        if (replicaPlan.contacts().size() == 1 && replicaPlan.contacts().get(0).isSelf())
+        {
+            Stage.READ.execute(new StorageProxy.LocalReadRunnable(rangeCommand, handler, requestTime, trackRepairedStatus));
+        }
+        else
+        {
+            for (Replica replica : replicaPlan.contacts())
+            {
+                Tracing.trace("Enqueuing request to {}", replica);
+                ReadCommand command = replica.isFull() ? rangeCommand : rangeCommand.copyAsTransientQuery(replica);
+                Message<ReadCommand> message = command.createMessage(trackRepairedStatus && replica.isFull(), requestTime);
+                MessagingService.instance().sendWithCallback(message, replica.endpoint(), handler);
+            }
+        }
+        return new SingleRangeResponse(resolver, handler, readRepair);
+    }
+
+
     /**
      * Queries the provided sub-range.
      *
@@ -196,56 +241,58 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
      * {@code DataLimits}) may have "state" information and that state may only be valid for the first query (in
      * that it's the query that "continues" whatever we're previously queried).
      */
-    private IRangeResponse query(ReplicaPlan.ForRangeRead replicaPlan, ReadCoordinator readCoordinator, boolean isFirst)
+    private PartitionIterator query(ReplicaPlan.ForRangeRead replicaPlan, ReadCoordinator readCoordinator, List<ReadRepair<?, ?>> readRepairs, boolean isFirst)
     {
+        checkState(readCoordinator.isEventuallyConsistent(), "Don't expect to use this from transactional coordinator");
+
         PartitionRangeReadCommand rangeCommand = command.forSubRange(replicaPlan.range(), isFirst);
-        
-        // If enabled, request repaired data tracking info from full replicas, but
-        // only if there are multiple full replicas to compare results from.
-        boolean trackRepairedStatus = DatabaseDescriptor.getRepairedDataTrackingForRangeReadsEnabled()
-                                      && replicaPlan.contacts().filter(Replica::isFull).size() > 1;
 
         ClusterMetadata cm = ClusterMetadata.current();
-        TableMetadata metadata = command.metadata();
-        TableParams tableParams = metadata.params;
-        TransactionalMode transactionalMode = tableParams.transactionalMode;
-        TransactionalMigrationFromMode transactionalMigrationFromMode = tableParams.transactionalMigrationFrom;
-        if (transactionalMigrationFromMode != TransactionalMigrationFromMode.none && transactionalMode.nonSerialReadsThroughAccord && transactionalMigrationFromMode.nonSerialWritesThroughAccord() && transactionalMigrationFromMode.nonSerialReadsThroughAccord())
-            throw new UnsupportedOperationException("Live migration is not supported, can't safely read when migrating from " + transactionalMigrationFromMode + " to " + transactionalMode);
-        if (transactionalMode.nonSerialReadsThroughAccord && readCoordinator.isEventuallyConsistent())
+        List<RangeReadWithTarget> reads = ConsensusRequestRouter.splitReadIntoAccordAndNormal(cm, rangeCommand, requestTime);
+        // Special case returning directly to avoid wrapping the iterator and applying the limits an extra time
+        if (reads.size() == 1)
         {
-            //TODO (nicetohave): This is very inefficient because it will not map the the command store owned ranges
-            // so every command store will return results and most will be discarded due to the limit
-            // Really we want to split the ranges by command stores owned ranges and then query one at a time
-            AsyncTxnResult result = StorageProxy.readWithAccord(cm, rangeCommand, ImmutableList.of(rangeCommand.dataRange().keyRange()), replicaPlan.consistencyLevel(), requestTime);
-            return new AccordRangeResponse(result, rangeCommand.isReversed(), replicaPlan.consistencyLevel(), requestTime);
-        }
-        else
-        {
-            ReplicaPlan.SharedForRangeRead sharedReplicaPlan = ReplicaPlan.shared(replicaPlan);
-            ReadRepair<EndpointsForRange, ReplicaPlan.ForRangeRead> readRepair =
-            ReadRepair.create(ReadCoordinator.DEFAULT, command, sharedReplicaPlan, requestTime);
-            DataResolver<EndpointsForRange, ReplicaPlan.ForRangeRead> resolver =
-            new DataResolver<>(ReadCoordinator.DEFAULT, rangeCommand, sharedReplicaPlan, readRepair, requestTime, trackRepairedStatus);
-            ReadCallback<EndpointsForRange, ReplicaPlan.ForRangeRead> handler =
-            new ReadCallback<>(resolver, rangeCommand, sharedReplicaPlan, requestTime);
-
-            if (replicaPlan.contacts().size() == 1 && replicaPlan.contacts().get(0).isSelf())
+            RangeReadWithTarget rangeReadWithTarget = reads.get(0);
+            checkState(rangeReadWithTarget.read.dataRange().equals(rangeCommand.dataRange()));
+            if (rangeReadWithTarget.target == RangeReadTarget.accord && readCoordinator.isEventuallyConsistent())
             {
-                Stage.READ.execute(new StorageProxy.LocalReadRunnable(rangeCommand, handler, requestTime, trackRepairedStatus));
+                return executeAccord(cm,
+                                     rangeReadWithTarget.read,
+                                     replicaPlan.consistencyLevel());
             }
             else
             {
-                for (Replica replica : replicaPlan.contacts())
-                {
-                    Tracing.trace("Enqueuing request to {}", replica);
-                    ReadCommand command = replica.isFull() ? rangeCommand : rangeCommand.copyAsTransientQuery(replica);
-                    Message<ReadCommand> message = command.createMessage(trackRepairedStatus && replica.isFull(), requestTime);
-                    MessagingService.instance().sendWithCallback(message, replica.endpoint(), handler);
-                }
+                SingleRangeResponse response = executeNormal(replicaPlan, rangeReadWithTarget.read, readCoordinator);
+                readRepairs.add(response.getReadRepair());
+                return response;
             }
-            return new CassandraRangeResponse(resolver, handler, readRepair);
         }
+
+        // TODO (review): Should this be reworked to execute the queries serially from the iterator? It would respect
+        // any provided limits better but the number of queries created will generally be low (2-3)
+        List<PartitionIterator> responses = new ArrayList<>(reads.size());
+        for (RangeReadWithTarget rangeReadWithTarget : reads)
+        {
+            if (rangeReadWithTarget.target == RangeReadTarget.accord && !readCoordinator.isEventuallyConsistent())
+                responses.add(executeAccord(cm, rangeReadWithTarget.read, replicaPlan.consistencyLevel()));
+            else
+            {
+                SingleRangeResponse response = executeNormal(replicaPlan, rangeReadWithTarget.read, readCoordinator);
+                responses.add(response);
+                readRepairs.add(response.getReadRepair());
+            }
+        }
+
+        /*
+         * We have to apply limits here if the query spans different systems because each subquery we created
+         * could have gaps in the results since the limit is pushed down independently to each subquery.
+         * So if we don't meet the limit in the first subquery, it's not safe to go to the next one unless
+         * we fully exhausted the data the first subquery might have reached
+         */
+        return command.limits().filter(PartitionIterators.concat(responses),
+                                       0,
+                                       command.selectsFullPartition(),
+                                       command.metadata().enforceStrictLiveness());
     }
 
     PartitionIterator sendNextRequests()
@@ -259,9 +306,8 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
             {
                 ReplicaPlan.ForRangeRead replicaPlan = replicaPlans.next();
 
-                IRangeResponse response = query(replicaPlan, readCoordinator, i == 0);
+                PartitionIterator response = query(replicaPlan, readCoordinator, readRepairs, i == 0);
                 concurrentQueries.add(response);
-                readRepairs.add(response.getReadRepair());
                 // due to RangeMerger, coordinator may fetch more ranges than required by concurrency factor.
                 rangesQueried += replicaPlan.vnodeCount();
                 i += replicaPlan.vnodeCount();

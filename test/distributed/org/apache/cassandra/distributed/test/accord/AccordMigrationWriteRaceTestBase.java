@@ -113,11 +113,11 @@ import static org.apache.cassandra.distributed.shared.ClusterUtils.getNextEpoch;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseAfterEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseBeforeEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.unpauseEnactment;
-import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTestBase.Scenario.BATCHLOG_FAILED_ROUTING_THEN_HINT;
-import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTestBase.Scenario.BATCHLOG_FAILED_TIMEOUT_THEN_HINT;
-import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTestBase.Scenario.BATCHLOG_SUCCESSFUL_ROUTING;
-import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTestBase.Scenario.HINT;
-import static org.apache.cassandra.distributed.test.accord.AccordMigrationRaceTestBase.Scenario.MUTATION;
+import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteRaceTestBase.Scenario.BATCHLOG_FAILED_ROUTING_THEN_HINT;
+import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteRaceTestBase.Scenario.BATCHLOG_FAILED_TIMEOUT_THEN_HINT;
+import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteRaceTestBase.Scenario.BATCHLOG_SUCCESSFUL_ROUTING;
+import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteRaceTestBase.Scenario.HINT;
+import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteRaceTestBase.Scenario.MUTATION;
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.apache.cassandra.exceptions.RequestFailureReason.RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM;
 import static org.apache.cassandra.utils.Throwables.runUnchecked;
@@ -129,9 +129,9 @@ import static org.junit.Assert.assertTrue;
  * Test that non-transactional write operations such as regular mutations, batch log, and hints
  * all detect when a migration is in progress, and then retry on the correct system.
  */
-public abstract class AccordMigrationRaceTestBase extends AccordTestBase
+public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
 {
-    private static final Logger logger = LoggerFactory.getLogger(AccordMigrationRaceTestBase.class);
+    private static final Logger logger = LoggerFactory.getLogger(AccordMigrationWriteRaceTestBase.class);
 
     private static final int CLUSTERING_VALUE = 1;
 
@@ -210,7 +210,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
 
     private final boolean migrateAwayFromAccord;
 
-    protected AccordMigrationRaceTestBase()
+    protected AccordMigrationWriteRaceTestBase()
     {
         this.migrateAwayFromAccord = migratingAwayFromAccord();
     }
@@ -257,6 +257,7 @@ public abstract class AccordMigrationRaceTestBase extends AccordTestBase
     @After
     public void tearDown() throws Exception
     {
+        super.tearDown();
         messageSink.reset();
         forEach(() -> {
             BatchlogManager.instance.resumeReplay();

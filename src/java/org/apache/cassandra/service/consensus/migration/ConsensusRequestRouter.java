@@ -26,6 +26,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 
 import accord.primitives.Routable.Domain;
 import accord.primitives.Seekables;
@@ -36,6 +37,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.dht.AbstractBounds;
@@ -59,6 +61,7 @@ import org.apache.cassandra.service.paxos.Paxos;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.Pair;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
@@ -500,6 +503,7 @@ public class ConsensusRequestRouter
         return false;
     }
 
+    // Returns true if any part of the bound
     private static boolean isBoundsExclusivelyManagedByAccordForRead(@Nonnull TransactionalMode transactionalMode,
                                                                      @Nonnull TransactionalMigrationFromMode migrationFrom,
                                                                      @Nonnull TableMigrationState tms,
@@ -545,6 +549,104 @@ public class ConsensusRequestRouter
         }
 
         return false;
+    }
+
+    public enum RangeReadTarget
+    {
+        accord,
+        normal
+    }
+
+    public static class RangeReadWithTarget
+    {
+        public final PartitionRangeReadCommand read;
+        public final RangeReadTarget target;
+
+        private RangeReadWithTarget(PartitionRangeReadCommand read, RangeReadTarget target)
+        {
+            this.read = read;
+            this.target = target;
+        }
+    }
+
+    /**
+     * While it's possible to map the Accord read to a single txn it doesn't seem worth it since it's a pretty unusual
+     * scenario where we do this during migration and have a lot of different read commands.
+     */
+    public static List<RangeReadWithTarget> splitReadIntoAccordAndNormal(ClusterMetadata cm, PartitionRangeReadCommand read, Dispatcher.RequestTime requestTime)
+    {
+        TableMetadata tm = getTableMetadata(cm, read.metadata().id);
+        if (tm == null || (!tm.params.transactionalMode.nonSerialReadsThroughAccord && !tm.params.transactionalMigrationFrom.nonSerialReadsThroughAccord()))
+            return ImmutableList.of(new RangeReadWithTarget(read, RangeReadTarget.normal));
+
+        List<RangeReadWithTarget> result = null;
+        TransactionalMode transactionalMode = tm.params.transactionalMode;
+        TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
+        boolean transactionalModeReadsThroughAccord = transactionalMode.nonSerialReadsThroughAccord;
+        boolean migrationFromReadsThroughAccord = transactionalMigrationFromMode.nonSerialReadsThroughAccord();
+        TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tm.id);
+        if (tms == null)
+        {
+            if (transactionalMigrationFromMode == TransactionalMigrationFromMode.none)
+                // There is no migration and no TMS so do what the schema says since no migration should be required
+                return ImmutableList.of(new RangeReadWithTarget(read, transactionalModeReadsThroughAccord ? RangeReadTarget.accord : RangeReadTarget.normal));
+            else
+                // If we are migrating from something and there is no migration state the migration hasn't begun
+                // so continue to do what we are migrating from does until the range is marked as migrating
+                return ImmutableList.of(new RangeReadWithTarget(read, migrationFromReadsThroughAccord ? RangeReadTarget.accord : RangeReadTarget.normal));
+        }
+
+
+        // AbstractBounds can potentially be left/right inclusive while Range used to track migration is only right inclusive
+        // The right way to tackle this seems to be to find the tokens that intersect the key range and then split until
+        // until nothing intersects
+        AbstractBounds<PartitionPosition> keyRange = read.dataRange().keyRange();
+        AbstractBounds<PartitionPosition> remainder = keyRange;
+        boolean hadAccordReads = false;
+        for (Range<Token> r : tms.accordSafeToReadRanges)
+        {
+            Pair<AbstractBounds<PartitionPosition>, AbstractBounds<PartitionPosition>> intersectionAndRemainder = Range.intersectionAndRemainder(remainder, r);
+            if (intersectionAndRemainder.left != null)
+            {
+                if (result == null)
+                    result = new ArrayList<>();
+                PartitionRangeReadCommand subRead = read.forSubRange(intersectionAndRemainder.left, result.isEmpty() ? true : false);
+                result.add(new RangeReadWithTarget(subRead, RangeReadTarget.accord));
+                hadAccordReads = true;
+            }
+            remainder = intersectionAndRemainder.right;
+            if (remainder == null)
+                break;
+        }
+
+        if (remainder != null)
+        {
+            if (result != null)
+                result.add(new RangeReadWithTarget(read.forSubRange(remainder, false), RangeReadTarget.normal));
+            else
+                return ImmutableList.of(new RangeReadWithTarget(read.forSubRange(remainder, true), RangeReadTarget.normal));
+        }
+
+        checkState(result != null && !result.isEmpty(), "Shouldn't have null or empty result");
+        checkState(result.get(0).read.dataRange().startKey().equals(read.dataRange().startKey()), "Split reads should encompass entire range");
+        checkState(result.get(0).read.dataRange().stopKey().equals(read.dataRange().stopKey()), "Split reads should encompass entire range");
+        if (result.size() > 1)
+        {
+            for (int i = 0; i < result.size() - 1; i++)
+            {
+                checkState(result.get(i).read.dataRange().stopKey().equals(result.get(i + 1).read.dataRange().startKey()), "Split reads should all be adjacent");
+                checkState(result.get(i).target != result.get(i + 1).target, "Split reads should be for different targets");
+            }
+        }
+
+        //TODO (later): The range reads need a barrier for now only going to provide READ_COMMITTED
+        // Even if the barriers were being done they would probably time out like they tend to do in repair
+        if (hadAccordReads)
+        {
+            // do barrier
+        }
+
+        return result;
     }
 
     /**
