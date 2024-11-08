@@ -45,7 +45,6 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.utils.ObjectSizes;
-import org.apache.cassandra.utils.Simulate;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -60,7 +59,6 @@ import static org.apache.cassandra.utils.ArraySerializers.serializedArraySize;
 import static org.apache.cassandra.utils.NullableSerializer.deserializeNullable;
 import static org.apache.cassandra.utils.NullableSerializer.serializeNullable;
 import static org.apache.cassandra.utils.NullableSerializer.serializedNullableSize;
-import static org.apache.cassandra.utils.Simulate.With.MONITORS;
 
 public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRead
 {
@@ -223,7 +221,6 @@ public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRe
         return Kind.key;
     }
 
-    @Simulate(with = MONITORS)
     public static final TxnReadSerializer<TxnKeyRead> serializer = new TxnReadSerializer<TxnKeyRead>()
     {
         @Override

@@ -72,7 +72,6 @@ import org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.MonotonicClock;
 import org.apache.cassandra.utils.ObjectSizes;
-import org.apache.cassandra.utils.Simulate;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.cassandra.service.accord.AccordSerializers.consistencyLevelSerializer;
@@ -83,7 +82,6 @@ import static org.apache.cassandra.utils.ByteBufferUtil.writeWithVIntLength;
 import static org.apache.cassandra.utils.NullableSerializer.deserializeNullable;
 import static org.apache.cassandra.utils.NullableSerializer.serializeNullable;
 import static org.apache.cassandra.utils.NullableSerializer.serializedNullableSize;
-import static org.apache.cassandra.utils.Simulate.With.MONITORS;
 
 public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements TxnRead
 {
@@ -303,7 +301,6 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
         return size;
     }
 
-    @Simulate(with = MONITORS)
     public static final TxnReadSerializer<TxnRangeRead> serializer = new TxnReadSerializer<TxnRangeRead>()
     {
         @Override
