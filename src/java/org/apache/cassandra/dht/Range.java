@@ -30,11 +30,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import org.apache.commons.lang3.ObjectUtils;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.dht.Token.TokenFactory;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -417,6 +419,16 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         if (!right.equals(contained.right))
             difference.add(new Range<T>(contained.right, right));
         return difference;
+    }
+
+    public static void main(String args[])
+    {
+        Range r = new Range(new LongToken(Long.MAX_VALUE), new LongToken(Long.MIN_VALUE));
+        System.out.println(r.unwrap());
+        System.out.println(Range.normalize(ImmutableList.of(r)));
+        r = new Range(new LongToken(2), new LongToken(1));
+        System.out.println(r.unwrap());
+        System.out.println(Range.normalize(ImmutableList.of(r)));
     }
 
     public Set<Range<T>> subtract(Range<T> rhs)

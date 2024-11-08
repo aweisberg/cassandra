@@ -48,8 +48,8 @@ public class NormalizedRanges<T extends RingPosition<T>> extends AbstractList<Ra
         boolean rangeRightIsMin = range.right.isMinimum();
         boolean keyIsMinimum = key.isMinimum();
 
-        if (keyIsMinimum & rangeRightIsMin)
-            return 0;
+//        if (keyIsMinimum & rangeRightIsMin)
+//            return 0;
 
         int lc = key.compareTo(range.left);
         int rc = key.compareTo(range.right);
