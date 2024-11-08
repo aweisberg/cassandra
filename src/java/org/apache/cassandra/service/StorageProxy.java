@@ -2192,7 +2192,7 @@ public class StorageProxy implements StorageProxyMBean
         Range<Token> readRange = new Range<>(command.dataRange().startKey().getToken(), command.dataRange().stopKey().getToken());
         consistencyLevel = tableParams.transactionalMode.readCLForStrategy(tableParams.transactionalMigrationFrom, consistencyLevel, cm, tableMetadata.id, readRange);
         TxnRead read = new TxnRangeRead(command, consistencyLevel);
-        Txn.Kind kind = Txn.Kind.Read;
+        Txn.Kind kind = EphemeralRead;
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.RANGE_QUERY, null);
         IAccordService accordService = AccordService.instance();
         return accordService.coordinateAsync(txn, consistencyLevel, requestTime);
