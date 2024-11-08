@@ -127,7 +127,6 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
             stopAccordRoutingKey = new TokenKey(tableId, stopToken.decreaseSlightly());
 
         covering = Ranges.of(new TokenRange(startAccordRoutingKey, stopAccordRoutingKey));
-        logger.info("Ariel Creating txn range read of " + command);
     }
 
     private TxnRangeRead(@Nonnull ByteBuffer commandBytes, @Nonnull ConsistencyLevel cassandraConsistencyLevel, @Nonnull Ranges covering)
