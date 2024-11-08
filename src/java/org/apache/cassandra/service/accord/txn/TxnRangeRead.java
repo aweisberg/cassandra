@@ -68,6 +68,7 @@ import org.apache.cassandra.service.accord.api.AccordRoutingKey;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey.SentinelKey;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey.TokenKey;
 import org.apache.cassandra.service.accord.serializers.KeySerializers;
+import org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.MonotonicClock;
 import org.apache.cassandra.utils.ObjectSizes;
@@ -90,9 +91,6 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
 
     public static final TxnRangeRead EMPTY = new TxnRangeRead(null, null, null);
     private static final long EMPTY_SIZE = ObjectSizes.measure(EMPTY);
-
-    public static final String RANGE_READ_NAME = "RANGE_READ";
-    public static final TxnDataName RANGE_READ = TxnDataName.user(RANGE_READ_NAME);
 
     @Nonnull
     private final ConsistencyLevel cassandraConsistencyLevel;
@@ -222,7 +220,7 @@ public class TxnRangeRead extends AbstractSerialized<ReadCommand> implements Txn
                         }
                     }
                 }
-                result.put(RANGE_READ, value);
+                result.put(TxnData.txnDataName(TxnDataNameKind.USER), value);
                 return result;
             }
         };

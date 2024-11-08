@@ -135,7 +135,6 @@ import org.apache.cassandra.service.accord.IAccordService;
 import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
-import org.apache.cassandra.service.accord.txn.TxnDataName;
 import org.apache.cassandra.service.accord.txn.TxnDataValue;
 import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
@@ -2245,9 +2244,9 @@ public class StorageProxy implements StorageProxyMBean
             List<PartitionIterator> partitionIterators = new ArrayList<>(numQueries);
             for (int i = 0; i < numQueries; i++)
                 partitionIterators.add(null);
-            for (Map.Entry<TxnDataName, TxnDataValue> e : data.entrySet())
+            for (Map.Entry<Integer, TxnDataValue> e : data.entrySet())
             {
-                int queryIndex = Integer.valueOf(e.getKey().part(0));
+                int queryIndex = e.getKey();
                 TxnDataKeyValue value = ((TxnDataKeyValue)e.getValue());
                 partitionIterators.set(queryIndex, PartitionIterators.singletonIterator(value.rowIterator(isQueryReversed.test(queryIndex))));
             }

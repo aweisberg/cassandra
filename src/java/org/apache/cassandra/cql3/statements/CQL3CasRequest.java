@@ -63,7 +63,6 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.accord.txn.TxnCondition;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
-import org.apache.cassandra.service.accord.txn.TxnDataName;
 import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
 import org.apache.cassandra.service.accord.txn.TxnReference;
@@ -78,7 +77,8 @@ import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.RETRY_NEW_PROTOCOL;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.casResult;
-import static org.apache.cassandra.service.accord.txn.TxnDataName.Kind.CAS_READ;
+import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.CAS_READ;
+import static org.apache.cassandra.service.accord.txn.TxnData.txnDataName;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
 
@@ -405,8 +405,7 @@ public class CQL3CasRequest implements CASRequest
         @Override
         public TxnCondition asTxnCondition()
         {
-            TxnDataName txnDataName = new TxnDataName(CAS_READ, clustering, TxnKeyRead.CAS_READ_NAME);
-            TxnReference txnReference = new TxnReference(txnDataName, null);
+            TxnReference txnReference = new TxnReference(txnDataName(CAS_READ), null);
             return new TxnCondition.Exists(txnReference, TxnCondition.Kind.IS_NULL);
         }
     }
@@ -426,8 +425,7 @@ public class CQL3CasRequest implements CASRequest
         @Override
         public TxnCondition asTxnCondition()
         {
-            TxnDataName txnDataName = new TxnDataName(CAS_READ, clustering, TxnKeyRead.CAS_READ_NAME);
-            TxnReference txnReference = new TxnReference(txnDataName, null);
+            TxnReference txnReference = new TxnReference(txnDataName(CAS_READ), null);
             return new TxnCondition.Exists(txnReference, TxnCondition.Kind.IS_NOT_NULL);
         }
     }
@@ -544,7 +542,7 @@ public class CQL3CasRequest implements CASRequest
         if (txnResult.kind() == retry_new_protocol)
             return RETRY_NEW_PROTOCOL;
         TxnData txnData = (TxnData)txnResult;
-        TxnDataKeyValue partition = (TxnDataKeyValue)txnData.get(TxnKeyRead.CAS_READ);
+        TxnDataKeyValue partition = (TxnDataKeyValue)txnData.get(txnDataName(CAS_READ));
         return casResult(partition != null ? partition.rowIterator(false) : null);
     }
 }

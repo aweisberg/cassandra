@@ -64,7 +64,9 @@ public class AccordSerializers
         try (DataOutputBuffer out = new DataOutputBuffer((int) size))
         {
             out.writeUnsignedVInt32(version);
-            serializer.serialize(item, out, version);
+            out.write(item == null ? 1 : 0);
+            if (item != null)
+                serializer.serialize(item, out, version);
             return out.buffer(false);
         }
         catch (IOException e)
@@ -86,7 +88,11 @@ public class AccordSerializers
         try (DataInputBuffer in = new DataInputBuffer(bytes, true))
         {
             int version = in.readUnsignedVInt32();
-            return serializer.deserialize(in, version);
+            boolean isNull = in.readByte() != 0;
+            if (isNull)
+                return null;
+            else
+                return serializer.deserialize(in, version);
         }
         catch (IOException e)
         {

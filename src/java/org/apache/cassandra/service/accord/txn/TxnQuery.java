@@ -40,12 +40,14 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.metrics.ClientRequestsMetricsHolder;
 import org.apache.cassandra.service.accord.api.PartitionKey;
+import org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.ObjectSizes;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.apache.cassandra.service.accord.txn.TxnKeyRead.CAS_READ;
+import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.CAS_READ;
+import static org.apache.cassandra.service.accord.txn.TxnData.txnDataName;
 
 public abstract class TxnQuery implements Query
 {
@@ -117,7 +119,7 @@ public abstract class TxnQuery implements Query
                 TxnKeyRead txnKeyRead = (TxnKeyRead)read;
                 SinglePartitionReadCommand command = (SinglePartitionReadCommand) txnKeyRead.iterator().next().get();
                 // For CAS must return a non-empty result to indicate error even if there was no partition found
-                return TxnData.of(CAS_READ, new TxnDataKeyValue(EmptyIterators.row(command.metadata(), command.partitionKey(), command.isReversed())));
+                return TxnData.of(txnDataName(CAS_READ), new TxnDataKeyValue(EmptyIterators.row(command.metadata(), command.partitionKey(), command.isReversed())));
             }
             else
                 // If it failed to apply the partition contents are returned and it indicates failure
@@ -173,7 +175,7 @@ public abstract class TxnQuery implements Query
         {
             TxnRangeRead txnRead = (TxnRangeRead)read;
             PartitionRangeReadCommand command = (PartitionRangeReadCommand) txnRead.get();
-            TxnDataRangeValue value = (TxnDataRangeValue)data.get(TxnRangeRead.RANGE_READ);
+            TxnDataRangeValue value = (TxnDataRangeValue)data.get(txnDataName(TxnDataNameKind.USER));
             return new TxnRangeReadResult(value.toPartitionIterator(command.isReversed()));
         }
     };

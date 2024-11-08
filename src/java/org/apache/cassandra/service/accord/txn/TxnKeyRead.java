@@ -21,6 +21,7 @@ package org.apache.cassandra.service.accord.txn;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -43,13 +44,16 @@ import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.service.accord.api.PartitionKey;
-import org.apache.cassandra.service.accord.serializers.KeySerializers;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.Simulate;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.cassandra.service.accord.AccordSerializers.consistencyLevelSerializer;
 import static org.apache.cassandra.service.accord.IAccordService.SUPPORTED_READ_CONSISTENCY_LEVELS;
+import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.CAS_READ;
+import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.USER;
+import static org.apache.cassandra.service.accord.txn.TxnData.txnDataName;
 import static org.apache.cassandra.utils.ArraySerializers.deserializeArray;
 import static org.apache.cassandra.utils.ArraySerializers.serializeArray;
 import static org.apache.cassandra.utils.ArraySerializers.serializedArraySize;
@@ -60,60 +64,58 @@ import static org.apache.cassandra.utils.Simulate.With.MONITORS;
 
 public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRead
 {
-    public static final TxnKeyRead EMPTY = new TxnKeyRead(new TxnNamedRead[0], Keys.EMPTY, null);
+    public static final TxnKeyRead EMPTY = new TxnKeyRead(new TxnNamedRead[0], null);
     private static final long EMPTY_SIZE = ObjectSizes.measure(EMPTY);
-
-    public static final String CAS_READ_NAME = "CAS_READ";
-    public static final TxnDataName CAS_READ = new TxnDataName(TxnDataName.Kind.CAS_READ, CAS_READ_NAME);
-
-    @Nonnull
-    private final Keys txnKeys;
 
     // Cassandra's consistency level used by Accord to safely read data written outside of Accord
     @Nullable
     private final ConsistencyLevel cassandraConsistencyLevel;
 
-    public TxnKeyRead(@Nonnull TxnNamedRead[] items, @Nonnull Keys txnKeys, @Nullable ConsistencyLevel cassandraConsistencyLevel)
+    private TxnKeyRead(@Nonnull TxnNamedRead[] items, @Nullable ConsistencyLevel cassandraConsistencyLevel)
     {
         super(items);
+        checkNotNull(items, "items is null");
         checkArgument(cassandraConsistencyLevel == null || SUPPORTED_READ_CONSISTENCY_LEVELS.contains(cassandraConsistencyLevel), "Unsupported consistency level for read");
-        this.txnKeys = txnKeys;
         this.cassandraConsistencyLevel = cassandraConsistencyLevel;
     }
 
-    public TxnKeyRead(@Nonnull List<TxnNamedRead> items, @Nonnull Keys txnKeys, @Nullable ConsistencyLevel cassandraConsistencyLevel)
+    private TxnKeyRead(@Nonnull List<TxnNamedRead> items, @Nullable ConsistencyLevel cassandraConsistencyLevel)
     {
         super(items);
+        checkNotNull(items, "items is null");
         checkArgument(cassandraConsistencyLevel == null || SUPPORTED_READ_CONSISTENCY_LEVELS.contains(cassandraConsistencyLevel), "Unsupported consistency level for read");
-        this.txnKeys = txnKeys;
         this.cassandraConsistencyLevel = cassandraConsistencyLevel;
     }
 
-    public static TxnKeyRead createTxnRead(@Nonnull List<TxnNamedRead> items, @Nonnull Keys txnKeys, @Nullable ConsistencyLevel consistencyLevel)
+    public static TxnKeyRead createTxnRead(@Nonnull List<TxnNamedRead> items, @Nullable ConsistencyLevel consistencyLevel)
     {
-        return new TxnKeyRead(items, txnKeys, consistencyLevel);
+        items.sort(Comparator.comparing(TxnNamedRead::key));
+        return new TxnKeyRead(items, consistencyLevel);
     }
 
     public static TxnKeyRead createSerialRead(List<SinglePartitionReadCommand> readCommands, ConsistencyLevel consistencyLevel)
     {
         List<TxnNamedRead> reads = new ArrayList<>(readCommands.size());
         for (int i = 0; i < readCommands.size(); i++)
-            reads.add(new TxnNamedRead(TxnDataName.user(String.valueOf(i)), readCommands.get(i)));
-        Keys keys = Keys.of(reads, TxnNamedRead::key);
-        return new TxnKeyRead(reads, keys, consistencyLevel);
+            reads.add(new TxnNamedRead(txnDataName(USER, i), readCommands.get(i)));
+        reads.sort(Comparator.comparing(TxnNamedRead::key));
+        return new TxnKeyRead(reads, consistencyLevel);
     }
 
     public static TxnKeyRead createCasRead(SinglePartitionReadCommand readCommand, ConsistencyLevel consistencyLevel)
     {
-        TxnNamedRead read = new TxnNamedRead(CAS_READ, readCommand);
-        return new TxnKeyRead(ImmutableList.of(read), Keys.of(read.key()), consistencyLevel);
+        TxnNamedRead read = new TxnNamedRead(txnDataName(CAS_READ), readCommand);
+        return new TxnKeyRead(ImmutableList.of(read), consistencyLevel);
     }
 
     // A read that declares it will read from keys but doesn't actually read any data so dependent transactions will
     // still be applied first
     public static TxnKeyRead createNoOpRead(Keys keys)
     {
-        return new TxnKeyRead(ImmutableList.of(), keys, null);
+        List<TxnNamedRead> reads = new ArrayList<>(keys.size());
+        for (int i = 0; i < keys.size(); i++)
+            reads.add(new TxnNamedRead(txnDataName(USER, i), null));
+        return new TxnKeyRead(reads, null);
     }
 
     @Override
@@ -128,7 +130,7 @@ public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRe
     @Override
     int compareNonKeyFields(TxnNamedRead left, TxnNamedRead right)
     {
-        return left.txnDataName().compareTo(right.txnDataName());
+        return Integer.compare(left.txnDataName(), right.txnDataName());
     }
 
     @Override
@@ -146,7 +148,7 @@ public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRe
     @Override
     public Keys keys()
     {
-        return txnKeys;
+        return itemKeys;
     }
 
     @Override
@@ -176,7 +178,7 @@ public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRe
             if (keys.contains(read.key()))
                 reads.add(read);
 
-        return createTxnRead(reads, txnKeys.intersecting(select), cassandraConsistencyLevel);
+        return createTxnRead(reads, cassandraConsistencyLevel);
     }
 
     @Override
@@ -189,7 +191,7 @@ public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRe
             if (!reads.contains(namedRead))
                 reads.add(namedRead);
 
-        return createTxnRead(reads, txnKeys.with((Keys)read.keys()), cassandraConsistencyLevel);
+        return createTxnRead(reads, cassandraConsistencyLevel);
     }
 
     @Override
@@ -227,7 +229,6 @@ public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRe
         @Override
         public void serialize(TxnKeyRead read, DataOutputPlus out, int version) throws IOException
         {
-            KeySerializers.keys.serialize(read.txnKeys, out, version);
             serializeArray(read.items, out, version, TxnNamedRead.serializer);
             serializeNullable(read.cassandraConsistencyLevel, out, version, consistencyLevelSerializer);
         }
@@ -235,16 +236,15 @@ public class TxnKeyRead extends AbstractKeySorted<TxnNamedRead> implements TxnRe
         @Override
         public TxnKeyRead deserialize(DataInputPlus in, int version) throws IOException
         {
-            Keys keys = KeySerializers.keys.deserialize(in, version);
             TxnNamedRead[] items = deserializeArray(in, version, TxnNamedRead.serializer, TxnNamedRead[]::new);
             ConsistencyLevel consistencyLevel = deserializeNullable(in, version, consistencyLevelSerializer);
-            return new TxnKeyRead(items, keys, consistencyLevel);
+            return new TxnKeyRead(items, consistencyLevel);
         }
 
         @Override
         public long serializedSize(TxnKeyRead read, int version)
         {
-            long size = KeySerializers.keys.serializedSize(read.txnKeys, version);
+            long size = 0;
             size += serializedArraySize(read.items, version, TxnNamedRead.serializer);
             size += serializedNullableSize(read.cassandraConsistencyLevel, version, consistencyLevelSerializer);
             return size;

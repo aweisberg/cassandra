@@ -73,18 +73,19 @@ public class AccordUpdateParameters
 
     private Map<DecoratedKey, Partition> prefetchRow(TableMetadata metadata, DecoratedKey dk, int index)
     {
-        for (Map.Entry<TxnDataName, TxnDataValue> e : data.entrySet())
+        for (Map.Entry<Integer, TxnDataValue> e : data.entrySet())
         {
-            TxnDataName name = e.getKey();
+            int name = e.getKey();
             TxnDataKeyValue value = (TxnDataKeyValue)e.getValue();
-            switch (name.getKind())
+            switch (TxnData.txnDataNameKind(name))
             {
                 case CAS_READ:
                     checkState(data.entrySet().size() == 1, "CAS read should only have one entry");
                     return ImmutableMap.of(dk, value);
                 case AUTO_READ:
-                    if (name.atIndex(index))
-                        return ImmutableMap.of(name.getDecoratedKey(metadata), value);
+                    // TODO (review): Is this the right DK being passed into that matches what we used to store in TxnDataName
+                    if (TxnData.txnDataNameIndex(name) == index)
+                        return ImmutableMap.of(dk, value);
                 default:
             }
         }

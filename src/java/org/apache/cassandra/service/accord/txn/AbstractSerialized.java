@@ -20,7 +20,7 @@ package org.apache.cassandra.service.accord.txn;
 
 import java.nio.ByteBuffer;
 import java.util.Objects;
-
+import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -33,14 +33,14 @@ import org.apache.cassandra.service.accord.AccordSerializers;
 public abstract class AbstractSerialized<T>
 {
     private final ByteBuffer bytes;
-    private T memoized = null;
+    private @Nullable T memoized = null;
 
     public AbstractSerialized(ByteBuffer bytes)
     {
         this.bytes = bytes;
     }
 
-    public AbstractSerialized(T value)
+    public AbstractSerialized(@Nullable T value)
     {
         this.bytes = AccordSerializers.serialize(value, serializer());
         this.memoized = value;

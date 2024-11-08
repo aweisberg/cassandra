@@ -28,7 +28,6 @@ import java.util.stream.Collectors;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterators;
 
-import accord.api.Key;
 import accord.primitives.Keys;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 
@@ -45,8 +44,8 @@ public abstract class AbstractKeySorted<T> implements Iterable<T>
     public AbstractKeySorted(T[] items)
     {
         this.items = items;
-        validateOrder();
-        this.itemKeys = extractItemKeys();
+        int duplicates = validateOrder();
+        this.itemKeys = extractItemKeys(duplicates);
     }
 
     public AbstractKeySorted(List<T> items)
@@ -55,16 +54,39 @@ public abstract class AbstractKeySorted<T> implements Iterable<T>
         items.toArray(arr);
         Arrays.sort(arr, this::compare);
         this.items = arr;
-        validateOrder();
-        this.itemKeys = extractItemKeys();
+        int duplicates = validateOrder();
+        this.itemKeys = extractItemKeys(duplicates);
     }
 
-    private Keys extractItemKeys()
+    private Keys extractItemKeys(int duplicates)
     {
-        Key[] keys = new Key[size()];
-        for (int i = 0 ; i < keys.length ; ++i)
-            keys[i] = getKey(items[i]);
-        return Keys.ofSorted(keys);
+        PartitionKey[] partitionKeys = new PartitionKey[items.length - duplicates];
+        if (duplicates == 0)
+        {
+            for (int i = 0; i < items.length; i++)
+                partitionKeys[i] = getKey(items[i]);
+            return Keys.ofSortedUnique(partitionKeys);
+        }
+        else
+        {
+            int j = 0;
+            for (int i = 0; i < items.length; i++)
+            {
+                PartitionKey nextKey = getKey(items[i]);
+                if (i == 0)
+                {
+                    partitionKeys[j++] = nextKey;
+                }
+                else
+                {
+                    if (partitionKeys[j - 1].equals(nextKey))
+                        continue;
+                    else
+                        partitionKeys[j++] = nextKey;
+                }
+            }
+            return Keys.ofSortedUnique(partitionKeys);
+        }
     }
 
     @Override
@@ -117,8 +139,9 @@ public abstract class AbstractKeySorted<T> implements Iterable<T>
     }
 
     @VisibleForTesting
-    void validateOrder()
+    int validateOrder()
     {
+        int duplicateKeys = 0;
         for (int i = 1; i < items.length; i++)
         {
             T prev = items[i-1];
@@ -126,7 +149,10 @@ public abstract class AbstractKeySorted<T> implements Iterable<T>
 
             if (compare(prev, next) >= 0)
                 throw new IllegalStateException(String.format(ITEMS_OUT_OF_ORDER_MESSAGE, i - 1, prev, i, next));
+            if (getKey(prev).compareTo(getKey(next)) == 0)
+                duplicateKeys++;
         }
+        return duplicateKeys;
     }
 
     public int size()
