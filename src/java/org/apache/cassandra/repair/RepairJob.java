@@ -180,7 +180,22 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
             accordRepair = paxosRepair.flatMap(unused -> {
                 logger.info("{} {}.{} starting accord repair", session.previewKind.logPrefix(session.getId()), desc.keyspace, desc.columnFamily);
                 IPartitioner partitioner = metadata.partitioner;
-                AccordRepair repair = new AccordRepair(ctx, cfs, partitioner, desc.keyspace, desc.ranges, session.isConsensusMigration && session.accordOnly(), allEndpoints);
+//                // Accord migration doesn't require ALL because it's expecting everything else to read at QUORUM
+//                // Non-migration repair does need to be at ALL if there is no data repair to meet the contract of
+//                // repair making things safe to read from the repaired set at ONE
+//                boolean requireAllEndpoints;
+//                if (session.isConsensusMigration)
+//                {
+//                    // Migration to Accord shouldn't request an Accord repair
+//                    // Migration to Paxos should only request the Accord barrier, but it would work with Accord at QUORUM + data repair
+//                    requireAllEndpoints = !session.repairData;
+//                }
+//                else
+//                {
+//                    if (!session.repairData)
+//                        requireAllEndpoints = true;
+//                }
+                AccordRepair repair = new AccordRepair(ctx, cfs, partitioner, desc.keyspace, desc.ranges, true, allEndpoints);
                 return repair.repair(taskExecutor);
             }, taskExecutor);
         }
