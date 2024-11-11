@@ -126,9 +126,9 @@ import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.journal.Params;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.metrics.AccordClientRequestMetrics;
-import org.apache.cassandra.metrics.TCMMetrics;
 import org.apache.cassandra.metrics.ClientRequestMetrics;
 import org.apache.cassandra.metrics.ClientRequestsMetricsHolder;
+import org.apache.cassandra.metrics.TCMMetrics;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessageDelivery;
@@ -169,7 +169,6 @@ import org.apache.cassandra.utils.ExecutorUtils;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.AsyncPromise;
 import org.apache.cassandra.utils.concurrent.Future;
-import org.apache.cassandra.utils.concurrent.ImmediateFuture;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static accord.messages.SimpleReply.Ok;
@@ -191,8 +190,6 @@ public class AccordService implements IAccordService, Shutdownable
 
     private enum State {INIT, STARTED, SHUTTING_DOWN, SHUTDOWN}
 
-    private static final Future<Void> BOOTSTRAP_SUCCESS = ImmediateFuture.success(null);
-
     private final Node node;
     private final Shutdownable nodeShutdown;
     private final AccordMessageSink messageSink;
@@ -208,140 +205,14 @@ public class AccordService implements IAccordService, Shutdownable
     @GuardedBy("this")
     private State state = State.INIT;
 
-    private static final IAccordService NOOP_SERVICE = new IAccordService()
-    {
-        @Override
-        public IVerbHandler<? extends Request> requestHandler()
-        {
-            return null;
-        }
-
-        @Override
-        public IVerbHandler<? extends Reply> responseHandler()
-        {
-            return null;
-        }
-
-        @Override
-        public Seekables<?, ?> barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
-        {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Seekables<?, ?> barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
-        {
-            throw new UnsupportedOperationException("No accord barriers should be executed when accord.enabled = false in cassandra.yaml");
-        }
-
-        @Override
-        public Seekables<?, ?> repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
-        {
-            throw new UnsupportedOperationException("No accord repairs should be executed when accord.enabled = false in cassandra.yaml");
-        }
-
-        @Override
-        public @Nonnull TxnResult coordinate(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
-        {
-            throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
-        }
-
-        @Override
-        public @Nonnull AsyncTxnResult coordinateAsync(@Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
-        {
-            throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
-        }
-
-        @Override
-        public TxnResult getTxnResult(AsyncTxnResult asyncTxnResult, boolean isWrite, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
-        {
-            throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
-        }
-
-        @Override
-        public long currentEpoch()
-        {
-            throw new UnsupportedOperationException("Cannot return epoch when accord.enabled = false in cassandra.yaml");
-        }
-
-        @Override
-        public void setCacheSize(long kb) { }
-
-        @Override
-        public TopologyManager topology()
-        {
-            throw new UnsupportedOperationException("Cannot return topology when accord.enabled = false in cassandra.yaml");
-        }
-
-        @Override
-        public void startup()
-        {
-            try
-            {
-                AccordTopologySorter.checkSnitchSupported(DatabaseDescriptor.getEndpointSnitch());
-            }
-            catch (Throwable t)
-            {
-                logger.warn("Current snitch  is not compatable with Accord, make sure to fix the snitch before enabling Accord; {}", t.toString());
-            }
-        }
-
-        @Override
-        public void shutdownAndWait(long timeout, TimeUnit unit) { }
-
-        @Override
-        public AccordScheduler scheduler()
-        {
-            return null;
-        }
-
-        @Override
-        public Future<Void> epochReady(Epoch epoch)
-        {
-            return BOOTSTRAP_SUCCESS;
-        }
-
-        @Override
-        public void receive(Message<List<AccordSyncPropagator.Notification>> message) {}
-
-        @Override
-        public CompactionInfo getCompactionInfo()
-        {
-            return new CompactionInfo(new Int2ObjectHashMap<>(), new Int2ObjectHashMap<>(), new Int2ObjectHashMap<>());
-        }
-
-        @Override
-        public List<CommandStoreTxnBlockedGraph> debugTxnBlockedGraph(TxnId txnId)
-        {
-            return Collections.emptyList();
-        }
-
-        @Nullable
-        @Override
-        public Long minEpoch(Collection<TokenRange> ranges)
-        {
-            return null;
-        }
-
-        @Override
-        public void tryMarkRemoved(Topology topology, Id node)
-        {
-
-        }
-
-        @Override
-        public Params journalConfiguration()
-        {
-            throw new UnsupportedOperationException("Cannot return configuration when accord.enabled = false in cassandra.yaml");
-        }
-    };
+    private static final IAccordService NOOP_SERVICE = new NoOpAccordService();
 
     private static volatile IAccordService instance = null;
 
     @VisibleForTesting
-    public static void unsafeSetNewAccordService()
+    public static void unsafeSetNewAccordService(IAccordService service)
     {
-        instance = null;
+        instance = service;
     }
 
     @VisibleForTesting
@@ -397,6 +268,7 @@ public class AccordService implements IAccordService, Shutdownable
         i.shutdownAndWait(timeout, unit);
     }
 
+    @Override
     public boolean shouldAcceptMessages()
     {
         return state == State.STARTED && journal.started();
@@ -617,13 +489,13 @@ public class AccordService implements IAccordService, Shutdownable
             AsyncResult<TxnId> asyncResult = syncPoint == null
                                                  ? Barrier.barrier(node, keysOrRanges, route, epoch, barrierType)
                                                  : Barrier.barrier(node, keysOrRanges, route, epoch, barrierType, syncPoint);
+            long deadlineNanos = requestTime.startedAtNanos() + timeoutNanos;
+            TxnId txnId = AsyncChains.getBlocking(asyncResult, deadlineNanos - nanoTime(), NANOSECONDS);
             if (keysOrRanges.domain() == Key)
             {
                 PartitionKey key = (PartitionKey)keysOrRanges.get(0);
-                asyncResult.accept(txnId -> maybeSaveAccordKeyMigrationLocally(key, Epoch.create(txnId.epoch())));
+                maybeSaveAccordKeyMigrationLocally(key, Epoch.create(txnId.epoch()));
             }
-            long deadlineNanos = requestTime.startedAtNanos() + timeoutNanos;
-            AsyncChains.getBlocking(asyncResult, deadlineNanos - nanoTime(), NANOSECONDS);
             logger.debug("Completed barrier attempt in {}ms, {}ms since attempts start, barrier key: {} epoch: {} barrierType: {} isForWrite {}",
                          sw.elapsed(MILLISECONDS),
                          NANOSECONDS.toMillis(nanoTime() - requestTime.startedAtNanos()),
