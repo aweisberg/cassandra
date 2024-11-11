@@ -78,7 +78,6 @@ public abstract class AbstractRepairTask implements RepairTask
                                                                                  options.repairData(),
                                                                                  options.repairPaxos(),
                                                                                  options.repairAccord(),
-                                                                                 options.isConsensusMigration(),
                                                                                  executor,
                                                                                  validationScheduler,
                                                                                  cfnames);

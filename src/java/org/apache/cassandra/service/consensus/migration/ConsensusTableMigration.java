@@ -69,8 +69,8 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.lang.String.format;
 import static java.util.Collections.emptyList;
-import static org.apache.cassandra.dht.Range.normalize;
 import static org.apache.cassandra.dht.NormalizedRanges.normalizedRanges;
+import static org.apache.cassandra.dht.Range.normalize;
 import static org.apache.cassandra.utils.CollectionSerializers.deserializeList;
 import static org.apache.cassandra.utils.CollectionSerializers.serializeCollection;
 import static org.apache.cassandra.utils.CollectionSerializers.serializedCollectionSize;
@@ -384,8 +384,7 @@ public abstract class ConsensusTableMigration
         boolean forceRepair = false;
         boolean optimiseStreams = false;
         boolean ignoreUnreplicatedKeyspaces = true;
-        boolean isConsensusMigration = true;
-        RepairOption repairOption = new RepairOption(RepairParallelism.PARALLEL, primaryRange, incremental, trace, numJobThreads, intersectingRanges, pullRepair, forceRepair, PreviewKind.NONE, optimiseStreams, ignoreUnreplicatedKeyspaces, repairData, repairPaxos, repairAccord, isConsensusMigration);
+        RepairOption repairOption = new RepairOption(RepairParallelism.PARALLEL, primaryRange, incremental, trace, numJobThreads, intersectingRanges, pullRepair, forceRepair, PreviewKind.NONE, optimiseStreams, ignoreUnreplicatedKeyspaces, repairData, repairPaxos, repairAccord);
         tables.forEach(table -> repairOption.getColumnFamilies().add(table.tableName));
         return repairOption;
     }

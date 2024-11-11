@@ -463,7 +463,6 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                                              boolean repairData,
                                              boolean repairPaxos,
                                              boolean repairAccord,
-                                             boolean isConsensusMigration,
                                              ExecutorPlus executor,
                                              Scheduler validationScheduler,
                                              String... cfnames)
@@ -481,7 +480,7 @@ public class ActiveRepairService implements IEndpointStateChangeSubscriber, IFai
                                                         range, excludedDeadNodes, keyspace,
                                                         parallelismDegree, isIncremental, pullRepair,
                                                         previewKind, optimiseStreams, repairData, repairPaxos, repairAccord,
-                                                        isConsensusMigration, cfnames);
+                                                        cfnames);
         repairs.getIfPresent(parentRepairSession).register(session.state);
 
         sessions.put(session.getId(), session);

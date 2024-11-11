@@ -123,7 +123,6 @@ public class RepairSession extends AsyncFuture<RepairSessionResult> implements I
     public final boolean repairData;
     public final boolean repairPaxos; // TODO (now): rename to repairPaxosIfSupported
     public final boolean repairAccord;
-    public final boolean isConsensusMigration;
 
     public final boolean excludedDeadNodes;
 
@@ -172,7 +171,6 @@ public class RepairSession extends AsyncFuture<RepairSessionResult> implements I
                          boolean repairData,
                          boolean repairPaxos,
                          boolean repairAccord,
-                         boolean isConsensusMigration,
                          String... cfnames)
     {
         this.ctx = ctx;
@@ -180,7 +178,6 @@ public class RepairSession extends AsyncFuture<RepairSessionResult> implements I
         this.repairData = repairData;
         this.repairPaxos = repairPaxos;
         this.repairAccord = repairAccord;
-        this.isConsensusMigration = isConsensusMigration;
         assert cfnames.length > 0 : "Repairing no column families seems pointless, doesn't it";
         this.state = new SessionState(ctx, parentRepairSession, keyspace, cfnames, commonRange);
         this.parallelismDegree = parallelismDegree;

@@ -34,8 +34,8 @@ import org.apache.cassandra.dht.IPartitioner;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.locator.MetaStrategy;
-import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.repair.RepairParallelism;
+import org.apache.cassandra.streaming.PreviewKind;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -208,15 +208,12 @@ public class RepairOption
             logger.info("Overriding and disabling Accord repair because Accord is not enabled");
             repairAccord = false;
         }
-        boolean isConsensusMigration = Boolean.parseBoolean(options.get(IS_CONSENSUS_MIGRATION_KEY));
 
         if (previewKind != PreviewKind.NONE)
         {
             checkArgument(!repairPaxos, "repairPaxos must be set to false for preview repairs");
             checkArgument(!repairAccord, "repairAccord must be set to false for preview repairs");
         }
-
-        checkArgument(!(force && isConsensusMigration), "Force repair cannot be used for consensus migration");
 
         int jobThreads = 1;
         if (options.containsKey(JOB_THREADS_KEY))
@@ -235,7 +232,7 @@ public class RepairOption
 
         boolean asymmetricSyncing = Boolean.parseBoolean(options.get(OPTIMISE_STREAMS_KEY));
 
-        RepairOption option = new RepairOption(parallelism, primaryRange, incremental, trace, jobThreads, ranges, pullRepair, force, previewKind, asymmetricSyncing, ignoreUnreplicatedKeyspaces, repairData, repairPaxos, repairAccord, isConsensusMigration);
+        RepairOption option = new RepairOption(parallelism, primaryRange, incremental, trace, jobThreads, ranges, pullRepair, force, previewKind, asymmetricSyncing, ignoreUnreplicatedKeyspaces, repairData, repairPaxos, repairAccord);
 
         // data centers
         String dataCentersStr = options.get(DATACENTERS_KEY);
@@ -317,14 +314,13 @@ public class RepairOption
     private final boolean repairData;
     private final boolean repairPaxos;
     private final boolean repairAccord;
-    private final boolean isConsensusMigration;
 
     private final Collection<String> columnFamilies = new HashSet<>();
     private final Collection<String> dataCenters = new HashSet<>();
     private final Collection<String> hosts = new HashSet<>();
     private final Collection<Range<Token>> ranges = new HashSet<>();
 
-    public RepairOption(RepairParallelism parallelism, boolean primaryRange, boolean incremental, boolean trace, int jobThreads, Collection<Range<Token>> ranges, boolean pullRepair, boolean forceRepair, PreviewKind previewKind, boolean optimiseStreams, boolean ignoreUnreplicatedKeyspaces, boolean repairData, boolean repairPaxos,  boolean repairAccord, boolean isConsensusMigration)
+    public RepairOption(RepairParallelism parallelism, boolean primaryRange, boolean incremental, boolean trace, int jobThreads, Collection<Range<Token>> ranges, boolean pullRepair, boolean forceRepair, PreviewKind previewKind, boolean optimiseStreams, boolean ignoreUnreplicatedKeyspaces, boolean repairData, boolean repairPaxos,  boolean repairAccord)
     {
         checkArgument(repairData || repairAccord || repairPaxos, "Repair needs to repair at least one of data, Paxos, or Accord");
         this.parallelism = parallelism;
@@ -341,7 +337,6 @@ public class RepairOption
         this.repairData = repairData;
         this.repairPaxos = repairPaxos;
         this.repairAccord = repairAccord;
-        this.isConsensusMigration = isConsensusMigration;
     }
 
     public RepairParallelism getParallelism()
@@ -472,11 +467,6 @@ public class RepairOption
         return (repairPaxos() || repairAccord()) && !repairData;
     }
 
-    public boolean isConsensusMigration()
-    {
-        return isConsensusMigration;
-    }
-
     @Override
     public String toString()
     {
@@ -497,7 +487,6 @@ public class RepairOption
                ", repairData: " + repairData +
                ", repairPaxos: " + repairPaxos +
                ", repairAccord: " + repairAccord +
-               ", isConsensusMigration: " + isConsensusMigration +
                ')';
     }
 
@@ -520,7 +509,6 @@ public class RepairOption
         options.put(REPAIR_DATA_KEY, Boolean.toString(repairData));
         options.put(REPAIR_PAXOS_KEY, Boolean.toString(repairPaxos));
         options.put(REPAIR_ACCORD_KEY, Boolean.toString(repairAccord));
-        options.put(IS_CONSENSUS_MIGRATION_KEY, Boolean.toString(isConsensusMigration));
         return options;
     }
 }

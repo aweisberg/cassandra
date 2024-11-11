@@ -394,6 +394,33 @@ public class AccordIncrementalRepairTest extends AccordTestBase
         final String keyspace = KEYSPACE;
         final String table = accordTableName;
 
+        executeWithRetry(SHARED_CLUSTER, format("BEGIN TRANSACTION\n" +
+                                                "INSERT INTO %s (k, v) VALUES (1, 1);\n" +
+                                                "COMMIT TRANSACTION", qualifiedAccordTableName));
+
+        SHARED_CLUSTER.get(1, 2).forEach(instance -> instance.runOnInstance(() -> {
+            TableMetadata metadata = Schema.instance.getTableMetadata(keyspace, table);
+            awaitLocalApplyOnKey(metadata, 1);
+        }));
+
+        SHARED_CLUSTER.forEach(instance -> instance.runOnInstance(() -> barrierRecordingService().reset()));
+
+        SHARED_CLUSTER.filters().reset();
+        awaitEndpointUp(SHARED_CLUSTER.get(1), SHARED_CLUSTER.get(3));
+        nodetool(SHARED_CLUSTER.get(1), "repair", "--accord-only", KEYSPACE);
+
+        SHARED_CLUSTER.get(1).runOnInstance(() -> {
+            Assert.assertTrue(barrierRecordingService().executedBarriers);
+        });
+    }
+
+    @Test
+    public void onlyAccordWithForceTest()
+    {
+        SHARED_CLUSTER.schemaChange(format("CREATE TABLE %s.%s (k int primary key, v int) WITH transactional_mode='full' AND fast_path={'size':2};", KEYSPACE, accordTableName));
+        final String keyspace = KEYSPACE;
+        final String table = accordTableName;
+
         SHARED_CLUSTER.filters().allVerbs().to(3).drop();
         awaitEndpointDown(SHARED_CLUSTER.get(1), SHARED_CLUSTER.get(3));
         awaitEndpointDown(SHARED_CLUSTER.get(2), SHARED_CLUSTER.get(3));
@@ -411,7 +438,7 @@ public class AccordIncrementalRepairTest extends AccordTestBase
 
         SHARED_CLUSTER.filters().reset();
         awaitEndpointUp(SHARED_CLUSTER.get(1), SHARED_CLUSTER.get(3));
-        nodetool(SHARED_CLUSTER.get(1), "repair", "--accord-only", KEYSPACE);
+        nodetool(SHARED_CLUSTER.get(1), "repair", "--force", "--accord-only", KEYSPACE);
 
         SHARED_CLUSTER.get(1).runOnInstance(() -> {
             Assert.assertTrue(barrierRecordingService().executedBarriers);

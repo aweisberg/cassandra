@@ -129,7 +129,7 @@ public class RepairJobTest
         {
             super(SharedContext.Global.instance, new Scheduler.NoopScheduler(),
                   parentRepairSession, commonRange, excludedDeadNodes, keyspace, parallelismDegree, isIncremental, pullRepair,
-                  previewKind, optimiseStreams, repairData, repairPaxos, repairAccord, false, cfnames);
+                  previewKind, optimiseStreams, repairData, repairPaxos, repairAccord, cfnames);
         }
 
         @Override
