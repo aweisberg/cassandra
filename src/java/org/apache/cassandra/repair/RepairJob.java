@@ -184,7 +184,7 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
                     requireAllEndpoints = false;
                 else
                 {
-                    // If the session is doing a data repair (which flushes sstables) we can do the barriers at QUORUM
+                    // If the session is doing a data repair (which flushes sstables if not incremental) we can do the barriers at QUORUM
                     if (session.repairData && !session.isIncremental)
                         requireAllEndpoints = false;
                     else

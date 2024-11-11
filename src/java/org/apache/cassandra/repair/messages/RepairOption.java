@@ -449,7 +449,7 @@ public class RepairOption
 
     public boolean paxosOnly()
     {
-        return !repairAccord && !repairData;
+        return !repairAccord && !repairData && repairPaxos;
     }
 
     public boolean repairAccord()
@@ -459,12 +459,7 @@ public class RepairOption
 
     public boolean accordOnly()
     {
-        return !repairPaxos && !repairData;
-    }
-
-    public boolean isConsensusOnly()
-    {
-        return (repairPaxos() || repairAccord()) && !repairData;
+        return !repairPaxos && !repairData && repairAccord;
     }
 
     @Override
