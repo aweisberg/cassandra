@@ -25,11 +25,11 @@ public class MultiNodeSAITest extends MultiNodeSAITestBase
     @BeforeClass
     public static void before() throws Throwable
     {
-        MultiNodeSAITestBase.before(false);
+        MultiNodeSAITestBase.before(null);
     }
 
     public MultiNodeSAITest()
     {
-        super(false);
+        super(null);
     }
 }

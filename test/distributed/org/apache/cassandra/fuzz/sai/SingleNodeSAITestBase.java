@@ -25,7 +25,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import com.google.common.collect.Iterables;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import org.apache.cassandra.config.CassandraRelevantProperties;
@@ -70,7 +72,7 @@ public abstract class SingleNodeSAITestBase extends IntegrationTestBase
 
     long seed = 1;
 
-    protected boolean withAccord;
+    protected TransactionalMode transactionalMode;
 
     @BeforeClass
     public static void before() throws Throwable
@@ -95,52 +97,60 @@ public abstract class SingleNodeSAITestBase extends IntegrationTestBase
         sut = new InJvmSut(cluster);
     }
 
-    public SingleNodeSAITestBase(boolean withAccord)
+    public SingleNodeSAITestBase(TransactionalMode transactionalMode)
     {
-        this.withAccord = withAccord;
+        this.transactionalMode = transactionalMode;
     }
 
     @Test
     public void basicSaiTest()
     {
+        basicSaiTest(Arrays.asList(ColumnSpec.ck("pk1", ColumnSpec.int64Type),
+                                   ColumnSpec.ck("pk2", ColumnSpec.asciiType(4, 100)),
+                                   ColumnSpec.ck("pk3", ColumnSpec.int64Type)),
+                     Arrays.asList(ColumnSpec.ck("ck1", ColumnSpec.asciiType(4, 100)),
+                                   ColumnSpec.ck("ck2", ColumnSpec.asciiType, true),
+                                   ColumnSpec.ck("ck3", ColumnSpec.int64Type)),
+                     Arrays.asList(ColumnSpec.regularColumn("v1", ColumnSpec.asciiType(40, 100)),
+                                  ColumnSpec.regularColumn("v2", ColumnSpec.int64Type),
+                                  ColumnSpec.regularColumn("v3", ColumnSpec.int64Type)),
+                     List.of(ColumnSpec.staticColumn("s1", ColumnSpec.asciiType(40, 100))));
+    }
+
+    @Ignore("This is just a simplified version of the basic test that is easier to debug that you can run if there is a failure with the more complex schmea")
+    @Test
+    public void simplifiedSaiTest()
+    {
+        basicSaiTest(Arrays.asList(ColumnSpec.ck("pk1", ColumnSpec.int64Type)),
+                     Arrays.asList(ColumnSpec.ck("ck1", ColumnSpec.int64Type)),
+                     Arrays.asList(ColumnSpec.regularColumn("v1", ColumnSpec.int64Type), ColumnSpec.regularColumn("v2", ColumnSpec.int64Type)),
+                     List.of(ColumnSpec.staticColumn("s1", ColumnSpec.int64Type)));
+    }
+
+    private long[] getValueIdxes(List<ColumnSpec<?>> columns, EntropySource random, long values[])
+    {
+        long[] valuesIdxes = new long[columns.size()];
+        for (int iValueIdxes = 0; iValueIdxes < valuesIdxes.length; iValueIdxes++)
+            valuesIdxes[iValueIdxes] = random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)];
+        return valuesIdxes;
+    }
+
+    private void basicSaiTest(List<ColumnSpec<?>> partitionKeys, List<ColumnSpec<?>> clusteringKeys, List<ColumnSpec<?>> regularColumns, List<ColumnSpec<?>> staticColumns)
+    {
         CassandraRelevantProperties.SAI_INTERSECTION_CLAUSE_LIMIT.setInt(6);
-        SchemaSpec schema = new SchemaSpec(KEYSPACE, "tbl1",
-                                           Arrays.asList(ColumnSpec.ck("pk1", ColumnSpec.int64Type),
-                                                         ColumnSpec.ck("pk2", ColumnSpec.asciiType(4, 100)),
-                                                         ColumnSpec.ck("pk3", ColumnSpec.int64Type)),
-                                           Arrays.asList(ColumnSpec.ck("ck1", ColumnSpec.asciiType(4, 100)),
-                                                         ColumnSpec.ck("ck2", ColumnSpec.asciiType, true),
-                                                         ColumnSpec.ck("ck3", ColumnSpec.int64Type)),
-                                           Arrays.asList(ColumnSpec.regularColumn("v1", ColumnSpec.asciiType(40, 100)),
-                                                         ColumnSpec.regularColumn("v2", ColumnSpec.int64Type),
-                                                         ColumnSpec.regularColumn("v3", ColumnSpec.int64Type)),
-                                           List.of(ColumnSpec.staticColumn("s1", ColumnSpec.asciiType(40, 100))),
-                                           withAccord ? Optional.of(TransactionalMode.full) : Optional.empty())
+        SchemaSpec schema = new SchemaSpec(KEYSPACE, "tbl1", partitionKeys, clusteringKeys, regularColumns, staticColumns,
+                                           transactionalMode != null ? Optional.of(transactionalMode) : Optional.empty())
                             .withWriteTimeFromAccord(false) // use the harry timestamp
                             .withCompactionStrategy("LeveledCompactionStrategy");
 
         sut.schemaChange(schema.compile().cql());
         sut.schemaChange(schema.cloneWithName(schema.keyspace, schema.table + "_debug").compile().cql());
-        sut.schemaChange(String.format("CREATE INDEX %s_sai_idx ON %s.%s (%s) USING 'sai' ",
-                                       schema.regularColumns.get(0).name,
-                                       schema.keyspace,
-                                       schema.table,
-                                       schema.regularColumns.get(0).name));
-        sut.schemaChange(String.format("CREATE INDEX %s_sai_idx ON %s.%s (%s) USING 'sai';",
-                                       schema.regularColumns.get(1).name,
-                                       schema.keyspace,
-                                       schema.table,
-                                       schema.regularColumns.get(1).name));
-        sut.schemaChange(String.format("CREATE INDEX %s_sai_idx ON %s.%s (%s) USING 'sai';",
-                                       schema.regularColumns.get(2).name,
-                                       schema.keyspace,
-                                       schema.table,
-                                       schema.regularColumns.get(2).name));
-        sut.schemaChange(String.format("CREATE INDEX %s_sai_idx ON %s.%s (%s) USING 'sai';",
-                                       schema.staticColumns.get(0).name,
-                                       schema.keyspace,
-                                       schema.table,
-                                       schema.staticColumns.get(0).name));
+        for (ColumnSpec<?> column : Iterables.concat(schema.regularColumns, schema.staticColumns))
+            sut.schemaChange(String.format("CREATE INDEX %s_sai_idx ON %s.%s (%s) USING 'sai' ",
+                                           column.name,
+                                           schema.keyspace,
+                                           schema.table,
+                                           column.name));
 
         waitForIndexesQueryable(schema);
 
@@ -169,12 +179,9 @@ public abstract class SingleNodeSAITestBase extends IntegrationTestBase
             {
                 int partitionIndex = random.nextInt(0, NUM_PARTITIONS);
 
-                history.visitPartition(partitionIndex)
-                       .insert(random.nextInt(MAX_PARTITION_SIZE),
-                               new long[] { random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)],
-                                            random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)],
-                                            random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)] },
-                               new long[] { random.nextBoolean() ? DataGenerators.UNSET_DESCR : values[random.nextInt(values.length)] });
+                history.visitPartition(partitionIndex).insert(random.nextInt(MAX_PARTITION_SIZE),
+                                                              getValueIdxes(regularColumns, random, values),
+                                                              getValueIdxes(staticColumns, random, values));
 
                 if (random.nextFloat() > 0.99f)
                 {
@@ -286,6 +293,15 @@ public abstract class SingleNodeSAITestBase extends IntegrationTestBase
                     catch (Throwable t)
                     {
                         logger.debug("Partition index = {}, run = {}, j = {}, i = {}", partitionIndex, run, j, i);
+
+                        // Much more succinct output for debugging
+//                        logger.info(query.toSelectStatement(columns, !query.schemaSpec.isWriteTimeFromAccord()).toString());
+//                        logger.info("Expected:");
+//                        modelState.rows().values().stream().forEach(row -> logger.info(row.toString(schema)));
+//                        List<ResultSetRow> rows = SelectHelper.execute(sut, history.clock(), query);
+//                        logger.info("Found:");
+//                        rows.stream().forEach(row -> logger.info(row.toString(schema)));
+//                        fail();
 
                         Query partitionQuery = Query.selectAllColumns(schema, pd, false);
                         QuiescentChecker.validate(schema,

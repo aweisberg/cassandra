@@ -173,6 +173,11 @@ public class InJvmSutBase<NODE extends IInstance, CLUSTER extends ICluster<NODE>
         {
             try
             {
+                // Easy way to get a lot of statements being run
+//                String bound = statement;
+//                for (Object bind : bindings)
+//                    bound = bound.replaceFirst("\\?", bind.toString());
+//                logger.info(bound);
                 if (cl == ConsistencyLevel.NODE_LOCAL)
                 {
                     return cluster.get(coordinator)

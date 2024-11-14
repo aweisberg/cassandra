@@ -19,13 +19,13 @@
 package org.apache.cassandra.fuzz.sai;
 
 import org.junit.Before;
-import org.junit.BeforeClass;
 
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.test.sai.SAIUtil;
 import org.apache.cassandra.harry.ddl.SchemaSpec;
 import org.apache.cassandra.harry.sut.injvm.InJvmSut;
 import org.apache.cassandra.harry.sut.injvm.InJvmSutBase;
+import org.apache.cassandra.service.consensus.TransactionalMode;
 
 import static org.apache.cassandra.distributed.api.Feature.GOSSIP;
 import static org.apache.cassandra.distributed.api.Feature.NETWORK;
@@ -39,18 +39,12 @@ public abstract class MultiNodeSAITestBase extends SingleNodeSAITestBase
      */
     private static final int FETCH_SIZE = 10;
 
-    public MultiNodeSAITestBase(boolean withAccord)
+    public MultiNodeSAITestBase(TransactionalMode transactionalMode)
     {
-        super(withAccord);
+        super(transactionalMode);
     }
 
-    @BeforeClass
-    public static void before() throws Throwable
-    {
-        before(false);
-    }
-
-    public static void before(boolean withAccord) throws Throwable
+    public static void before(TransactionalMode transactionalMode) throws Throwable
     {
         cluster = Cluster.build()
                          .withNodes(2)
@@ -77,10 +71,9 @@ public abstract class MultiNodeSAITestBase extends SingleNodeSAITestBase
                     return super.execute(cql, ConsistencyLevel.ALL, FETCH_SIZE, bindings);
 
                 // The goal here is to make replicas as out of date as possible, modulo the efforts of repair
-                // and read-repair in the test itself. node_local bypasses Accord which breaks any attempt at testing Accord
-                // so if we are running with Accord use QUORUM (which Accord will ignore since it runs with transactional
-                // mode full).
-                ConsistencyLevel consistencyLevel = withAccord ? ConsistencyLevel.QUORUM : ConsistencyLevel.NODE_LOCAL;
+                // and read-repair in the test itself. node_local bypasses Accord so don't use it if Accord is not
+                // doing interop
+                ConsistencyLevel consistencyLevel = (transactionalMode != null && transactionalMode.nonSerialWritesThroughAccord) ? ConsistencyLevel.QUORUM : ConsistencyLevel.NODE_LOCAL;
                 return super.execute(cql, consistencyLevel, bindings);
             }
         };

@@ -18,10 +18,20 @@
 
 package org.apache.cassandra.fuzz.sai;
 
-public class AccordSingleNodeSAITest extends SingleNodeSAITestBase
+import org.junit.BeforeClass;
+
+import org.apache.cassandra.service.consensus.TransactionalMode;
+
+public class AccordInteropMultiNodeSAITest extends MultiNodeSAITestBase
 {
-    public AccordSingleNodeSAITest()
+    @BeforeClass
+    public static void before() throws Throwable
     {
-        super(true);
+        MultiNodeSAITestBase.before(TransactionalMode.test_interop_read);
+    }
+
+    public AccordInteropMultiNodeSAITest()
+    {
+        super(TransactionalMode.test_interop_read);
     }
 }

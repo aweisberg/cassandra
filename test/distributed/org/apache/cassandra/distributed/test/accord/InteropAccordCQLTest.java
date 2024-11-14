@@ -16,20 +16,14 @@
  * limitations under the License.
  */
 
-package org.apache.cassandra.fuzz.sai;
+package org.apache.cassandra.distributed.test.accord;
 
-import org.junit.BeforeClass;
+import org.apache.cassandra.service.consensus.TransactionalMode;
 
-public class AccordMultiNodeSAITest extends MultiNodeSAITestBase
+public class InteropAccordCQLTest extends AccordCQLTestBase
 {
-    @BeforeClass
-    public static void before() throws Throwable
+    public InteropAccordCQLTest()
     {
-        MultiNodeSAITestBase.before(true);
-    }
-
-    public AccordMultiNodeSAITest()
-    {
-        super(true);
+        super(TransactionalMode.test_interop_read);
     }
 }

@@ -337,7 +337,7 @@ public class SchemaSpec
 
     public boolean isWriteTimeFromAccord()
     {
-        return transactionalMode.isPresent() && transactionalMode.get().nonSerialWritesThroughAccord;
+        return writeTimeFromAccord;
     }
 
     public CompiledStatement compile()
