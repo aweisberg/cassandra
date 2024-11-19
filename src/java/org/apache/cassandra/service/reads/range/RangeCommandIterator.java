@@ -47,7 +47,6 @@ import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.locator.ReplicaPlan;
 import org.apache.cassandra.metrics.ClientRangeRequestMetrics;
 import org.apache.cassandra.net.Message;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
@@ -201,6 +200,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
 
     private SingleRangeResponse executeNormal(ReplicaPlan.ForRangeRead replicaPlan, PartitionRangeReadCommand rangeCommand, ReadCoordinator readCoordinator)
     {
+        rangeCommand = (PartitionRangeReadCommand) readCoordinator.maybeAllowOutOfRangeReads(rangeCommand, replicaPlan.consistencyLevel());
         // If enabled, request repaired data tracking info from full replicas, but
         // only if there are multiple full replicas to compare results from.
         boolean trackRepairedStatus = DatabaseDescriptor.getRepairedDataTrackingForRangeReadsEnabled()
@@ -214,7 +214,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
         ReadCallback<EndpointsForRange, ReplicaPlan.ForRangeRead> handler =
         new ReadCallback<>(resolver, rangeCommand, sharedReplicaPlan, requestTime);
 
-        if (replicaPlan.contacts().size() == 1 && replicaPlan.contacts().get(0).isSelf())
+        if (replicaPlan.contacts().size() == 1 && replicaPlan.contacts().get(0).isSelf() && readCoordinator.localReadSupported())
         {
             Stage.READ.execute(new StorageProxy.LocalReadRunnable(rangeCommand, handler, requestTime, trackRepairedStatus));
         }
@@ -225,7 +225,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                 Tracing.trace("Enqueuing request to {}", replica);
                 ReadCommand command = replica.isFull() ? rangeCommand : rangeCommand.copyAsTransientQuery(replica);
                 Message<ReadCommand> message = command.createMessage(trackRepairedStatus && replica.isFull(), requestTime);
-                MessagingService.instance().sendWithCallback(message, replica.endpoint(), handler);
+                readCoordinator.sendReadCommand(message, replica.endpoint(), handler);
             }
         }
         return new SingleRangeResponse(resolver, handler, readRepair);
@@ -243,12 +243,10 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
      */
     private PartitionIterator query(ReplicaPlan.ForRangeRead replicaPlan, ReadCoordinator readCoordinator, List<ReadRepair<?, ?>> readRepairs, boolean isFirst)
     {
-        checkState(readCoordinator.isEventuallyConsistent(), "Don't expect to use this from transactional coordinator");
-
         PartitionRangeReadCommand rangeCommand = command.forSubRange(replicaPlan.range(), isFirst);
 
         ClusterMetadata cm = ClusterMetadata.current();
-        List<RangeReadWithTarget> reads = ConsensusRequestRouter.splitReadIntoAccordAndNormal(cm, rangeCommand, requestTime);
+        List<RangeReadWithTarget> reads = ConsensusRequestRouter.splitReadIntoAccordAndNormal(cm, rangeCommand, readCoordinator, requestTime);
         // Special case returning directly to avoid wrapping the iterator and applying the limits an extra time
         if (reads.size() == 1)
         {

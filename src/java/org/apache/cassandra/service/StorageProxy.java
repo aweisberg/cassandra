@@ -142,9 +142,7 @@ import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
 import org.apache.cassandra.service.accord.txn.TxnDataValue;
-import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
-import org.apache.cassandra.service.accord.txn.TxnRangeRead;
 import org.apache.cassandra.service.accord.txn.TxnRangeReadResult;
 import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.service.accord.txn.TxnResult;
@@ -2200,7 +2198,7 @@ public class StorageProxy implements StorageProxyMBean
         TableParams tableParams = tableMetadata.params;
         Range<Token> readRange = new Range<>(command.dataRange().startKey().getToken(), command.dataRange().stopKey().getToken());
         consistencyLevel = tableParams.transactionalMode.readCLForMode(tableParams.transactionalMigrationFrom, consistencyLevel, cm, tableMetadata.id, readRange);
-        TxnRead read = new TxnRangeRead(command, ranges, consistencyLevel);
+        TxnRead read = TxnRead.createRangeRead(command, ranges, consistencyLevel);
         Txn.Kind kind = shouldReadEphemerally(read.keys(), tableParams, Read);
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.RANGE_QUERY, null);
         IAccordService accordService = AccordService.instance();
@@ -2217,7 +2215,7 @@ public class StorageProxy implements StorageProxyMBean
         TableMetadata tableMetadata = getTableMetadata(cm, group.metadata().id);
         TableParams tableParams = tableMetadata.params;
         consistencyLevel = consistencyLevelForAccordRead(cm, group.queries.get(0).metadata().id, group, consistencyLevel);
-        TxnKeyRead read = TxnKeyRead.createSerialRead(group.queries, consistencyLevel);
+        TxnRead read = TxnRead.createSerialRead(group.queries, consistencyLevel);
         Txn.Kind kind = shouldReadEphemerally(read.keys(), tableParams, Read);
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.ALL, null);
         return AccordService.instance().coordinateAsync(tableMetadata.epoch.getEpoch(), txn, consistencyLevel, requestTime);
@@ -2370,7 +2368,7 @@ public class StorageProxy implements StorageProxyMBean
             ClusterMetadata cm = ClusterMetadata.current();
             try
             {
-                SplitReads splitReads = splitReadsIntoAccordAndNormal(cm, group, requestTime);
+                SplitReads splitReads = splitReadsIntoAccordAndNormal(cm, group, coordinator, requestTime);
                 SinglePartitionReadCommand.Group accordReads = splitReads.accordReads;
                 AsyncTxnResult accordResult = accordReads != null ? readWithAccordAsync(cm, accordReads, consistencyLevel, requestTime) : null;
                 SinglePartitionReadCommand.Group normalReads = splitReads.normalReads;

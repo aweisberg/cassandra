@@ -325,8 +325,6 @@ public class AccordGenerators
                     return new MinTokenKey(tableId, tokenGen.next(rs));
                 case SENTINEL:
                     return rs.nextBoolean() ? AccordRoutingKey.SentinelKey.min(tableId) : AccordRoutingKey.SentinelKey.max(tableId);
-                case MIN_TOKEN:
-                    return new MinTokenKey(tableId, tokenGen.next(rs));
                 default:
                     throw new AssertionError("Unknown kind: " + kind);
             }

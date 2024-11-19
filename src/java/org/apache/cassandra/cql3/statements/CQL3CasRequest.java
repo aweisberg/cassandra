@@ -63,8 +63,8 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.accord.txn.TxnCondition;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
-import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
+import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.service.accord.txn.TxnReference;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.TxnUpdate;
@@ -479,7 +479,7 @@ public class CQL3CasRequest implements CASRequest
         // level since Accord will manage reading safely
         TableParams tableParams = getTableMetadata(cm, metadata.id).params;
         consistencyLevel = tableParams.transactionalMode.readCLForMode(tableParams.transactionalMigrationFrom, consistencyLevel, cm, metadata.id, readCommand.partitionKey().getToken());
-        TxnKeyRead read = TxnKeyRead.createCasRead(readCommand, consistencyLevel);
+        TxnRead read = TxnRead.createCasRead(readCommand, consistencyLevel);
         // In a CAS requesting only one key is supported and writes
         // can't be dependent on any data that is read (only conditions)
         // so the only relevant keys are the read key
