@@ -71,32 +71,6 @@ public enum TransactionalMode
     // Running on Paxos V1 or V2 with Accord disabled
     off(false, false, false, false),
 
-    // TODO (maybe): These unsafe modes don't have Accord do async commit and single replica reads so how useful are they besides preserving non-SERIAL performance?
-    // These modes are unsafe when Accord and non-SERIAL reads and writes interact with the same data
-    // They don't guarantee that non-SERIAL reads or writes will see the latest Accord writes or that
-    // Accord transactions will recover correctly
-
-    /*
-     * Enables Accord but does not allow non-SERIAL reads and writes to occur safely to data read/written by Accord
-     *
-     * Execute non-SERIAL writes through Cassandra via StorageProxy's normal write path. This can lead Accord to compute
-     * multiple outcomes for a transaction that depend on data written by non-SERIAL writes.
-     *
-     * SERIAL reads and CAS will run on Accord. Accord will honor provided consistency levels and do synchronous commit
-     * so the results can be read correctly with non-SERIAL CLs, but read repair could interfere with Accord.
-     **/
-    unsafe(true, false, false, false),
-
-    /*
-     * Enables Accord and makes it safe to perform non-SERIAL reads of Accord data without guaranteeing that they will
-     * see the latest Accord writes. non-SERIAL writes to data read by Accord will make Accord txn recovery non-deterministic
-     *
-     * Allow mixing of non-SERIAL writes and Accord, but still force BRR through Accord.
-     * This mode makes it safe to perform non-SERIAL or SERIAL reads of Accord data, but unsafe
-     * to write data that Accord may attempt to read.
-     */
-    unsafe_writes(true, false, false, true),
-
     // These modes always provide correct execution with mixed_reads allow non-transaction non-SERIAL operations
     // at the expense of slower Accord transactions, and full allowing faster transaction execution, but forcing
     // all reads and writes to occur transactionally
@@ -113,6 +87,32 @@ public enum TransactionalMode
      * which makes Accord commit writes at ANY similar to Paxos with commit consistency level ANY.
      */
     full(true, true, true, true),
+
+    // TODO (maybe): These unsafe modes don't have Accord do async commit and single replica reads so how useful are they besides preserving non-SERIAL performance?
+    // These modes are unsafe when Accord and non-SERIAL reads and writes interact with the same data
+    // They don't guarantee that non-SERIAL reads or writes will see the latest Accord writes or that
+    // Accord transactions will recover correctly
+
+    /*
+     * Enables Accord and makes it safe to perform non-SERIAL reads of Accord data without guaranteeing that they will
+     * see the latest Accord writes. non-SERIAL writes to data read by Accord will make Accord txn recovery non-deterministic
+     *
+     * Allow mixing of non-SERIAL writes and Accord, but still force BRR through Accord.
+     * This mode makes it safe to perform non-SERIAL or SERIAL reads of Accord data, but unsafe
+     * to write data that Accord may attempt to read.
+     */
+    test_unsafe_writes(true, false, false, true),
+
+    /*
+     * Enables Accord but does not allow non-SERIAL reads and writes to occur safely to data read/written by Accord
+     *
+     * Execute non-SERIAL writes through Cassandra via StorageProxy's normal write path. This can lead Accord to compute
+     * multiple outcomes for a transaction that depend on data written by non-SERIAL writes.
+     *
+     * SERIAL reads and CAS will run on Accord. Accord will honor provided consistency levels and do synchronous commit
+     * so the results can be read correctly with non-SERIAL CLs, but read repair could interfere with Accord.
+     **/
+    test_unsafe(true, false, false, false),
 
     // For tests, Accord will read and be forced to do interop reads
     test_interop_read(true, false, true, true);
