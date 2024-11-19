@@ -27,6 +27,8 @@ import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import accord.primitives.Keys;
+import accord.primitives.Seekables;
 import org.apache.cassandra.SchemaLoader;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.dht.ByteOrderedPartitioner;
@@ -99,9 +101,9 @@ public class AbstractKeySortedTest
         }
 
         @Override
-        PartitionKey getKey(Item item)
+        Seekables getKeys(Item item)
         {
-            return item.key;
+            return Keys.of(item.key);
         }
 
         @Override

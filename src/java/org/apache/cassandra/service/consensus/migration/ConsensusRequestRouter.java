@@ -58,6 +58,7 @@ import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.KeyMigrationState;
 import org.apache.cassandra.service.paxos.Paxos;
+import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.FBUtilities;
@@ -573,8 +574,10 @@ public class ConsensusRequestRouter
      * While it's possible to map the Accord read to a single txn it doesn't seem worth it since it's a pretty unusual
      * scenario where we do this during migration and have a lot of different read commands.
      */
-    public static List<RangeReadWithTarget> splitReadIntoAccordAndNormal(ClusterMetadata cm, PartitionRangeReadCommand read, Dispatcher.RequestTime requestTime)
+    public static List<RangeReadWithTarget> splitReadIntoAccordAndNormal(ClusterMetadata cm, PartitionRangeReadCommand read, ReadCoordinator readCoordinator, Dispatcher.RequestTime requestTime)
     {
+        if (!readCoordinator.isEventuallyConsistent())
+            return ImmutableList.of(new RangeReadWithTarget(read, RangeReadTarget.normal));
         TableMetadata tm = getTableMetadata(cm, read.metadata().id);
         if (tm == null || (!tm.params.transactionalMode.nonSerialReadsThroughAccord && !tm.params.transactionalMigrationFrom.nonSerialReadsThroughAccord()))
             return ImmutableList.of(new RangeReadWithTarget(read, RangeReadTarget.normal));
@@ -667,8 +670,10 @@ public class ConsensusRequestRouter
         }
     }
 
-    public static SplitReads splitReadsIntoAccordAndNormal(ClusterMetadata cm, SinglePartitionReadCommand.Group reads, Dispatcher.RequestTime requestTime)
+    public static SplitReads splitReadsIntoAccordAndNormal(ClusterMetadata cm, SinglePartitionReadCommand.Group reads, ReadCoordinator coordinator, Dispatcher.RequestTime requestTime)
     {
+        if (!coordinator.isEventuallyConsistent())
+            return new SplitReads(null, reads);
         List<SinglePartitionReadCommand> accordReads = null;
         List<SinglePartitionReadCommand> normalReads = null;
 

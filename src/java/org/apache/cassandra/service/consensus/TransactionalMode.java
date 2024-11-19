@@ -130,7 +130,7 @@ public enum TransactionalMode
         this.nonSerialReadsThroughAccord = nonSerialReadsThroughAccord;
         this.blockingReadRepairThroughAccord = blockingReadRepairThroughAccord;
         this.cqlParam = String.format("transactional_mode = '%s'", this.name().toLowerCase());
-        checkState((nonSerialReadsThroughAccord && nonSerialWritesThroughAccord) || !nonSerialReadsThroughAccord, "Doesn't make sense to do non-SERIAL reads through Accord without also doing non-SERIAL writes through Accord");
+        checkState(this.name().startsWith("test_") || (nonSerialReadsThroughAccord && nonSerialWritesThroughAccord) || !nonSerialReadsThroughAccord, "Doesn't make sense to do non-SERIAL reads through Accord without also doing non-SERIAL writes through Accord");
     }
 
     // This can be inferred from whether non-SERIAL reads are done through Accord

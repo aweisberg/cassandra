@@ -24,8 +24,8 @@ import javax.annotation.Nullable;
 import accord.api.Data;
 import accord.local.Node;
 import accord.local.SafeCommandStore;
-import accord.messages.ReadData;
 import accord.messages.MessageType;
+import accord.messages.ReadData;
 import accord.primitives.PartialTxn;
 import accord.primitives.Participants;
 import accord.primitives.Ranges;
@@ -35,9 +35,9 @@ import accord.topology.Topologies;
 import accord.utils.async.AsyncChain;
 import accord.utils.async.AsyncChains;
 import org.apache.cassandra.concurrent.Stage;
+import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadCommandVerbHandler;
 import org.apache.cassandra.db.ReadResponse;
-import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
@@ -64,7 +64,7 @@ public class AccordInteropRead extends ReadData
             CommandSerializers.txnId.serialize(read.txnId, out, version);
             KeySerializers.participants.serialize(read.readScope, out, version);
             out.writeUnsignedVInt(read.executeAtEpoch);
-            SinglePartitionReadCommand.serializer.serialize(read.command, out, version);
+            ReadCommand.serializer.serialize(read.command, out, version);
         }
 
         @Override
@@ -73,7 +73,7 @@ public class AccordInteropRead extends ReadData
             TxnId txnId = CommandSerializers.txnId.deserialize(in, version);
             Participants<?> readScope = KeySerializers.participants.deserialize(in, version);
             long executeAtEpoch = in.readUnsignedVInt();
-            SinglePartitionReadCommand command = (SinglePartitionReadCommand) SinglePartitionReadCommand.serializer.deserialize(in, version);
+            ReadCommand command = ReadCommand.serializer.deserialize(in, version);
             return new AccordInteropRead(txnId, readScope, executeAtEpoch, command);
         }
 
@@ -83,7 +83,7 @@ public class AccordInteropRead extends ReadData
             return CommandSerializers.txnId.serializedSize(read.txnId, version)
                    + KeySerializers.participants.serializedSize(read.readScope, version)
                    + TypeSizes.sizeofUnsignedVInt(read.executeAtEpoch)
-                   + SinglePartitionReadCommand.serializer.serializedSize(read.command, version);
+                   + ReadCommand.serializer.serializedSize(read.command, version);
         }
     };
 
@@ -148,15 +148,15 @@ public class AccordInteropRead extends ReadData
 
     private static final ExecuteOn EXECUTE_ON = new ExecuteOn(ReadyToExecute, PreApplied);
 
-    private final SinglePartitionReadCommand command;
+    private final ReadCommand command;
 
-    public AccordInteropRead(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, long executeAtEpoch, SinglePartitionReadCommand command)
+    public AccordInteropRead(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, long executeAtEpoch, ReadCommand command)
     {
         super(to, topologies, txnId, readScope, executeAtEpoch);
         this.command = command;
     }
 
-    public AccordInteropRead(TxnId txnId, Participants<?> readScope, long executeAtEpoch, SinglePartitionReadCommand command)
+    public AccordInteropRead(TxnId txnId, Participants<?> readScope, long executeAtEpoch, ReadCommand command)
     {
         super(txnId, readScope, executeAtEpoch);
         this.command = command;

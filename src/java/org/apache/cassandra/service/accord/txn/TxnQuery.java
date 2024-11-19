@@ -122,7 +122,7 @@ public abstract class TxnQuery implements Query
                 return new TxnData();
             else if (txnData.isEmpty())
             {
-                TxnKeyRead txnKeyRead = (TxnKeyRead)read;
+                TxnRead txnKeyRead = (TxnRead)read;
                 SinglePartitionReadCommand command = (SinglePartitionReadCommand) txnKeyRead.iterator().next().get();
                 // For CAS must return a non-empty result to indicate error even if there was no partition found
                 return TxnData.of(txnDataName(CAS_READ), new TxnDataKeyValue(EmptyIterators.row(command.metadata(), command.partitionKey(), command.isReversed())));
@@ -179,8 +179,8 @@ public abstract class TxnQuery implements Query
 
         private Result concat(TxnData data, Read read)
         {
-            TxnRangeRead txnRead = (TxnRangeRead) read;
-            PartitionRangeReadCommand command = (PartitionRangeReadCommand) txnRead.get();
+            TxnRead txnRead = (TxnRead) read;
+            PartitionRangeReadCommand command = (PartitionRangeReadCommand) txnRead.iterator().next().get();
             TxnDataRangeValue value = (TxnDataRangeValue) data.get(txnDataName(TxnDataNameKind.USER));
             Supplier<PartitionIterator> source = value.toPartitionIterator(command.isReversed());
             // Because the query was split across multiple command stores the pushed down limit won't be sufficient
