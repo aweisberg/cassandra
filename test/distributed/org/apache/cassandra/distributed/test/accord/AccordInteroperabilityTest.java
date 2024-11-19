@@ -107,25 +107,25 @@ public class AccordInteroperabilityTest extends AccordTestBase
     @Test
     public void testTransactionStatementApplyIsInteropApplyUnsafe() throws Throwable
     {
-        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.unsafe);
+        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.test_unsafe);
     }
 
     @Test
     public void testNonSerialApplyIsInteropApplyUnsafe() throws Throwable
     {
-        testApplyIsInteropApply(testInsert(), TransactionalMode.unsafe);
+        testApplyIsInteropApply(testInsert(), TransactionalMode.test_unsafe);
     }
 
     @Test
     public void testTransactionStatementApplyIsInteropApplyUnsafeWrites() throws Throwable
     {
-        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.unsafe_writes);
+        testApplyIsInteropApply(testTransactionInsert(), TransactionalMode.test_unsafe_writes);
     }
 
     @Test
     public void testNonSerialApplyIsInteropApplyUnsafeWrites() throws Throwable
     {
-        testApplyIsInteropApply(testInsert(), TransactionalMode.unsafe_writes);
+        testApplyIsInteropApply(testInsert(), TransactionalMode.test_unsafe_writes);
     }
 
     @Test
@@ -239,25 +239,25 @@ public class AccordInteroperabilityTest extends AccordTestBase
     @Test
     public void testTransactionStatementReadIsAtQuorumUnsafe() throws Throwable
     {
-        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.unsafe);
+        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.test_unsafe);
     }
 
     @Test
     public void testNonSerialReadIsAtQuorumUnsafe() throws Throwable
     {
-        testReadIsAtQuorum(testSelect(), TransactionalMode.unsafe);
+        testReadIsAtQuorum(testSelect(), TransactionalMode.test_unsafe);
     }
 
     @Test
     public void testTransactionStatementReadIsAtQuorumUnsafeWrites() throws Throwable
     {
-        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.unsafe_writes);
+        testReadIsAtQuorum(testTransactionSelect(), TransactionalMode.test_unsafe_writes);
     }
 
     @Test
     public void testNonSerialReadIsAtQuorumUnsafeWrites() throws Throwable
     {
-        testReadIsAtQuorum(testSelect(), TransactionalMode.unsafe_writes);
+        testReadIsAtQuorum(testSelect(), TransactionalMode.test_unsafe_writes);
     }
 
     @Test
