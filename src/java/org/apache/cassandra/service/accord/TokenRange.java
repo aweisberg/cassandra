@@ -34,10 +34,13 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey.SentinelKey;
+import org.apache.cassandra.utils.ObjectSizes;
 
 public class TokenRange extends Range.EndInclusive
 {
-    public TokenRange(AccordRoutingKey start, AccordRoutingKey end)
+    public static final long EMPTY_SIZE = ObjectSizes.measure(new TokenRange(SentinelKey.min(TableId.fromLong(0)), SentinelKey.max(TableId.fromLong(0))));
+
+    private TokenRange(AccordRoutingKey start, AccordRoutingKey end)
     {
         super(start, end);
     }
@@ -70,6 +73,11 @@ public class TokenRange extends Range.EndInclusive
     public AccordRoutingKey end()
     {
         return  (AccordRoutingKey) super.end();
+    }
+
+    public long estimatedSizeOnHeap()
+    {
+        return EMPTY_SIZE + start().estimatedSizeOnHeap() + end().estimatedSizeOnHeap();
     }
 
     public boolean isFullRange()

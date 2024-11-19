@@ -75,9 +75,9 @@ import org.apache.cassandra.service.accord.txn.AccordUpdate;
 import org.apache.cassandra.service.accord.txn.TxnCondition;
 import org.apache.cassandra.service.accord.txn.TxnData;
 import org.apache.cassandra.service.accord.txn.TxnDataKeyValue;
-import org.apache.cassandra.service.accord.txn.TxnKeyRead;
 import org.apache.cassandra.service.accord.txn.TxnNamedRead;
 import org.apache.cassandra.service.accord.txn.TxnQuery;
+import org.apache.cassandra.service.accord.txn.TxnRead;
 import org.apache.cassandra.service.accord.txn.TxnReference;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.TxnUpdate;
@@ -100,7 +100,7 @@ import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.AU
 import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.RETURNING;
 import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.USER;
 import static org.apache.cassandra.service.accord.txn.TxnData.txnDataName;
-import static org.apache.cassandra.service.accord.txn.TxnKeyRead.createTxnRead;
+import static org.apache.cassandra.service.accord.txn.TxnRead.createTxnRead;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.shouldReadEphemerally;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
@@ -263,15 +263,15 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         return list;
     }
 
-    private List<TxnNamedRead> createNamedReads(QueryOptions options, ClientState state, @Nullable Int2ObjectHashMap<NamedSelect> autoReads, Consumer<Key> keyConsumer)
+    private List<TxnNamedRead> createNamedReads(QueryOptions options, ClientState state, @Nullable Int2ObjectHashMap<NamedSelect> autoReads, Consumer<Keys> keyConsumer)
     {
         List<TxnNamedRead> reads = new ArrayList<>(assignments.size() + 1);
 
         for (NamedSelect select : assignments)
         {
             TxnNamedRead read = createNamedRead(select, options, state);
+            keyConsumer.accept((Keys)read.keys());
             minEpoch = Math.max(minEpoch, read.command().metadata().epoch.getEpoch());
-            keyConsumer.accept(read.key());
             reads.add(read);
         }
 
@@ -279,7 +279,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         {
             for (TxnNamedRead read : createNamedReads(returningSelect, options, state))
             {
-                keyConsumer.accept(read.key());
+                keyConsumer.accept((Keys)read.keys());
                 minEpoch = Math.max(minEpoch, read.command().metadata().epoch.getEpoch());
                 reads.add(read);
             }
@@ -290,7 +290,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
             for (NamedSelect select : autoReads.values())
             {
                 TxnNamedRead read = createNamedRead(select, options, state);
-                keyConsumer.accept(read.key());
+                keyConsumer.accept((Keys)read.keys());
                 reads.add(read);
             }
         }
@@ -438,15 +438,19 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
     public Txn createTxn(ClientState state, QueryOptions options)
     {
         SortedSet<Key> keySet = new TreeSet<>();
+        Consumer<Keys> keyConsumer = keys -> {
+            for (Key k : keys)
+                keySet.add(k);
+        };
         ClusterMetadata cm = ClusterMetadata.current();
 
         if (updates.isEmpty())
         {
             // TODO: Test case around this...
             Preconditions.checkState(conditions.isEmpty(), "No condition should exist without updates present");
-            List<TxnNamedRead> reads = createNamedReads(options, state, null, keySet::add);
+            List<TxnNamedRead> reads = createNamedReads(options, state, null, keyConsumer);
             Keys txnKeys = toKeys(keySet);
-            TxnKeyRead read = createTxnRead(reads, consistencyLevelForAccordRead(cm, keySet, options.getSerialConsistency()));
+            TxnRead read = createTxnRead(reads, consistencyLevelForAccordRead(cm, keySet, options.getSerialConsistency()));
             Txn.Kind kind = shouldReadEphemerally(txnKeys, Schema.instance.getTableMetadata(((AccordRoutableKey) txnKeys.get(0)).table()).params, Read);
             return new Txn.InMemory(kind, txnKeys, read, TxnQuery.ALL, null);
         }
@@ -454,8 +458,8 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         {
             Int2ObjectHashMap<NamedSelect> autoReads = new Int2ObjectHashMap<>();
             AccordUpdate update = createUpdate(cm, state, options, autoReads, keySet);
-            List<TxnNamedRead> reads = createNamedReads(options, state, autoReads, keySet::add);
-            TxnKeyRead read = createTxnRead(reads, null);
+            List<TxnNamedRead> reads = createNamedReads(options, state, autoReads, keyConsumer);
+            TxnRead read = createTxnRead(reads, null);
             return new Txn.InMemory(toKeys(keySet), read, TxnQuery.ALL, update);
         }
     }

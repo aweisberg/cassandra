@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.Nonnull;
 
 import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,9 +39,11 @@ import accord.api.RoutingKey;
 import accord.api.Write;
 import accord.local.SafeCommandStore;
 import accord.local.cfk.SafeCommandsForKey;
+import accord.primitives.Keys;
 import accord.primitives.PartialTxn;
 import accord.primitives.RoutableKey;
 import accord.primitives.Seekable;
+import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
 import accord.primitives.Writes;
@@ -64,11 +65,13 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.service.accord.AccordObjectSizes;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.utils.BooleanSerializer;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ObjectSizes;
 
+import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.cql3.terms.Lists.accordListPathSupplier;
 import static org.apache.cassandra.service.accord.AccordSerializers.partitionUpdateSerializer;
 import static org.apache.cassandra.utils.ArraySerializers.deserializeArray;
@@ -87,27 +90,27 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
     public static class Update extends AbstractSerialized<PartitionUpdate>
     {
         private static final long EMPTY_SIZE = ObjectSizes.measure(new Update(null, 0, (ByteBuffer) null));
-        public final PartitionKey key;
+        public final Seekables<?, ?> keys;
         public final int index;
 
         public Update(PartitionKey key, int index, PartitionUpdate update)
         {
             super(update);
-            this.key = key;
+            this.keys = Keys.of(key);
             this.index = index;
         }
 
         private Update(PartitionKey key, int index, ByteBuffer bytes)
         {
             super(bytes);
-            this.key = key;
+            this.keys = Keys.of(key);
             this.index = index;
         }
 
         long estimatedSizeOnHeap()
         {
             return EMPTY_SIZE
-                   + key.estimatedSizeOnHeap()
+                   + AccordObjectSizes.seekables(keys)
                    + ByteBufferUtil.estimatedSizeOnHeap(bytes());
         }
 
@@ -118,20 +121,20 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
             if (o == null || getClass() != o.getClass()) return false;
             if (!super.equals(o)) return false;
             Update update = (Update) o;
-            return index == update.index && key.equals(update.key);
+            return index == update.index && keys.equals(update.keys);
         }
 
         @Override
         public int hashCode()
         {
-            return Objects.hash(super.hashCode(), key, index);
+            return Objects.hash(super.hashCode(), keys, index);
         }
 
         @Override
         public String toString()
         {
             return "Complete{" +
-                   "key=" + key +
+                   "keys=" + keys +
                    ", index=" + index +
                    ", update=" + get() +
                    '}';
@@ -157,7 +160,8 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
             @Override
             public void serialize(Update write, DataOutputPlus out, int version) throws IOException
             {
-                PartitionKey.serializer.serialize(write.key, out, version);
+                checkState(write.keys.size() == 1);
+                PartitionKey.serializer.serialize((PartitionKey)write.keys.get(0), out, version);
                 out.writeInt(write.index);
                 ByteBufferUtil.writeWithVIntLength(write.bytes(), out);
             }
@@ -175,7 +179,7 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
             public long serializedSize(Update write, int version)
             {
                 long size = 0;
-                size += PartitionKey.serializer.serializedSize(write.key, version);
+                size += PartitionKey.serializer.serializedSize((PartitionKey)write.keys.get(0), version);
                 size += TypeSizes.INT_SIZE;
                 size += ByteBufferUtil.serializedSizeWithVIntLength(write.bytes());
                 return size;
@@ -281,7 +285,7 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
 
         private static RegularAndStaticColumns columns(PartitionUpdate update, TxnReferenceOperations referenceOps)
         {
-            Preconditions.checkState(!referenceOps.isEmpty());
+            checkState(!referenceOps.isEmpty());
             RegularAndStaticColumns current = update.columns();
             return new RegularAndStaticColumns(columns(current.statics, referenceOps.statics),
                                                columns(current.regulars, referenceOps.regulars));
@@ -294,7 +298,7 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
 
             if (existing != null && !existing.isEmpty())
             {
-                Preconditions.checkState(existing.clustering().equals(clustering));
+                checkState(existing.clustering().equals(clustering));
                 up.addRow(existing);
             }
             else
@@ -359,9 +363,9 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
     }
 
     @Override
-    PartitionKey getKey(Update item)
+    Seekables getKeys(Update item)
     {
-        return item.key;
+        return item.keys;
     }
 
     @Override
