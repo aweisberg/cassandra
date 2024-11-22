@@ -187,6 +187,7 @@ public abstract class AbstractKeySorted<T> implements Iterable<T>
                     if (compareKey(prev, next) >= 0)
                         throw new IllegalStateException(String.format(ITEMS_OUT_OF_ORDER_MESSAGE, i - 1, prev, i, next));
                 }
+                break;
             case Range:
                 for (int i = 1; i < items.length; i++)
                 {
@@ -196,6 +197,7 @@ public abstract class AbstractKeySorted<T> implements Iterable<T>
                     if (compareRange(prev, next) >= 0)
                         throw new IllegalStateException(String.format(ITEMS_OUT_OF_ORDER_MESSAGE, i - 1, prev, i, next));
                 }
+                break;
             default:
                 throw new IllegalStateException("Unhandled domain " + domain);
         }
