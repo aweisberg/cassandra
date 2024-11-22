@@ -297,7 +297,6 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
     public PartitionRangeReadCommand commandForSubrange(PartitionRangeReadCommand command, Range r, boolean withoutReconciliation, long nowInSeconds)
     {
         AbstractBounds<PartitionPosition> bounds = command.dataRange().keyRange();
-
         PartitionPosition startPP = bounds.left;
         PartitionPosition endPP = bounds.right;
         TokenKey startTokenKey = new TokenKey(command.metadata().id, startPP.getToken());
