@@ -77,6 +77,7 @@ import org.apache.cassandra.service.accord.txn.TxnReference;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.accord.txn.TxnUpdate;
 import org.apache.cassandra.service.accord.txn.TxnWrite;
+import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.transport.messages.ResultMessage;
 import org.apache.cassandra.utils.FBUtilities;
@@ -135,6 +136,8 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
 
     private final VariableSpecifications bindVariables;
     private final ResultSet.ResultMetadata resultMetadata;
+
+    private long minEpoch = Epoch.EMPTY.getEpoch();
 
     public TransactionStatement(List<NamedSelect> assignments,
                                 NamedSelect returningSelect,
@@ -257,6 +260,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         for (NamedSelect select : assignments)
         {
             TxnNamedRead read = createNamedRead(select, options, state);
+            minEpoch = Math.max(minEpoch, read.command().metadata().epoch.getEpoch());
             keyConsumer.accept(read.key());
             reads.add(read);
         }
@@ -266,6 +270,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
             for (TxnNamedRead read : createNamedReads(returningSelect, options, state))
             {
                 keyConsumer.accept(read.key());
+                minEpoch = Math.max(minEpoch, read.command().metadata().epoch.getEpoch());
                 reads.add(read);
             }
         }
@@ -302,6 +307,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         for (ModificationStatement modification : updates)
         {
             TxnWrite.Fragment fragment = modification.getTxnWriteFragment(idx, state, options);
+            minEpoch = Math.max(minEpoch, fragment.baseUpdate.metadata().epoch.getEpoch());
             keyConsumer.accept(fragment.key);
             fragments.add(fragment);
 
@@ -385,7 +391,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
 
         Txn txn = createTxn(state.getClientState(), options);
 
-        TxnResult txnResult = AccordService.instance().coordinate(txn, options.getConsistency(), requestTime);
+        TxnResult txnResult = AccordService.instance().coordinate(minEpoch, txn, options.getConsistency(), requestTime);
         if (txnResult.kind() == retry_new_protocol)
             throw new InvalidRequestException(UNSUPPORTED_MIGRATION);
         TxnData data = (TxnData)txnResult;

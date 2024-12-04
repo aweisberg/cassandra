@@ -398,7 +398,8 @@ public class StorageProxy implements StorageProxyMBean
                                                   clientState,
                                                   nowInSeconds);
                     IAccordService accordService = AccordService.instance();
-                    TxnResult txnResult = accordService.coordinate(txn,
+                    TxnResult txnResult = accordService.coordinate(metadata.epoch.getEpoch(),
+                                                                   txn,
                                                                    consistencyForPaxos,
                                                                    requestTime);
                     lastAttemptResult = request.toCasResult(txnResult);
@@ -2193,7 +2194,7 @@ public class StorageProxy implements StorageProxyMBean
         Txn.Kind kind = shouldReadEphemerally(read.keys(), tableParams, Read);
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.RANGE_QUERY, null);
         IAccordService accordService = AccordService.instance();
-        return accordService.coordinateAsync(txn, consistencyLevel, requestTime);
+        return accordService.coordinateAsync(tableMetadata.epoch.getEpoch(), txn, consistencyLevel, requestTime);
     }
 
     private static ConsensusAttemptResult readWithAccord(ClusterMetadata cm, SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
@@ -2209,7 +2210,7 @@ public class StorageProxy implements StorageProxyMBean
         TxnKeyRead read = TxnKeyRead.createSerialRead(group.queries, consistencyLevel);
         Txn.Kind kind = shouldReadEphemerally(read.keys(), tableParams, Read);
         Txn txn = new Txn.InMemory(kind, read.keys(), read, TxnQuery.ALL, null);
-        AsyncTxnResult asyncTxnResult = AccordService.instance().coordinateAsync(txn, consistencyLevel, requestTime);
+        AsyncTxnResult asyncTxnResult = AccordService.instance().coordinateAsync(tableMetadata.epoch.getEpoch(), txn, consistencyLevel, requestTime);
         return getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, group.queries.size(), index -> group.queries.get(index).isReversed(), consistencyLevel, requestTime);
     }
 
