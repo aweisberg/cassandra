@@ -45,7 +45,6 @@ import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.utils.ObjectSizes;
 
-import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.config.DatabaseDescriptor.getPartitioner;
 
 public abstract class AccordRoutingKey extends AccordRoutableKey implements RoutingKey
@@ -100,29 +99,20 @@ public abstract class AccordRoutingKey extends AccordRoutableKey implements Rout
     // final in part because we refer to its class directly in AccordRoutableKey.compareTo
     public static final class SentinelKey extends AccordRoutingKey
     {
-        private static final long EMPTY_SIZE = ObjectSizes.measure(new SentinelKey(null, true, false));
+        private static final long EMPTY_SIZE = ObjectSizes.measure(new SentinelKey(null, true));
 
-        // Is this a min sentinel or a max sentinel
-        public final boolean isMinSentinel;
+        public final boolean isMin;
 
-        // Is this a minumum of a max or min sentinel
-        // Allows conversion of a token key to a range
-        public final boolean isMinMinSentinel;
-
-        public SentinelKey(TableId table, boolean isMinSentinel, boolean isMinMinSentinel)
+        public SentinelKey(TableId table, boolean isMin)
         {
             super(table);
-            this.isMinSentinel = isMinSentinel;
-            this.isMinMinSentinel = isMinMinSentinel;
+            this.isMin = isMin;
         }
 
         @Override
         public int hashCode()
         {
-            int result = table.hashCode();
-            result = 31 * result + (isMinSentinel ? 1 : 0);
-            result = 31 * result + (isMinMinSentinel ? 1 : 0);
-            return result;
+            return table.hashCode() * (isMin ? 31 : 1);
         }
 
         @Override
@@ -139,25 +129,17 @@ public abstract class AccordRoutingKey extends AccordRoutableKey implements Rout
 
         public AccordRoutingKey withTable(TableId table)
         {
-            return new SentinelKey(table, isMinSentinel, isMinMinSentinel);
+            return new SentinelKey(table, isMin);
         }
 
         public static SentinelKey min(TableId table)
         {
-            return new SentinelKey(table, true, false);
+            return new SentinelKey(table, true);
         }
 
         public static SentinelKey max(TableId table)
         {
-            return new SentinelKey(table, false, false);
-        }
-
-        public TokenKey toTokenKeyBroken()
-        {
-            IPartitioner partitioner = getPartitioner();
-            return new TokenKey(table, isMinSentinel ?
-                                       partitioner.getMinimumToken().nextValidToken() :
-                                       partitioner.getMaximumTokenForSplitting());
+            return new SentinelKey(table, false);
         }
 
         @Override
@@ -168,26 +150,13 @@ public abstract class AccordRoutingKey extends AccordRoutableKey implements Rout
 
         int asInt()
         {
-            if (isMinSentinel)
-            {
-                if (isMinMinSentinel)
-                    return -2;
-                else
-                    return -1;
-            }
-            else
-            {
-                if (isMinMinSentinel)
-                    return 1;
-                else
-                    return 2;
-            }
+            return isMin ? -1 : 1;
         }
 
         @Override
         public String suffix()
         {
-            return isMinSentinel ? "-Inf" : "+Inf";
+            return isMin ? "-Inf" : "+Inf";
         }
 
         public static final AccordKeySerializer<SentinelKey> serializer = new AccordKeySerializer<SentinelKey>()
@@ -196,8 +165,7 @@ public abstract class AccordRoutingKey extends AccordRoutableKey implements Rout
             public void serialize(SentinelKey key, DataOutputPlus out, int version) throws IOException
             {
                 key.table.serialize(out);
-                out.writeBoolean(key.isMinSentinel);
-                out.writeBoolean(key.isMinMinSentinel);
+                out.writeBoolean(key.isMin);
             }
 
             @Override
@@ -211,22 +179,20 @@ public abstract class AccordRoutingKey extends AccordRoutableKey implements Rout
             {
                 TableId table = TableId.deserialize(in);
                 boolean isMin = in.readBoolean();
-                boolean isMinMin = in.readBoolean();
-                return new SentinelKey(table, isMin, isMinMin);
+                return new SentinelKey(table, isMin);
             }
 
             @Override
             public long serializedSize(SentinelKey key, int version)
             {
-                return key.table().serializedSize() + TypeSizes.BOOL_SIZE + TypeSizes.BOOL_SIZE;
+                return key.table().serializedSize() + TypeSizes.BOOL_SIZE;
             }
         };
 
         @Override
         public Range asRange()
         {
-            checkState(!isMinMinSentinel, "It might be possible to support converting a minmin sentinel to a range, but it needs to be evaluated in the context where it is failing");
-            return new TokenRange(new SentinelKey(table, isMinSentinel, true), this);
+            throw new UnsupportedOperationException();
         }
     }
 
@@ -298,8 +264,8 @@ public abstract class AccordRoutingKey extends AccordRoutableKey implements Rout
         public Range asRange()
         {
             AccordRoutingKey before = token.isMinimum()
-                                      ? new SentinelKey(table, true, false)
-                                      : new MinTokenKey(table, token);
+                                      ? new SentinelKey(table, true)
+                                      : new TokenKey(table, token.decreaseSlightly());
 
             return new TokenRange(before, this);
         }
@@ -356,7 +322,7 @@ public abstract class AccordRoutingKey extends AccordRoutableKey implements Rout
         public Range asRange()
         {
             AccordRoutingKey before = token.isMinimum()
-                                      ? new SentinelKey(table, true, false)
+                                      ? new SentinelKey(table, true)
                                       : new TokenKey(table, token.decreaseSlightly());
 
             return new TokenRange(before, this);
