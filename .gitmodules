@@ -1,4 +1,4 @@
 [submodule "modules/accord"]
 	path = modules/accord
 	url = https://github.com/aweisberg/cassandra-accord.git
-	branch = double-write-example
+	branch = 20089
