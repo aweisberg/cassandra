@@ -108,9 +108,10 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                          ClusteringIndexFilter clusteringIndexFilter,
                                          Index.QueryPlan indexQueryPlan,
                                          boolean trackWarnings,
-                                         DataRange dataRange)
+                                         DataRange dataRange,
+                                         int txnReadName)
     {
-        super(serializedAtEpoch, Kind.SINGLE_PARTITION, isDigest, digestVersion, acceptsTransient, allowsPotentialTxnConflicts, metadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan, trackWarnings, dataRange);
+        super(serializedAtEpoch, Kind.SINGLE_PARTITION, isDigest, digestVersion, acceptsTransient, allowsPotentialTxnConflicts, metadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan, trackWarnings, dataRange, txnReadName);
         assert partitionKey.getPartitioner() == metadata.partitioner;
         this.partitionKey = partitionKey;
         this.clusteringIndexFilter = clusteringIndexFilter;
@@ -129,7 +130,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                                      DecoratedKey partitionKey,
                                                      ClusteringIndexFilter clusteringIndexFilter,
                                                      Index.QueryPlan indexQueryPlan,
-                                                     boolean trackWarnings)
+                                                     boolean trackWarnings,
+                                                     int txnReadName)
     {
         DataRange dataRange = new DataRange(new Bounds<>(partitionKey, partitionKey), clusteringIndexFilter);
 
@@ -163,7 +165,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                               clusteringIndexFilter,
                                               indexQueryPlan,
                                               trackWarnings,
-                                              dataRange);
+                                              dataRange,
+                                              txnReadName);
     }
 
     /**
@@ -202,7 +205,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       partitionKey,
                       clusteringIndexFilter,
                       indexQueryPlan,
-                      false);
+                      false,
+                      0);
     }
 
     /**
@@ -381,7 +385,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       partitionKey(),
                       clusteringIndexFilter(),
                       indexQueryPlan(),
-                      isTrackingWarnings());
+                      isTrackingWarnings(),
+                      txnReadName());
     }
 
     @Override
@@ -400,7 +405,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       partitionKey(),
                       clusteringIndexFilter(),
                       indexQueryPlan(),
-                      isTrackingWarnings());
+                      isTrackingWarnings(),
+                      txnReadName());
     }
 
     @Override
@@ -419,7 +425,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       partitionKey(),
                       clusteringIndexFilter(),
                       indexQueryPlan(),
-                      isTrackingWarnings());
+                      isTrackingWarnings(),
+                      txnReadName());
     }
 
     @Override
@@ -438,10 +445,11 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       partitionKey(),
                       clusteringIndexFilter(),
                       indexQueryPlan(),
-                      isTrackingWarnings());
+                      isTrackingWarnings(),
+                      txnReadName());
     }
 
-    public SinglePartitionReadCommand withNowInSec(long nowInSec)
+    public SinglePartitionReadCommand withTxnReadName(int txnReadName)
     {
         return create(serializedAtEpoch(),
                       isDigestQuery(),
@@ -449,14 +457,15 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       acceptsTransient(),
                       allowsPotentialTxnConflicts(),
                       metadata(),
-                      nowInSec,
+                      nowInSec(),
                       columnFilter(),
                       rowFilter(),
                       limits(),
                       partitionKey(),
                       clusteringIndexFilter(),
                       indexQueryPlan(),
-                      isTrackingWarnings());
+                      isTrackingWarnings(),
+                      txnReadName);
     }
 
     @Override
@@ -1292,7 +1301,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                       partitionKey(),
                       clusteringIndexFilter(),
                       indexQueryPlan(),
-                      isTrackingWarnings());
+                      isTrackingWarnings(),
+                      txnReadName());
     }
 
     /**
@@ -1379,12 +1389,13 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                        ColumnFilter columnFilter,
                                        RowFilter rowFilter,
                                        DataLimits limits,
-                                       Index.QueryPlan indexQueryPlan)
+                                       Index.QueryPlan indexQueryPlan,
+                                       int txnReadName)
         throws IOException
         {
             DecoratedKey key = metadata.partitioner.decorateKey(metadata.partitionKeyType.readBuffer(in, DatabaseDescriptor.getMaxValueSize()));
             ClusteringIndexFilter filter = ClusteringIndexFilter.serializer.deserialize(in, version, metadata);
-            return SinglePartitionReadCommand.create(serializedAtEpoch, isDigest, digestVersion, acceptsTransient, allowsOutOfRangeReads, metadata, nowInSec, columnFilter, rowFilter, limits, key, filter, indexQueryPlan, false);
+            return SinglePartitionReadCommand.create(serializedAtEpoch, isDigest, digestVersion, acceptsTransient, allowsOutOfRangeReads, metadata, nowInSec, columnFilter, rowFilter, limits, key, filter, indexQueryPlan, false, txnReadName);
         }
     }
 
@@ -1432,7 +1443,7 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                                          boolean trackWarnings,
                                                          DataRange dataRange)
         {
-            super(metadata.epoch, isDigest, digestVersion, acceptsTransient, true, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter, indexQueryPlan, trackWarnings, dataRange);
+            super(metadata.epoch, isDigest, digestVersion, acceptsTransient, true, metadata, nowInSec, columnFilter, rowFilter, limits, partitionKey, clusteringIndexFilter, indexQueryPlan, trackWarnings, dataRange, 0);
         }
 
         @Override

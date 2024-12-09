@@ -50,8 +50,6 @@ import org.apache.cassandra.tcm.membership.NodeState;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 
-import static org.junit.Assert.assertEquals;
-
 import static org.apache.cassandra.distributed.test.log.ClusterMetadataTestHelper.MessageDelivery;
 import static org.apache.cassandra.distributed.test.log.ClusterMetadataTestHelper.broadcastAddress;
 import static org.apache.cassandra.distributed.test.log.ClusterMetadataTestHelper.bytesToken;
@@ -59,6 +57,7 @@ import static org.apache.cassandra.distributed.test.log.ClusterMetadataTestHelpe
 import static org.apache.cassandra.distributed.test.log.ClusterMetadataTestHelper.randomInt;
 import static org.apache.cassandra.distributed.test.log.ClusterMetadataTestHelper.registerOutgoingMessageSink;
 import static org.apache.cassandra.net.Verb.READ_REQ;
+import static org.junit.Assert.assertEquals;
 
 public class ReadCommandVerbHandlerOutOfRangeTest
 {
@@ -229,7 +228,8 @@ public class ReadCommandVerbHandlerOutOfRangeTest
                   null,
                   null,
                   false,
-                  null);
+                  null,
+                  0);
 
             this.tmd = tmd;
         }
@@ -263,7 +263,8 @@ public class ReadCommandVerbHandlerOutOfRangeTest
                   DataLimits.NONE,
                   DataRange.forTokenRange(range),
                   null,
-                  false);
+                  false,
+                  0);
 
             this.cfm = tmd;
         }

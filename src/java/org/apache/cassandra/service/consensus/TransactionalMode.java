@@ -235,4 +235,9 @@ public enum TransactionalMode
     {
         return valueOf(name.toLowerCase());
     }
+
+    public boolean isTestMode()
+    {
+        return name().startsWith("test_");
+    }
 }
