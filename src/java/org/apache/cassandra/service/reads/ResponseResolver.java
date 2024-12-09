@@ -24,6 +24,10 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadResponse;
+import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
+import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
+import org.apache.cassandra.db.rows.Unfiltered;
+import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.locator.Endpoints;
 import org.apache.cassandra.locator.ReplicaPlan;
 import org.apache.cassandra.net.Message;
@@ -60,6 +64,23 @@ public abstract class ResponseResolver<E extends Endpoints<E>, P extends Replica
 
     public void preprocess(Message<ReadResponse> message)
     {
+        System.out.println("Ariel read response from " + message.header.from);
+        int rowCount = 0;
+        try (UnfilteredPartitionIterator iterator = message.payload.makeIterator(command))
+        {
+            UnfilteredPartitionIterator logging = UnfilteredPartitionIterators.loggingIterator(iterator, "ariel", true);
+            while (logging.hasNext())
+            {
+                UnfilteredRowIterator rowIterator = logging.next();
+                while (rowIterator.hasNext())
+                {
+                    Unfiltered row = rowIterator.next();
+                    rowCount++;
+                    row.clustering();
+                }
+            }
+        }
+        System.out.println("Row count " + rowCount);
         if (replicaPlan().lookup(message.from()).isTransient() &&
             message.payload.isDigestResponse())
             throw new IllegalArgumentException("Digest response received from transient replica");

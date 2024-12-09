@@ -28,6 +28,8 @@ import javax.annotation.Nullable;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import accord.api.Data;
 import accord.local.Node;
@@ -82,6 +84,8 @@ import static org.apache.cassandra.utils.NullableSerializer.serializedNullableSi
 
 public class AccordInteropRead extends ReadData
 {
+    private static final Logger logger = LoggerFactory.getLogger(AccordInteropRead.class);
+
     public static final IVersionedSerializer<AccordInteropRead> requestSerializer = new ReadDataSerializer<AccordInteropRead>()
     {
         @Override
@@ -188,13 +192,6 @@ public class AccordInteropRead extends ReadData
             this.version = version;
         }
 
-        public int version()
-        {
-            if (version == -1)
-                throw new IllegalStateException("Version is not set");
-            return version;
-        }
-
         @Override
         public String toString()
         {
@@ -288,6 +285,7 @@ public class AccordInteropRead extends ReadData
                     }
                     ReadCommand readCommandFinal = readCommand;
                     AccordRoutingKey routingKeyFinal = routingKey;
+                    logger.info("Ariel submitting read for routing key " + routingKeyFinal);
                     chains.add(AsyncChains.ofCallable(Stage.READ.executor(), () -> new LocalReadData(routingKeyFinal, ReadCommandVerbHandler.instance.doRead(readCommandFinal, false), readCommandFinal.isRangeRequest())));
                 }
 

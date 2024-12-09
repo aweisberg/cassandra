@@ -123,7 +123,7 @@ public abstract class SingleNodeSAITestBase extends TestBaseImpl
     public void basicSaiTest()
     {
         Generator<SchemaSpec> schemaGen = schemaGenerator();
-        withRandom(rng -> {
+        withRandom(236386329903791L, rng -> {
             basicSaiTest(rng, schemaGen.generate(rng));
         });
     }

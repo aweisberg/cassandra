@@ -227,6 +227,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     @Override
     public void sendReadCommand(Message<ReadCommand> message, InetAddressAndPort to, RequestCallback<ReadResponse> callback)
     {
+        logger.info("Ariel sending read to {}, read {}", to, message.payload);
         Node.Id id = endpointMapper.mappedId(to);
         AccordInteropRead read = new AccordInteropRead(id, executes, txnId, readScope, executeAt.epoch(), message.payload.txnReadName());
         // TODO (required): understand interop and whether StableFastPath is appropriate
