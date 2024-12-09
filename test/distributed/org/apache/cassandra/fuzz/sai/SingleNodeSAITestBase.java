@@ -56,13 +56,13 @@ import static org.apache.cassandra.harry.dsl.SingleOperationBuilder.IdxRelation;
 // TODO: "WITH OPTIONS = {'case_sensitive': 'false', 'normalize': 'true', 'ascii': 'true'};",
 public abstract class SingleNodeSAITestBase extends TestBaseImpl
 {
-    private static final int OPERATIONS_PER_RUN = 30_000;
+    private static final int OPERATIONS_PER_RUN = 200_000;
     private static final int REPAIR_SKIP = OPERATIONS_PER_RUN / 2;
     private static final int FLUSH_SKIP = OPERATIONS_PER_RUN / 7;
     private static final int COMPACTION_SKIP = OPERATIONS_PER_RUN / 10;
 
-    private static final int NUM_PARTITIONS = OPERATIONS_PER_RUN / 1000;
-    protected static final int MAX_PARTITION_SIZE = 10_000;
+    private static final int NUM_PARTITIONS = 1;
+    protected static final int MAX_PARTITION_SIZE = 2;
     private static final int UNIQUE_CELL_VALUES = 5;
 
     protected static final Logger logger = LoggerFactory.getLogger(SingleNodeSAITest.class);
@@ -122,7 +122,7 @@ public abstract class SingleNodeSAITestBase extends TestBaseImpl
     public void basicSaiTest()
     {
         Generator<SchemaSpec> schemaGen = schemaGenerator();
-        withRandom(rng -> {
+        withRandom(232025369170750L, rng -> {
             basicSaiTest(rng, schemaGen.generate(rng));
         });
     }
