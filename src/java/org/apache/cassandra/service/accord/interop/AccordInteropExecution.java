@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
@@ -229,7 +228,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     public void sendReadCommand(Message<ReadCommand> message, InetAddressAndPort to, RequestCallback<ReadResponse> callback)
     {
         Node.Id id = endpointMapper.mappedId(to);
-        AccordInteropRead read = new AccordInteropRead(id, executes, txnId, readScope, executeAt.epoch(), message.payload);
+        AccordInteropRead read = new AccordInteropRead(id, executes, txnId, readScope, executeAt.epoch(), message.payload.txnReadName());
         // TODO (required): understand interop and whether StableFastPath is appropriate
         AccordInteropCommit commit = new AccordInteropCommit(Kind.StableFastPath, id, coordinateTopology, allTopologies,
                                                              txnId, txn, route, executeAt, deps, read);
@@ -245,22 +244,22 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         node.send(id, readRepair, executor, new AccordInteropReadRepair.ReadRepairCallback(id, to, message, callback, this));
     }
 
-    private List<AsyncChain<Data>> readChains(long nowInSeconds, Dispatcher.RequestTime requestTime)
+    private List<AsyncChain<Data>> readChains(Dispatcher.RequestTime requestTime)
     {
         TxnRead read = (TxnRead) txn.read();
         Seekables<?, ?> keys = txn.read().keys();
         switch (keys.domain())
         {
             case Key:
-                return keyReadChains(read, keys, nowInSeconds, requestTime);
+                return keyReadChains(read, keys, requestTime);
             case Range:
-                return rangeReadChains(read, keys, nowInSeconds, requestTime);
+                return rangeReadChains(read, keys, requestTime);
             default:
                 throw new IllegalStateException("Unhandled domain " + keys.domain());
         }
     }
 
-    private List<AsyncChain<Data>> keyReadChains(TxnRead read, Seekables<?, ?> keys, long nowInSeconds, Dispatcher.RequestTime requestTime)
+    private List<AsyncChain<Data>> keyReadChains(TxnRead read, Seekables<?, ?> keys, Dispatcher.RequestTime requestTime)
     {
         ClusterMetadata cm = ClusterMetadata.current();
         List<AsyncChain<Data>> results = new ArrayList<>();
@@ -281,8 +280,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
                                  return;
                              }
 
-                             // TODO (cleanup): Do we need to set nowInSeconds here? It will be set when the read is executed as well
-                             Group group = Group.one(command.withNowInSec(nowInSeconds));
+                             Group group = Group.one(command.withTxnReadName(fragment.txnDataName()));
                              results.add(AsyncChains.ofCallable(Stage.ACCORD_MIGRATION.executor(), () -> {
                                  TxnData result = new TxnData();
                                  // Enforcing limits is redundant since we only have a group of size 1, but checking anyways
@@ -307,13 +305,12 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         return results;
     }
 
-    private List<AsyncChain<Data>> rangeReadChains(TxnRead read, Seekables<?, ?> keys, long nowInSeconds, Dispatcher.RequestTime requestTime)
+    private List<AsyncChain<Data>> rangeReadChains(TxnRead read, Seekables<?, ?> keys, Dispatcher.RequestTime requestTime)
     {
         List<AsyncChain<Data>> results = new ArrayList<>();
         keys.forEach(key -> {
             read.forEachWithKey(key, fragment -> {
-                // TODO (cleanup): Do we need to set nowInSeconds here? It will be set when the read is executed as well
-                PartitionRangeReadCommand command = ((PartitionRangeReadCommand) fragment.command()).withNowInSec(nowInSeconds);
+                PartitionRangeReadCommand command = ((PartitionRangeReadCommand) fragment.command()).withTxnReadName(fragment.txnDataName());
 
                 // TODO (required): To make migration work we need to validate that the range is all on Accord
 
@@ -343,11 +340,10 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
 
     private AsyncChain<Data> readChains()
     {
-        long nowInSeconds = TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
         // TODO (expected): use normal query nano time
         Dispatcher.RequestTime requestTime = Dispatcher.RequestTime.forImmediateExecution();
 
-        List<AsyncChain<Data>> results = readChains(nowInSeconds, requestTime);
+        List<AsyncChain<Data>> results = readChains(requestTime);
         if (results.isEmpty())
             return AsyncChains.success(new TxnData());
 

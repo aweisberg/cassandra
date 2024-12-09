@@ -291,7 +291,8 @@ public class RepairedDataVerifierTest
                   new ClusteringIndexSliceFilter(Slices.ALL, false),
                   null,
                   false,
-                  null);
+                  null,
+                  0);
         }
     }
 }
