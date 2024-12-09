@@ -40,6 +40,8 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.cassandra.db.RepairedDataInfo.NO_OP_REPAIRED_DATA_INFO;
 
 public abstract class ReadResponse
@@ -262,6 +264,8 @@ public abstract class ReadResponse
         private MergedDataResponse(List<ReadResponse> responses, int version)
         {
             super(null, ByteBufferUtil.EMPTY_BYTE_BUFFER, true, version, Flag.FROM_REMOTE);
+            checkNotNull(responses, "responses is null");
+            checkArgument(!responses.isEmpty(), "responses should not be empty");
             this.responses = responses;
         }
 
