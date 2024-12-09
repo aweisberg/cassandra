@@ -195,6 +195,11 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         return keys;
     }
 
+    public static long nowInSeconds(Timestamp executeAt)
+    {
+        return TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
+    }
+
     public AsyncChain<Data> read(ConsistencyLevel consistencyLevel, Seekable key, Timestamp executeAt)
     {
         ReadCommand command = get();
@@ -207,18 +212,24 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         // It's fine for our nowInSeconds to lag slightly our insertion timestamp, as to the user
         // this simply looks like the transaction witnessed TTL'd data and the data then expired
         // immediately after the transaction executed, and this simplifies things a great deal
-        long nowInSeconds = TimeUnit.MICROSECONDS.toSeconds(executeAt.hlc());
+        long nowInSeconds = nowInSeconds(executeAt);
 
-        boolean withoutReconciliation = consistencyLevel == null || consistencyLevel == ConsistencyLevel.ONE;
+        boolean withoutReconciliation = readsWithoutReconciliation(consistencyLevel);
         switch (key.domain())
         {
             case Key:
                 return performLocalKeyRead(((SinglePartitionReadCommand) command).withTransactionalSettings(withoutReconciliation, nowInSeconds));
             case Range:
-                return performLocalRangeRead(((PartitionRangeReadCommand) command), key.asRange(), withoutReconciliation, nowInSeconds);
+                return performLocalRangeRead(((PartitionRangeReadCommand) command), key.asRange(), consistencyLevel, nowInSeconds);
             default:
                 throw new IllegalStateException("Unhandled domain " + key.domain());
         }
+    }
+
+    public boolean readsWithoutReconciliation(ConsistencyLevel consistencyLevel)
+    {
+        boolean withoutReconciliation = consistencyLevel == null || consistencyLevel == ConsistencyLevel.ONE;
+        return withoutReconciliation;
     }
 
 
@@ -289,12 +300,7 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         );
     }
 
-    public PartitionRangeReadCommand commandForSubrange(Range r, boolean withtoutReconciliation, long nowInSeconds)
-    {
-        return commandForSubrange((PartitionRangeReadCommand) get(), r, withtoutReconciliation, nowInSeconds);
-    }
-
-    public PartitionRangeReadCommand commandForSubrange(PartitionRangeReadCommand command, Range r, boolean withoutReconciliation, long nowInSeconds)
+    public PartitionRangeReadCommand commandForSubrange(PartitionRangeReadCommand command, Range r, ConsistencyLevel consistencyLevel, long nowInSeconds)
     {
         AbstractBounds<PartitionPosition> bounds = command.dataRange().keyRange();
         PartitionPosition startPP = bounds.left;
@@ -332,12 +338,12 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         PartitionPosition subRangeEndPP = endPP.getToken().equals(subRangeEndToken) ? endPP : subRangeEndToken.maxKeyBound();
         // Need to preserve the fact it is a bounds for paging to work, a range is not left inclusive and will not start from where we left off
         AbstractBounds<PartitionPosition> subRange = isFirstSubrange ? bounds.withNewRight(subRangeEndPP) : new org.apache.cassandra.dht.Range(subRangeStartPP, subRangeEndPP);
-        return command.withTransactionalSettings(nowInSeconds, subRange, startTokenKey.equals(r.start()), withoutReconciliation);
+        return command.withTransactionalSettings(nowInSeconds, subRange, startTokenKey.equals(r.start()), readsWithoutReconciliation(consistencyLevel));
     }
 
-    private AsyncChain<Data> performLocalRangeRead(PartitionRangeReadCommand command, Range r, boolean withoutReconciliation, long nowInSeconds)
+    private AsyncChain<Data> performLocalRangeRead(PartitionRangeReadCommand command, Range r, ConsistencyLevel consistencyLevel, long nowInSeconds)
     {
-        PartitionRangeReadCommand read = commandForSubrange(command, r, withoutReconciliation, nowInSeconds);
+        PartitionRangeReadCommand read = commandForSubrange(command, r, consistencyLevel, nowInSeconds);
         Callable<Data> readCallable = () ->
         {
             try (ReadExecutionController controller = read.executionController();

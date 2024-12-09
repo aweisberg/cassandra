@@ -126,6 +126,14 @@ public abstract class ReadCommand extends AbstractReadQuery
     private final boolean acceptsTransient;
     private final Epoch serializedAtEpoch;
     private final boolean allowsPotentialTxnConflicts;
+
+    /*
+     * If this is a read transaction in interop mode the eventually consistent ReadCoordinator
+     * need this so that the interop transaction execution knows which read to perform for each message
+     * since the read command itself was already sent earlier.
+     */
+    private final int txnReadName;
+
     // if a digest query, the version for which the digest is expected. Ignored if not a digest.
     private int digestVersion;
 
@@ -150,7 +158,8 @@ public abstract class ReadCommand extends AbstractReadQuery
                                                 ColumnFilter columnFilter,
                                                 RowFilter rowFilter,
                                                 DataLimits limits,
-                                                Index.QueryPlan indexQueryPlan) throws IOException;
+                                                Index.QueryPlan indexQueryPlan,
+                                                int txnReadName) throws IOException;
     }
 
     protected enum Kind
@@ -179,7 +188,8 @@ public abstract class ReadCommand extends AbstractReadQuery
                           DataLimits limits,
                           Index.QueryPlan indexQueryPlan,
                           boolean trackWarnings,
-                          DataRange dataRange)
+                          DataRange dataRange,
+                          int txnReadName)
     {
         super(metadata, nowInSec, columnFilter, rowFilter, limits);
         if (acceptsTransient && isDigestQuery)
@@ -194,6 +204,7 @@ public abstract class ReadCommand extends AbstractReadQuery
         this.trackWarnings = trackWarnings;
         this.serializedAtEpoch = serializedAtEpoch;
         this.dataRange = dataRange;
+        this.txnReadName = txnReadName;
     }
 
     public static ReadCommand getCommand()
@@ -550,6 +561,11 @@ public abstract class ReadCommand extends AbstractReadQuery
     public boolean allowsPotentialTxnConflicts()
     {
         return allowsPotentialTxnConflicts;
+    }
+
+    public int txnReadName()
+    {
+        return txnReadName;
     }
 
     /**
@@ -1187,6 +1203,9 @@ public abstract class ReadCommand extends AbstractReadQuery
             if (null != command.indexQueryPlan)
                 IndexMetadata.serializer.serialize(command.indexQueryPlan.getFirst().getIndexMetadata(), out, version);
 
+            if (version >= MessagingService.VERSION_51)
+                out.writeUnsignedVInt32(command.txnReadName);
+
             command.serializeSelection(out, version);
         }
 
@@ -1242,7 +1261,11 @@ public abstract class ReadCommand extends AbstractReadQuery
                     indexQueryPlan = indexGroup.queryPlanFor(rowFilter);
             }
 
-            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, isDigest, digestVersion, acceptsTransient, allowsOutOfRangeReads, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan);
+            int txnReadName = 0;
+            if (version >= MessagingService.VERSION_51)
+                txnReadName = in.readUnsignedVInt32();
+
+            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, isDigest, digestVersion, acceptsTransient, allowsOutOfRangeReads, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan, txnReadName);
         }
 
         private IndexMetadata deserializeIndexMetadata(DataInputPlus in, int version, TableMetadata metadata) throws IOException
@@ -1273,7 +1296,8 @@ public abstract class ReadCommand extends AbstractReadQuery
                    + RowFilter.serializer.serializedSize(command.rowFilter(), version)
                    + DataLimits.serializer.serializedSize(command.limits(), version, command.metadata().comparator)
                    + command.selectionSerializedSize(version)
-                   + command.indexSerializedSize(version);
+                   + command.indexSerializedSize(version)
+                   + (version >= MessagingService.VERSION_51 ? TypeSizes.sizeofUnsignedVInt(command.txnReadName) : 0);
         }
     }
 }
