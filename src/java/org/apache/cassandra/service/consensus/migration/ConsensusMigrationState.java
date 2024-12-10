@@ -33,7 +33,6 @@ import javax.annotation.Nullable;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
@@ -147,10 +146,10 @@ public class ConsensusMigrationState implements MetadataValue<ConsensusMigration
 
         Map<Epoch, List<Range<Token>>> migratingRangesByEpoch = ImmutableMap.of();
         if (!ranges.isEmpty())
-            ImmutableMap.of(Epoch.EMPTY, ranges);
+            migratingRangesByEpoch = ImmutableMap.of(Epoch.EMPTY, ranges);
 
         if (overwrite)
-            tableState = new TableMigrationState(metadata.keyspace, metadata.name, metadata.id, target, ImmutableSet.of(), initialRepairPendingRanges(target, ranges), migratingRangesByEpoch);
+            tableState = new TableMigrationState(metadata.keyspace, metadata.name, metadata.id, target, ImmutableList.of(), initialRepairPendingRanges(target, ranges), migratingRangesByEpoch);
         else
             tableState = tableState.withRangesMigrating(ranges, target);
 
