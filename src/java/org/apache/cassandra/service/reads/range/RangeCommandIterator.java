@@ -251,7 +251,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
         if (reads.size() == 1)
         {
             RangeReadWithTarget rangeReadWithTarget = reads.get(0);
-            checkState(rangeReadWithTarget.read.dataRange().equals(rangeCommand.dataRange()));
+            checkState(rangeReadWithTarget.read.dataRange().keyRange().equals(rangeCommand.dataRange().keyRange()));
             if (rangeReadWithTarget.target == RangeReadTarget.accord && readCoordinator.isEventuallyConsistent())
             {
                 return executeAccord(cm,

@@ -1,0 +1,155 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.cassandra.distributed.test.accord;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import javax.annotation.Nonnull;
+
+import org.junit.After;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.cassandra.distributed.api.ConsistencyLevel;
+import org.apache.cassandra.net.Verb;
+import org.apache.cassandra.service.consensus.TransactionalMode;
+
+import static org.junit.Assert.assertEquals;
+
+@RunWith(Parameterized.class)
+public class AccordReadInteroperabilityTest extends AccordTestBase
+{
+    private static final Logger logger = LoggerFactory.getLogger(AccordInteroperabilityTest.class);
+
+    @Nonnull
+    private final TransactionalMode mode;
+
+    private final boolean migrated;
+
+    public AccordReadInteroperabilityTest(@Nonnull TransactionalMode mode, boolean migrated)
+    {
+        this.mode = mode;
+        this.migrated = migrated;
+    }
+
+    @Parameterized.Parameters(name = "transactionalMode={0}, migrated={1}")
+    public static Collection<Object[]> data() {
+        List<Object[]> tests = new ArrayList<>(TransactionalMode.values().length * 2);
+        for (TransactionalMode mode : TransactionalMode.values())
+        {
+            if (mode.accordIsEnabled)
+            {
+                tests.add(new Object[]{ mode, true });
+                tests.add(new Object[]{ mode, false });
+            }
+        }
+        return tests;
+    }
+
+    @Override
+    protected Logger logger()
+    {
+        return logger;
+    }
+
+    @BeforeClass
+    public static void setupClass() throws IOException
+    {
+        AccordTestBase.setupCluster(builder -> builder.withConfig(config -> config.set("accord.range_migration", "auto")
+                                                                                  .set("paxos_variant", "v2")),
+                                    3);
+    }
+
+    @After
+    public void tearDown()
+    {
+        SHARED_CLUSTER.setMessageSink(null);
+    }
+
+
+    private String testTransactionSelect()
+    {
+        return "BEGIN TRANSACTION\n" +
+               "  SELECT * FROM " + qualifiedAccordTableName + " WHERE k = 0;\n" +
+               "COMMIT TRANSACTION";
+    }
+
+    private String testSelect()
+    {
+        return "SELECT * FROM " + qualifiedAccordTableName + " WHERE k = 0";
+    }
+
+    private String testRangeSelect()
+    {
+        return "SELECT * FROM " + qualifiedAccordTableName + " WHERE token(k) > token(0)";
+    }
+
+    @Test
+    public void testTransactionStatementReadIsAtQuorum() throws Throwable
+    {
+        testReadIsAtQuorum(testTransactionSelect());
+    }
+
+    @Test
+    public void testNonSerialReadIsAtQuorum() throws Throwable
+    {
+        testReadIsAtQuorum(testSelect());
+    }
+
+    @Test
+    public void testRangeReadIsAtQuorum() throws Throwable
+    {
+        testReadIsAtQuorum(testRangeSelect());
+    }
+
+    private void testReadIsAtQuorum(String query) throws Throwable
+    {
+        // Transaction statement doesn't work during migration
+        if (query.equals(testTransactionSelect()) && !migrated)
+            return;
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c))" + (migrated ? " WITH " + transactionalMode.asCqlParam() : ""),
+             cluster -> {
+                 SHARED_CLUSTER.setMessageSink(new MessageCountingSink(SHARED_CLUSTER));
+                 if (!migrated)
+                 {
+                     cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " WITH " + transactionalMode.asCqlParam(), ConsistencyLevel.ALL);
+                     nodetool(cluster.coordinator(1), "repair", "-skip-paxos", "-skip-accord", KEYSPACE, accordTableName);
+                 }
+                 cluster.coordinator(1).execute(query, org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL);
+                 if (transactionalMode.ignoresSuppliedReadCL() && migrated)
+                 {
+                     // Tricky to check for regular commit because a lot of background Accord things create commits
+                     assertEquals(0, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
+                     assertEquals(0, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
+                     assertEquals(1, messageCount(Verb.ACCORD_READ_RSP));
+                 }
+                 else
+                 {
+                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
+                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
+                 }
+             });
+    }
+}
