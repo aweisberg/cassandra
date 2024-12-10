@@ -183,8 +183,7 @@ public class ReadCommandVerbHandlerTest
                   new ClusteringIndexSliceFilter(Slices.ALL, false),
                   null,
                   false,
-                  null,
-                  0);
+                  null);
         }
 
         @Override
