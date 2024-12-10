@@ -90,7 +90,7 @@ public class AccordInteropRead extends ReadData
             CommandSerializers.txnId.serialize(read.txnId, out, version);
             KeySerializers.participants.serialize(read.readScope, out, version);
             out.writeUnsignedVInt(read.executeAtEpoch);
-            out.writeUnsignedVInt32(read.txnReadName);
+            ReadCommand.serializer.serialize(read.command, out, version);
         }
 
         @Override
@@ -99,8 +99,8 @@ public class AccordInteropRead extends ReadData
             TxnId txnId = CommandSerializers.txnId.deserialize(in, version);
             Participants<?> readScope = KeySerializers.participants.deserialize(in, version);
             long executeAtEpoch = in.readUnsignedVInt();
-            int txnReadName = in.readUnsignedVInt32();
-            return new AccordInteropRead(txnId, readScope, executeAtEpoch, txnReadName);
+            ReadCommand command = ReadCommand.serializer.deserialize(in, version);
+            return new AccordInteropRead(txnId, readScope, executeAtEpoch, command);
         }
 
         @Override
@@ -109,7 +109,7 @@ public class AccordInteropRead extends ReadData
             return CommandSerializers.txnId.serializedSize(read.txnId, version)
                    + KeySerializers.participants.serializedSize(read.readScope, version)
                    + TypeSizes.sizeofUnsignedVInt(read.executeAtEpoch)
-                   + TypeSizes.sizeofUnsignedVInt(read.txnReadName);
+                   + ReadCommand.serializer.serializedSize(read.command, version);
         }
     };
 
@@ -188,13 +188,6 @@ public class AccordInteropRead extends ReadData
             this.version = version;
         }
 
-        public int version()
-        {
-            if (version == -1)
-                throw new IllegalStateException("Version is not set");
-            return version;
-        }
-
         @Override
         public String toString()
         {
@@ -241,18 +234,18 @@ public class AccordInteropRead extends ReadData
 
     private static final ExecuteOn EXECUTE_ON = new ExecuteOn(ReadyToExecute, PreApplied);
 
-    private final int txnReadName;
+    private final ReadCommand command;
 
-    public AccordInteropRead(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, long executeAtEpoch, int txnReadName)
+    public AccordInteropRead(Node.Id to, Topologies topologies, TxnId txnId, Participants<?> readScope, long executeAtEpoch, ReadCommand command)
     {
         super(to, topologies, txnId, readScope, executeAtEpoch);
-        this.txnReadName = txnReadName;
+        this.command = command;
     }
 
-    public AccordInteropRead(TxnId txnId, Participants<?> readScope, long executeAtEpoch, int txnReadName)
+    public AccordInteropRead(TxnId txnId, Participants<?> readScope, long executeAtEpoch, ReadCommand command)
     {
         super(txnId, readScope, executeAtEpoch);
-        this.txnReadName = txnReadName;
+        this.command = command;
     }
 
     @Override
@@ -265,40 +258,38 @@ public class AccordInteropRead extends ReadData
     protected AsyncChain<Data> beginRead(SafeCommandStore safeStore, Timestamp executeAt, PartialTxn txn, Ranges unavailable)
     {
         TxnRead txnRead = (TxnRead)txn.read();
-        for (TxnNamedRead txnNamedRead : txnRead)
+        Ranges ranges = safeStore.ranges().allAt(executeAt).without(unavailable).intersecting(readScope, Slice.Minimal);
+        long nowInSeconds = TxnNamedRead.nowInSeconds(executeAt);
+        List<AsyncChain<Data>> chains = new ArrayList<>(ranges.size());
+        for (Range r : ranges)
         {
-            if (txnNamedRead.txnDataName() == txnReadName)
+            ReadCommand readCommand = this.command;
+            AccordRoutingKey routingKey = null;
+            if (readCommand.isRangeRequest())
             {
-                checkState(unavailable.isEmpty(), "Eventually consistent read coordinators can't handle unavailable ranges");
-                Ranges ranges = safeStore.ranges().allAt(executeAt).without(unavailable).intersecting(readScope, Slice.Minimal);
-                long nowInSeconds = TxnNamedRead.nowInSeconds(executeAt);
-                List<AsyncChain<Data>> chains = new ArrayList<>(ranges.size());
-                for (Range r : ranges)
-                {
-                    ReadCommand readCommand = txnNamedRead.command();
-                    AccordRoutingKey routingKey = null;
-                    if (readCommand.isRangeRequest())
-                    {
-                        readCommand = txnNamedRead.commandForSubrange((PartitionRangeReadCommand) readCommand, r, txnRead.cassandraConsistencyLevel(), nowInSeconds);
-                        routingKey = ((TokenRange)r).start();
-                    }
-                    else
-                    {
-                        readCommand = ((SinglePartitionReadCommand)readCommand).withTransactionalSettings(txnNamedRead.readsWithoutReconciliation(txnRead.cassandraConsistencyLevel()), nowInSeconds);
-                    }
-                    ReadCommand readCommandFinal = readCommand;
-                    AccordRoutingKey routingKeyFinal = routingKey;
-                    chains.add(AsyncChains.ofCallable(Stage.READ.executor(), () -> new LocalReadData(routingKeyFinal, ReadCommandVerbHandler.instance.doRead(readCommandFinal, false), readCommandFinal.isRangeRequest())));
-                }
-
-                if (chains.isEmpty())
-                    return AsyncChains.success(null);
-
-                return AsyncChains.reduce(chains, Data::merge);
+                // This path can have a subrange we have never seen before provided by short read protection or read repair so we need to
+                // calculate the intersection with this instance of the command store and the actual command if it is not empty we
+                // will need to execute it
+                TokenRange commandRange = TxnNamedRead.boundsAsAccordRange(readCommand.dataRange().keyRange(), readCommand.metadata().id);
+                Range intersection = commandRange.intersection(r);
+                if (intersection == null)
+                    continue;
+                readCommand = TxnNamedRead.commandForSubrange((PartitionRangeReadCommand) readCommand, intersection, txnRead.cassandraConsistencyLevel(), nowInSeconds);
+                routingKey = ((TokenRange)r).start();
             }
+            else
+            {
+                readCommand = ((SinglePartitionReadCommand)readCommand).withTransactionalSettings(TxnNamedRead.readsWithoutReconciliation(txnRead.cassandraConsistencyLevel()), nowInSeconds);
+            }
+            ReadCommand readCommandFinal = readCommand;
+            AccordRoutingKey routingKeyFinal = routingKey;
+            chains.add(AsyncChains.ofCallable(Stage.READ.executor(), () -> new LocalReadData(routingKeyFinal, ReadCommandVerbHandler.instance.doRead(readCommandFinal, false), readCommandFinal.isRangeRequest())));
         }
-        throw new IllegalStateException("Didn't find a matching read with txnReadName " + txnRead + " at " + safeStore + " for txn with executeAt " + executeAt);
-        // TODO (required): subtract unavailable ranges, either from read or from response (or on coordinator)
+
+        if (chains.isEmpty())
+            return AsyncChains.success(null);
+
+        return AsyncChains.reduce(chains, Data::merge);
     }
 
     @Override
@@ -324,7 +315,7 @@ public class AccordInteropRead extends ReadData
     {
         return "AccordInteropRead{" +
                "txnId=" + txnId +
-               "txnReadName=" + txnReadName +
+               "command=" + command +
                '}';
     }
 

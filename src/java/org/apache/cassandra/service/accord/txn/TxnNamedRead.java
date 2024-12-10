@@ -96,6 +96,42 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         this.keys = Keys.of(new PartitionKey(value.metadata().id, value.partitionKey()));
     }
 
+    public static TokenRange boundsAsAccordRange(AbstractBounds<PartitionPosition> range, TableId tableId)
+    {
+        // Should already have been unwrapped
+        checkState(!AbstractBounds.strictlyWrapsAround(range.left, range.right));
+
+        // Read commands can contain a mix of different kinds of bounds to facilitate paging
+        // and we need to communicate that to Accord as its own ranges. This uses
+        // TokenKey, SentinelKey, and MinTokenKey and sticks exclusively with left exclusive/right inclusive
+        // ranges rather add more types of ranges to the mix
+        // MinTokenKey allows emulating inclusive left and exclusive right with Range
+        boolean inclusiveLeft = range.inclusiveLeft();
+        PartitionPosition startPP = range.left;
+        boolean startIsMinKeyBound = startPP.getClass() == KeyBound.class ? ((KeyBound)startPP).isMinimumBound : false;
+        Token startToken = startPP.getToken();
+        AccordRoutingKey startAccordRoutingKey;
+        if (startToken.isMinimum() && inclusiveLeft)
+            startAccordRoutingKey = SentinelKey.min(tableId);
+        else if (inclusiveLeft || startIsMinKeyBound)
+            startAccordRoutingKey = new MinTokenKey(tableId, startToken);
+        else
+            startAccordRoutingKey = new TokenKey(tableId, startToken);
+
+        boolean inclusiveRight = range.inclusiveRight();
+        PartitionPosition endPP = range.right;
+        boolean endIsMinKeyBound = endPP.getClass() == KeyBound.class ? ((KeyBound)endPP).isMinimumBound : false;
+        Token stopToken = range.right.getToken();
+        AccordRoutingKey stopAccordRoutingKey;
+        if (stopToken.isMinimum())
+            stopAccordRoutingKey = SentinelKey.max(tableId);
+        else if (inclusiveRight && !endIsMinKeyBound)
+            stopAccordRoutingKey = new TokenKey(tableId, stopToken);
+        else
+            stopAccordRoutingKey = new MinTokenKey(tableId, stopToken);
+        return TokenRange.create(startAccordRoutingKey, stopAccordRoutingKey);
+    }
+
     public TxnNamedRead(int name, List<AbstractBounds<PartitionPosition>> ranges, PartitionRangeReadCommand value)
     {
         super(value);
@@ -105,38 +141,7 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         for (int i = 0; i < ranges.size(); i++)
         {
             AbstractBounds<PartitionPosition> range = ranges.get(i);
-            // Should already have been unwrapped
-            checkState(!AbstractBounds.strictlyWrapsAround(range.left, range.right));
-
-            // Read commands can contain a mix of different kinds of bounds to facilitate paging
-            // and we need to communicate that to Accord as its own ranges. This uses
-            // TokenKey, SentinelKey, and MinTokenKey and sticks exclusively with left exclusive/right inclusive
-            // ranges rather add more types of ranges to the mix
-            // MinTokenKey allows emulating inclusive left and exclusive right with Range
-            boolean inclusiveLeft = range.inclusiveLeft();
-            PartitionPosition startPP = range.left;
-            boolean startIsMinKeyBound = startPP.getClass() == KeyBound.class ? ((KeyBound)startPP).isMinimumBound : false;
-            Token startToken = startPP.getToken();
-            AccordRoutingKey startAccordRoutingKey;
-            if (startToken.isMinimum() && inclusiveLeft)
-                startAccordRoutingKey = SentinelKey.min(tableId);
-            else if (inclusiveLeft || startIsMinKeyBound)
-                startAccordRoutingKey = new MinTokenKey(tableId, startToken);
-            else
-                startAccordRoutingKey = new TokenKey(tableId, startToken);
-
-            boolean inclusiveRight = range.inclusiveRight();
-            PartitionPosition endPP = range.right;
-            boolean endIsMinKeyBound = endPP.getClass() == KeyBound.class ? ((KeyBound)endPP).isMinimumBound : false;
-            Token stopToken = range.right.getToken();
-            AccordRoutingKey stopAccordRoutingKey;
-            if (stopToken.isMinimum())
-                stopAccordRoutingKey = SentinelKey.max(tableId);
-            else if (inclusiveRight && !endIsMinKeyBound)
-                stopAccordRoutingKey = new TokenKey(tableId, stopToken);
-            else
-                stopAccordRoutingKey = new MinTokenKey(tableId, stopToken);
-            accordRanges[i] = TokenRange.create(startAccordRoutingKey, stopAccordRoutingKey);
+            accordRanges[i] = boundsAsAccordRange(range, tableId);
         }
         this.keys = Ranges.ofSortedAndDeoverlapped(accordRanges);
     }
@@ -226,7 +231,7 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         }
     }
 
-    public boolean readsWithoutReconciliation(ConsistencyLevel consistencyLevel)
+    public static boolean readsWithoutReconciliation(ConsistencyLevel consistencyLevel)
     {
         boolean withoutReconciliation = consistencyLevel == null || consistencyLevel == ConsistencyLevel.ONE;
         return withoutReconciliation;
@@ -300,7 +305,7 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand>
         );
     }
 
-    public PartitionRangeReadCommand commandForSubrange(PartitionRangeReadCommand command, Range r, ConsistencyLevel consistencyLevel, long nowInSeconds)
+    public static PartitionRangeReadCommand commandForSubrange(PartitionRangeReadCommand command, Range r, ConsistencyLevel consistencyLevel, long nowInSeconds)
     {
         AbstractBounds<PartitionPosition> bounds = command.dataRange().keyRange();
         PartitionPosition startPP = bounds.left;

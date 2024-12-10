@@ -228,8 +228,7 @@ public class ReadCommandVerbHandlerOutOfRangeTest
                   null,
                   null,
                   false,
-                  null,
-                  0);
+                  null);
 
             this.tmd = tmd;
         }
@@ -263,8 +262,7 @@ public class ReadCommandVerbHandlerOutOfRangeTest
                   DataLimits.NONE,
                   DataRange.forTokenRange(range),
                   null,
-                  false,
-                  0);
+                  false);
 
             this.cfm = tmd;
         }

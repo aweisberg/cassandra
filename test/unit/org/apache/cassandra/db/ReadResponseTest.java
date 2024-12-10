@@ -265,8 +265,7 @@ public class ReadResponseTest
                   null,
                   null,
                   false,
-                  null,
-                  0);
+                  null);
            
         }
 

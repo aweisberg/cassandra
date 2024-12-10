@@ -228,7 +228,10 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     public void sendReadCommand(Message<ReadCommand> message, InetAddressAndPort to, RequestCallback<ReadResponse> callback)
     {
         Node.Id id = endpointMapper.mappedId(to);
-        AccordInteropRead read = new AccordInteropRead(id, executes, txnId, readScope, executeAt.epoch(), message.payload.txnReadName());
+        // TODO (nicetohave): It would be better to use the re-use the command from the transaction but it's fragile
+        // to try and figure out exactly what changed for things like read repair and short read protection
+        // Also this read scope doesn't reflect the contents of this particular read and is larger than it needs to be
+        AccordInteropRead read = new AccordInteropRead(id, executes, txnId, readScope, executeAt.epoch(), message.payload);
         // TODO (required): understand interop and whether StableFastPath is appropriate
         AccordInteropCommit commit = new AccordInteropCommit(Kind.StableFastPath, id, coordinateTopology, allTopologies,
                                                              txnId, txn, route, executeAt, deps, read);
@@ -280,7 +283,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
                                  return;
                              }
 
-                             Group group = Group.one(command.withTxnReadName(fragment.txnDataName()));
+                             Group group = Group.one(command);
                              results.add(AsyncChains.ofCallable(Stage.ACCORD_MIGRATION.executor(), () -> {
                                  TxnData result = new TxnData();
                                  // Enforcing limits is redundant since we only have a group of size 1, but checking anyways
