@@ -19,6 +19,7 @@
 package org.apache.cassandra.distributed.test.accord;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
@@ -35,12 +36,6 @@ import java.util.stream.StreamSupport;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
-
-import org.apache.cassandra.cql3.CQLStatement;
-import org.apache.cassandra.cql3.QueryProcessor;
-import org.apache.cassandra.distributed.shared.ClusterUtils;
-import org.apache.cassandra.schema.Schema;
-import org.apache.cassandra.schema.TableMetadata;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assert;
@@ -62,6 +57,8 @@ import net.bytebuddy.implementation.MethodDelegation;
 import net.bytebuddy.implementation.bind.annotation.SuperCall;
 import net.bytebuddy.implementation.bind.annotation.This;
 import org.apache.cassandra.batchlog.BatchlogManager;
+import org.apache.cassandra.cql3.CQLStatement;
+import org.apache.cassandra.cql3.QueryProcessor;
 import org.apache.cassandra.cql3.statements.ModificationStatement;
 import org.apache.cassandra.cql3.statements.TransactionStatement;
 import org.apache.cassandra.cql3.transactions.ReferenceValue;
@@ -79,6 +76,7 @@ import org.apache.cassandra.distributed.api.QueryResults;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.impl.Instance;
 import org.apache.cassandra.distributed.shared.AssertUtils;
+import org.apache.cassandra.distributed.shared.ClusterUtils;
 import org.apache.cassandra.distributed.shared.Metrics;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
 import org.apache.cassandra.distributed.util.QueryResultUtil;
@@ -90,8 +88,10 @@ import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.Verb;
-import org.apache.cassandra.service.accord.api.AccordRoutingKey;
+import org.apache.cassandra.schema.Schema;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.ClientState;
+import org.apache.cassandra.service.accord.api.AccordRoutingKey;
 import org.apache.cassandra.service.accord.exceptions.ReadPreemptedException;
 import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
 import org.apache.cassandra.service.consensus.TransactionalMode;
@@ -101,6 +101,7 @@ import org.apache.cassandra.tcm.serialization.Version;
 import org.apache.cassandra.utils.AssertionUtils;
 import org.apache.cassandra.utils.FailingConsumer;
 
+import static com.google.common.base.Preconditions.checkState;
 import static java.lang.String.format;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static org.apache.cassandra.db.SystemKeyspace.CONSENSUS_MIGRATION_STATE;
@@ -559,6 +560,7 @@ public abstract class AccordTestBase extends TestBaseImpl
     {
         public static void install(ClassLoader classLoader, Integer num)
         {
+            checkState(Arrays.asList(ModificationStatement.class.getDeclaredMethods()).stream().map(Method::getName).anyMatch(m -> m.equals("readRequiredLists")));
             new ByteBuddy().rebase(ModificationStatement.class)
                            .method(named("readRequiredLists"))
                            .intercept(MethodDelegation.to(EnforceUpdateDoesNotPerformRead.class))
