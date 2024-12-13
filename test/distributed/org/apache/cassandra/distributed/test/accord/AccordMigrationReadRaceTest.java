@@ -87,7 +87,7 @@ import static org.apache.cassandra.distributed.shared.ClusterUtils.getNextEpoch;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseAfterEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseBeforeEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.unpauseEnactment;
-import static org.apache.cassandra.distributed.test.accord.AccordMigrationReadRaceTestBase.Scenario.ANY;
+import static org.apache.cassandra.distributed.test.accord.AccordMigrationReadRaceTest.Scenario.ANY;
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
 import static org.junit.Assert.assertEquals;
@@ -96,9 +96,9 @@ import static org.junit.Assert.assertEquals;
  * Test that non-transactional read operations migrating to/from a mode where Accord ignores commit consistency levels
  * and does aysnc commit are routed correctly. Currently this is just TransactionalMode.full
  */
-public class AccordMigrationReadRaceTestBase extends AccordTestBase
+public class AccordMigrationReadRaceTest extends AccordTestBase
 {
-    private static final Logger logger = LoggerFactory.getLogger(AccordMigrationReadRaceTestBase.class);
+    private static final Logger logger = LoggerFactory.getLogger(AccordMigrationReadRaceTest.class);
 
     private static final String TABLE_FMT = "CREATE TABLE %s (id int, c int, v int, PRIMARY KEY ((id), c));";
 
@@ -141,7 +141,7 @@ public class AccordMigrationReadRaceTestBase extends AccordTestBase
 
     private final boolean migrateAwayFromAccord;
 
-    public AccordMigrationReadRaceTestBase()
+    public AccordMigrationReadRaceTest()
     {
         this.migrateAwayFromAccord = migratingAwayFromAccord();
     }
