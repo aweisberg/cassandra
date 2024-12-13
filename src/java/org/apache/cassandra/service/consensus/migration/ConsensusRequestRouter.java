@@ -459,7 +459,12 @@ public class ConsensusRequestRouter
         {
             checkState(transactionalMigrationFromMode == TransactionalMigrationFromMode.none);
             if (transactionalMode.nonSerialReadsThroughAccord)
+            {
+                ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
+                if (cfs != null)
+                    cfs.metric.readsRejectedOnWrongSystem.mark();
                 throw new RetryOnDifferentSystemException();
+            }
         }
 
         boolean isExclusivelyReadableFromAccord;
@@ -469,7 +474,12 @@ public class ConsensusRequestRouter
             isExclusivelyReadableFromAccord = isTokenExclusivelyManagedByAccordForRead(transactionalMode, transactionalMigrationFromMode, tms, ((SinglePartitionReadCommand)command).partitionKey().getToken());
 
         if (isExclusivelyReadableFromAccord)
+        {
+            ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(tableId);
+            if (cfs != null)
+                cfs.metric.readsRejectedOnWrongSystem.mark();
             throw new RetryOnDifferentSystemException();
+        }
     }
 
     private static boolean isTokenExclusivelyManagedByAccordForRead(@Nonnull TransactionalMode transactionalMode,

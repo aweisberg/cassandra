@@ -70,6 +70,7 @@ import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.Cluster.Builder;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.Feature;
+import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.IIsolatedExecutor.SerializableRunnable;
 import org.apache.cassandra.distributed.api.QueryResults;
@@ -252,7 +253,12 @@ public abstract class AccordTestBase extends TestBaseImpl
         return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.Latency.CASWrite"));
     }
 
-    protected static int getRetryOnDifferentSystemCount(int coordinatorIndex)
+    protected static int getReadRetryOnDifferentSystemCount(IInstance instance)
+    {
+        return Ints.checkedCast(instance.metrics().getCounter("org.apache.cassandra.metrics.ClientRequest.RetryDifferentSystem.Write"));
+    }
+
+    protected static int getWriteRetryOnDifferentSystemCount(int coordinatorIndex)
     {
         return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.RetryDifferentSystem.Write"));
     }
@@ -262,6 +268,14 @@ public abstract class AccordTestBase extends TestBaseImpl
         long sum = 0;
         for (IInvokableInstance instance : SHARED_CLUSTER)
             sum += instance.metrics().getCounter("org.apache.cassandra.metrics.Table.MutationsRejectedOnWrongSystem." + qualifiedAccordTableName);
+        return Ints.checkedCast(sum);
+    }
+
+    protected int getReadsRejectedOnWrongSystemCount()
+    {
+        long sum = 0;
+        for (IInvokableInstance instance : SHARED_CLUSTER)
+            sum += instance.metrics().getCounter("org.apache.cassandra.metrics.Table.ReadsRejectedOnWrongSystem." + qualifiedAccordTableName);
         return Ints.checkedCast(sum);
     }
 

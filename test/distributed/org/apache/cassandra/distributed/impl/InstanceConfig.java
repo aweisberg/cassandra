@@ -30,8 +30,8 @@ import java.util.UUID;
 import java.util.function.Function;
 
 import com.vdurmont.semver4j.Semver;
-import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.AccordSpec;
+import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.OptionaldPositiveInt;
 import org.apache.cassandra.distributed.api.Feature;
 import org.apache.cassandra.distributed.api.IInstanceConfig;
@@ -265,6 +265,16 @@ public class InstanceConfig implements IInstanceConfig
     {
         getParams(fieldName).put(fieldName, value);
         return this;
+    }
+
+    public InstanceConfig extendTimeouts(int seconds)
+    {
+        return set("range_request_timeout", "180s")
+              .set("read_request_timeout", "180s")
+              .set("transaction_timeout", "180s")
+              .set("write_request_timeout", "180s")
+              .set("native_transport_timeout", "180s")
+              .set("slow_query_log_timeout", "180s");
     }
 
     private Map<String, Object> getParams(String fieldName)
