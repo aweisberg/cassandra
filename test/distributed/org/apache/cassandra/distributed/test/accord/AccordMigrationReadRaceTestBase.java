@@ -21,16 +21,18 @@ package org.apache.cassandra.distributed.test.accord;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
-import java.util.NavigableMap;
 import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableList;
@@ -38,7 +40,6 @@ import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListenableFutureTask;
 import org.junit.After;
 import org.junit.AfterClass;
-import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -46,11 +47,11 @@ import org.slf4j.LoggerFactory;
 
 import accord.primitives.Ranges;
 import org.apache.cassandra.ServerTestUtils;
-import org.apache.cassandra.Util;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.Config.PaxosVariant;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.dht.IPartitioner;
+import org.apache.cassandra.dht.Murmur3Partitioner;
 import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -74,42 +75,36 @@ import org.apache.cassandra.service.consensus.migration.ConsensusMigrationRepair
 import org.apache.cassandra.service.consensus.migration.ConsensusTableMigration;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.eclipse.jetty.util.ConcurrentHashSet;
 
 import static java.lang.String.format;
-import static org.apache.cassandra.Util.spinUntilSuccess;
+import static org.apache.cassandra.Util.spinAssertEquals;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.ALL;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.getNextEpoch;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseAfterEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseBeforeEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.unpauseEnactment;
+import static org.apache.cassandra.distributed.test.accord.AccordMigrationReadRaceTestBase.Scenario.ANY;
+import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
+import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
+import static org.junit.Assert.assertEquals;
 
 /*
- * Test that non-transactional write operations such as regular mutations, batch log, and hints
- * all detect when a migration is in progress, and then retry on the correct system.
+ * Test that non-transactional read operations migrating to/from a mode where Accord ignores commit consistency levels
+ * and does aysnc commit are routed correctly. Currently this is just TransactionalMode.full
  */
-public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
+public class AccordMigrationReadRaceTestBase extends AccordTestBase
 {
     private static final Logger logger = LoggerFactory.getLogger(AccordMigrationReadRaceTestBase.class);
 
     private static final String TABLE_FMT = "CREATE TABLE %s (id int, c int, v int, PRIMARY KEY ((id), c));";
 
-    public static final int PKEY_ACCORD = 3;
-    public static final int PKEY_NORMAL = 0;
-
     private static IPartitioner partitioner;
 
-    private static Token minToken;
-
-    private static Token maxToken;
-
-    private static Token midToken;
-
-    private static Token upperMidToken;
-
-    private static Token lowerMidToken;
+    private static Range<Token> migratingRange;
 
     private static ICoordinator coordinator;
 
@@ -138,43 +133,23 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
 
     enum Scenario
     {
-        // Apply the mutation from the coordinator directly without going through hinting
-        MUTATION(false, false, false, false, false),
-        // Hint from the initial mutation coordination
-        HINT(true, false, true, false, true),
-        // Apply the mutation from the batchlog directly
-        BATCHLOG_SUCCESSFUL_ROUTING(false, true, true, true, false),
-        // Have the batchlog use hints to apply the mutation after failing to route, migrating back from Accord this is a timeout because you can't get Accord to fail at routing
-        // it either executes correctly in the old epoch or times out waiting for the new one to arrive
-        BATCHLOG_FAILED_ROUTING_THEN_HINT(false, true, true, true, true),
-        // Have the batchlog use hints to apply the mutation after a timeout
-        BATCHLOG_FAILED_TIMEOUT_THEN_HINT(false, true, true, true, true),
-        ;
-
-        final boolean initiallyEnableHints;
-        final boolean initiallyEnableBatchlogReplay;
-        final boolean initiallyBlockTestKeyspaceMutations;
-        final boolean passesThroughBatchlog;
-        final boolean deliversViaHint;
-
-        Scenario(boolean initiallyEnableHints, boolean initiallyEnableBatchlogReplay, boolean initiallyBlockTestKeyspaceMutations, boolean passesThroughBatchlog, boolean deliversViaHint)
+        ANY;
+        Scenario()
         {
-            this.initiallyEnableHints = initiallyEnableHints;
-            this.initiallyEnableBatchlogReplay = initiallyEnableBatchlogReplay;
-            this.initiallyBlockTestKeyspaceMutations = initiallyBlockTestKeyspaceMutations;
-            this.passesThroughBatchlog = passesThroughBatchlog;
-            this.deliversViaHint = deliversViaHint;
         }
     }
 
     private final boolean migrateAwayFromAccord;
 
-    protected AccordMigrationReadRaceTestBase()
+    public AccordMigrationReadRaceTestBase()
     {
         this.migrateAwayFromAccord = migratingAwayFromAccord();
     }
 
-    protected abstract boolean migratingAwayFromAccord();
+    protected boolean migratingAwayFromAccord()
+    {
+        return false;
+    }
 
     @Override
     protected Logger logger()
@@ -189,18 +164,44 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
         // Otherwise repair complains if you don't specify a keyspace
         CassandraRelevantProperties.SYSTEM_TRACES_DEFAULT_RF.setInt(3);
         AccordTestBase.setupCluster(builder -> builder.appendConfig(config -> config.set("paxos_variant", PaxosVariant.v2.name())
-                                                                                    .set("write_request_timeout", "2s")
+                                                                                    .set("read_request_timeout", "2s")
+                                                                                    .set("native_transport_timeout", "3600s")
                                                                                     .set("accord.range_migration", "explicit")), 3);
         partitioner = FBUtilities.newPartitioner(SHARED_CLUSTER.get(1).callsOnInstance(() -> DatabaseDescriptor.getPartitioner().getClass().getSimpleName()).call());
         StorageService.instance.setPartitionerUnsafe(partitioner);
         ServerTestUtils.prepareServerNoRegister();
-        minToken = partitioner.getMinimumToken();
-        maxToken = partitioner.getMaximumTokenForSplitting();
-        midToken = partitioner.midpoint(minToken, maxToken);
-        upperMidToken = partitioner.midpoint(midToken, maxToken);
-        lowerMidToken = partitioner.midpoint(minToken, midToken);
+        LongToken migrationStart = new LongToken(Long.valueOf(SHARED_CLUSTER.get(2).callOnInstance(() -> DatabaseDescriptor.getInitialTokens().iterator().next())));
+        LongToken migrationEnd = new LongToken(Long.valueOf(SHARED_CLUSTER.get(3).callOnInstance(() -> DatabaseDescriptor.getInitialTokens().iterator().next())));
+        migratingRange = new Range<>(migrationStart, migrationEnd);
         coordinator = SHARED_CLUSTER.coordinator(1);
         SHARED_CLUSTER.setMessageSink(messageSink);
+        buildData();
+    }
+
+    private static final Integer[][][] data = new Integer[1000][][];
+    private static int pkeyAccord;
+    private static int pkeyAccordDataIndex;
+
+    private static void buildData()
+    {
+        Random r = new Random(0);
+        for (int i = 0; i < 1000; i++)
+        {
+            data[i] = new Integer[10][];
+            int pk = r.nextInt();
+            for (int j = 0; j < 10; j++)
+            {
+                int clustering = r.nextInt();
+                data[i][j] = new Integer[] { pk, clustering, 42 };
+                LongToken token = Murmur3Partitioner.instance.getToken(ByteBufferUtil.bytes(pk));
+                if (migratingRange.contains(token))
+                {
+                    pkeyAccord = pk;
+                    pkeyAccordDataIndex = i;
+                }
+            }
+            Arrays.sort(data[i], Comparator.comparing(row -> row[1]));
+        }
     }
 
     @AfterClass
@@ -218,45 +219,89 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
         super.tearDown();
     }
 
-    private NavigableMap<Integer, NavigableMap<Integer, Integer>> modelByPK = new TreeMap<>();
-    private NavigableMap<Token, NavigableMap<Integer, Integer>> modelByToken = new TreeMap<>();
-
-    @Before
-    public void setUp() throws Throwable
+    private void loadData() throws Throwable
     {
+        logger.info("Starting data load");
         Stopwatch sw = Stopwatch.createStarted();
-        Random r = new Random(0);
         List<java.util.concurrent.Future<SimpleQueryResult>> inserts = new ArrayList<>();
-        boolean buildModel = modelByPK.isEmpty();
-        for (int i = 0; i < 10000; i++)
+        for (int i = 0; i < 1000; i++)
         {
             for (int j = 0; j < 10; j++)
-            {
-                int pk = r.nextInt();
-                int clustering = r.nextInt();
-                inserts.add(coordinator.asyncExecuteWithResult(insertCQL(qualifiedAccordTableName, pk, clustering, 42), ALL));
-                if (buildModel)
-                {
-                    NavigableMap<Integer, Integer> partition = modelByPK.computeIfAbsent(pk, newPK -> new TreeMap<>());
-                    partition.put(clustering, 42);
-                    modelByToken.put(Util.token(pk), partition);
-                }
-            }
+                inserts.add(coordinator.asyncExecuteWithResult(insertCQL(qualifiedAccordTableName, (int)data[i][j][0], (int)data[i][j][1], (int)data[i][j][2]), ALL));
 
-            if (i % 500 == 0)
+            if (i % 100 == 0)
             {
                 for (java.util.concurrent.Future<SimpleQueryResult> insert : inserts)
                     insert.get();
                 inserts.clear();
             }
         }
-        logger.info("Setup rows took %dms", sw.elapsed(TimeUnit.MILLISECONDS));
+        logger.info("Data load took %dms", sw.elapsed(TimeUnit.MILLISECONDS));
+    }
+
+    /*
+     * Test cases
+     * single partition
+     *    read success on target
+     *    read success not on target
+     *    Retry different system
+     * Range
+     *    """"
+     */
+    @Test
+    public void testKeyRouting() throws Throwable
+    {
+       String readCQL = "SELECT * FROM " + qualifiedAccordTableName + " WHERE id = " + pkeyAccord;
+       testSplitAndRetry(readCQL, result -> assertThat(result).isDeepEqualTo(data[pkeyAccordDataIndex]), ANY);
     }
 
     @Test
-    public void testKeyRouting()
+    public void testRangeRouting() throws Throwable
     {
+        String cql = "SELECT * FROM " + qualifiedAccordTableName + " WHERE token > " + bytesToHex(LongToken.keyForToken(Murmur3Partitioner.MINIMUM));
+        testSplitAndRetry(cql, result -> {}, ANY);
+    }
 
+    private void testSplitAndRetry(String readCQL, Consumer<SimpleQueryResult> validation, Scenario scenario) throws Throwable
+    {
+        test(createTables(TABLE_FMT, qualifiedAccordTableName),
+             cluster -> {
+                 loadData();
+                 // Node 3 is always the out of sync node
+                 IInvokableInstance outOfSyncInstance = setUpOutOfSyncNode(cluster, scenario);
+                 ICoordinator coordinator = outOfSyncInstance.coordinator();
+                 int startRetryCount = getReadRetryOnDifferentSystemCount(outOfSyncInstance);
+                 // If testing routing at mutation coordination then Node 1 and 2 will both rejected the mutation because it is in a migrating range
+                 int startRejectedCount = getReadsRejectedOnWrongSystemCount();
+                 logger.info("Executing read " + readCQL);
+                 Future<SimpleQueryResult> resultFuture = coordinator.asyncExecuteWithResult(readCQL, ALL);
+
+                 spinAssertEquals(startRejectedCount + 2, 10, () -> getReadsRejectedOnWrongSystemCount() - startRejectedCount);
+
+                 logger.info("Unpausing out of sync instance");
+                 // Testing regular mutation coordination retry loop let coordinator get up to date and retry
+                 unpauseEnactment(outOfSyncInstance);
+
+                 try
+                 {
+                     SimpleQueryResult result = resultFuture.get();
+                     logger.info(result.toString());
+                     validation.accept(result);
+                 }
+                 catch (ExecutionException e)
+                 {
+//                     // This is expected when inverting the migration
+//                     if (migrateAwayFromAccord && e.getCause() instanceof CoordinatorBehindException)
+//                         throw e;
+                     throw e;
+                 }
+
+                 int endRetryCount = getReadRetryOnDifferentSystemCount(outOfSyncInstance);
+                 int endRejectedCount = getReadsRejectedOnWrongSystemCount();
+                 assertEquals(1, endRetryCount - startRetryCount);
+                 // Expect only two nodes to reject since they enacted the new epoch
+                 assertEquals(2, endRejectedCount - startRejectedCount);
+             });
     }
 
     private ListenableFuture<Void> alterTableTransactionalModeAsync(TransactionalMode mode)
@@ -271,7 +316,8 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
     }
 
     /*
-     * Set up 3 to be behind and unaware of the migration while 1 and 2 are aware
+     * Set up 3 to be behind and unaware of the migration having progressed to the point where reads need to
+     * be on a different system while 1 and 2 are aware
      */
     private IInvokableInstance setUpOutOfSyncNode(Cluster cluster, Scenario scenario) throws Throwable
     {
@@ -279,82 +325,45 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
         IInvokableInstance i2 = cluster.get(2);
         IInvokableInstance i3 = cluster.get(3);
         alterTableTransactionalMode(TransactionalMode.full);
+        // Reads are allowed until Accord thinks it owns the range and can start doing async commit and ignoring consistency levels
+        nodetool(coordinator, "consensus_admin", "begin-migration", "-st", migratingRange.left.toString(), "-et", migratingRange.right.toString(), "-tp", "accord", KEYSPACE, accordTableName);
+        // First repair only does the data and allows Accord to read, but doesn't require reads to be done through Accord
+        nodetool(i2, "repair", "-skip-paxos", "-skip-accord", "-st", migratingRange.left.toString(), "-et", migratingRange.right.toString(), KEYSPACE, accordTableName);
+
         Epoch nextEpoch = getNextEpoch(i1);
         // Node 3 will coordinate the query and not be aware that the migration has begun
         Callable<?> pausedBeforeEnacting = pauseBeforeEnacting(i3, nextEpoch);
-        // In batch log delivery cases i2 will be the coordinator and we need to be sure that it has enacted the latest epoch
+
+        // Wawnt to make sure both instances are aware of the migration
+        Callable<?> i1PausedAfterEnacting = pauseAfterEnacting(i1, nextEpoch);
         Callable<?> i2PausedAfterEnacting = pauseAfterEnacting(i2, nextEpoch);
 
-        ListenableFuture<?> result = nodetoolAsync(coordinator, "consensus_admin", "begin-migration", "-st", midToken.toString(), "-et", maxToken.toString(), "-tp", "accord", KEYSPACE, accordTableName);
-
-        if (migrateAwayFromAccord)
-        {
-            pausedBeforeEnacting.call();
-            i2PausedAfterEnacting.call();
-            unpauseEnactment(i2);
-            unpauseEnactment(i3);
-            result.get();
-            long migratingEpoch = nextEpoch.getEpoch();
-            Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(migratingEpoch)))), 10);
-            nextEpoch = getNextEpoch(i1);
-            pausedBeforeEnacting = pauseBeforeEnacting(i3, nextEpoch);
-            i2PausedAfterEnacting = pauseAfterEnacting(i2, nextEpoch);
-            // In the reverse direction doing the alter automatically reverses the migration without a need to call begin migration on any ranges
-            result = alterTableTransactionalModeAsync(TransactionalMode.off);
-        }
+        // Unfortunately can't run real repair because it can't complete with i3 not responding because it's stuck waiting
+        // on TCM so fake the completion of the repair by invoking the completion handler directly
+        String keyspace = KEYSPACE;
+        String table = accordTableName;
+        long migratingTokenStart = migratingRange.left.getLongValue();
+        long migratingTokenEnd = migratingRange.right.getLongValue();
+        Future<?> result = SHARED_CLUSTER.get(1).asyncRunsOnInstance(() ->
+                                            {
+                                                Epoch startEpoch = ClusterMetadata.current().epoch;
+                                                TableId tableId = Schema.instance.getTableMetadata(keyspace, table).id;
+                                                List<Range<Token>> ranges = ImmutableList.of(new Range<>(new LongToken(migratingTokenStart), new LongToken(migratingTokenEnd)));
+                                                RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
+                                                TokenRange range = new TokenRange(new TokenKey(tableId, new LongToken(migratingTokenStart)), new TokenKey(tableId, new LongToken(migratingTokenEnd)));
+                                                Ranges accordRanges = Ranges.of(range);
+                                                ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
+                                                ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
+                                            }).call();
 
         // Wait for everyone to get to where they are supposed to be
-        try
-        {
-            pausedBeforeEnacting.call();
-        }
-        catch (Throwable t)
-        {
-            if (result.isDone())
-            {
-                try
-                {
-                    result.get();
-                }
-                catch (ExecutionException e)
-                {
-                    t.addSuppressed(e);
-                    throw t;
-                }
-            }
-            throw t;
-        }
+        pausedBeforeEnacting.call();
+        i1PausedAfterEnacting.call();
         i2PausedAfterEnacting.call();
         // Unpause on 1 and 2 where we want them aware of the migration
         unpauseEnactment(i1);
         unpauseEnactment(i2);
-        // nodetool should be able to complete now
         result.get();
-
-        // Need to complete the migration for its eventual execution in the next epoch to be discovered to be misrouted
-        // now that we continue to write through Accord during migration away from Accord
-        // Faking the completed repair is the only way to get it in a state where two coordinators know about the new
-        // epoch and one doesn't
-        if (migrateAwayFromAccord && scenario.deliversViaHint && scenario.passesThroughBatchlog)
-        {
-            String keyspace = KEYSPACE;
-            String table = accordTableName;
-            long midTokenLong = midToken.getLongValue();
-            long maxTokenLong = maxToken.getLongValue();
-            SHARED_CLUSTER.get(1).runOnInstance(() ->
-                {
-                    Epoch startEpoch = ClusterMetadata.current().epoch;
-                    Epoch epochAfterRepair = startEpoch.nextEpoch();
-                    TableId tableId = Schema.instance.getTableMetadata(keyspace, table).id;
-                    List<Range<Token>> ranges = ImmutableList.of(new Range<>(new LongToken(midTokenLong), new LongToken(maxTokenLong)));
-                    RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
-                    TokenRange range = TokenRange.create(new TokenKey(tableId, new LongToken(midTokenLong)), new TokenKey(tableId, new LongToken(maxTokenLong)));
-                    Ranges accordRanges = Ranges.of(range);
-                    ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
-                    ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
-                    spinUntilSuccess(() -> ClusterMetadata.current().epoch.equals(epochAfterRepair));
-                });
-        }
 
         return i3;
     }

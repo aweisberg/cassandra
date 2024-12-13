@@ -500,7 +500,7 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                  int coordinatorIndex = scenario.initiallyEnableBatchlogReplay ? 2 : 3;
                  IInvokableInstance instance = cluster.get(coordinatorIndex);
                  ICoordinator coordinator = instance.coordinator();
-                 int startRetryCount = getRetryOnDifferentSystemCount(coordinatorIndex);
+                 int startRetryCount = getWriteRetryOnDifferentSystemCount(coordinatorIndex);
                  // If testing routing at mutation coordination then Node 1 and 2 will both rejected the mutation because it is in a migrating range
                  int startRejectedCount = getMutationsRejectedOnWrongSystemCount();
                  logger.info("Executing batch insert");
@@ -637,7 +637,7 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
 
                      if (!migrateAwayFromAccord)
                      {
-                         int endRetryCount = getRetryOnDifferentSystemCount(coordinatorIndex);
+                         int endRetryCount = getWriteRetryOnDifferentSystemCount(coordinatorIndex);
                          int endRejectedCount = getMutationsRejectedOnWrongSystemCount();
                          assertEquals(1, endRetryCount - startRetryCount);
                          // Expect only two nodes to reject since they enacted the new epoch

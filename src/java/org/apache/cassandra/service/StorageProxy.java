@@ -2663,6 +2663,7 @@ public class StorageProxy implements StorageProxyMBean
 
                 boolean readRejected = false;
                 long deadline = requestTime.computeDeadline(verb.expiresAfterNanos());
+                long now = Clock.Global.nanoTime();
                 command.setMonitoringTime(requestTime.startedAtNanos(), false, deadline - requestTime.startedAtNanos(), DatabaseDescriptor.getSlowQueryTimeout(NANOSECONDS));
 
                 ReadResponse response;
