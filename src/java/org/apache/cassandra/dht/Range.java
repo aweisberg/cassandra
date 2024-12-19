@@ -796,15 +796,6 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         Token rangeRight = range.right;
         checkState(rangeLeft.compareTo(rangeRight) < 0 || rangeRight.isMinimum(), "Wrap around is not handled");
 
-//        // The token(column) = token(?) case
-//        if (boundsLeft.equals(boundsRight))
-//        {
-//            checkState(bounds.left.getClass() == KeyBound.class && ((KeyBound)bounds.left).isMinimumBound);
-//            checkState(bounds.right.getClass() == KeyBound.class && !((KeyBound)bounds.right).isMinimumBound);
-//            if (range.contains(boundsLeft))
-//                return Pair.create(bounds, null);
-//        }
-
         // Completely before
         int rightLeftCmp = boundsRight.compareTo(rangeLeft);
         // Nothing is > min on the right
