@@ -35,6 +35,7 @@ import org.apache.commons.lang3.ObjectUtils;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.PartitionPosition;
+import org.apache.cassandra.dht.Token.KeyBound;
 import org.apache.cassandra.dht.Token.TokenFactory;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -787,11 +788,22 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
     public static Pair<AbstractBounds<PartitionPosition>, AbstractBounds<PartitionPosition>> intersectionAndRemainder(AbstractBounds<PartitionPosition> bounds, org.apache.cassandra.dht.Range<Token> range)
     {
         checkArgument((bounds.inclusiveRight() && bounds.inclusiveLeft()) || (bounds.left.compareTo(bounds.right) < 0 || bounds.right.isMinimum()), "Wrap around not handled");
+        boolean boundsInclusiveLeft = bounds.inclusiveLeft() || (bounds.left.getClass() == KeyBound.class && ((KeyBound)bounds.left).isMinimumBound);
+        boolean boundsInclusiveRight = bounds.inclusiveRight() || (bounds.right.getClass() == KeyBound.class && !((KeyBound)bounds.right).isMinimumBound);
         Token boundsLeft = bounds.left.getToken();
         Token boundsRight = bounds.right.getToken();
         Token rangeLeft = range.left;
         Token rangeRight = range.right;
         checkState(rangeLeft.compareTo(rangeRight) < 0 || rangeRight.isMinimum(), "Wrap around is not handled");
+
+//        // The token(column) = token(?) case
+//        if (boundsLeft.equals(boundsRight))
+//        {
+//            checkState(bounds.left.getClass() == KeyBound.class && ((KeyBound)bounds.left).isMinimumBound);
+//            checkState(bounds.right.getClass() == KeyBound.class && !((KeyBound)bounds.right).isMinimumBound);
+//            if (range.contains(boundsLeft))
+//                return Pair.create(bounds, null);
+//        }
 
         // Completely before
         int rightLeftCmp = boundsRight.compareTo(rangeLeft);
@@ -809,7 +821,7 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         if (rangeRight.isMinimum())
             leftRightCmp = -1;
         // Fixed mismatched inclusivity
-        leftRightCmp = leftRightCmp == 0 && !bounds.inclusiveLeft() ? 1 : leftRightCmp;
+        leftRightCmp = leftRightCmp == 0 && !boundsInclusiveLeft ? 1 : leftRightCmp;
         if (leftRightCmp > 0)
             return Pair.create(null, bounds);
 
@@ -822,7 +834,7 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         else if (rangeRight.isMinimum())
             rightRightCmp = -1;
         // Fixed mismatched inclusivity
-        rightRightCmp = rightRightCmp == 0 && !bounds.inclusiveRight() ? -1 : rightRightCmp;
+        rightRightCmp = rightRightCmp == 0 && !boundsInclusiveRight ? -1 : rightRightCmp;
 
         int leftLeftCmp = boundsLeft.compareTo(rangeLeft);
         // Range left is not inclusive, doesn't matter whether the bound is inclusive/exclusive left
@@ -839,12 +851,25 @@ public class Range<T extends RingPosition<T>> extends AbstractBounds<T> implemen
         {
             // Remove everything before the intersection
             Pair<AbstractBounds<PartitionPosition>, AbstractBounds<PartitionPosition>> split = bounds.split(rangeLeft.maxKeyBound());
-            AbstractBounds<PartitionPosition> intersectionAndRemainder = split.right;
+            AbstractBounds<PartitionPosition> intersectionAndRemainder = bounds;
+            if (split != null)
+                intersectionAndRemainder = split.right;
             // There is a remainder
             if (rightRightCmp > 0)
                 return intersectionAndRemainder.split(rangeRight.maxKeyBound());
             // There is no remainder everything that
             return Pair.create(intersectionAndRemainder, null);
         }
+    }
+
+    public static int compareRightToken(Token a, Token b)
+    {
+        if (a.isMinimum() && b.isMinimum())
+            return 0;
+        if (a.isMinimum())
+            return 1;
+        if (b.isMinimum())
+            return 0;
+        return a.compareTo(b);
     }
 }

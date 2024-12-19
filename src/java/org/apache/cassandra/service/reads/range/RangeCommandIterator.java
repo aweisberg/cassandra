@@ -21,7 +21,9 @@ package org.apache.cassandra.service.reads.range;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
@@ -38,9 +40,11 @@ import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionIterators;
 import org.apache.cassandra.db.rows.RowIterator;
+import org.apache.cassandra.exceptions.CoordinatorBehindException;
 import org.apache.cassandra.exceptions.ReadAbortException;
 import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
+import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
 import org.apache.cassandra.exceptions.UnavailableException;
 import org.apache.cassandra.locator.EndpointsForRange;
 import org.apache.cassandra.locator.Replica;
@@ -63,6 +67,8 @@ import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
 import static com.google.common.base.Preconditions.checkState;
+import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetrics;
+import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetricsForLevel;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 
 @VisibleForTesting
@@ -268,10 +274,35 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
 
         // TODO (review): Should this be reworked to execute the queries serially from the iterator? It would respect
         // any provided limits better but the number of queries created will generally be low (2-3)
-        List<PartitionIterator> responses = new ArrayList<>(reads.size());
+        List<PartitionIterator> responses = new ArrayList<>(reads.size() + 1);
+        // Dummy iterator that checks all the responses for retry on different system hasNext so we don't read
+        // from the first iterator when the second needs to be retried because the split was wrong
+        responses.add(new PartitionIterator()
+        {
+            @Override
+            public void close()
+            {
+
+            }
+
+            @Override
+            public boolean hasNext()
+            {
+                for (int i = 1; i < responses.size(); i++)
+                    responses.get(i).hasNext();
+                return false;
+            }
+
+            @Override
+            public RowIterator next()
+            {
+                throw new NoSuchElementException();
+            }
+        });
+
         for (RangeReadWithTarget rangeReadWithTarget : reads)
         {
-            if (rangeReadWithTarget.target == RangeReadTarget.accord && !readCoordinator.isEventuallyConsistent())
+            if (rangeReadWithTarget.target == RangeReadTarget.accord && readCoordinator.isEventuallyConsistent())
                 responses.add(executeAccord(cm, rangeReadWithTarget.read, replicaPlan.consistencyLevel()));
             else
             {
@@ -303,8 +334,9 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
             for (int i = 0; i < concurrencyFactor && replicaPlans.hasNext(); )
             {
                 ReplicaPlan.ForRangeRead replicaPlan = replicaPlans.next();
-
-                PartitionIterator response = query(replicaPlan, readCoordinator, readRepairs, i == 0);
+                boolean isFirst = i == 0;
+                Supplier<PartitionIterator> querySupplier = () -> query(replicaPlan, readCoordinator, readRepairs, isFirst);
+                PartitionIterator response = retryingPartitionIterator(querySupplier, replicaPlan.consistencyLevel());
                 concurrentQueries.add(response);
                 // due to RangeMerger, coordinator may fetch more ranges than required by concurrency factor.
                 rangesQueried += replicaPlan.vnodeCount();
@@ -325,6 +357,55 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
         // postReconciliationProcessing), hence the DataLimits.NONE.
         counter = DataLimits.NONE.newCounter(command.nowInSec(), true, command.selectsFullPartition(), enforceStrictLiveness);
         return counter.applyTo(StorageProxy.concatAndBlockOnRepair(concurrentQueries, readRepairs));
+    }
+
+    // Wrap the iterator to retry if routing request is incorrect
+    private PartitionIterator retryingPartitionIterator(Supplier<PartitionIterator> attempt, ConsistencyLevel cl)
+    {
+        return new PartitionIterator()
+        {
+            private PartitionIterator delegate = attempt.get();
+
+            @Override
+            public void close()
+            {
+                delegate.close();
+            }
+
+            @Override
+            public boolean hasNext()
+            {
+                while (true)
+                {
+                    try
+                    {
+                        return delegate.hasNext();
+                    }
+                    catch (RetryOnDifferentSystemException e)
+                    {
+                        readMetrics.retryDifferentSystem.mark();
+                        readMetricsForLevel(cl).retryDifferentSystem.mark();
+                        logger.debug("Retrying range read on different system because some reads were misrouted according to Accord");
+                        Tracing.trace("Got {} from range reads, will retry", e);
+                        delegate = attempt.get();
+                    }
+                    catch (CoordinatorBehindException e)
+                    {
+                        readMetrics.retryCoordinatorBehind.mark();
+                        readMetricsForLevel(cl).retryCoordinatorBehind.mark();
+                        logger.debug("Retrying range read now that coordinator has caught up to cluster metadata");
+                        Tracing.trace("Got {} from range reads, will retry", e);
+                        delegate = attempt.get();
+                    }
+                }
+            }
+
+            @Override
+            public RowIterator next()
+            {
+                return delegate.next();
+            }
+        };
     }
 
     @Override

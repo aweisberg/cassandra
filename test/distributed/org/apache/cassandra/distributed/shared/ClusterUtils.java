@@ -501,7 +501,10 @@ public class ClusterUtils
         return instance.callOnInstance(() -> {
             TestChangeListener listener = TestChangeListener.instance;
             AsyncPromise<?> promise = new AsyncPromise<>();
-            listener.pauseBefore(epoch, () -> promise.setSuccess(null));
+            listener.pauseBefore(epoch, () -> {
+                logger.info("Notifying waiter of pausing for pauseBeforeEnacting epoch {}", epoch);
+                promise.setSuccess(null);
+            });
             return () -> {
                 try
                 {
@@ -532,7 +535,10 @@ public class ClusterUtils
         return instance.callOnInstance(() -> {
             TestChangeListener listener = TestChangeListener.instance;
             AsyncPromise<?> promise = new AsyncPromise<>();
-            listener.pauseAfter(epoch, () -> promise.setSuccess(null));
+            listener.pauseAfter(epoch, () -> {
+                logger.info("Notifying waiter of pausing for pauseAfterEnacting epoch {}", epoch);
+                promise.setSuccess(null);
+            });
             return () -> {
                 try
                 {
