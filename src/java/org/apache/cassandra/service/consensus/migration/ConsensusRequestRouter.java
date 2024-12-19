@@ -66,6 +66,7 @@ import org.apache.cassandra.utils.Pair;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static org.apache.cassandra.dht.Range.compareRightToken;
 import static org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.getConsensusMigratedAt;
 import static org.apache.cassandra.service.consensus.migration.ConsensusMigrationTarget.paxos;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision.accord;
@@ -596,7 +597,9 @@ public class ConsensusRequestRouter
         TransactionalMode transactionalMode = tm.params.transactionalMode;
         TransactionalMigrationFromMode transactionalMigrationFromMode = tm.params.transactionalMigrationFrom;
         boolean transactionalModeReadsThroughAccord = transactionalMode.nonSerialReadsThroughAccord;
+        RangeReadTarget migrationToTarget = transactionalModeReadsThroughAccord ? RangeReadTarget.accord : RangeReadTarget.normal;
         boolean migrationFromReadsThroughAccord = transactionalMigrationFromMode.nonSerialReadsThroughAccord();
+        RangeReadTarget migrationFromTarget = migrationFromReadsThroughAccord ? RangeReadTarget.accord : RangeReadTarget.normal;
         TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tm.id);
         if (tms == null)
         {
@@ -615,8 +618,25 @@ public class ConsensusRequestRouter
         // until nothing intersects
         AbstractBounds<PartitionPosition> keyRange = read.dataRange().keyRange();
         AbstractBounds<PartitionPosition> remainder = keyRange;
+
+        // Add the preceding range if any
+        if (!tms.migratedRanges.isEmpty())
+        {
+            Token firstMigratingToken = tms.migratedRanges.get(0).left.getToken();
+            int leftCmp = keyRange.left.getToken().compareTo(firstMigratingToken);
+            int rightCmp = compareRightToken(keyRange.right.getToken(), firstMigratingToken);
+            if (leftCmp <= 0)
+            {
+                if (rightCmp <= 0)
+                    return ImmutableList.of(new RangeReadWithTarget(read, migrationFromTarget));
+                result = new ArrayList<>();
+                AbstractBounds<PartitionPosition> precedingRange = keyRange.withNewRight(rightCmp <= 0 ? keyRange.right : firstMigratingToken.maxKeyBound());
+                result.add(new RangeReadWithTarget(read.forSubRange(precedingRange, false), migrationFromTarget));
+            }
+        }
+
         boolean hadAccordReads = false;
-        for (Range<Token> r : tms.accordSafeToReadRanges)
+        for (Range<Token> r : tms.migratedRanges)
         {
             Pair<AbstractBounds<PartitionPosition>, AbstractBounds<PartitionPosition>> intersectionAndRemainder = Range.intersectionAndRemainder(remainder, r);
             if (intersectionAndRemainder.left != null)
@@ -624,7 +644,7 @@ public class ConsensusRequestRouter
                 if (result == null)
                     result = new ArrayList<>();
                 PartitionRangeReadCommand subRead = read.forSubRange(intersectionAndRemainder.left, result.isEmpty() ? true : false);
-                result.add(new RangeReadWithTarget(subRead, RangeReadTarget.accord));
+                result.add(new RangeReadWithTarget(subRead, migrationToTarget));
                 hadAccordReads = true;
             }
             remainder = intersectionAndRemainder.right;
@@ -635,14 +655,14 @@ public class ConsensusRequestRouter
         if (remainder != null)
         {
             if (result != null)
-                result.add(new RangeReadWithTarget(read.forSubRange(remainder, false), RangeReadTarget.normal));
+                result.add(new RangeReadWithTarget(read.forSubRange(remainder, true), migrationFromTarget));
             else
-                return ImmutableList.of(new RangeReadWithTarget(read.forSubRange(remainder, true), RangeReadTarget.normal));
+                return ImmutableList.of(new RangeReadWithTarget(read.forSubRange(remainder, false), migrationFromTarget));
         }
 
         checkState(result != null && !result.isEmpty(), "Shouldn't have null or empty result");
         checkState(result.get(0).read.dataRange().startKey().equals(read.dataRange().startKey()), "Split reads should encompass entire range");
-        checkState(result.get(0).read.dataRange().stopKey().equals(read.dataRange().stopKey()), "Split reads should encompass entire range");
+        checkState(result.get(result.size() - 1).read.dataRange().stopKey().equals(read.dataRange().stopKey()), "Split reads should encompass entire range");
         if (result.size() > 1)
         {
             for (int i = 0; i < result.size() - 1; i++)

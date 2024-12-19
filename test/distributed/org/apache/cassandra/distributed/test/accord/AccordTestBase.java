@@ -254,7 +254,7 @@ public abstract class AccordTestBase extends TestBaseImpl
 
     protected static int getReadRetryOnDifferentSystemCount(IInstance instance)
     {
-        return Ints.checkedCast(instance.metrics().getCounter("org.apache.cassandra.metrics.ClientRequest.RetryDifferentSystem.Write"));
+        return Ints.checkedCast(instance.metrics().getCounter("org.apache.cassandra.metrics.ClientRequest.RetryDifferentSystem.Read"));
     }
 
     protected static int getWriteRetryOnDifferentSystemCount(int coordinatorIndex)
