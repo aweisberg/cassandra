@@ -167,6 +167,7 @@ public class ConsensusMigrationState implements MetadataValue<ConsensusMigration
     private static void putUnchanged(Map<TableId, TableMigrationState> current, ImmutableMap.Builder<TableId, TableMigrationState> next, Collection<TableMetadata> changed)
     {
         Set<TableId> changedIds = changed.stream().map(TableMetadata::id).collect(Collectors.toSet());
+
         putUnchanged(current, next, changedIds);
     }
 
@@ -182,12 +183,6 @@ public class ConsensusMigrationState implements MetadataValue<ConsensusMigration
     {
         ImmutableMap.Builder<TableId, TableMigrationState> updated = ImmutableMap.builder();
         putUnchanged(tableStates, updated, new HashSet<>(completed));
-        for (Map.Entry<TableId, TableMigrationState> entry : tableStates.entrySet())
-        {
-            if (completed.contains(entry.getKey()))
-                continue;
-            updated.put(entry);
-        }
         return new ConsensusMigrationState(lastModified, updated.build());
     }
 

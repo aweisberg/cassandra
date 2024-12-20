@@ -488,6 +488,11 @@ public class ClusterUtils
         instance.runOnInstance(() -> ClusterMetadataService.instance().log().clearFilters());
     }
 
+    public static Callable<Void> pauseBeforeEnacting(IInvokableInstance instance, long epoch)
+    {
+        return pauseBeforeEnacting(instance, Epoch.create(epoch), 10, TimeUnit.SECONDS);
+    }
+
     public static Callable<Void> pauseBeforeEnacting(IInvokableInstance instance, Epoch epoch)
     {
         return pauseBeforeEnacting(instance, epoch, 10, TimeUnit.SECONDS);

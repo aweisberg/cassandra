@@ -36,12 +36,15 @@ import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.coordinate.TopologyMismatch;
 import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
 import org.apache.cassandra.concurrent.ImmediateExecutor;
 import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.exceptions.RequestFailure;
 import org.apache.cassandra.exceptions.RequestFailureReason;
+import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
+import org.apache.cassandra.exceptions.WriteFailureException;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.io.util.File;
 import org.apache.cassandra.locator.InetAddressAndPort;
@@ -177,12 +180,15 @@ final class HintsDispatcher implements AutoCloseable
 
     private Action sendHintsAndAwait(HintsReader.Page page)
     {
+        long epoch = ClusterMetadata.current().epoch.getEpoch();
         try
         {
+            logger.info("Sending hint page " + epoch);
             return doSendHintsAndAwait(page, null);
         }
         finally
         {
+            logger.info("done sending hint page " + epoch);
             hintsNeedingRehinting.clear();
         }
     }
@@ -248,7 +254,9 @@ final class HintsDispatcher implements AutoCloseable
                 failedRetryDifferentSystem = true;
         }
 
-        if (failures > 0 || timeouts > 0 || failedRetryDifferentSystem)
+        // The batchlog Accord hints need to return abort if any hint needs to be retried and retry the whole page
+        // since we don't want hints to ping pong back and forth vai hintsNeedingRehinting
+        if (failures > 0 || timeouts > 0 || failedRetryDifferentSystem || (isBatchLogHints && retryDifferentSystem > 0))
         {
             HintDiagnostics.pageFailureResult(this, success, failures, timeouts, retryDifferentSystem);
             return Action.ABORT;
@@ -347,6 +355,7 @@ final class HintsDispatcher implements AutoCloseable
     private Callback sendHint(Hint hint)
     {
         ClusterMetadata cm = ClusterMetadata.current();
+        logger.info("Splitting hint with epoch " + cm.epoch.getEpoch());
         SplitHint splitHint = splitHintIntoAccordAndNormal(cm, hint);
         Mutation accordHintMutation = splitHint.accordMutation;
         Dispatcher.RequestTime requestTime = null;
@@ -540,10 +549,20 @@ final class HintsDispatcher implements AutoCloseable
                 else
                     accordOutcome = SUCCESS;
             }
+            catch (WriteTimeoutException | WriteFailureException | RetryOnDifferentSystemException | TopologyMismatch e)
+            {
+                if (e instanceof TopologyMismatch || e instanceof RetryOnDifferentSystemException)
+                    accordOutcome = RETRY_DIFFERENT_SYSTEM;
+                else
+                    accordOutcome = TIMEOUT;
+                String msg = "Accord hint delivery transaction failed retriably";
+                if (noSpamLogger.getStatement(msg).shouldLog(Clock.Global.nanoTime()))
+                    logger.error(msg, e);
+            }
             catch (Exception e)
             {
-                accordOutcome = e instanceof WriteTimeoutException ? TIMEOUT : FAILURE;
-                String msg = "Accord hint delivery transaction failed";
+                accordOutcome = FAILURE;
+                String msg = "Accord hint delivery transaction failed permanently";
                 if (noSpamLogger.getStatement(msg).shouldLog(Clock.Global.nanoTime()))
                     logger.error(msg, e);
             }

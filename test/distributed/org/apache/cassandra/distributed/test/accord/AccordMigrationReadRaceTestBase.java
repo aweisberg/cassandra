@@ -377,7 +377,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                               .isEqualTo(expectedTokens);
                 };
                 // Cassandra straight up returns the wrong answer here so until it is fixed skip it
-                // https://issues.apache.org/jira/browse/CASSANDRA-19604?focusedCommentId=17906895&page=com.atlassian.jira.plugin.system.issuetabpanels%3Acomment-tabpanel#comment-17906895
+                // https://issues.apache.org/jira/browse/CASSANDRA-20154
                 if (firstToken > secondToken)
                     continue;
                 boolean expectRetry = gte.intersects(firstToken, migratingRange) && lte.intersects(secondToken, migratingRange);

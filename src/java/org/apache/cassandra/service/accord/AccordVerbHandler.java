@@ -53,6 +53,8 @@ public class AccordVerbHandler<T extends Request> implements IVerbHandler<T>
         }
 
         logger.trace("Receiving {} from {}", message.payload, message.from());
+        logger.debug("Receiving {} from {}", message.payload, message.from());
+
         T request = message.payload;
 
         /*

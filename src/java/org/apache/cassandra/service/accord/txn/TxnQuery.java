@@ -212,7 +212,7 @@ public abstract class TxnQuery implements Query
                 ClientRequestsMetricsHolder.accordWriteMetrics.accordMigrationRejects.mark();
             else
                 ClientRequestsMetricsHolder.accordReadMetrics.accordMigrationRejects.mark();
-            return new RetryWithNewProtocolResult(epoch);
+            return RetryWithNewProtocolResult.instance;
         }
         return doCompute(txnId, executeAt, keys, data, read, update);
     }
@@ -285,7 +285,6 @@ public abstract class TxnQuery implements Query
 
     private static boolean transactionIsSafeToWrite(Epoch epoch, Seekables<?, ?> keys)
     {
-        // TODO (required): This is going to be problematic when we presumably support range reads and don't validate them
         // Whatever this transaction might be it isn't one supported for migration anyways
         if (!keys.domain().isKey())
             return true;
