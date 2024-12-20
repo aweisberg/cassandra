@@ -18,22 +18,16 @@
 
 package org.apache.cassandra.service.accord.txn;
 
-import org.apache.cassandra.tcm.Epoch;
-import org.apache.cassandra.utils.ObjectSizes;
-
 /**
  * Potentially returned by any transaction that tries to execute in an Epoch
  * where the range has migrated away from Accord
  */
 public class RetryWithNewProtocolResult implements TxnResult
 {
-    private static final long EMPTY_SIZE = ObjectSizes.measure(new RetryWithNewProtocolResult(null));
+    public static final RetryWithNewProtocolResult instance = new RetryWithNewProtocolResult();
 
-    public final Epoch epoch;
-
-    RetryWithNewProtocolResult(Epoch epoch)
+    private RetryWithNewProtocolResult()
     {
-        this.epoch = epoch;
     }
 
     @Override
@@ -45,6 +39,6 @@ public class RetryWithNewProtocolResult implements TxnResult
     @Override
     public long estimatedSizeOnHeap()
     {
-        return EMPTY_SIZE + epoch.estimatedSizeOnHeap();
+        return 0;
     }
 }

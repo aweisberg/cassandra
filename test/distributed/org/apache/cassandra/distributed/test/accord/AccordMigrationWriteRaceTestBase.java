@@ -21,6 +21,7 @@ package org.apache.cassandra.distributed.test.accord;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -42,11 +43,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import accord.api.RoutingKey;
+import accord.coordinate.Outcome;
 import accord.messages.PreAccept;
 import accord.primitives.PartialKeyRoute;
 import accord.primitives.Ranges;
 import accord.primitives.Routable.Domain;
 import accord.primitives.Route;
+import accord.primitives.TxnId;
+import accord.utils.async.AsyncResult;
 import org.apache.cassandra.ServerTestUtils;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.batchlog.BatchlogManager;
@@ -106,11 +110,9 @@ import org.eclipse.jetty.util.ConcurrentHashSet;
 import static java.lang.String.format;
 import static org.apache.cassandra.Util.expectException;
 import static org.apache.cassandra.Util.spinAssertEquals;
-import static org.apache.cassandra.Util.spinUntilSuccess;
 import static org.apache.cassandra.config.CassandraRelevantProperties.HINT_DISPATCH_INTERVAL_MS;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.ALL;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.getNextEpoch;
-import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseAfterEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.pauseBeforeEnacting;
 import static org.apache.cassandra.distributed.shared.ClusterUtils.unpauseEnactment;
 import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteRaceTestBase.Scenario.BATCHLOG_FAILED_ROUTING_THEN_HINT;
@@ -128,6 +130,8 @@ import static org.junit.Assert.assertTrue;
 /*
  * Test that non-transactional write operations such as regular mutations, batch log, and hints
  * all detect when a migration is in progress, and then retry on the correct system.
+ * TODO (required): Accord TopologyMismatch means we aren't testing routing failure checks in TxnQuery migrating away from Accord in some test scenarios
+ * but maybe this doesn't matter becuase we do check the routing
  */
 public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
 {
@@ -457,11 +461,6 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                  // Node 3 is always the out of sync node
                  IInvokableInstance outOfSyncInstance = setUpOutOfSyncNode(cluster, scenario);
 
-                 // Force the batchlog Accord txn to run after this write txn in the new epoch where it
-                 // will trigger RetryDifferentSystem
-                 if (scenario == BATCHLOG_FAILED_ROUTING_THEN_HINT && migrateAwayFromAccord)
-                     writeAccordRowViaAccord();
-
                  // Need to be able to block writing to the test keyspace forcing batchlog replay
                  // without also failing writes to the batch log
                  if (scenario.initiallyBlockTestKeyspaceMutations)
@@ -566,8 +565,15 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                                          // Unpause so it can route incorrectly instead of timing out waiting to fetch the epoch, need the transaction to be created first
                                          // otherwise it will just be routed straight to non-Accord.
                                          logger.info("Spinning waiting on a transaction");
-                                         Util.spinUntilTrue(() -> !((AccordService)AccordService.instance()).node().coordinating().isEmpty(), 20);
-                                         logger.info("Found transaction, unpausing");
+                                         Util.spinUntilTrue(() -> {
+                                             Map<TxnId, AsyncResult<? extends Outcome>> txns = AccordService.instance().node().coordinating();
+                                             if (!txns.isEmpty())
+                                             {
+                                                 logger.info("Found txns {}", txns);
+                                                 return true;
+                                             }
+                                             return false;
+                                         }, 20);
                                          TestChangeListener.instance.unpause();
                                          unpaused.trySuccess(null);
                                      }
@@ -657,6 +663,7 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                      long startingAccordPreempted = outOfSyncInstance.callOnInstance(() -> ClientRequestsMetricsHolder.accordWriteMetrics.preempted.getCount());
                      long startingAccordMigrationRejects = outOfSyncInstance.callOnInstance(() -> ClientRequestsMetricsHolder.accordWriteMetrics.accordMigrationRejects.getCount());
                      long startingHintTimeouts = outOfSyncInstance.callOnInstance(() -> HintsServiceMetrics.hintsTimedOut.getCount());
+                     long startingTopologyMismatches = outOfSyncInstance.callOnInstance(() -> ClientRequestsMetricsHolder.accordWriteMetrics.topologyMismatches.getCount());
                      outOfSyncInstance.runOnInstance(() -> HintsService.instance.resumeDispatch());
                      // The initial hinting attempt should fail, unless it's a batchlog routing failure in which
                      // case the coordinator has already caught up so the hint will succeed on the first try
@@ -666,8 +673,8 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                      {
                          Callable<Boolean> test = () -> outOfSyncInstance.callOnInstance(() -> {
                              HintsService.instance.flushAndFsyncBlockingly();
-                             logger.info("startingAccordTimeouts {}, startingAccordPreempts {}, startingAccordMigrationRejects {}, startingHintTimeouts {}, accord timeouts {}, accordPreempts {}, accordMigrationRejects {}, hint timeouts {}", startingAccordTimeouts, startingAccordPreempted, startingAccordMigrationRejects, startingHintTimeouts, ClientRequestsMetricsHolder.accordWriteMetrics.timeouts.getCount(), ClientRequestsMetricsHolder.accordWriteMetrics.preempted.getCount(), ClientRequestsMetricsHolder.accordWriteMetrics.accordMigrationRejects.getCount(), HintsServiceMetrics.hintsTimedOut.getCount());
                              AccordClientRequestMetrics accordMetrics = ClientRequestsMetricsHolder.accordWriteMetrics;
+                             logger.info("startingAccordTimeouts {}, startingAccordPreempts {}, startingAccordMigrationRejects {}, startingHintTimeouts {}, startingTopoloygMismatches {}, accord timeouts {}, accordPreempts {}, accordMigrationRejects {}, hint timeouts {}, topologyMismatches {}", startingAccordTimeouts, startingAccordPreempted, startingAccordMigrationRejects, startingHintTimeouts, startingTopologyMismatches, accordMetrics.timeouts.getCount(), accordMetrics.preempted.getCount(), accordMetrics.accordMigrationRejects.getCount(), HintsServiceMetrics.hintsTimedOut.getCount(), accordMetrics.topologyMismatches.getCount());
                              return accordMetrics.timeouts.getCount() >= (startingAccordTimeouts + 1) && HintsServiceMetrics.hintsTimedOut.getCount() >= (startingHintTimeouts + 1);
                          });
                          Util.spinUntilTrue(test, 40);
@@ -692,12 +699,16 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                                             }, 20);
                      }
                      // After this hints should deliver and the final validation should succeed
-                     // if we don't unpause enactment
+                     // if we unpause enactment
                      unpauseEnactment(outOfSyncInstance);
+                     long currentEpoch = SHARED_CLUSTER.get(1).callOnInstance(() -> ClusterMetadata.current().epoch.getEpoch());
+                     logger.info("Spinning waiting for out of sync instance to catch up");
+                     Util.spinUntilTrue(() -> outOfSyncInstance.callOnInstance(() -> ClusterMetadata.current().epoch.getEpoch() == currentEpoch));
+                     logger.info("Out of sync instance caught up");
                  }
 
                  // Accord commit is async and might take a while, but the data should end up as expected
-                 Util.spinUntilSuccess(() -> validation.accept(cluster));
+                 Util.spinUntilSuccess(() -> validation.accept(cluster), 20);
              });
     }
 
@@ -707,29 +718,30 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
     private IInvokableInstance setUpOutOfSyncNode(Cluster cluster, Scenario scenario) throws Throwable
     {
         IInvokableInstance i1 = cluster.get(1);
-        IInvokableInstance i2 = cluster.get(2);
         IInvokableInstance i3 = cluster.get(3);
+        long afterAlterEpoch = getNextEpoch(i1).getEpoch();
         alterTableTransactionalMode(TransactionalMode.full);
-        Epoch nextEpoch = getNextEpoch(i1);
-        // Node 3 will coordinate the query and not be aware that the migration has begun
-        Callable<?> pausedBeforeEnacting = pauseBeforeEnacting(i3, nextEpoch);
-        // In batch log delivery cases i2 will be the coordinator and we need to be sure that it has enacted the latest epoch
-        Callable<?> i2PausedAfterEnacting = pauseAfterEnacting(i2, nextEpoch);
+        Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterAlterEpoch)))), 10);
 
+        long migratingEpoch = getNextEpoch(i1).getEpoch();
+        logger.info("Epoch for migrating to Accord is {}", migratingEpoch);
+        // Node 3 will coordinate the query and not be aware that the migration has begun
+        Callable<?> pausedBeforeEnacting = pauseBeforeEnacting(i3, migratingEpoch);
         ListenableFuture<?> result = nodetoolAsync(coordinator, "consensus_admin", "begin-migration", "-st", midToken.toString(), "-et", maxToken.toString(), "-tp", "accord", KEYSPACE, accordTableName);
+        // Node 2 coordinates in the batch log case so it has to have caught up
+        long afterBeginMigrationEpochFinal = migratingEpoch;
+        Util.spinUntilTrue(() -> cluster.get(2).callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterBeginMigrationEpochFinal))), 10);
 
         if (migrateAwayFromAccord)
         {
             pausedBeforeEnacting.call();
-            i2PausedAfterEnacting.call();
-            unpauseEnactment(i2);
             unpauseEnactment(i3);
             result.get();
-            long migratingEpoch = nextEpoch.getEpoch();
-            Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(migratingEpoch)))), 10);
-            nextEpoch = getNextEpoch(i1);
-            pausedBeforeEnacting = pauseBeforeEnacting(i3, nextEpoch);
-            i2PausedAfterEnacting = pauseAfterEnacting(i2, nextEpoch);
+            long migratingEpochFinal = migratingEpoch;
+            Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(migratingEpochFinal)))), 10);
+            migratingEpoch = getNextEpoch(i1).getEpoch();
+            logger.info("Epoch for migration away from Accord is {}", migratingEpoch);
+            pausedBeforeEnacting = pauseBeforeEnacting(i3, migratingEpoch);
             // In the reverse direction doing the alter automatically reverses the migration without a need to call begin migration on any ranges
             result = alterTableTransactionalModeAsync(TransactionalMode.off);
         }
@@ -755,10 +767,13 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
             }
             throw t;
         }
-        i2PausedAfterEnacting.call();
-        // Unpause on 1 and 2 where we want them aware of the migration
-        unpauseEnactment(i1);
-        unpauseEnactment(i2);
+        // Make sure 1 and 2 are up to date
+        for (int i = 1; i < 3; i++)
+        {
+            int instanceIndex = i;
+            long migratingEpochFinal = migratingEpoch;
+            Util.spinUntilTrue(() -> cluster.get(instanceIndex).callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(migratingEpochFinal))), 10);
+        }
         // nodetool should be able to complete now
         result.get();
 
@@ -766,13 +781,13 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
         // now that we continue to write through Accord during migration away from Accord
         // Faking the completed repair is the only way to get it in a state where two coordinators know about the new
         // epoch and one doesn't
-        if (migrateAwayFromAccord && scenario.deliversViaHint && scenario.passesThroughBatchlog)
+        if (migrateAwayFromAccord && scenario.deliversViaHint && scenario.passesThroughBatchlog) //&& scenario != BATCHLOG_FAILED_ROUTING_THEN_HINT)
         {
             String keyspace = KEYSPACE;
             String table = accordTableName;
             long midTokenLong = midToken.getLongValue();
             long maxTokenLong = maxToken.getLongValue();
-            SHARED_CLUSTER.get(1).runOnInstance(() ->
+            long afterReverseMigrationEpoch = SHARED_CLUSTER.get(1).callOnInstance(() ->
                 {
                     Epoch startEpoch = ClusterMetadata.current().epoch;
                     Epoch epochAfterRepair = startEpoch.nextEpoch();
@@ -783,8 +798,14 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                     Ranges accordRanges = Ranges.of(range);
                     ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
                     ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
-                    spinUntilSuccess(() -> ClusterMetadata.current().epoch.equals(epochAfterRepair));
+                    return epochAfterRepair.getEpoch();
                 });
+            // Make sure 1 and 2 are up to date and know the reverse migration happens
+            for (int i = 1; i < 3; i++)
+            {
+                int instanceIndex = i;
+                Util.spinUntilTrue(() -> cluster.get(instanceIndex).callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterReverseMigrationEpoch))), 10);
+            }
         }
 
         return i3;

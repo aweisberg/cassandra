@@ -119,7 +119,6 @@ import org.agrona.collections.Int2ObjectHashMap;
 import org.apache.cassandra.concurrent.Shutdownable;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.cql3.statements.RequestValidations;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
@@ -158,6 +157,7 @@ import org.apache.cassandra.service.accord.exceptions.ReadPreemptedException;
 import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
 import org.apache.cassandra.service.accord.interop.AccordInteropAdapter.AccordInteropFactory;
 import org.apache.cassandra.service.accord.repair.RepairSyncPointAdapter;
+import org.apache.cassandra.service.accord.txn.RetryWithNewProtocolResult;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.TableMigrationState;
@@ -404,7 +404,7 @@ public class AccordService implements IAccordService, Shutdownable
         node.durabilityScheduling().setGlobalCycleTime(Ints.checkedCast(DatabaseDescriptor.getAccordGlobalDurabilityCycle(SECONDS)), SECONDS);
         node.durabilityScheduling().setShardCycleTime(Ints.checkedCast(DatabaseDescriptor.getAccordShardDurabilityCycle(SECONDS)), SECONDS);
         node.durabilityScheduling().setTxnIdLag(Ints.checkedCast(DatabaseDescriptor.getAccordScheduleDurabilityTxnIdLag(SECONDS)), TimeUnit.SECONDS);
-        node.durabilityScheduling().start();
+//        node.durabilityScheduling().start();
         state = State.STARTED;
     }
 
@@ -773,7 +773,17 @@ public class AccordService implements IAccordService, Shutdownable
     public @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
     {
         AsyncTxnResult asyncTxnResult = coordinateAsync(minEpoch, txn, consistencyLevel, requestTime);
-        return getTxnResult(asyncTxnResult);
+        try
+        {
+            return getTxnResult(asyncTxnResult);
+        }
+        catch (TopologyMismatch e)
+        {
+            // For now assuming topology mismatch is caused by a race misrouting
+            Tracing.trace("Accord returned topology mismatch: " + e.getMessage());
+            logger.debug("Accord returned topology mismatch: " + e.getMessage());
+            return RetryWithNewProtocolResult.instance;
+        }
     }
 
     @Override
@@ -830,10 +840,12 @@ public class AccordService implements IAccordService, Shutdownable
                 return;
             }
             sharedMetrics.failures.mark();
+            // TODO (desired): It would be better to check if the topology mismatch is due to Accord ownership changes
+            // or the txn accessing tables that don't exist or something.
             if (cause instanceof TopologyMismatch)
             {
                 metrics.topologyMismatches.mark();
-                asyncTxnResult.tryFailure(RequestValidations.invalidRequest(cause.getMessage()));
+                asyncTxnResult.tryFailure(cause);
                 return;
             }
             metrics.failures.mark();

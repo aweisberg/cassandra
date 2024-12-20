@@ -485,7 +485,7 @@ public abstract class AccordCQLTestBase extends AccordTestBase
                             .isEqualTo(42, 43, 44, 45);
 
                  // This one is a little more explicit about trying to force a range read of a single token
-                 cluster.schemaChange(withKeyspace("CREATE TABLE %s.testRangeReadSingleToken2 (pk blob primary key) WITH " + TransactionalMode.full.asCqlParam()));
+                 cluster.schemaChange(withKeyspace("CREATE TABLE %s.testRangeReadSingleToken2 (pk blob primary key) WITH " + transactionalMode.asCqlParam()));
                  long token = 42;
                  ByteBuffer keyForToken = Murmur3Partitioner.LongToken.keyForToken(token);
                  node.executeWithResult(withKeyspace("INSERT INTO %s.testRangeReadSingleToken2 (pk) VALUES (?)"), QUORUM, keyForToken);
@@ -508,7 +508,7 @@ public abstract class AccordCQLTestBase extends AccordTestBase
         test(cluster ->
         {
             ICoordinator node = cluster.coordinator(1);
-            cluster.schemaChange(withKeyspace("CREATE TABLE %s.testRangeReadRightMin (pk blob primary key) WITH " + TransactionalMode.full.asCqlParam()));
+            cluster.schemaChange(withKeyspace("CREATE TABLE %s.testRangeReadRightMin (pk blob primary key) WITH " + transactionalMode.asCqlParam()));
             long token = Long.MIN_VALUE;
             ByteBuffer keyForToken = Murmur3Partitioner.LongToken.keyForToken(token);
             node.executeWithResult(withKeyspace("INSERT INTO %s.testRangeReadRightMin (pk) VALUES (?)"), QUORUM, keyForToken);
@@ -527,6 +527,21 @@ public abstract class AccordCQLTestBase extends AccordTestBase
             assertThat(node.executeWithResult(withKeyspace("SELECT * FROM %s.testRangeReadRightMin WHERE token(pk) between token(?) AND token(?)"), QUORUM, keyForToken, keyForToken))
                        .isEqualTo(keyForToken);
         });
+    }
+
+    @Test
+    public void testRangeReadAllowFiltering() throws Throwable
+    {
+        test(cluster ->
+             {
+                 ICoordinator node = cluster.coordinator(1);
+                 cluster.schemaChange(withKeyspace("CREATE TABLE %s.testRangeReadAllowFiltering (pk int primary key, foo text) WITH " + transactionalMode.asCqlParam()));
+                 long token = Long.MIN_VALUE;
+                 ByteBuffer keyForToken = Murmur3Partitioner.LongToken.keyForToken(token);
+                 node.executeWithResult(withKeyspace("INSERT INTO %s.testRangeReadAllowFiltering (pk, foo) VALUES (?, ?)"), QUORUM, 42, "ba");
+                 assertThat(node.executeWithResult(withKeyspace("SELECT * FROM %s.testRangeReadAllowFiltering WHERE foo < 'bar' ALLOW FILTERING"), QUORUM))
+                 .isEqualTo(42, "ba");
+             });
     }
 
     @Test
