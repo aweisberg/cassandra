@@ -195,13 +195,14 @@ public class ReadCallback<E extends Endpoints<E>, P extends ReplicaPlan.ForRead<
 
         // TODO (nicetohave): This could be smarter and check if retrying would succeed instead of pessimistically
         // failing unless all errors are retriable
-        if (totalRetriableFailures == failureReasonByEndpoint.size())
+        if (!timedout && totalRetriableFailures > 0 && totalRetriableFailures == failureReasonByEndpoint.size())
         {
             // Doesn't matter which we throw really but for clarity/metrics be specific
             // Retrying on the correct system might make this write succeed
             if (transactionRetryErrors > 0)
                 throw new RetryOnDifferentSystemException();
-            throw new CoordinatorBehindException("Read request failed due to coordinator behind");
+            if (coordinatorBehindErrors > 0)
+                throw new CoordinatorBehindException("Read request failed due to coordinator behind");
         }
 
 
