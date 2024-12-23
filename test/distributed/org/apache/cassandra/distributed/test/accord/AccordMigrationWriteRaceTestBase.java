@@ -727,7 +727,7 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
         logger.info("Epoch for migrating to Accord is {}", migratingEpoch);
         // Node 3 will coordinate the query and not be aware that the migration has begun
         Callable<?> pausedBeforeEnacting = pauseBeforeEnacting(i3, migratingEpoch);
-        ListenableFuture<?> result = nodetoolAsync(coordinator, "consensus_admin", "begin-migration", "-st", midToken.toString(), "-et", maxToken.toString(), "-tp", "accord", KEYSPACE, accordTableName);
+        ListenableFuture<?> result = nodetoolAsync(coordinator, "consensus_admin", "begin-migration", "-st", midToken.toString(), "-et", maxToken.toString(), KEYSPACE, accordTableName);
         // Node 2 coordinates in the batch log case so it has to have caught up
         long afterBeginMigrationEpochFinal = migratingEpoch;
         Util.spinUntilTrue(() -> cluster.get(2).callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterBeginMigrationEpochFinal))), 10);

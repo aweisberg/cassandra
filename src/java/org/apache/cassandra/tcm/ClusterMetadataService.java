@@ -756,7 +756,12 @@ public class ClusterMetadataService
 
     public ClusterMetadata awaitAtLeast(Epoch epoch) throws InterruptedException, TimeoutException
     {
-        return log.awaitAtLeast(epoch);
+        return awaitAtLeast(epoch, -1, null);
+    }
+
+    public ClusterMetadata awaitAtLeast(Epoch epoch, long timeout, TimeUnit unit) throws InterruptedException, TimeoutException
+    {
+        return log.awaitAtLeast(epoch, timeout, unit);
     }
 
     public MetadataSnapshots snapshotManager()

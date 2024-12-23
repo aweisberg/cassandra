@@ -167,6 +167,8 @@ import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.service.reads.range.RangeCommands;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.tcm.ClusterMetadata;
+import org.apache.cassandra.tcm.ClusterMetadataService;
+import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.tcm.membership.NodeState;
 import org.apache.cassandra.tcm.ownership.VersionedEndpoints;
 import org.apache.cassandra.tracing.Tracing;
@@ -372,9 +374,29 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         ConsensusAttemptResult lastAttemptResult;
+        Epoch lastEpoch = null;
         do
         {
+            if (lastEpoch != null)
+            {
+                try
+                {
+                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
+                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
+                }
+                catch (InterruptedException e)
+                {
+                    throw new RuntimeException(e);
+                }
+                catch (TimeoutException e)
+                {
+                    casWriteMetrics.timeouts.mark();
+                    writeMetricsForLevel(consistencyForPaxos).timeouts.mark();
+                    throw new CasWriteTimeoutException(WriteType.CAS, consistencyForPaxos, 0, 0, 0);
+                }
+            }
             ClusterMetadata cm = ClusterMetadata.current();
+            lastEpoch = cm.epoch;
             TableMetadata metadata = Schema.instance.validateTable(keyspaceName, cfName);
             ConsensusRoutingDecision decision = consensusRouting(cm, metadata, key, consistencyForPaxos, requestTime, true);
             switch (decision)
@@ -1251,9 +1273,28 @@ public class StorageProxy implements StorageProxyMBean
 
     public static void dispatchMutationsWithRetryOnDifferentSystem(List<? extends IMutation> mutations, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
     {
+        Epoch lastEpoch = null;
         while (true)
         {
+            if (lastEpoch != null)
+            {
+                try
+                {
+                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getWriteRpcTimeout(NANOSECONDS));
+                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
+                }
+                catch (InterruptedException e)
+                {
+                    throw new RuntimeException(e);
+                }
+                catch (TimeoutException e)
+                {
+                    doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.SIMPLE, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
+                                                      consistencyLevel);
+                }
+            }
             ClusterMetadata cm = ClusterMetadata.current();
+            lastEpoch = cm.epoch;
             try
             {
                 SplitMutations splitMutations = splitMutationsIntoAccordAndNormal(cm, (List<IMutation>)mutations);
@@ -1423,11 +1464,30 @@ public class StorageProxy implements StorageProxyMBean
             ReplicaPlan.ForWrite batchlogReplicaPlan = ReplicaPlans.forBatchlogWrite(ClusterMetadata.current(), batchConsistencyLevel == ConsistencyLevel.ANY);
             final TimeUUID batchUUID = nextTimeUUID();
             boolean wroteToBatchLog = false;
+            Epoch lastEpoch = null;
             while (true)
             {
+                if (lastEpoch != null)
+                {
+                    try
+                    {
+                        long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getNativeTransportTimeout(NANOSECONDS));
+                        ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        throw new RuntimeException(e);
+                    }
+                    catch (TimeoutException e)
+                    {
+                        doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.BATCH, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
+                                                          consistencyLevel);
+                    }
+                }
+                ClusterMetadata cm = ClusterMetadata.current();
+                lastEpoch = cm.epoch;
                 // In case we hit an error in before/during splitting
                 attributeNonAccordLatency = true;
-                ClusterMetadata cm = ClusterMetadata.current();
                 List<WriteResponseHandlerWrapper> wrappers = new ArrayList<>(mutations.size());
                 List<Mutation> accordMutations = new ArrayList<>(mutations.size());
                 BatchlogCleanup cleanup = new BatchlogCleanup(() -> asyncRemoveFromBatchlog(batchlogReplicaPlan, batchUUID, requestTime));
@@ -2182,9 +2242,29 @@ public class StorageProxy implements StorageProxyMBean
     throws InvalidRequestException, UnavailableException, ReadFailureException, ReadTimeoutException
     {
         ConsensusAttemptResult lastResult;
+        Epoch lastEpoch = null;
         do
         {
+            if (lastEpoch != null)
+            {
+                try
+                {
+                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
+                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
+                }
+                catch (InterruptedException e)
+                {
+                    throw new RuntimeException(e);
+                }
+                catch (TimeoutException e)
+                {
+                    casReadMetrics.timeouts.mark();
+                    readMetricsForLevel(consistencyLevel).timeouts.mark();
+                    throw new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
+                }
+            }
             ClusterMetadata cm = ClusterMetadata.current();
+            lastEpoch = cm.epoch;
             SinglePartitionReadCommand command = group.queries.get(0);
             ConsensusRoutingDecision decision = consensusRouting(cm, group.metadata(), command.partitionKey(), consistencyLevel, requestTime, false);
             switch (decision)
@@ -2412,9 +2492,31 @@ public class StorageProxy implements StorageProxyMBean
     public static PartitionIterator dispatchReadWithRetryOnDifferentSystem(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, ReadCoordinator coordinator, Dispatcher.RequestTime requestTime)
     throws UnavailableException, ReadFailureException, ReadTimeoutException
     {
+        Epoch lastEpoch = null;
         while (true)
         {
+            if (lastEpoch != null)
+            {
+                try
+                {
+                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getReadRpcTimeout(NANOSECONDS));
+                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
+                }
+                catch (InterruptedException e)
+                {
+                    throw new RuntimeException(e);
+                }
+                catch (TimeoutException e)
+                {
+                    ReadTimeoutException rte = new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
+                    readMetrics.timeouts.mark();
+                    readMetricsForLevel(consistencyLevel).timeouts.mark();
+                    logRequestException(e, group.queries);
+                    throw rte;
+                }
+            }
             ClusterMetadata cm = ClusterMetadata.current();
+            lastEpoch = cm.epoch;
             try
             {
                 SplitReads splitReads = splitReadsIntoAccordAndNormal(cm, group, coordinator, requestTime);
@@ -2463,6 +2565,8 @@ public class StorageProxy implements StorageProxyMBean
                         ConsensusAttemptResult consensusResult = getConsensusAttemptResultFromAsyncTxnResult(accordResult, accordReads.queries.size(), index -> group.queries.get(index).isReversed());
                         if (consensusResult == RETRY_NEW_PROTOCOL)
                         {
+                            readMetrics.retryDifferentSystem.mark();
+                            readMetricsForLevel(consistencyLevel).retryDifferentSystem.mark();
                             Tracing.trace("Accord returned retry new protocol");
                             logger.debug("Retrying reads on different system because some reads were misrouted according to Accord");
                             continue;

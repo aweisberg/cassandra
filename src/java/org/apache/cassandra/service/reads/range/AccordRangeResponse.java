@@ -23,13 +23,12 @@ import java.util.function.IntPredicate;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.rows.RowIterator;
+import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
 import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult;
 import org.apache.cassandra.service.accord.IAccordService.AsyncTxnResult;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.AbstractIterator;
-
-import static com.google.common.base.Preconditions.checkState;
 
 public class AccordRangeResponse extends AbstractIterator<RowIterator> implements PartitionIterator
 {
@@ -56,7 +55,8 @@ public class AccordRangeResponse extends AbstractIterator<RowIterator> implement
         IntPredicate alwaysFalse = ignored -> false;
         // TODO (required): Handle retry on different system
         ConsensusAttemptResult consensusAttemptResult = StorageProxy.getConsensusAttemptResultFromAsyncTxnResult(asyncTxnResult, 1, reversed ? alwaysTrue : alwaysFalse);
-        checkState(!consensusAttemptResult.shouldRetryOnNewConsensusProtocol, "Live migration is not supported yet");
+        if (consensusAttemptResult.shouldRetryOnNewConsensusProtocol)
+            throw new RetryOnDifferentSystemException();
         result = consensusAttemptResult.serialReadResult;
     }
 

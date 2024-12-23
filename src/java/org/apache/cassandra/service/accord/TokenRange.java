@@ -92,7 +92,12 @@ public class TokenRange extends Range.EndInclusive
         return new TokenRange((AccordRoutingKey) start, (AccordRoutingKey) end);
     }
 
-    public org.apache.cassandra.dht.Range<Token> toKeyspaceRange ()
+    /*
+     * This behaves quite incorrectly with MinTokenKey because it loses the inclusivity of MinTokenKey in the conversion.
+     * It's not a problem for cluster metadata and topology, but it's quite wrong for queries that convert from Bounds to
+     * Range.
+     */
+    public org.apache.cassandra.dht.Range<Token> toKeyspaceRange()
     {
         IPartitioner partitioner = DatabaseDescriptor.getPartitioner();
         AccordRoutingKey start = start();
@@ -101,7 +106,6 @@ public class TokenRange extends Range.EndInclusive
         Token right = end instanceof SentinelKey ? partitioner.getMinimumToken() : end.token();
         return new org.apache.cassandra.dht.Range<>(left, right);
     }
-
 
     public static final Serializer serializer = new Serializer();
 

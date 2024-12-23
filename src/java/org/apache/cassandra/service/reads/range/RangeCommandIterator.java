@@ -23,7 +23,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Supplier;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
@@ -61,12 +62,14 @@ import org.apache.cassandra.service.reads.ReadCallback;
 import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.tcm.ClusterMetadata;
+import org.apache.cassandra.tcm.ClusterMetadataService;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
 import static com.google.common.base.Preconditions.checkState;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetricsForLevel;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
@@ -247,11 +250,10 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
      * {@code DataLimits}) may have "state" information and that state may only be valid for the first query (in
      * that it's the query that "continues" whatever we're previously queried).
      */
-    private PartitionIterator query(ReplicaPlan.ForRangeRead replicaPlan, ReadCoordinator readCoordinator, List<ReadRepair<?, ?>> readRepairs, boolean isFirst)
+    private PartitionIterator query(ClusterMetadata cm, ReplicaPlan.ForRangeRead replicaPlan, ReadCoordinator readCoordinator, List<ReadRepair<?, ?>> readRepairs, boolean isFirst)
     {
         PartitionRangeReadCommand rangeCommand = command.forSubRange(replicaPlan.range(), isFirst);
 
-        ClusterMetadata cm = ClusterMetadata.current();
         List<RangeReadWithTarget> reads = ConsensusRequestRouter.splitReadIntoAccordAndNormal(cm, rangeCommand, readCoordinator, requestTime);
         // Special case returning directly to avoid wrapping the iterator and applying the limits an extra time
         if (reads.size() == 1)
@@ -335,7 +337,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
             {
                 ReplicaPlan.ForRangeRead replicaPlan = replicaPlans.next();
                 boolean isFirst = i == 0;
-                Supplier<PartitionIterator> querySupplier = () -> query(replicaPlan, readCoordinator, readRepairs, isFirst);
+                Function<ClusterMetadata, PartitionIterator> querySupplier = clusterMetadata -> query(clusterMetadata, replicaPlan, readCoordinator, readRepairs, isFirst);
                 PartitionIterator response = retryingPartitionIterator(querySupplier, replicaPlan.consistencyLevel());
                 concurrentQueries.add(response);
                 // due to RangeMerger, coordinator may fetch more ranges than required by concurrency factor.
@@ -359,12 +361,13 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
         return counter.applyTo(StorageProxy.concatAndBlockOnRepair(concurrentQueries, readRepairs));
     }
 
-    // Wrap the iterator to retry if routing request is incorrect
-    private PartitionIterator retryingPartitionIterator(Supplier<PartitionIterator> attempt, ConsistencyLevel cl)
+    // Wrap the iterator to retry if request routing is incorrect
+    private PartitionIterator retryingPartitionIterator(Function<ClusterMetadata, PartitionIterator> attempt, ConsistencyLevel cl)
     {
         return new PartitionIterator()
         {
-            private PartitionIterator delegate = attempt.get();
+            private ClusterMetadata lastClusterMetadata = ClusterMetadata.current();
+            private PartitionIterator delegate = attempt.apply(lastClusterMetadata);
 
             @Override
             public void close()
@@ -387,7 +390,6 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                         readMetricsForLevel(cl).retryDifferentSystem.mark();
                         logger.debug("Retrying range read on different system because some reads were misrouted according to Accord");
                         Tracing.trace("Got {} from range reads, will retry", e);
-                        delegate = attempt.get();
                     }
                     catch (CoordinatorBehindException e)
                     {
@@ -395,8 +397,22 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                         readMetricsForLevel(cl).retryCoordinatorBehind.mark();
                         logger.debug("Retrying range read now that coordinator has caught up to cluster metadata");
                         Tracing.trace("Got {} from range reads, will retry", e);
-                        delegate = attempt.get();
                     }
+                    // Fetch the next epoch to retry
+                    try
+                    {
+                        long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getRangeRpcTimeout(NANOSECONDS));
+                        lastClusterMetadata = ClusterMetadataService.instance().awaitAtLeast(lastClusterMetadata.nextEpoch(), timeout, NANOSECONDS);
+                    }
+                    catch (InterruptedException e)
+                    {
+                        throw new RuntimeException(e);
+                    }
+                    catch (TimeoutException e)
+                    {
+                        throw new ReadTimeoutException(cl, 0, 0, false, "Timed out waiting for updated cluster metadata");
+                    }
+                    delegate = attempt.apply(lastClusterMetadata);
                 }
             }
 

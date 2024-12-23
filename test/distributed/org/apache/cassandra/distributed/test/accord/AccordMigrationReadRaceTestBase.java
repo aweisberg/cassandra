@@ -72,11 +72,13 @@ import org.apache.cassandra.repair.RepairResult;
 import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageService;
+import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey.TokenKey;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationRepairResult;
 import org.apache.cassandra.service.consensus.migration.ConsensusTableMigration;
+import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.FBUtilities;
@@ -433,7 +435,6 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
 
     private void testBoundsBatch(List<String> readCQL, List<Consumer<SimpleQueryResult>> validation, boolean expectRetry, int batchCount) throws Throwable
     {
-        readCQL = readCQL.stream().map(cql -> format(cql, qualifiedAccordTableName)).collect(toImmutableList());
         if (EXECUTE_BATCH_QUERIES_SERIALLY)
         {
             for (int i = 0; i < readCQL.size(); i++)
@@ -441,7 +442,8 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                 if (QUERY_INDEX == null || QUERY_INDEX == i)
                 {
                     logger.info("Executing query from batch {} query index {}", batchCount, i);
-                    testSplitAndRetry(ImmutableList.of(readCQL.get(i)), this::loadOverlapData, ImmutableList.of(validation.get(i)), expectRetry);
+                    String cql = format(readCQL.get(i), qualifiedAccordTableName);
+                    testSplitAndRetry(ImmutableList.of(cql), this::loadOverlapData, ImmutableList.of(validation.get(i)), expectRetry);
                     tearDown();
                     setup();
                     afterEach();
@@ -454,6 +456,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
         }
         else
         {
+            readCQL = readCQL.stream().map(cql -> format(cql, qualifiedAccordTableName)).collect(toImmutableList());
             testSplitAndRetry(readCQL, this::loadOverlapData, validation, expectRetry);
             tearDown();
             setup();
@@ -474,6 +477,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                  // Node 3 is always the out of sync node
                  IInvokableInstance outOfSyncInstance = setUpOutOfSyncNode(cluster);
                  ICoordinator coordinator = outOfSyncInstance.coordinator();
+                 int startMigrationRejectCount = getAccordReadMigrationRejects(3);
                  int startRetryCount = getReadRetryOnDifferentSystemCount(outOfSyncInstance);
                  int startRejectedCount = getReadsRejectedOnWrongSystemCount();
                  logger.info("Executing reads " + readCQL + " expect retry " + expectRetry);
@@ -481,9 +485,25 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                                                                   .map(read -> coordinator.asyncExecuteWithResult(read, ALL))
                                                                   .collect(toImmutableList());
 
-                 if (expectRetry)
+                 if (migrateAwayFromAccord && expectRetry)
                  {
-                     spinAssertEquals(startRejectedCount + (readCQL.size() * 2), 10, () -> getReadsRejectedOnWrongSystemCount() - startRejectedCount);
+                     int expectedTransactions = readCQL.size();
+                     // Accord will block until we unpause enactment so to test the routing we wait until the transaction
+                     // has started so the epoch it is created in is the old one
+                     Util.spinUntilTrue(() -> outOfSyncInstance.callOnInstance(() -> {
+                         logger.info("Coordinating {}", AccordService.instance().node().coordinating());
+                         return AccordService.instance().node().coordinating().size() == expectedTransactions;
+                     }), 10);
+
+                     logger.info("Accord node is now coordinating something, unpausing so it can continue to execute");
+                 }
+
+                 if (!migrateAwayFromAccord && expectRetry)
+                     spinAssertEquals(readCQL.size() * 2, 10, () -> getReadsRejectedOnWrongSystemCount() - startRejectedCount);
+
+                 // Accord can't finish the transaction without unpausing
+                 if (expectRetry || migrateAwayFromAccord)
+                 {
                      logger.info("Unpausing out of sync instance before waiting on result");
                      // Testing read coordination retry loop let coordinator get up to date and retry
                      unpauseEnactment(outOfSyncInstance);
@@ -524,11 +544,20 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
 
                  int endRetryCount = getReadRetryOnDifferentSystemCount(outOfSyncInstance);
                  int endRejectedCount = getReadsRejectedOnWrongSystemCount();
+                 int endMigrationRejects = getAccordReadMigrationRejects(3);
                  if (expectRetry)
                  {
-                     assertEquals(1 * readCQL.size(), endRetryCount - startRetryCount);
-                     // Expect only two nodes to reject since they enacted the new epoch
-                     assertEquals(2 * readCQL.size(), endRejectedCount - startRejectedCount);
+                     if (migrateAwayFromAccord)
+                     {
+                         assertEquals(readCQL.size(), endRetryCount - startRetryCount);
+                         assertEquals(readCQL.size(), endMigrationRejects - startMigrationRejectCount);
+                     }
+                     else
+                     {
+                         assertEquals(1 * readCQL.size(), endRetryCount - startRetryCount);
+                         // Expect only two nodes to reject since they enacted the new epoch
+                         assertEquals(2 * readCQL.size(), endRejectedCount - startRejectedCount);
+                     }
                  }
                  else
                  {
@@ -549,49 +578,62 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
         IInvokableInstance i3 = cluster.get(3);
 
         long afterAlter = getNextEpoch(i1).getEpoch();
-        alterTableTransactionalMode(TransactionalMode.full);
+        if (migrateAwayFromAccord)
+            alterTableTransactionalMode(TransactionalMode.off, TransactionalMigrationFromMode.full);
+        else
+            alterTableTransactionalMode(TransactionalMode.full);
         Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterAlter)))), 10);
 
         long afterMigrationStart = getNextEpoch(i1).getEpoch();
+        long waitFori1Andi2ToEnact = afterMigrationStart;
+        // Migrating away from Accord need i3 to pause before enacting
+        if (migrateAwayFromAccord)
+            pauseBeforeEnacting(i3, Epoch.create(afterMigrationStart));
         // Reads are allowed until Accord thinks it owns the range and can start doing async commit and ignoring consistency levels
-        nodetool(coordinator, "consensus_admin", "begin-migration", "-st", migratingRange.left.toString(), "-et", migratingRange.right.toString(), "-tp", "accord", KEYSPACE, accordTableName);
-        Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterMigrationStart)))), 10);
+        nodetool(coordinator, "consensus_admin", "begin-migration", "-st", migratingRange.left.toString(), "-et", migratingRange.right.toString(), KEYSPACE, accordTableName);
 
-        long afterRepair = getNextEpoch(i1).getEpoch();
-        // First repair only does the data and allows Accord to read, but doesn't require reads to be done through Accord
-        nodetool(i2, "repair", "-skip-paxos", "-skip-accord", "-st", migratingRange.left.toString(), "-et", migratingRange.right.toString(), KEYSPACE, accordTableName);
-        Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterRepair)))), 10);
+        if (!migrateAwayFromAccord)
+        {
+            // Migration to Accord does not have Accord read until the migration has completed a data repair and then an Accord repair
+            Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterMigrationStart)))), 10);
 
-        Epoch afterRepairCompletionHandler = getNextEpoch(i1);
-        long afterRepairCompletionHandlerLong = afterRepairCompletionHandler.getEpoch();
-        // Node 3 will coordinate the query and not be aware that the migration has begun
-        pauseBeforeEnacting(i3, afterRepairCompletionHandler);
+            long afterRepair = getNextEpoch(i1).getEpoch();
+            // First repair only does the data and allows Accord to read, but doesn't require reads to be done through Accord
+            nodetool(i2, "repair", "-skip-paxos", "-skip-accord", "-st", migratingRange.left.toString(), "-et", migratingRange.right.toString(), KEYSPACE, accordTableName);
+            Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterRepair)))), 10);
 
-        // Unfortunately can't run real repair because it can't complete with i3 not responding because it's stuck waiting
-        // on TCM so fake the completion of the repair by invoking the completion handler directly
-        String keyspace = KEYSPACE;
-        String table = accordTableName;
-        long migratingTokenStart = migratingRange.left.getLongValue();
-        long migratingTokenEnd = migratingRange.right.getLongValue();
-        Future<?> result = SHARED_CLUSTER.get(1).asyncRunsOnInstance(() ->
-                                            {
-                                                Epoch startEpoch = ClusterMetadata.current().epoch;
-                                                TableId tableId = Schema.instance.getTableMetadata(keyspace, table).id;
-                                                List<Range<Token>> ranges = ImmutableList.of(new Range<>(new LongToken(migratingTokenStart), new LongToken(migratingTokenEnd)));
-                                                RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
-                                                TokenRange range = new TokenRange(new TokenKey(tableId, new LongToken(migratingTokenStart)), new TokenKey(tableId, new LongToken(migratingTokenEnd)));
-                                                Ranges accordRanges = Ranges.of(range);
-                                                ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
-                                                ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
-                                            }).call();
+            long afterRepairCompletionHandler = getNextEpoch(i1).getEpoch();
+            waitFori1Andi2ToEnact = afterRepairCompletionHandler;
+            // Node 3 will coordinate the query and not be aware that the migration has begun
+            pauseBeforeEnacting(i3, Epoch.create(afterRepairCompletionHandler));
 
+            // Unfortunately can't run real repair because it can't complete with i3 not responding because it's stuck waiting
+            // on TCM so fake the completion of the repair by invoking the completion handler directly
+            String keyspace = KEYSPACE;
+            String table = accordTableName;
+            long migratingTokenStart = migratingRange.left.getLongValue();
+            long migratingTokenEnd = migratingRange.right.getLongValue();
+            Future<?> result = SHARED_CLUSTER.get(1).asyncRunsOnInstance(() ->
+                                                                         {
+                                                                             Epoch startEpoch = ClusterMetadata.current().epoch;
+                                                                             TableId tableId = Schema.instance.getTableMetadata(keyspace, table).id;
+                                                                             List<Range<Token>> ranges = ImmutableList.of(new Range<>(new LongToken(migratingTokenStart), new LongToken(migratingTokenEnd)));
+                                                                             RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
+                                                                             TokenRange range = new TokenRange(new TokenKey(tableId, new LongToken(migratingTokenStart)), new TokenKey(tableId, new LongToken(migratingTokenEnd)));
+                                                                             Ranges accordRanges = Ranges.of(range);
+                                                                             ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
+                                                                             ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
+                                                                         }).call();
+            result.get();
+        }
+
+        long waitFori1Andi2ToEnactFinal = waitFori1Andi2ToEnact;
         // Make sure 1 and 2 are up to date
         for (int i = 1; i < 3; i++)
         {
             int instanceIndex = i;
-            Util.spinUntilTrue(() -> cluster.get(instanceIndex).callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterRepairCompletionHandlerLong))), 10);
+            Util.spinUntilTrue(() -> cluster.get(instanceIndex).callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(waitFori1Andi2ToEnactFinal))), 10);
         }
-        result.get();
 
         return i3;
     }

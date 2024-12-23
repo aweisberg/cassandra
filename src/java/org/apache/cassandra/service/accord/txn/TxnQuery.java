@@ -29,6 +29,7 @@ import accord.api.Query;
 import accord.api.Read;
 import accord.api.Result;
 import accord.api.Update;
+import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
@@ -41,6 +42,7 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.metrics.ClientRequestsMetricsHolder;
+import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
@@ -49,6 +51,7 @@ import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.ObjectSizes;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.CAS_READ;
 import static org.apache.cassandra.service.accord.txn.TxnData.txnDataName;
 
@@ -268,26 +271,37 @@ public abstract class TxnQuery implements Query
 
     private static boolean transactionIsSafeToReadAndWrite(Epoch epoch, Seekables<?, ?> keys)
     {
-        // TODO (required): This is going to be problematic when we presumably support range reads and don't validate them
-        // Whatever this transaction might be it isn't one supported for migration anyways
-        if (!keys.domain().isKey())
-            return true;
-
+        // TODO (required): This is not the cluster metadata of the current transaction
         ClusterMetadata clusterMetadata = ClusterMetadata.current();
-        for (PartitionKey partitionKey : (Seekables<PartitionKey, ?>)keys)
+        switch (keys.domain())
         {
-            // TODO (required): This is looking at ClusterMetadata, but not the ClusterMetadata for the specified epoch, just that epoch or later. Need to store ConsensusMigrationState in the global Topologies Accord stores for itself.
-            if (!ConsensusRequestRouter.instance.isKeyManagedByAccordForReadAndWrite(clusterMetadata, partitionKey.table(), partitionKey.partitionKey()))
-                return false;
+            case Key:
+                for (PartitionKey partitionKey : (Seekables<PartitionKey, ?>)keys)
+                {
+                    // TODO (required): This is looking at ClusterMetadata, but not the ClusterMetadata for the specified epoch, just that epoch or later. Need to store ConsensusMigrationState in the global Topologies Accord stores for itself.
+                    if (!ConsensusRequestRouter.instance.isKeyManagedByAccordForReadAndWrite(clusterMetadata, partitionKey.table(), partitionKey.partitionKey()))
+                        return false;
+                }
+                break;
+            case Range:
+                for (accord.primitives.Range range : (Ranges)keys)
+                {
+                    TokenRange tokenRange = (TokenRange)range;
+                    // TODO (required): This is looking at ClusterMetadata, but not the ClusterMetadata for the specified epoch, just that epoch or later. Need to store ConsensusMigrationState in the global Topologies Accord stores for itself.
+                    if (!ConsensusRequestRouter.instance.isRangeManagedByAccordForReadAndWrite(clusterMetadata, tokenRange.table(), tokenRange))
+                        return false;
+                }
+                break;
+            default:
+                throw new IllegalStateException("Unsupported domain " + keys.domain());
         }
+
         return true;
     }
 
     private static boolean transactionIsSafeToWrite(Epoch epoch, Seekables<?, ?> keys)
     {
-        // Whatever this transaction might be it isn't one supported for migration anyways
-        if (!keys.domain().isKey())
-            return true;
+        checkState(keys.domain().isKey(), "Only key transactions are supported for writes");
 
         ClusterMetadata clusterMetadata = ClusterMetadata.current();
         for (PartitionKey partitionKey : (Seekables<PartitionKey, ?>)keys)

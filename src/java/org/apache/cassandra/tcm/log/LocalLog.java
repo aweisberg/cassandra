@@ -430,6 +430,8 @@ public abstract class LocalLog implements Closeable
         pending.add(entry);
     }
 
+    public abstract ClusterMetadata awaitAtLeast(Epoch epoch, long timeout, TimeUnit unit) throws InterruptedException, TimeoutException;
+
     public abstract ClusterMetadata awaitAtLeast(Epoch epoch) throws InterruptedException, TimeoutException;
 
     /**
@@ -439,7 +441,7 @@ public abstract class LocalLog implements Closeable
     {
         try
         {
-            runOnce(null);
+            runOnce(-1, null);
         }
         catch (TimeoutException e)
         {
@@ -448,7 +450,7 @@ public abstract class LocalLog implements Closeable
         }
     }
 
-    abstract void runOnce(DurationSpec durationSpec) throws TimeoutException;
+    abstract void runOnce(long timeout, TimeUnit unit) throws TimeoutException;
     abstract void processPending();
 
     private Entry peek()
@@ -708,14 +710,20 @@ public abstract class LocalLog implements Closeable
         @Override
         public ClusterMetadata awaitAtLeast(Epoch epoch) throws InterruptedException, TimeoutException
         {
-            ClusterMetadata lastSeen = committed.get();
-            return lastSeen.epoch.compareTo(epoch) >= 0
-                   ? lastSeen
-                   : new AwaitCommit(epoch).get();
+            return awaitAtLeast(epoch, -1, null);
         }
 
         @Override
-        public void runOnce(DurationSpec duration) throws TimeoutException
+        public ClusterMetadata awaitAtLeast(Epoch epoch, long timeout, TimeUnit unit) throws InterruptedException, TimeoutException
+        {
+            ClusterMetadata lastSeen = committed.get();
+            return lastSeen.epoch.compareTo(epoch) >= 0
+                   ? lastSeen
+                   : new AwaitCommit(epoch).get(timeout, unit);
+        }
+
+        @Override
+        public void runOnce(long timeout, TimeUnit unit) throws TimeoutException
         {
             if (executor.isTerminated())
                 throw new IllegalStateException("Global log follower has shutdown");
@@ -730,12 +738,11 @@ public abstract class LocalLog implements Closeable
                 // complete.
                 if (current != null)
                 {
-                    if (duration == null)
+                    if (timeout < 0)
                     {
-
                         current.awaitThrowUncheckedOnInterrupt();
                     }
-                    else if (!current.awaitThrowUncheckedOnInterrupt(duration.to(TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS))
+                    else if (!current.awaitThrowUncheckedOnInterrupt(timeout, TimeUnit.MILLISECONDS))
                     {
                         throw new TimeoutException(String.format("Timed out waiting for follower to run at least once. " +
                                                                  "Pending is %s and current is now at epoch %s.",
@@ -862,15 +869,16 @@ public abstract class LocalLog implements Closeable
 
             public ClusterMetadata get() throws InterruptedException, TimeoutException
             {
-                return get(DatabaseDescriptor.getCmsAwaitTimeout());
+                DurationSpec timeoutSpec = DatabaseDescriptor.getCmsAwaitTimeout();
+                return get(timeoutSpec.quantity(), timeoutSpec.unit());
             }
 
-            public ClusterMetadata get(DurationSpec duration) throws InterruptedException, TimeoutException
+            public ClusterMetadata get(long timeout, TimeUnit unit) throws InterruptedException, TimeoutException
             {
                 ClusterMetadata lastSeen = metadata();
                 while (!isCommitted(lastSeen))
                 {
-                    runOnce(duration);
+                    runOnce(timeout, unit);
                     lastSeen = metadata();
 
                     if (executor.isTerminated() && !isCommitted(lastSeen))
@@ -894,7 +902,7 @@ public abstract class LocalLog implements Closeable
             super(logSpec);
         }
 
-        void runOnce(DurationSpec durationSpec)
+        void runOnce(long timeout, TimeUnit unit)
         {
             processPendingInternal();
         }
@@ -904,11 +912,17 @@ public abstract class LocalLog implements Closeable
             processPendingInternal();
         }
 
+        @Override
         public ClusterMetadata awaitAtLeast(Epoch epoch)
+        {
+            return awaitAtLeast(epoch, -1, null);
+        }
+
+        public ClusterMetadata awaitAtLeast(Epoch epoch, long timeout, TimeUnit unit)
         {
             processPending();
             if (metadata().epoch.isBefore(epoch))
-                 throw new IllegalStateException(String.format("Could not reach %s after replay. Highest epoch after replay: %s.", epoch, metadata().epoch));
+                throw new IllegalStateException(String.format("Could not reach %s after replay. Highest epoch after replay: %s.", epoch, metadata().epoch));
 
             return metadata();
         }
