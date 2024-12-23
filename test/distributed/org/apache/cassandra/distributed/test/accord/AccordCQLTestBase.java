@@ -166,7 +166,7 @@ public abstract class AccordCQLTestBase extends AccordTestBase
 
 
             // Enabled on table but migrating
-            nodetool(coordinator, "consensus_admin", "begin-migration", "-tp", "accord", KEYSPACE, accordTableName);
+            nodetool(coordinator, "consensus_admin", "begin-migration", KEYSPACE, accordTableName);
             try
             {
                 coordinator.execute(readQuery, ConsistencyLevel.ALL);

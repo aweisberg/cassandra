@@ -32,6 +32,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import javax.annotation.Nullable;
 
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
@@ -97,6 +98,7 @@ import org.apache.cassandra.service.accord.exceptions.ReadPreemptedException;
 import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationState;
+import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.serialization.Version;
 import org.apache.cassandra.utils.AssertionUtils;
@@ -303,7 +305,12 @@ public abstract class AccordTestBase extends TestBaseImpl
         return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.Latency.AccordRead"));
     }
 
-    protected static int getAccordMigrationRejects(int coordinatorIndex)
+    protected static int getAccordReadMigrationRejects(int coordinatorIndex)
+    {
+        return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.AccordMigrationRejects.AccordRead"));
+    }
+
+    protected static int getAccordWriteMigrationRejects(int coordinatorIndex)
     {
         return Ints.checkedCast(getMetrics(coordinatorIndex).getCounter("org.apache.cassandra.metrics.ClientRequest.AccordMigrationRejects.AccordWrite"));
     }
@@ -601,7 +608,12 @@ public abstract class AccordTestBase extends TestBaseImpl
 
     protected void alterTableTransactionalMode(TransactionalMode mode)
     {
-        SHARED_CLUSTER.schemaChange(format("ALTER TABLE %s WITH %s", qualifiedAccordTableName, mode.asCqlParam()));
+        alterTableTransactionalMode(mode, null);
+    }
+
+    protected void alterTableTransactionalMode(TransactionalMode mode, @Nullable TransactionalMigrationFromMode from)
+    {
+        SHARED_CLUSTER.schemaChange(format("ALTER TABLE %s WITH %s" + (from == null ? "" : " AND %s"), qualifiedAccordTableName, mode.asCqlParam(), from == null ? null : from.asCqlParam()));
     }
 
     protected static void pauseHints()

@@ -41,6 +41,7 @@ import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.dht.AbstractBounds;
+import org.apache.cassandra.dht.Bounds;
 import org.apache.cassandra.dht.NormalizedRanges;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -55,6 +56,10 @@ import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableParams;
+import org.apache.cassandra.service.accord.TokenRange;
+import org.apache.cassandra.service.accord.api.AccordRoutingKey.MinTokenKey;
+import org.apache.cassandra.service.accord.api.AccordRoutingKey.SentinelKey;
+import org.apache.cassandra.service.accord.api.AccordRoutingKey.TokenKey;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.KeyMigrationState;
 import org.apache.cassandra.service.paxos.Paxos;
@@ -303,11 +308,88 @@ public class ConsensusRequestRouter
         return false;
     }
 
+    public boolean isRangeManagedByAccordForReadAndWrite(ClusterMetadata cm, TableId tableId, TokenRange range)
+    {
+        TableMetadata metadata = getTableMetadata(cm, tableId);
+        TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
+        // = token ends up as a min and max key bound in C* parlance and min and max token key in Accord parlance
+        // and the conversion to a C* range results in the unintentional creation of a wrap around range.
+        // Instead treat it like a key and do that check.
+        if (range.start().getClass() == MinTokenKey.class
+            && range.end() instanceof TokenKey
+            && range.start().token().equals(range.end().token()))
+        {
+            checkState(range.end().getClass() != MinTokenKey.class, "Unexpected empty range");
+            return isTokenManagedByAccordForReadAndWrite(metadata, tms, range.start().token());
+        }
+        else if (range.start().getClass() == MinTokenKey.class)
+        {
+            // Start is particularly problematic because we use min MinTokenKey to make start inclusive and this is something
+            // that isn't possible to mimic at all with Range<Token>, for end it's less problematic because just the token
+            // is sufficient for Accord to route the query and select the correct shards even if it might accidentally run
+            // on an extra shard, the filtering will take care of it. There is nothing to do here but convert to a bounds
+            // and use the bounds check
+            PartitionPosition startPP = range.start().token().minKeyBound();
+            PartitionPosition endPP;
+            if (range.end().getClass() == SentinelKey.class)
+                endPP = DatabaseDescriptor.getPartitioner().getMinimumToken().maxKeyBound();
+            else if (range.end().getClass() == MinTokenKey.class)
+                endPP = range.end().token().minKeyBound();
+            else
+                endPP = range.end().token().maxKeyBound();
+            Bounds<PartitionPosition> bounds = new Bounds<>(startPP, endPP);
+            TransactionalMode transactionalMode = metadata.params.transactionalMode;
+            TransactionalMigrationFromMode transactionalMigrationFromMode = metadata.params.transactionalMigrationFrom;
+            return isBoundsExclusivelyManagedByAccordForRead(transactionalMode, transactionalMigrationFromMode, tms, bounds);
+        }
+        else
+        {
+            return isRangeManagedByAccordForReadAndWrite(metadata,
+                                                         cm.consensusMigrationState.tableStates.get(tableId),
+                                                         range.toKeyspaceRange());
+        }
+    }
+
+    /*
+     * A lightweight check against cluster metadata that doesn't check if the range has already been migrated
+     * using local system table state. It just assumes that the key migration has already been done.
+     *
+     * This version is for is full read write transactions
+     */
+    public boolean isRangeManagedByAccordForReadAndWrite(TableMetadata metadata, TableMigrationState tms, Range<Token> range)
+    {
+        checkState(!range.isTrulyWrapAround(), "Accidentally created a wrap around range");
+        TransactionalMode transactionalMode = metadata.params.transactionalMode;
+        TransactionalMigrationFromMode migrationFrom = metadata.params.transactionalMigrationFrom;
+
+        if (migrationFrom.isMigrating())
+            checkState(tms != null, "Can't have migration in progress without tms");
+
+        if (transactionalMode.accordIsEnabled)
+        {
+            if (!migrationFrom.isMigrating())
+                return true;
+            if (migrationFrom.migratingFromAccord())
+                return true;
+            // Accord can only read/write the key if it is in a safe to read (repaired) range
+            if (Range.intersects(tms.accordSafeToReadRanges, ImmutableList.of(range)))
+                return true;
+        }
+        else
+        {
+            // Once the migration starts only barriers are allowed to run for the key in Accord
+            if (migrationFrom.migratingFromAccord() && !Range.intersects(tms.migratingAndMigratedRanges, ImmutableList.of(range)))
+                return true;
+        }
+
+        return false;
+    }
+
     public boolean isKeyManagedByAccordForReadAndWrite(ClusterMetadata cm, TableId tableId, DecoratedKey key)
     {
-        return isKeyManagedByAccordForReadAndWrite(getTableMetadata(cm, tableId),
+        return isTokenManagedByAccordForReadAndWrite(getTableMetadata(cm, tableId),
                                                    cm.consensusMigrationState.tableStates.get(tableId),
-                                                   key);
+                                                   key.getToken());
     }
 
     /*
@@ -316,11 +398,10 @@ public class ConsensusRequestRouter
      *
      * This version is for is full read write transactions
      */
-    public boolean isKeyManagedByAccordForReadAndWrite(TableMetadata metadata, TableMigrationState tms, DecoratedKey key)
+    public boolean isTokenManagedByAccordForReadAndWrite(TableMetadata metadata, TableMigrationState tms, Token token)
     {
         TransactionalMode transactionalMode = metadata.params.transactionalMode;
         TransactionalMigrationFromMode migrationFrom = metadata.params.transactionalMigrationFrom;
-        Token token = key.getToken();
 
         if (migrationFrom.isMigrating())
             checkState(tms != null, "Can't have migration in progress without tms");
@@ -530,8 +611,8 @@ public class ConsensusRequestRouter
             // TODO (nicetohave): Efficiency of this intersection
             for (org.apache.cassandra.dht.Range<Token> range : testRanges)
             {
-                if (Range.makeRowRange(range).intersects(testBounds))
-                    return true;
+                Pair<AbstractBounds<PartitionPosition>, AbstractBounds<PartitionPosition>> intersectionAndRemainder = Range.intersectionAndRemainder(testBounds, range);
+                return intersectionAndRemainder.left != null;
             }
             return false;
         };
@@ -579,6 +660,15 @@ public class ConsensusRequestRouter
             this.read = read;
             this.target = target;
         }
+
+        @Override
+        public String toString()
+        {
+            return "RangeReadWithTarget{" +
+                   "read=" + read +
+                   ", target=" + target +
+                   '}';
+        }
     }
 
     /**
@@ -619,10 +709,14 @@ public class ConsensusRequestRouter
         AbstractBounds<PartitionPosition> keyRange = read.dataRange().keyRange();
         AbstractBounds<PartitionPosition> remainder = keyRange;
 
+        // Migrating to Accord we only read through Accord when the range is fully migrated, but migrating back
+        // we stop reading from Accord as soon as the range is marked migrating and do key migration on read
+        NormalizedRanges<Token> migratedRanges = transactionalModeReadsThroughAccord ? tms.migratedRanges : tms.migratingAndMigratedRanges;
+
         // Add the preceding range if any
-        if (!tms.migratedRanges.isEmpty())
+        if (!migratedRanges.isEmpty())
         {
-            Token firstMigratingToken = tms.migratedRanges.get(0).left.getToken();
+            Token firstMigratingToken = migratedRanges.get(0).left.getToken();
             int leftCmp = keyRange.left.getToken().compareTo(firstMigratingToken);
             int rightCmp = compareRightToken(keyRange.right.getToken(), firstMigratingToken);
             if (leftCmp <= 0)
@@ -631,12 +725,14 @@ public class ConsensusRequestRouter
                     return ImmutableList.of(new RangeReadWithTarget(read, migrationFromTarget));
                 result = new ArrayList<>();
                 AbstractBounds<PartitionPosition> precedingRange = keyRange.withNewRight(rightCmp <= 0 ? keyRange.right : firstMigratingToken.maxKeyBound());
-                result.add(new RangeReadWithTarget(read.forSubRange(precedingRange, false), migrationFromTarget));
+                // Could be an empty bound, it's fine to let a min KeyBound and max KeyBound through as that isn't empty
+                if (!precedingRange.left.equals(precedingRange.right))
+                    result.add(new RangeReadWithTarget(read.forSubRange(precedingRange, false), migrationFromTarget));
             }
         }
 
         boolean hadAccordReads = false;
-        for (Range<Token> r : tms.migratedRanges)
+        for (Range<Token> r : migratedRanges)
         {
             Pair<AbstractBounds<PartitionPosition>, AbstractBounds<PartitionPosition>> intersectionAndRemainder = Range.intersectionAndRemainder(remainder, r);
             if (intersectionAndRemainder.left != null)
