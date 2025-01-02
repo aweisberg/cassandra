@@ -2614,10 +2614,11 @@ public class StorageProxy implements StorageProxyMBean
                 if (failure != null)
                     throw unchecked(failure);
 
+                PartitionIterator resultIterator = null;
                 if (normalPartitions != null && (accordPartitions == null || !accordPartitions.hasNext()))
-                    return normalPartitions;
+                    resultIterator = normalPartitions;
                 else if ((normalPartitions == null || !normalPartitions.hasNext()) && accordPartitions != null)
-                    return accordPartitions;
+                    resultIterator = accordPartitions;
                 else
                 {
                     // Merge into partition key order
@@ -2627,8 +2628,8 @@ public class StorageProxy implements StorageProxyMBean
                     {
                         partitions.add(singletonIterator(mergeIterator.next()));
                     }
-                    return maybeEnforceLimits(PartitionIterators.concat(partitions), group);
-                }
+                    resultIterator = PartitionIterators.concat(partitions);}
+                return maybeEnforceLimits(resultIterator, group);
             }
             catch (Exception t)
             {
