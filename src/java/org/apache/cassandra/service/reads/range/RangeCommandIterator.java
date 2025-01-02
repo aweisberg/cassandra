@@ -410,6 +410,8 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                     }
                     catch (TimeoutException e)
                     {
+                        Tracing.trace("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
+                        logger.warn("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
                         throw new ReadTimeoutException(cl, 0, 0, false, "Timed out waiting for updated cluster metadata");
                     }
                     delegate = attempt.apply(lastClusterMetadata);
