@@ -399,21 +399,24 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                         Tracing.trace("Got {} from range reads, will retry", e);
                     }
                     // Fetch the next epoch to retry
-                    try
-                    {
-                        long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getRangeRpcTimeout(NANOSECONDS));
-                        lastClusterMetadata = ClusterMetadataService.instance().awaitAtLeast(lastClusterMetadata.nextEpoch(), timeout, NANOSECONDS);
-                    }
-                    catch (InterruptedException e)
-                    {
-                        throw new RuntimeException(e);
-                    }
-                    catch (TimeoutException e)
-                    {
-                        Tracing.trace("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
-                        logger.warn("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
-                        throw new ReadTimeoutException(cl, 0, 0, false, "Timed out waiting for updated cluster metadata");
-                    }
+                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getRangeRpcTimeout(NANOSECONDS));
+                    ClusterMetadataService.instance().log().highestPending().ifPresent(epoch ->
+                           {
+                               try
+                               {
+                                   lastClusterMetadata = ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+                               }
+                               catch (InterruptedException e)
+                               {
+                                   throw new RuntimeException(e);
+                               }
+                               catch (TimeoutException e)
+                               {
+                                   Tracing.trace("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
+                                   logger.warn("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
+                                   throw new ReadTimeoutException(cl, 0, 0, false, "Timed out waiting for updated cluster metadata");
+                               }
+                           });
                     delegate = attempt.apply(lastClusterMetadata);
                 }
             }
