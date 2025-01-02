@@ -379,23 +379,28 @@ public class StorageProxy implements StorageProxyMBean
         {
             if (lastEpoch != null)
             {
-                try
-                {
-                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
-                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
-                }
-                catch (InterruptedException e)
-                {
-                    throw new RuntimeException(e);
-                }
-                catch (TimeoutException e)
-                {
-                    Tracing.trace("CAS Timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    logger.warn("CAS Timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    casWriteMetrics.timeouts.mark();
-                    writeMetricsForLevel(consistencyForPaxos).timeouts.mark();
-                    throw new CasWriteTimeoutException(WriteType.CAS, consistencyForPaxos, 0, 0, 0);
-                }
+
+                long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
+                Epoch lastEpochFinal = lastEpoch;
+                ClusterMetadataService.instance().log().highestPending().ifPresent(epoch ->
+                       {
+                           try
+                           {
+                               ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+                           }
+                           catch (InterruptedException e)
+                           {
+                               throw new RuntimeException(e);
+                           }
+                           catch (TimeoutException e)
+                           {
+                               Tracing.trace("CAS Timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               logger.warn("CAS Timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               casWriteMetrics.timeouts.mark();
+                               writeMetricsForLevel(consistencyForPaxos).timeouts.mark();
+                               throw new CasWriteTimeoutException(WriteType.CAS, consistencyForPaxos, 0, 0, 0);
+                           }
+                       });
             }
             ClusterMetadata cm = ClusterMetadata.current();
             lastEpoch = cm.epoch;
@@ -1280,22 +1285,26 @@ public class StorageProxy implements StorageProxyMBean
         {
             if (lastEpoch != null)
             {
-                try
-                {
-                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getWriteRpcTimeout(NANOSECONDS));
-                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
-                }
-                catch (InterruptedException e)
-                {
-                    throw new RuntimeException(e);
-                }
-                catch (TimeoutException e)
-                {
-                    Tracing.trace("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    logger.warn("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.SIMPLE, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
-                                                      consistencyLevel);
-                }
+                long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getWriteRpcTimeout(NANOSECONDS));
+                Epoch lastEpochFinal = lastEpoch;
+                ClusterMetadataService.instance().log().highestPending().ifPresent(epoch ->
+                       {
+                           try
+                           {
+                               ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+                           }
+                           catch (InterruptedException e)
+                           {
+                               throw new RuntimeException(e);
+                           }
+                           catch (TimeoutException e)
+                           {
+                               Tracing.trace("Write timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               logger.warn("Write timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.SIMPLE, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
+                                                                 consistencyLevel);
+                           }
+                       });
             }
             ClusterMetadata cm = ClusterMetadata.current();
             lastEpoch = cm.epoch;
@@ -1473,22 +1482,26 @@ public class StorageProxy implements StorageProxyMBean
             {
                 if (lastEpoch != null)
                 {
-                    try
-                    {
-                        long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getNativeTransportTimeout(NANOSECONDS));
-                        ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
-                    }
-                    catch (InterruptedException e)
-                    {
-                        throw new RuntimeException(e);
-                    }
-                    catch (TimeoutException e)
-                    {
-                        Tracing.trace("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
-                        logger.warn("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
-                        doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.BATCH, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
-                                                          consistencyLevel);
-                    }
+                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getNativeTransportTimeout(NANOSECONDS));
+                    Epoch lastEpochFinal = lastEpoch;
+                    ClusterMetadataService.instance().log().highestPending().ifPresent(epoch ->
+                           {
+                               try
+                               {
+                                   ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+                               }
+                               catch (InterruptedException e)
+                               {
+                                   throw new RuntimeException(e);
+                               }
+                               catch (TimeoutException e)
+                               {
+                                   Tracing.trace("Write timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                                   logger.warn("Write timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                                   doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.BATCH, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
+                                                                     consistencyLevel);
+                               }
+                           });
                 }
                 ClusterMetadata cm = ClusterMetadata.current();
                 lastEpoch = cm.epoch;
@@ -2253,23 +2266,27 @@ public class StorageProxy implements StorageProxyMBean
         {
             if (lastEpoch != null)
             {
-                try
-                {
-                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
-                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
-                }
-                catch (InterruptedException e)
-                {
-                    throw new RuntimeException(e);
-                }
-                catch (TimeoutException e)
-                {
-                    Tracing.trace("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    logger.warn("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    casReadMetrics.timeouts.mark();
-                    readMetricsForLevel(consistencyLevel).timeouts.mark();
-                    throw new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
-                }
+                long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
+                Epoch lastEpochFinal = lastEpoch;
+                ClusterMetadataService.instance().log().highestPending().ifPresent(epoch ->
+                       {
+                           try
+                           {
+                               ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+                           }
+                           catch (InterruptedException e)
+                           {
+                               throw new RuntimeException(e);
+                           }
+                           catch (TimeoutException e)
+                           {
+                               Tracing.trace("Read timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               logger.warn("Read timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               casReadMetrics.timeouts.mark();
+                               readMetricsForLevel(consistencyLevel).timeouts.mark();
+                               throw new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
+                           }
+                       });
             }
             ClusterMetadata cm = ClusterMetadata.current();
             lastEpoch = cm.epoch;
@@ -2505,25 +2522,29 @@ public class StorageProxy implements StorageProxyMBean
         {
             if (lastEpoch != null)
             {
-                try
-                {
-                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getReadRpcTimeout(NANOSECONDS));
-                    ClusterMetadataService.instance().awaitAtLeast(lastEpoch.nextEpoch(), timeout, NANOSECONDS);
-                }
-                catch (InterruptedException e)
-                {
-                    throw new RuntimeException(e);
-                }
-                catch (TimeoutException e)
-                {
-                    Tracing.trace("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    logger.warn("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
-                    ReadTimeoutException rte = new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
-                    readMetrics.timeouts.mark();
-                    readMetricsForLevel(consistencyLevel).timeouts.mark();
-                    logRequestException(e, group.queries);
-                    throw rte;
-                }
+                long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getReadRpcTimeout(NANOSECONDS));
+                Epoch lastEpochFinal = lastEpoch;
+                ClusterMetadataService.instance().log().highestPending().ifPresent(epoch ->
+                       {
+                           try
+                           {
+                               ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+                           }
+                           catch (InterruptedException e)
+                           {
+                               throw new RuntimeException(e);
+                           }
+                           catch (TimeoutException e)
+                           {
+                               Tracing.trace("Read timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               logger.warn("Read timed out fetching next epoch " + lastEpochFinal.nextEpoch());
+                               ReadTimeoutException rte = new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
+                               readMetrics.timeouts.mark();
+                               readMetricsForLevel(consistencyLevel).timeouts.mark();
+                               logRequestException(e, group.queries);
+                               throw rte;
+                           }
+                       });
             }
             ClusterMetadata cm = ClusterMetadata.current();
             lastEpoch = cm.epoch;
