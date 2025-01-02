@@ -75,6 +75,7 @@ import static org.apache.cassandra.concurrent.InfiniteLoopExecutor.Interrupts.UN
 import static org.apache.cassandra.concurrent.InfiniteLoopExecutor.SimulatorSafe.SAFE;
 import static org.apache.cassandra.tcm.Epoch.EMPTY;
 import static org.apache.cassandra.tcm.Epoch.FIRST;
+import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 import static org.apache.cassandra.utils.concurrent.WaitQueue.newWaitQueue;
 
 // TODO metrics for contention/buffer size/etc
@@ -769,7 +770,10 @@ public abstract class LocalLog implements Closeable
                 if (runnable.subscriber.compareAndSet(null, ours))
                 {
                     runnable.logNotifier.signalAll();
-                    ours.awaitThrowUncheckedOnInterrupt();
+                    if (timeout < 0)
+                        ours.awaitThrowUncheckedOnInterrupt();
+                    else
+                        ours.awaitThrowUncheckedOnInterrupt(timeout, unit);
                     return;
                 }
             }
@@ -876,8 +880,12 @@ public abstract class LocalLog implements Closeable
             public ClusterMetadata get(long timeout, TimeUnit unit) throws InterruptedException, TimeoutException
             {
                 ClusterMetadata lastSeen = metadata();
+                long start = nanoTime();
                 while (!isCommitted(lastSeen))
                 {
+                    long elapsed = nanoTime() - start;
+                    if (timeout >= 0 && elapsed > unit.toNanos(timeout))
+                        throw new TimeoutException("Timed out waiting for epoch " + waitingFor);
                     runOnce(timeout, unit);
                     lastSeen = metadata();
 

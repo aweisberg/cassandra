@@ -390,6 +390,8 @@ public class StorageProxy implements StorageProxyMBean
                 }
                 catch (TimeoutException e)
                 {
+                    Tracing.trace("CAS Timed out fetching next epoch " + lastEpoch.nextEpoch());
+                    logger.warn("CAS Timed out fetching next epoch " + lastEpoch.nextEpoch());
                     casWriteMetrics.timeouts.mark();
                     writeMetricsForLevel(consistencyForPaxos).timeouts.mark();
                     throw new CasWriteTimeoutException(WriteType.CAS, consistencyForPaxos, 0, 0, 0);
@@ -1289,6 +1291,8 @@ public class StorageProxy implements StorageProxyMBean
                 }
                 catch (TimeoutException e)
                 {
+                    Tracing.trace("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
+                    logger.warn("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
                     doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.SIMPLE, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
                                                       consistencyLevel);
                 }
@@ -1480,6 +1484,8 @@ public class StorageProxy implements StorageProxyMBean
                     }
                     catch (TimeoutException e)
                     {
+                        Tracing.trace("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
+                        logger.warn("Write timed out fetching next epoch " + lastEpoch.nextEpoch());
                         doFallibleWriteWithMetricTracking(() -> {throw new WriteTimeoutException(WriteType.BATCH, consistencyLevel, 0, 0, "Timed out waiting for updated cluster metadata");},
                                                           consistencyLevel);
                     }
@@ -2258,6 +2264,8 @@ public class StorageProxy implements StorageProxyMBean
                 }
                 catch (TimeoutException e)
                 {
+                    Tracing.trace("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
+                    logger.warn("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
                     casReadMetrics.timeouts.mark();
                     readMetricsForLevel(consistencyLevel).timeouts.mark();
                     throw new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
@@ -2508,6 +2516,8 @@ public class StorageProxy implements StorageProxyMBean
                 }
                 catch (TimeoutException e)
                 {
+                    Tracing.trace("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
+                    logger.warn("Read timed out fetching next epoch " + lastEpoch.nextEpoch());
                     ReadTimeoutException rte = new ReadTimeoutException(consistencyLevel, 0, 0, false, "Timed out waiting for updated cluster metadata");
                     readMetrics.timeouts.mark();
                     readMetricsForLevel(consistencyLevel).timeouts.mark();
