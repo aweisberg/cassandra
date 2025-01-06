@@ -51,6 +51,8 @@ import org.apache.cassandra.db.ReadCommandVerbHandler;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.TypeSizes;
+import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
+import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -70,18 +72,13 @@ import org.apache.cassandra.utils.Pair;
 
 import static accord.primitives.SaveStatus.PreApplied;
 import static accord.primitives.SaveStatus.ReadyToExecute;
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static org.apache.cassandra.utils.CollectionSerializers.deserializeList;
-import static org.apache.cassandra.utils.CollectionSerializers.serializeCollection;
-import static org.apache.cassandra.utils.CollectionSerializers.serializedCollectionSize;
-import static org.apache.cassandra.utils.NullableSerializer.deserializeNullable;
-import static org.apache.cassandra.utils.NullableSerializer.serializeNullable;
-import static org.apache.cassandra.utils.NullableSerializer.serializedNullableSize;
 
 public class AccordInteropRead extends ReadData
 {
+    private static final boolean LOG_READ_RESULTS = false;
+
     public static final IVersionedSerializer<AccordInteropRead> requestSerializer = new ReadDataSerializer<AccordInteropRead>()
     {
         @Override
@@ -117,97 +114,96 @@ public class AccordInteropRead extends ReadData
 
     private static class LocalReadData implements Data
     {
-        private static final IVersionedSerializer<Pair<AccordRoutingKey, ReadResponse>> responseSerializer = new IVersionedSerializer<>()
-        {
-            @Override
-            public void serialize(Pair<AccordRoutingKey, ReadResponse> t, DataOutputPlus out, int version) throws IOException
-            {
-                serializeNullable(t.left, out, version, AccordRoutingKey.serializer);
-                ReadResponse.serializer.serialize(t.right, out, version);
-            }
-
-            @Override
-            public Pair<AccordRoutingKey, ReadResponse> deserialize(DataInputPlus in, int version) throws IOException
-            {
-                return Pair.create(deserializeNullable(in, version, AccordRoutingKey.serializer),
-                                   ReadResponse.serializer.deserialize(in, version));
-            }
-
-            @Override
-            public long serializedSize(Pair<AccordRoutingKey, ReadResponse> t, int version)
-            {
-                return serializedNullableSize(t.left, version, AccordRoutingKey.serializer)
-                       + ReadResponse.serializer.serializedSize(t.right, version);
-            }
-        };
+        private static final Comparator<Pair<AccordRoutingKey, ReadResponse>> RESPONSE_COMPARATOR = Comparator.comparing(Pair::left);
 
         static final IVersionedSerializer<LocalReadData> serializer = new IVersionedSerializer<>()
         {
             @Override
             public void serialize(LocalReadData data, DataOutputPlus out, int version) throws IOException
             {
-                out.writeBoolean(data.isRangeResponse);
-                serializeCollection(data.responses, out, version, responseSerializer);
-           }
+                data.ensureRemoteResponse();
+                ReadResponse.serializer.serialize(data.remoteResponse, out, version);
+            }
 
             @Override
             public LocalReadData deserialize(DataInputPlus in, int version) throws IOException
             {
-                boolean isRangeResponse = in.readBoolean();
-                List<Pair<AccordRoutingKey, ReadResponse>> responses = deserializeList(in, version, responseSerializer);
-                return new LocalReadData(responses, isRangeResponse, version);
+                return new LocalReadData(ReadResponse.serializer.deserialize(in, version));
             }
 
             @Override
             public long serializedSize(LocalReadData data, int version)
             {
-                return TypeSizes.BOOL_SIZE
-                       + serializedCollectionSize(data.responses, version, responseSerializer);
+                data.ensureRemoteResponse();
+                return ReadResponse.serializer.serializedSize(data.remoteResponse, version);
             }
         };
 
-        List<Pair<AccordRoutingKey, ReadResponse>> responses;
-        private final int version;
-        final boolean isRangeResponse;
+        // Will be null at coordinator
+        List<Pair<AccordRoutingKey, ReadResponse>> localResponses;
+        // Will be null at coordinator
+        final ReadCommand readCommand;
+        // Will be not null at coordinator, but null at the node creating the response until it serialized
+        ReadResponse remoteResponse;
 
-        public LocalReadData(@Nullable AccordRoutingKey start, @Nonnull ReadResponse response, boolean isRangeResponse)
+        public LocalReadData(@Nullable AccordRoutingKey start, @Nonnull ReadResponse response, @Nonnull ReadCommand readCommand)
         {
             checkNotNull(response, "response is null");
-            responses = ImmutableList.of(Pair.create(start, response));
-            this.isRangeResponse = isRangeResponse;
-            version = -1;
+            checkNotNull(readCommand, "readCommand is null");
+            localResponses = ImmutableList.of(Pair.create(start, response));
+            this.readCommand = readCommand;
+            this.remoteResponse = null;
         }
 
-        public LocalReadData(@Nonnull List<Pair<AccordRoutingKey, ReadResponse>> responses, boolean isRangeResponse, int version)
+        public LocalReadData(@Nonnull ReadResponse remoteResponse)
         {
-            checkNotNull(responses);
-            checkArgument(!responses.isEmpty(), "responses should not be empty");
-            checkState(responses.size() == 1 || isRangeResponse, "Should only have multiple responses with a range response");
-            this.responses = responses;
-            this.isRangeResponse = isRangeResponse;
-            this.version = version;
+            checkNotNull(remoteResponse);
+            this.remoteResponse = remoteResponse;
+            readCommand = null;
         }
 
         @Override
         public String toString()
         {
-            return "LocalReadData{" + responses + '}';
+            if (localResponses != null)
+               return "LocalReadData{" + localResponses + '}';
+            else
+                return "LocalReadData{" + remoteResponse + '}';
         }
 
         @Override
         public Data merge(Data data)
         {
-            checkState(isRangeResponse, "Should only ever be a single partition");
+            checkState(remoteResponse == null, "Already serialized");
+            checkState(readCommand.isRangeRequest(), "Should only ever be a single partition");
             LocalReadData other = (LocalReadData)data;
-            checkState(other.isRangeResponse, "Other should also be a range response");
-            if (responses.size() == 1)
+            checkState(readCommand == other.readCommand, "Should share the same ReadCommand");
+            if (localResponses.size() == 1)
             {
                 List<Pair<AccordRoutingKey, ReadResponse>> merged = new ArrayList<>();
-                merged.add(responses.get(0));
-                responses = merged;
+                merged.add(localResponses.get(0));
+                localResponses = merged;
             }
-            responses.addAll(other.responses);
+            localResponses.addAll(other.localResponses);
             return this;
+        }
+
+        private void ensureRemoteResponse()
+        {
+            if (remoteResponse != null)
+                return;
+            // Range reads will be spread across command stores and need to be merged in token order
+            List<Pair<AccordRoutingKey, ReadResponse>> responses = localResponses;
+            if (responses.size() == 1)
+            {
+                remoteResponse = responses.get(0).right;
+            }
+            else
+            {
+                responses = new ArrayList(responses);
+                Collections.sort(responses, RESPONSE_COMPARATOR);
+                remoteResponse = ReadResponse.merge(Lists.transform(responses, Pair::right), readCommand);
+            }
         }
     }
 
@@ -221,14 +217,7 @@ public class AccordInteropRead extends ReadData
         @Override
         ReadResponse convertResponse(ReadOk ok)
         {
-            LocalReadData localReadData = ((LocalReadData)ok.data);
-            // Range reads will be spread across command stores and need to be merged in token order
-            List<Pair<AccordRoutingKey, ReadResponse>> responses = localReadData.responses;
-            if (responses.size() == 1)
-                return responses.get(0).right;
-            responses = new ArrayList(responses);
-            Collections.sort(responses, Comparator.comparing(Pair::left));
-            return ReadResponse.merge(Lists.transform(responses, Pair::right), localReadData.version);
+            return ((LocalReadData)ok.data).remoteResponse;
         }
     }
 
@@ -265,6 +254,7 @@ public class AccordInteropRead extends ReadData
         {
             ReadCommand readCommand = this.command;
             AccordRoutingKey routingKey = null;
+            final ReadCommand readCommandFinal;
             if (readCommand.isRangeRequest())
             {
                 // This path can have a subrange we have never seen before provided by short read protection or read repair so we need to
@@ -274,16 +264,25 @@ public class AccordInteropRead extends ReadData
                 Range intersection = commandRange.intersection(r);
                 if (intersection == null)
                     continue;
-                readCommand = TxnNamedRead.commandForSubrange((PartitionRangeReadCommand) readCommand, intersection, txnRead.cassandraConsistencyLevel(), nowInSeconds);
+                readCommandFinal = TxnNamedRead.commandForSubrange((PartitionRangeReadCommand) readCommand, intersection, txnRead.cassandraConsistencyLevel(), nowInSeconds);
                 routingKey = ((TokenRange)r).start();
             }
             else
             {
-                readCommand = ((SinglePartitionReadCommand)readCommand).withTransactionalSettings(TxnNamedRead.readsWithoutReconciliation(txnRead.cassandraConsistencyLevel()), nowInSeconds);
+                readCommandFinal = ((SinglePartitionReadCommand)readCommand).withTransactionalSettings(TxnNamedRead.readsWithoutReconciliation(txnRead.cassandraConsistencyLevel()), nowInSeconds);
             }
-            ReadCommand readCommandFinal = readCommand;
             AccordRoutingKey routingKeyFinal = routingKey;
-            chains.add(AsyncChains.ofCallable(Stage.READ.executor(), () -> new LocalReadData(routingKeyFinal, ReadCommandVerbHandler.instance.doRead(readCommandFinal, false), readCommandFinal.isRangeRequest())));
+            chains.add(AsyncChains.ofCallable(Stage.READ.executor(), () ->
+            {
+                if (LOG_READ_RESULTS && !readCommandFinal.isDigestQuery())
+                {
+                    try (UnfilteredPartitionIterator i = ReadCommandVerbHandler.instance.doRead(readCommandFinal, false).makeIterator(readCommandFinal))
+                    {
+                        UnfilteredPartitionIterators.log(i, safeStore.commandStore().toString(), true);
+                    }
+                }
+                return new LocalReadData(routingKeyFinal, ReadCommandVerbHandler.instance.doRead(readCommandFinal, false), readCommand);
+            }));
         }
 
         if (chains.isEmpty())

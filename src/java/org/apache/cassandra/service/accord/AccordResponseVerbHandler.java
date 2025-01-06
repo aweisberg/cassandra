@@ -63,7 +63,6 @@ class AccordResponseVerbHandler<T extends Reply> implements IVerbHandler<T>
 
         Node.Id from = endpointMapper.mappedId(message.from());
         logger.trace("Receiving {} from {}", message.payload, message.from());
-        logger.debug("Receiving {} from {}", message.payload, message.from());
         if (message.isFailureResponse())
         {
             Tracing.trace("Processing failure response from {}", message.from());

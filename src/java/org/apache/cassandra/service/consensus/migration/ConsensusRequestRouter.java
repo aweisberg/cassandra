@@ -311,7 +311,15 @@ public class ConsensusRequestRouter
     public boolean isRangeManagedByAccordForReadAndWrite(ClusterMetadata cm, TableId tableId, TokenRange range)
     {
         TableMetadata metadata = getTableMetadata(cm, tableId);
+        TransactionalMode transactionalMode = metadata.params.transactionalMode;
+        TransactionalMigrationFromMode transactionalMigrationFromMode = metadata.params.transactionalMigrationFrom;
         TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
+        if (tms == null)
+        {
+            checkState(transactionalMigrationFromMode == TransactionalMigrationFromMode.none, "TableMigrationState shouldn't be null during migration");
+            return transactionalMode.nonSerialReadsThroughAccord;
+        }
+
         // = token ends up as a min and max key bound in C* parlance and min and max token key in Accord parlance
         // and the conversion to a C* range results in the unintentional creation of a wrap around range.
         // Instead treat it like a key and do that check.
@@ -338,8 +346,6 @@ public class ConsensusRequestRouter
             else
                 endPP = range.end().token().maxKeyBound();
             Bounds<PartitionPosition> bounds = new Bounds<>(startPP, endPP);
-            TransactionalMode transactionalMode = metadata.params.transactionalMode;
-            TransactionalMigrationFromMode transactionalMigrationFromMode = metadata.params.transactionalMigrationFrom;
             return isBoundsExclusivelyManagedByAccordForRead(transactionalMode, transactionalMigrationFromMode, tms, bounds);
         }
         else
