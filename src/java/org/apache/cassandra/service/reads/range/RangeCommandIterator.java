@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
@@ -63,6 +64,7 @@ import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ClusterMetadataService;
+import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.AbstractIterator;
@@ -254,6 +256,14 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
     {
         PartitionRangeReadCommand rangeCommand = command.forSubRange(replicaPlan.range(), isFirst);
 
+        // Accord interop execution should always be coordinated through the C* plumbing
+        if (!readCoordinator.isEventuallyConsistent())
+        {
+            SingleRangeResponse response = executeNormal(replicaPlan, rangeCommand, readCoordinator);
+            readRepairs.add(response.getReadRepair());
+            return response;
+        }
+
         List<RangeReadWithTarget> reads = ConsensusRequestRouter.splitReadIntoAccordAndNormal(cm, rangeCommand, readCoordinator, requestTime);
         // Special case returning directly to avoid wrapping the iterator and applying the limits an extra time
         if (reads.size() == 1)
@@ -331,14 +341,25 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
         List<PartitionIterator> concurrentQueries = new ArrayList<>(concurrencyFactor);
         List<ReadRepair<?, ?>> readRepairs = new ArrayList<>(concurrencyFactor);
 
+        ClusterMetadata cm = ClusterMetadata.current();
         try
         {
             for (int i = 0; i < concurrencyFactor && replicaPlans.hasNext(); )
             {
                 ReplicaPlan.ForRangeRead replicaPlan = replicaPlans.next();
                 boolean isFirst = i == 0;
-                Function<ClusterMetadata, PartitionIterator> querySupplier = clusterMetadata -> query(clusterMetadata, replicaPlan, readCoordinator, readRepairs, isFirst);
-                PartitionIterator response = retryingPartitionIterator(querySupplier, replicaPlan.consistencyLevel());
+                PartitionIterator response;
+                // Only add the retry wrapper to reroute for the top level coordinator execution
+                // not Accord's interop execution
+                if (readCoordinator.isEventuallyConsistent())
+                {
+                    Function<ClusterMetadata, PartitionIterator> querySupplier = clusterMetadata -> query(clusterMetadata, replicaPlan, readCoordinator, readRepairs, isFirst);
+                    response = retryingPartitionIterator(querySupplier, replicaPlan.consistencyLevel());
+                }
+                else
+                {
+                    response = query(cm, replicaPlan, readCoordinator, readRepairs, isFirst);
+                }
                 concurrentQueries.add(response);
                 // due to RangeMerger, coordinator may fetch more ranges than required by concurrency factor.
                 rangesQueried += replicaPlan.vnodeCount();
@@ -400,11 +421,13 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                     }
                     // Fetch the next epoch to retry
                     long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getRangeRpcTimeout(NANOSECONDS));
-                    ClusterMetadataService.instance().log().highestPending().ifPresent(epoch ->
+                    Optional<Epoch> pending = ClusterMetadataService.instance().log().highestPending();
+                    logger.debug("Pending highest epoch is {}", pending);
+                    pending.ifPresent(epoch ->
                            {
                                try
                                {
-                                   lastClusterMetadata = ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+                                   ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
                                }
                                catch (InterruptedException e)
                                {
@@ -417,6 +440,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                                    throw new ReadTimeoutException(cl, 0, 0, false, "Timed out waiting for updated cluster metadata");
                                }
                            });
+                    lastClusterMetadata = ClusterMetadata.current();
                     delegate = attempt.apply(lastClusterMetadata);
                 }
             }

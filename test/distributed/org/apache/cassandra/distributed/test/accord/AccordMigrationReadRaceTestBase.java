@@ -578,6 +578,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
         IInvokableInstance i3 = cluster.get(3);
 
         long afterAlter = getNextEpoch(i1).getEpoch();
+        logger.info("Epoch after alter {}", afterAlter);
         if (migrateAwayFromAccord)
             alterTableTransactionalMode(TransactionalMode.off, TransactionalMigrationFromMode.full);
         else
