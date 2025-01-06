@@ -45,6 +45,7 @@ import accord.primitives.Ballot;
 import accord.primitives.Deps;
 import accord.primitives.FullRoute;
 import accord.primitives.Participants;
+import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.Txn;
@@ -80,6 +81,7 @@ import org.apache.cassandra.service.accord.AccordEndpointMapper;
 import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.service.accord.api.AccordAgent;
 import org.apache.cassandra.service.accord.api.AccordRoutingKey;
+import org.apache.cassandra.service.accord.api.AccordRoutingKey.TokenKey;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.interop.AccordInteropReadCallback.MaximalCommitSender;
 import org.apache.cassandra.service.accord.txn.AccordUpdate;
@@ -97,6 +99,7 @@ import static accord.coordinate.CoordinationAdapter.Factory.Step.Continue;
 import static accord.utils.Invariants.checkArgument;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.accordReadMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.accordWriteMetrics;
+import static org.apache.cassandra.service.accord.txn.TxnNamedRead.boundsAsAccordRange;
 
 /*
  * The core interoperability problem between Accord and C* writes (regular, and read repair)
@@ -146,7 +149,6 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     private final TxnId txnId;
     private final Txn txn;
     private final FullRoute<?> route;
-    private final Participants<?> readScope;
     private final Timestamp executeAt;
     private final Deps deps;
     private final BiConsumer<? super Result, Throwable> callback;
@@ -164,7 +166,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     private final Set<InetAddressAndPort> contacted;
     private final AccordUpdate.Kind updateKind;
 
-    public AccordInteropExecution(Node node, TxnId txnId, Txn txn, AccordUpdate.Kind updateKind, FullRoute<?> route, Participants<?> readScope, Timestamp executeAt, Deps deps, BiConsumer<? super Result, Throwable> callback,
+    public AccordInteropExecution(Node node, TxnId txnId, Txn txn, AccordUpdate.Kind updateKind, FullRoute<?> route, Timestamp executeAt, Deps deps, BiConsumer<? super Result, Throwable> callback,
                                   AgentExecutor executor, ConsistencyLevel consistencyLevel, AccordEndpointMapper endpointMapper)
     {
         checkArgument(!txn.read().keys().isEmpty() || updateKind == AccordUpdate.Kind.UNRECOVERABLE_REPAIR);
@@ -172,7 +174,6 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         this.txnId = txnId;
         this.txn = txn;
         this.route = route;
-        this.readScope = readScope;
         this.executeAt = executeAt;
         this.deps = deps;
         this.callback = callback;
@@ -224,6 +225,29 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         return EndpointsForToken.of(token, replicas);
     }
 
+    /*
+     * Short read protection will generate new read commands with a scope that is smaller than the read scope
+     * of all the original reads.
+     */
+    private Participants<?> readScopeForCommand(ReadCommand command)
+    {
+        if (command.getClass() == SinglePartitionReadCommand.class)
+        {
+            SinglePartitionReadCommand readCommand = (SinglePartitionReadCommand) command;
+            TokenKey tk = new TokenKey(readCommand.metadata().id, readCommand.partitionKey().getToken());
+            return Participants.singleton(txn.read().keys().domain(), tk);
+        }
+        else if (command.getClass() == PartitionRangeReadCommand.class)
+        {
+            TokenRange tr = boundsAsAccordRange(command.dataRange().keyRange(), command.metadata().id);
+            return Ranges.of(tr).toParticipants();
+        }
+        else
+        {
+            throw new IllegalStateException("Unsupported command type " + command.getClass().getName());
+        }
+    }
+
     @Override
     public void sendReadCommand(Message<ReadCommand> message, InetAddressAndPort to, RequestCallback<ReadResponse> callback)
     {
@@ -231,7 +255,7 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
         // TODO (nicetohave): It would be better to use the re-use the command from the transaction but it's fragile
         // to try and figure out exactly what changed for things like read repair and short read protection
         // Also this read scope doesn't reflect the contents of this particular read and is larger than it needs to be
-        AccordInteropRead read = new AccordInteropRead(id, executes, txnId, readScope, executeAt.epoch(), message.payload);
+        AccordInteropRead read = new AccordInteropRead(id, executes, txnId, readScopeForCommand(message.payload), executeAt.epoch(), message.payload);
         // TODO (required): understand interop and whether StableFastPath is appropriate
         AccordInteropCommit commit = new AccordInteropCommit(Kind.StableFastPath, id, coordinateTopology, allTopologies,
                                                              txnId, txn, route, executeAt, deps, read);
@@ -242,7 +266,9 @@ public class AccordInteropExecution implements ReadCoordinator, MaximalCommitSen
     public void sendReadRepairMutation(Message<Mutation> message, InetAddressAndPort to, RequestCallback<Object> callback)
     {
         checkArgument(message.payload.allowsPotentialTransactionConflicts());
+        checkArgument(message.payload.getTableIds().size() == 1);
         Node.Id id = endpointMapper.mappedId(to);
+        Participants<?> readScope = Participants.singleton(txn.read().keys().domain(), new TokenKey(message.payload.getTableIds().iterator().next(), message.payload.key().getToken()));
         AccordInteropReadRepair readRepair = new AccordInteropReadRepair(id, executes, txnId, readScope, executeAt.epoch(), message.payload);
         node.send(id, readRepair, executor, new AccordInteropReadRepair.ReadRepairCallback(id, to, message, callback, this));
     }

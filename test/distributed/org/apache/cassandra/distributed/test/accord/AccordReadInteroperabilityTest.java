@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.net.Verb;
 import org.apache.cassandra.service.consensus.TransactionalMode;
+import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 
 import static org.junit.Assert.assertEquals;
 
@@ -59,11 +60,8 @@ public class AccordReadInteroperabilityTest extends AccordTestBase
         List<Object[]> tests = new ArrayList<>(TransactionalMode.values().length * 2);
         for (TransactionalMode mode : TransactionalMode.values())
         {
-            if (mode.accordIsEnabled)
-            {
-                tests.add(new Object[]{ mode, true });
-                tests.add(new Object[]{ mode, false });
-            }
+            tests.add(new Object[]{ mode, true });
+            tests.add(new Object[]{ mode, false });
         }
         return tests;
     }
@@ -119,12 +117,23 @@ public class AccordReadInteroperabilityTest extends AccordTestBase
     }
 
     @Test
+    public void testSerialReadIsAtQuorum() throws Throwable
+    {
+        testReadIsAtQuorum(testSelect(), ConsistencyLevel.SERIAL);
+    }
+
+    @Test
     public void testRangeReadIsAtQuorum() throws Throwable
     {
         testReadIsAtQuorum(testRangeSelect());
     }
 
     private void testReadIsAtQuorum(String query) throws Throwable
+    {
+        testReadIsAtQuorum(query, ConsistencyLevel.QUORUM);
+    }
+
+    private void testReadIsAtQuorum(String query, org.apache.cassandra.distributed.api.ConsistencyLevel cl) throws Throwable
     {
         // Transaction statement doesn't work during migration
         if (query.equals(testTransactionSelect()) && !migrated)
@@ -134,21 +143,34 @@ public class AccordReadInteroperabilityTest extends AccordTestBase
                  SHARED_CLUSTER.setMessageSink(new MessageCountingSink(SHARED_CLUSTER));
                  if (!migrated)
                  {
-                     cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " WITH " + transactionalMode.asCqlParam(), ConsistencyLevel.ALL);
-                     nodetool(cluster.coordinator(1), "repair", "-skip-paxos", "-skip-accord", KEYSPACE, accordTableName);
+                     String alterCQL = "ALTER TABLE " + qualifiedAccordTableName + " WITH " + transactionalMode.asCqlParam();
+                     if (transactionalMode == TransactionalMode.off)
+                         alterCQL = alterCQL + " AND " + TransactionalMigrationFromMode.full.asCqlParam();
+                     cluster.coordinator(1).execute(alterCQL, ConsistencyLevel.ALL);
+                     if (transactionalMode == TransactionalMode.off)
+                     {
+                         nodetool(cluster.coordinator(1), "repair", "-skip-paxos", KEYSPACE, accordTableName);
+                     }
+                     else
+                     {
+                         nodetool(cluster.coordinator(1), "repair", "-skip-paxos", "-skip-accord", KEYSPACE, accordTableName);
+                         nodetool(cluster.coordinator(1), "repair", "-skip-accord", KEYSPACE, accordTableName);
+                     }
                  }
-                 cluster.coordinator(1).execute(query, org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL);
-                 if (transactionalMode.ignoresSuppliedReadCL() && migrated)
+                 cluster.coordinator(1).execute(query, cl);
+                 // Transactional modes that write through Accord never have a point where they need to run interop reads
+                 // they go straight from not being able to read to being able to read from a single replica
+                 if (!transactionalMode.ignoresSuppliedReadCL() && !transactionalMode.nonSerialWritesThroughAccord)
+                 {
+                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
+                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
+                 }
+                 else
                  {
                      // Tricky to check for regular commit because a lot of background Accord things create commits
                      assertEquals(0, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
                      assertEquals(0, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
                      assertEquals(1, messageCount(Verb.ACCORD_READ_RSP));
-                 }
-                 else
-                 {
-                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
-                     assertEquals(2, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
                  }
              });
     }

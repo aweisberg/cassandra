@@ -493,7 +493,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                      Util.spinUntilTrue(() -> outOfSyncInstance.callOnInstance(() -> {
                          logger.info("Coordinating {}", AccordService.instance().node().coordinating());
                          return AccordService.instance().node().coordinating().size() == expectedTransactions;
-                     }), 10);
+                     }));
 
                      logger.info("Accord node is now coordinating something, unpausing so it can continue to execute");
                  }
@@ -585,6 +585,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
         Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterAlter)))), 10);
 
         long afterMigrationStart = getNextEpoch(i1).getEpoch();
+        logger.info("Epoch after migration start {}", afterMigrationStart);
         long waitFori1Andi2ToEnact = afterMigrationStart;
         // Migrating away from Accord need i3 to pause before enacting
         if (migrateAwayFromAccord)
@@ -598,11 +599,13 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
             Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterMigrationStart)))), 10);
 
             long afterRepair = getNextEpoch(i1).getEpoch();
+            logger.info("Epoch after repair {}", afterRepair);
             // First repair only does the data and allows Accord to read, but doesn't require reads to be done through Accord
             nodetool(i2, "repair", "-skip-paxos", "-skip-accord", "-st", migratingRange.left.toString(), "-et", migratingRange.right.toString(), KEYSPACE, accordTableName);
             Util.spinUntilTrue(() -> cluster.stream().allMatch(instance -> instance.callOnInstance(() -> ClusterMetadata.current().epoch.equals(Epoch.create(afterRepair)))), 10);
 
             long afterRepairCompletionHandler = getNextEpoch(i1).getEpoch();
+            logger.info("Epoch after repair completion handler {}", afterRepairCompletionHandler);
             waitFori1Andi2ToEnact = afterRepairCompletionHandler;
             // Node 3 will coordinate the query and not be aware that the migration has begun
             pauseBeforeEnacting(i3, Epoch.create(afterRepairCompletionHandler));

@@ -202,7 +202,6 @@ public class ConsensusMigrationState implements MetadataValue<ConsensusMigration
             updated.put(metadata.id, state);
             return new ConsensusMigrationState(lastModified, updated.build());
         }
-
     }
 
     public ConsensusMigrationState withMigrationsRemovedFor(Set<TableId> removed)

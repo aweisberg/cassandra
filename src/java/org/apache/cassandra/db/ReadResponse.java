@@ -28,7 +28,6 @@ import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.db.rows.DeserializationHelper;
-import org.apache.cassandra.db.rows.DeserializationHelper.Flag;
 import org.apache.cassandra.db.rows.Rows;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.io.IVersionedSerializer;
@@ -40,8 +39,6 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
 import static org.apache.cassandra.db.RepairedDataInfo.NO_OP_REPAIRED_DATA_INFO;
 
 public abstract class ReadResponse
@@ -143,22 +140,31 @@ public abstract class ReadResponse
     /**
      * For range reads Accord generates multiple responses per node because each command store executes
      * the reads independently. The responses are already sorted in token order so the iterators or digests can be
-     * merged and still produce a consistent result across different nodes
+     * merged and still produce a consistent result across different nodes.
+     *
+     * This can *only* be called from the node producing the results not the coordinator because isEmptyDigest is
+     * not serialized
      */
-    public static ReadResponse merge(List<ReadResponse> responses, int version)
+    public static ReadResponse merge(List<ReadResponse> responses, ReadCommand command)
     {
         if (responses.get(0).isDigestResponse())
         {
             Digest digest = Digest.forReadResponse();
             for (ReadResponse response : responses)
-            {
                 digest.update(((DigestResponse)response).digest);
-            }
             return new DigestResponse(ByteBuffer.wrap(digest.digest()));
         }
         else
         {
-            return new MergedDataResponse(responses, version);
+            List<UnfilteredPartitionIterator> iterators = new ArrayList<>(responses.size());
+            for (ReadResponse response : responses)
+                iterators.add(response.makeIterator(command));
+
+            // Range responses will not respect the limit because each command store returns a separate response
+            // so we effectively deserialize and then reserialize in order to apply the limits
+            // Wasteful, but better than sending it to the coordinator to do it
+            UnfilteredPartitionIterator filtered = command.limits().filter(UnfilteredPartitionIterators.concat(iterators), 0, command.selectsFullPartition());
+            return new LocalDataResponse(filtered, command, NO_OP_REPAIRED_DATA_INFO);
         }
     }
 
@@ -255,27 +261,6 @@ public abstract class ReadResponse
                                      int version)
         {
             super(data, repairedDataDigest, isRepairedDigestConclusive, version, DeserializationHelper.Flag.FROM_REMOTE);
-        }
-    }
-
-    private static class MergedDataResponse extends DataResponse
-    {
-        private final List<ReadResponse> responses;
-        private MergedDataResponse(List<ReadResponse> responses, int version)
-        {
-            super(null, ByteBufferUtil.EMPTY_BYTE_BUFFER, true, version, Flag.FROM_REMOTE);
-            checkNotNull(responses, "responses is null");
-            checkArgument(!responses.isEmpty(), "responses should not be empty");
-            this.responses = responses;
-        }
-
-        @Override
-        public UnfilteredPartitionIterator makeIterator(ReadCommand command)
-        {
-            List<UnfilteredPartitionIterator> iterators = new ArrayList<>(responses.size());
-            for (ReadResponse response : responses)
-                iterators.add(response.makeIterator(command));
-            return UnfilteredPartitionIterators.concat(iterators);
         }
     }
 

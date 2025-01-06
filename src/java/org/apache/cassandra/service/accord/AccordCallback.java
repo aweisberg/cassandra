@@ -32,6 +32,7 @@ import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.RequestCallback;
 
+// TODO (review): Why is this unused now, should it be removed? Was it a mistake?
 class AccordCallback<T extends Reply> extends SafeCallback<T> implements RequestCallback<T>
 {
     private static final Logger logger = LoggerFactory.getLogger(AccordCallback.class);
@@ -47,6 +48,8 @@ class AccordCallback<T extends Reply> extends SafeCallback<T> implements Request
     public void onResponse(Message<T> msg)
     {
         logger.trace("Received response {} from {}", msg.payload, msg.from());
+        if (AccordService.DEBUG_LOG_MESSAGING)
+            logger.debug("Received response {} from {}", msg.payload, msg.from());
         success(endpointMapper.mappedId(msg.from()), msg.payload);
     }
 
@@ -61,6 +64,8 @@ class AccordCallback<T extends Reply> extends SafeCallback<T> implements Request
     public void onFailure(InetAddressAndPort from, RequestFailure failure)
     {
         logger.trace("Received failure {} from {} for {}", failure, from, this);
+        if (AccordService.DEBUG_LOG_MESSAGING)
+            logger.debug("Received failure {} from {} for {}", failure, from, this);
         // TODO (now): we should distinguish timeout failures with some placeholder Exception
         failure(endpointMapper.mappedId(from), convertFailureMessage(failure));
     }

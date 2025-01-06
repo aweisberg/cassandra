@@ -900,8 +900,10 @@ public class RangeTest extends CassandraTestBase
             b.subtract(a);
             b.subtract(b);
 
-            a.invert();
-            b.invert();
+            if (!a.isEmpty())
+                a.invert();
+            if (!b.isEmpty())
+                b.invert();
         }
     }
 

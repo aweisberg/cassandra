@@ -153,17 +153,8 @@ public abstract class AccordCQLTestBase extends AccordTestBase
                 assertEquals(t.getMessage(), TransactionStatement.UNSUPPORTED_MIGRATION);
             }
 
-            try
-            {
-                coordinator.execute(writeQuery, ConsistencyLevel.ALL);
-                fail("Expected exception");
-            }
-            catch (Throwable t)
-            {
-                assertEquals(InvalidRequestException.class.getName(), t.getClass().getName());
-                assertEquals(t.getMessage(), TransactionStatement.UNSUPPORTED_MIGRATION);
-            }
-
+            // Blind writes are allowed because Accord does know how to execute them correctly via interop
+            coordinator.execute(writeQuery, ConsistencyLevel.ALL);
 
             // Enabled on table but migrating
             nodetool(coordinator, "consensus_admin", "begin-migration", KEYSPACE, accordTableName);
