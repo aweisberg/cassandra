@@ -461,8 +461,6 @@ public class BatchlogManager implements BatchlogManagerMBean
             }
             catch (WriteTimeoutException | WriteFailureException | RetryOnDifferentSystemException | TopologyMismatch e)
             {
-                if (e instanceof TopologyMismatch)
-
                 logger.trace("Failed replaying a batched mutation on Accord, will write a hint");
                 logger.trace("Failure was : {}", e.getMessage());
                 writeHintsForUndeliveredAccordTxns(hintedNodes);

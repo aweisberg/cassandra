@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.Iterables;
-
 import org.apache.commons.lang3.tuple.Pair;
 
 import org.apache.cassandra.db.filter.ClusteringIndexFilter;
@@ -51,9 +50,10 @@ public interface SinglePartitionReadQuery extends ReadQuery
                                                                         RowFilter rowFilter,
                                                                         DataLimits limits,
                                                                         List<DecoratedKey> partitionKeys,
-                                                                        ClusteringIndexFilter clusteringIndexFilter)
+                                                                        ClusteringIndexFilter clusteringIndexFilter,
+                                                                        boolean local)
     {
-        return SinglePartitionReadCommand.Group.create(metadata, nowInSec, columnFilter, rowFilter, limits, partitionKeys, clusteringIndexFilter);
+        return SinglePartitionReadCommand.Group.create(metadata, nowInSec, columnFilter, rowFilter, limits, partitionKeys, clusteringIndexFilter, local);
     }
 
 

@@ -460,7 +460,8 @@ public abstract class ReadCommand extends AbstractReadQuery
         try
         {
             ColumnFamilyStore cfs = Keyspace.openAndGetStore(metadata());
-            ConsensusRequestRouter.validateSafeToReadNonTransactionally(this);
+            if (!allowsPotentialTxnConflicts)
+                ConsensusRequestRouter.validateSafeToReadNonTransactionally(this);
             Index.QueryPlan indexQueryPlan = indexQueryPlan();
 
             Index.Searcher searcher = null;

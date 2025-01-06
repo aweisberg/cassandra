@@ -183,12 +183,10 @@ final class HintsDispatcher implements AutoCloseable
         long epoch = ClusterMetadata.current().epoch.getEpoch();
         try
         {
-            logger.info("Sending hint page " + epoch);
             return doSendHintsAndAwait(page, null);
         }
         finally
         {
-            logger.info("done sending hint page " + epoch);
             hintsNeedingRehinting.clear();
         }
     }
@@ -355,7 +353,6 @@ final class HintsDispatcher implements AutoCloseable
     private Callback sendHint(Hint hint)
     {
         ClusterMetadata cm = ClusterMetadata.current();
-        logger.info("Splitting hint with epoch " + cm.epoch.getEpoch());
         SplitHint splitHint = splitHintIntoAccordAndNormal(cm, hint);
         Mutation accordHintMutation = splitHint.accordMutation;
         Dispatcher.RequestTime requestTime = null;
