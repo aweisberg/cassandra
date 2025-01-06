@@ -36,9 +36,10 @@ public interface PartitionRangeReadQuery extends ReadQuery
                             ColumnFilter columnFilter,
                             RowFilter rowFilter,
                             DataLimits limits,
-                            DataRange dataRange)
+                            DataRange dataRange,
+                            boolean local)
     {
-        return PartitionRangeReadCommand.create(table, nowInSec, columnFilter, rowFilter, limits, dataRange);
+        return PartitionRangeReadCommand.create(table, nowInSec, columnFilter, rowFilter, limits, dataRange, local);
     }
 
     /**

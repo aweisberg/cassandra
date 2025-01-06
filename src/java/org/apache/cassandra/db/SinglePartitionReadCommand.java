@@ -215,6 +215,45 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
      * @param limits the limits to use for the query.
      * @param partitionKey the partition key for the partition to query.
      * @param clusteringIndexFilter the clustering index filter to use for the query.
+     * @param local the query is a test or system query executing locally and can ignore potential txn conflicts
+     *
+     * @return a newly created read command.
+     */
+    public static SinglePartitionReadCommand create(TableMetadata metadata,
+                                                    long nowInSec,
+                                                    ColumnFilter columnFilter,
+                                                    RowFilter rowFilter,
+                                                    DataLimits limits,
+                                                    DecoratedKey partitionKey,
+                                                    ClusteringIndexFilter clusteringIndexFilter,
+                                                    boolean local)
+    {
+        return create(metadata.epoch,
+                      false,
+                      0,
+                      false,
+                      local,
+                      metadata,
+                      nowInSec,
+                      columnFilter,
+                      rowFilter,
+                      limits,
+                      partitionKey,
+                      clusteringIndexFilter,
+                      findIndexQueryPlan(metadata, rowFilter),
+                      false);
+    }
+
+    /**
+     * Creates a new read command on a single partition.
+     *
+     * @param metadata the table to query.
+     * @param nowInSec the time in seconds to use are "now" for this query.
+     * @param columnFilter the column filter to use for the query.
+     * @param rowFilter the row filter to use for the query.
+     * @param limits the limits to use for the query.
+     * @param partitionKey the partition key for the partition to query.
+     * @param clusteringIndexFilter the clustering index filter to use for the query.
      *
      * @return a newly created read command.
      */
@@ -1288,7 +1327,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                    RowFilter rowFilter,
                                    DataLimits limits,
                                    List<DecoratedKey> partitionKeys,
-                                   ClusteringIndexFilter clusteringIndexFilter)
+                                   ClusteringIndexFilter clusteringIndexFilter,
+                                   boolean local)
         {
             List<SinglePartitionReadCommand> commands = new ArrayList<>(partitionKeys.size());
             for (DecoratedKey partitionKey : partitionKeys)
@@ -1299,7 +1339,8 @@ public class SinglePartitionReadCommand extends ReadCommand implements SinglePar
                                                                rowFilter,
                                                                limits,
                                                                partitionKey,
-                                                               clusteringIndexFilter));
+                                                               clusteringIndexFilter,
+                                                               local));
             }
 
             return create(commands, limits);

@@ -151,6 +151,29 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
                       false);
     }
 
+    public static PartitionRangeReadCommand create(TableMetadata metadata,
+                                                   long nowInSec,
+                                                   ColumnFilter columnFilter,
+                                                   RowFilter rowFilter,
+                                                   DataLimits limits,
+                                                   DataRange dataRange,
+                                                   boolean local)
+    {
+        return create(metadata.epoch,
+                      false,
+                      0,
+                      false,
+                      local,
+                      metadata,
+                      nowInSec,
+                      columnFilter,
+                      rowFilter,
+                      limits,
+                      dataRange,
+                      findIndexQueryPlan(metadata, rowFilter),
+                      false);
+    }
+
     /**
      * Creates a new read command that query all the data in the table.
      *
