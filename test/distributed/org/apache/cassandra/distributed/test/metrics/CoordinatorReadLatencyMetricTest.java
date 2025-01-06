@@ -36,6 +36,7 @@ import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
 import org.apache.cassandra.metrics.ClientRequestsMetricsHolder;
 import org.apache.cassandra.service.consensus.TransactionalMode;
+import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.service.paxos.Paxos;
 import org.assertj.core.api.Assertions;
 
@@ -65,11 +66,11 @@ public class CoordinatorReadLatencyMetricTest extends TestBaseImpl
 
             verifyTableLatency(cluster, 1, () -> verifyLatencyMetrics(cluster, select.toCQL(), ConsistencyLevel.QUORUM));
             cluster.get(1).runOnInstance(() -> Paxos.setPaxosVariant(Config.PaxosVariant.v1));
-            verifyTableLatency(cluster, 1, () -> verifyLatencyMetrics(cluster, select.toCQL(), ConsistencyLevel.SERIAL));
+            verifyTableLatency(cluster,  1, () -> verifyLatencyMetrics(cluster, select.toCQL(), ConsistencyLevel.SERIAL));
             cluster.get(1).runOnInstance(() -> Paxos.setPaxosVariant(Config.PaxosVariant.v2));
             verifyTableLatency(cluster, 1, () -> verifyLatencyMetrics(cluster, select.toCQL(), ConsistencyLevel.SERIAL));
 
-            cluster.schemaChange(withKeyspace("ALTER TABLE %s.tbl WITH " + TransactionalMode.full.asCqlParam()));
+            cluster.schemaChange(withKeyspace("ALTER TABLE %s.tbl WITH " + TransactionalMode.full.asCqlParam() + " AND " + TransactionalMigrationFromMode.none.asCqlParam()));
             verifyTableLatency(cluster, 1, () -> verifyLatencyMetrics(cluster, Txn.wrap(select).toCQL(), ConsistencyLevel.QUORUM));
 
             var let = Txn.builder()
