@@ -104,8 +104,8 @@ public class ShortPaxosSimulationTest
     @Test
     public void casOnAccordSimulationTest() throws IOException
     {
-        PaxosSimulationRunner.main(new String[] { "run",
-                                                  "--lwt-strategy", "mixed_reads",
+        PaxosSimulationRunner.m]]]]]]]]]]]]]]]]]]]]]]]]]]]ain(new String[] { "run",
+                                                  "--transactional-mode", "full",
                                                   "-n", "3...6",
                                                   "-t", "1000",
                                                   "--cluster-action-limit", "0",
