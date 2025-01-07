@@ -38,6 +38,7 @@ import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(Parameterized.class)
 public class AccordReadInteroperabilityTest extends AccordTestBase
@@ -169,8 +170,10 @@ public class AccordReadInteroperabilityTest extends AccordTestBase
                  {
                      // Tricky to check for regular commit because a lot of background Accord things create commits
                      assertEquals(0, messageCount(Verb.ACCORD_INTEROP_COMMIT_REQ));
+                     assertEquals(0, messageCount(Verb.ACCORD_INTEROP_READ_REQ));
                      assertEquals(0, messageCount(Verb.ACCORD_INTEROP_READ_RSP));
-                     assertEquals(1, messageCount(Verb.ACCORD_READ_RSP));
+                     // Durability scheduling creates a lot of background commits that generate read responses
+                     assertTrue(messageCount(Verb.ACCORD_READ_RSP) > 0);
                  }
              });
     }
