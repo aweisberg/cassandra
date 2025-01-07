@@ -294,9 +294,7 @@ public class AccordTopology
             List<TableMetadata> tables = keyspace.tables.stream().filter(TableMetadata::requiresAccordSupport).collect(Collectors.toList());
             if (tables.isEmpty())
                 continue;
-            System.out.println("In epoch " + epoch + " Accord tables are " + tables);
             List<KeyspaceShard> ksShards = KeyspaceShard.forKeyspace(keyspace, placements, directory);
-            System.out.println("Shards are " + shards);
             tables.forEach(table -> ksShards.forEach(shard -> shards.addAll(shard.createForTable(table, unavailable, dcMap, lookup))));
         }
 
