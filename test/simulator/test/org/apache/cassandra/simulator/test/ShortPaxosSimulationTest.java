@@ -104,7 +104,7 @@ public class ShortPaxosSimulationTest
     @Test
     public void casOnAccordSimulationTest() throws IOException
     {
-        PaxosSimulationRunner.m]]]]]]]]]]]]]]]]]]]]]]]]]]]ain(new String[] { "run",
+        PaxosSimulationRunner.main(new String[] { "run",
                                                   "--transactional-mode", "full",
                                                   "-n", "3...6",
                                                   "-t", "1000",
