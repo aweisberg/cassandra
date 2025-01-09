@@ -30,12 +30,14 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.coordinate.CoordinationFailed;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.Row;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.impl.Query;
+import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.simulator.Action;
 import org.apache.cassandra.simulator.ActionListener;
@@ -251,6 +253,13 @@ public class PairOfSequencesPaxosSimulation extends AbstractPairOfSequencesPaxos
         if (array.length != 1)
             throw new AssertionError("Require only 1 element but found array " + Arrays.toString(array));
         return array[0];
+    }
+
+    @Override
+    protected Class<? extends Throwable>[] expectedExceptions()
+    {
+        return (Class<? extends Throwable>[]) new Class<?>[] { RequestExecutionException.class,
+                                                               CoordinationFailed.class };
     }
 
     @Override

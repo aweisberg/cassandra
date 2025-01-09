@@ -1840,10 +1840,15 @@
 
     <property name="simulator.asm.print" value="none"/> <!-- Supports: NONE, CLASS_SUMMARY, CLASS_DETAIL, METHOD_SUMMARY, METHOD_DETAIL, ASM; see org.apache.cassandra.simulator.asm.MethodLogger.Level -->
   <target name="test-simulator-dtest" depends="maybe-build-test" description="Execute simulator dtests">
-    <testmacro inputdir="${test.simulator-test.src}" timeout="${test.simulation.timeout}" forkmode="perTest" showoutput="true" filter="**/test/${test.name}.java" maxmemory="8g">
+    <testmacro inputdir="${test.simulator-test.src}" timeout="${test.simulation.timeout}" forkmode="perTest" showoutput="true" filter="**/test/ShortPaxosSimulationTest.java" maxmemory="8g">
       <jvmarg value="-Dlogback.configurationFile=test/conf/logback-simulator.xml"/>
       <jvmarg value="-Dcassandra.ring_delay_ms=10000"/>
       <jvmarg value="-Dcassandra.tolerate_sstable_size=true"/>
+      <jvmarg value="-Dcassandra.disable_tcactive_openssl" />
+      <jvmarg value="-Dcassandra.test.simulator.debug=true" />
+      <jvmarg value="-Dlog4j2.disableJmx=true" />
+      <jvmarg value="-Dlog4j.shutdownHookEnabled=false" />
+      <jvmarg value="-Dcassandra.simulator.skiplog4jreload=true" />
       <jvmarg value="-Dcassandra.skip_sync=true" />
       <jvmarg value="-Dcassandra.debugrefcount=false"/>
       <jvmarg value="-Dcassandra.test.simulator.determinismcheck=strict"/>

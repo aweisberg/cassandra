@@ -29,8 +29,6 @@ import java.util.function.Predicate;
 
 import com.google.common.collect.Iterators;
 import org.junit.BeforeClass;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.concurrent.ExecutorFactory;
 import org.apache.cassandra.config.CassandraRelevantProperties;
@@ -40,8 +38,18 @@ import org.apache.cassandra.distributed.api.IIsolatedExecutor;
 import org.apache.cassandra.distributed.impl.AbstractCluster;
 import org.apache.cassandra.distributed.impl.IsolatedExecutor;
 import org.apache.cassandra.distributed.shared.InstanceClassLoader;
-import org.apache.cassandra.simulator.*;
+import org.apache.cassandra.simulator.Action;
+import org.apache.cassandra.simulator.ActionList;
+import org.apache.cassandra.simulator.ActionPlan;
+import org.apache.cassandra.simulator.ActionSchedule;
 import org.apache.cassandra.simulator.ActionSchedule.Work;
+import org.apache.cassandra.simulator.ClusterSimulation;
+import org.apache.cassandra.simulator.Debug;
+import org.apache.cassandra.simulator.FutureActionScheduler;
+import org.apache.cassandra.simulator.RandomSource;
+import org.apache.cassandra.simulator.RunnableActionScheduler;
+import org.apache.cassandra.simulator.Simulation;
+import org.apache.cassandra.simulator.SimulationRunner;
 import org.apache.cassandra.simulator.asm.InterceptClasses;
 import org.apache.cassandra.simulator.asm.NemesisFieldSelectors;
 import org.apache.cassandra.simulator.systems.Failures;
@@ -85,7 +93,8 @@ public class SimulationTestBase
         try { Clock.Global.nanoTime(); } catch (IllegalStateException e) {} // make sure static initializer gets called
     }
 
-    private static final Logger logger = LoggerFactory.getLogger(Logger.class);
+    // Don't use loggers before invoking simulator it messes up initialization order
+//    private static final Logger logger = LoggerFactory.getLogger(Logger.class);
 
     static abstract class DTestClusterSimulation implements Simulation
     {
@@ -206,7 +215,7 @@ public class SimulationTestBase
         long seed = System.currentTimeMillis();
         // Development seed:
         //long seed = 1687184561194L;
-        logger.info("Simulation seed: {}L", seed);
+        System.out.printf("Simulation seed: %dL", seed);
         configure.accept(factory);
         try (ClusterSimulation<?> cluster = factory.create(seed))
         {

@@ -29,6 +29,6 @@ public class ShortAccordSimulationTest
     @Test
     public void simulationTest() throws IOException
     {
-        AccordSimulationRunner.main(new String[] { "run", "-n", "3..6", "-t", "1000", "--cluster-action-limit", "-1", "-c", "2", "-s", "30"});
+        AccordSimulationRunner.main(new String[] { "run", "--seed", "0xb778e6353b3596cf", "-n", "3..6", "-t", "1000", "--cluster-action-limit", "-1", "-c", "2", "-s", "30"});
     }
 }

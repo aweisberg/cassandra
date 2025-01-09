@@ -32,7 +32,10 @@ import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.Slice;
 import org.apache.cassandra.db.Slices;
 import org.apache.cassandra.db.SystemKeyspace;
+import org.apache.cassandra.db.filter.ClusteringIndexSliceFilter;
 import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.filter.DataLimits;
+import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.TimeUUIDType;
 import org.apache.cassandra.db.memtable.Memtable;
@@ -200,7 +203,8 @@ public class Ballots
 
     public static long latestBallotFromBaseTable(DecoratedKey key, TableMetadata metadata)
     {
-        SinglePartitionReadCommand cmd = SinglePartitionReadCommand.create(metadata, 0, key, Slice.ALL);
+        ClusteringIndexSliceFilter filter = new ClusteringIndexSliceFilter(Slices.with(metadata.comparator, Slice.ALL), false);
+        SinglePartitionReadCommand cmd = SinglePartitionReadCommand.create(metadata, 0, ColumnFilter.all(metadata), RowFilter.none(), DataLimits.NONE, key, filter, true);
         try (ReadExecutionController controller = cmd.executionController(); UnfilteredPartitionIterator partitions = cmd.executeLocally(controller))
         {
             if (!partitions.hasNext())

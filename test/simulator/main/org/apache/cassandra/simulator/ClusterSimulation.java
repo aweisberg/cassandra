@@ -200,7 +200,7 @@ public class ClusterSimulation<S extends Simulation> implements AutoCloseable
         protected HeapPool.Logged.Listener memoryListener;
         protected SimulatedTime.Listener timeListener = (i1, i2) -> {};
         protected LongConsumer onThreadLocalRandomCheck;
-        protected String transactionalMode = "full";
+        protected String transactionalMode = "off";
 
         public Builder<S> failures(Failures failures)
         {
