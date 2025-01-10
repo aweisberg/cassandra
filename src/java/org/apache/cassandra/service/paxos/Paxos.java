@@ -87,6 +87,7 @@ import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.CASRequest;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.FailureRecordingCallback.AsMap;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.service.paxos.Commit.Proposal;
 import org.apache.cassandra.service.paxos.PaxosPrepare.FoundIncompleteAccepted;
@@ -107,7 +108,6 @@ import org.apache.cassandra.utils.CassandraVersion;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.NoSpamLogger;
 
-import static com.google.common.base.Preconditions.checkState;
 import static java.util.Collections.emptyMap;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -129,6 +129,8 @@ import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.casWriteM
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetricsMap;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.writeMetricsMap;
+import static org.apache.cassandra.service.StorageProxy.ARIEL_DEBUG;
+import static org.apache.cassandra.service.StorageProxy.ARIEL_DEBUG_KEY;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.RETRY_NEW_PROTOCOL;
 import static org.apache.cassandra.service.StorageProxy.ConsensusAttemptResult.casResult;
@@ -703,7 +705,8 @@ public class Paxos
                                              ConsistencyLevel consistencyForConsensus,
                                              ConsistencyLevel consistencyForCommit,
                                              ClientState clientState,
-                                             Dispatcher.RequestTime requestTime)
+                                             Dispatcher.RequestTime requestTime,
+                                             long minHLC)
             throws UnavailableException, IsBootstrappingException, RequestFailureException, RequestTimeoutException, InvalidRequestException
     {
         final long proposeDeadline = requestTime.startedAtNanos() + getCasContentionTimeout(NANOSECONDS);
@@ -724,7 +727,7 @@ public class Paxos
                 Tracing.trace("Reading existing values for CAS precondition");
 
                 BeginResult begin = begin(proposeDeadline, readCommand, consistencyForConsensus,
-                        true, null, failedAttemptsDueToContention);
+                        true, Ballot.atUnixMicrosWithLsb(minHLC, 0, GLOBAL), failedAttemptsDueToContention);
 
                 if (begin.retryWithNewConsenusProtocol)
                 {
@@ -800,11 +803,13 @@ public class Paxos
                     continue;
                 }
 
-                PaxosPropose.Status propose = propose(proposal, participants, conditionMet, false).awaitUntil(proposeDeadline);
+                PaxosPropose.Status propose = propose(proposal, participants, conditionMet).awaitUntil(proposeDeadline);
                 switch (propose.outcome)
                 {
                     default: throw new IllegalStateException();
-
+                    case RETRY_DIFFERENT_SYSTEM:
+                        casWriteMetrics.acceptMigrationRejects.mark();
+                        return RETRY_NEW_PROTOCOL;
                     case MAYBE_FAILURE:
                         throw propose.maybeFailure().markAndThrowAsTimeoutOrFailure(true, consistencyForConsensus, failedAttemptsDueToContention);
 
@@ -837,12 +842,6 @@ public class Paxos
                                         .markAndThrowAsTimeoutOrFailure(true, consistencyForConsensus, failedAttemptsDueToContention);
 
                             case NO:
-                                // Shouldn't retry on this protocol
-                                if (superseded.needsConsensusMigration)
-                                {
-                                    casWriteMetrics.acceptMigrationRejects.mark();
-                                    return RETRY_NEW_PROTOCOL;
-                                }
                                 // We have been superseded without our proposal being accepted by anyone, so we can safely retry
                                 Tracing.trace("Paxos proposal not accepted (pre-empted by a higher ballot)");
                                 if (!waitForContention(proposeDeadline, ++failedAttemptsDueToContention, metadata, partitionKey, consistencyForConsensus, WRITE))
@@ -886,7 +885,7 @@ public class Paxos
         return read.rowIterator(false);
     }
 
-    public static ConsensusAttemptResult read(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyForConsensus, Dispatcher.RequestTime requestTime)
+    public static ConsensusAttemptResult read(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyForConsensus, Dispatcher.RequestTime requestTime, long minHLC)
             throws InvalidRequestException, UnavailableException, ReadFailureException, ReadTimeoutException
     {
         long start = nanoTime();
@@ -895,8 +894,10 @@ public class Paxos
         long deadline = requestTime.computeDeadline(DatabaseDescriptor.getReadRpcTimeout(NANOSECONDS));
 
         int failedAttemptsDueToContention = 0;
-        Ballot minimumBallot = null;
+        Ballot minimumBallot = Ballot.atUnixMicrosWithLsb(minHLC, 0, GLOBAL);
         SinglePartitionReadCommand read = group.queries.get(0);
+        // Allow potential txn conflicts since Paxos will manage them
+        read = read.withTransactionalSettings(false, read.nowInSec());
         try (PaxosOperationLock lock = PaxosState.lock(read.partitionKey(), read.metadata(), deadline, consistencyForConsensus, false))
         {
             while (true)
@@ -928,11 +929,13 @@ public class Paxos
                 }
 
                 Proposal proposal = Proposal.empty(begin.ballot, read.partitionKey(), read.metadata());
-                PaxosPropose.Status propose = propose(proposal, begin.participants, true, false).awaitUntil(deadline);
+                PaxosPropose.Status propose = propose(proposal, begin.participants, true).awaitUntil(deadline);
                 switch (propose.outcome)
                 {
                     default: throw new IllegalStateException();
-
+                    case RETRY_DIFFERENT_SYSTEM:
+                        casReadMetrics.acceptMigrationRejects.mark();
+                        return RETRY_NEW_PROTOCOL;
                     case MAYBE_FAILURE:
                         throw propose.maybeFailure().markAndThrowAsTimeoutOrFailure(false, consistencyForConsensus, failedAttemptsDueToContention);
 
@@ -941,15 +944,6 @@ public class Paxos
 
                     case SUPERSEDED:
                         Superseded superseded = propose.superseded();
-                        // For consensus migration we are going to bail out earlier if migration is needed
-                        // otherwise it it will fail every single query that races with migration being started
-                        // during the propose step. Necessary because of CASSANDRA-18276
-                        // Shouldn't retry again on this protocol
-                        if (superseded.needsConsensusMigration)
-                        {
-                            casReadMetrics.acceptMigrationRejects.mark();
-                            return RETRY_NEW_PROTOCOL;
-                        }
                         // TODO https://issues.apache.org/jira/browse/CASSANDRA-18276 side effects shouldn't matter for reads
                         switch (superseded.hadSideEffects)
                         {
@@ -1064,15 +1058,14 @@ public class Paxos
             // After performing the prepare phase we may discover that we can't propose
             // our own transaction on this protocol by discovering a new CM Epoch
             if (ConsensusRequestRouter.instance.isKeyInMigratingOrMigratedRangeDuringPaxosBegin(query.metadata().id, query.partitionKey()) && prepare.outcome != MAYBE_FAILURE)
-            {
                 return BeginResult.retryOnNewProtocol();
-            }
 
             boolean isPromised = false;
             retry: switch (prepare.outcome)
             {
                 default: throw new IllegalStateException();
-
+                case RETRY_DIFFERENT_SYSTEM:
+                    return BeginResult.retryOnNewProtocol();
                 case FOUND_INCOMPLETE_COMMITTED:
                 {
                     FoundIncompleteCommitted incomplete = prepare.incompleteCommitted();
@@ -1096,11 +1089,23 @@ public class Paxos
                     // and in fact it's possible for a CAS to sometimes determine if side effects occurred by reading
                     // the underlying data and not witnessing the timestamp of its ballot (or any newer for the relevant data).
                     Proposal repropose = new Proposal(inProgress.ballot, inProgress.accepted.update);
-                    PaxosPropose.Status proposeResult = propose(repropose, inProgress.participants, false, true).awaitUntil(deadline);
+                    String hostId = "UNKNOWN";
+                    if (StorageService.instance.getLocalHostUUID() != null)
+                    {
+                        hostId = StorageService.instance.getLocalHostId();
+                        hostId = "node" + hostId.substring(hostId.length() - 1, hostId.length());
+                    }
+                    if (ARIEL_DEBUG)
+                    {
+                        if (inProgress.accepted.update.metadata().keyspace.equals("simple_paxos_simulation") && inProgress.accepted.update.partitionKey().getKey().getInt(0) == ARIEL_DEBUG_KEY)
+                            System.out.println(hostId + "-" + Thread.currentThread().getName() + ": Paxos begin reproposing " + inProgress.accepted.update);
+                    }
+                    PaxosPropose.Status proposeResult = propose(repropose, inProgress.participants, false).awaitUntil(deadline);
                     switch (proposeResult.outcome)
                     {
                         default: throw new IllegalStateException();
-
+                        case RETRY_DIFFERENT_SYSTEM:
+                            throw new IllegalStateException("Should not receive retry different system when proposing for recovery from begin");
                         case MAYBE_FAILURE:
                             throw proposeResult.maybeFailure().markAndThrowAsTimeoutOrFailure(isWrite, consistencyForConsensus, failedAttemptsDueToContention);
 
@@ -1109,7 +1114,6 @@ public class Paxos
                             break retry;
 
                         case SUPERSEDED:
-                            checkState(!proposeResult.superseded().needsConsensusMigration, "Should not receive needsConsensusMigration rejects from begin");
                             // since we are proposing a previous value that was maybe superseded by us before completion
                             // we don't need to test the side effects, as we just want to start again, and fall through
                             // to the superseded section below

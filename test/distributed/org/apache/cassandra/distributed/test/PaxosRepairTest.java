@@ -366,7 +366,7 @@ public class PaxosRepairTest extends TestBaseImpl
             List<InetAddressAndPort> endpoints = cluster.stream().map(IInstance::broadcastAddress).map(InetAddressAndPort::getByAddress).collect(Collectors.toList());
             Future<?> cleanup = cluster.get(1).appliesOnInstance((List<? extends InetSocketAddress> es, ExecutorService exec)-> {
                 TableMetadata metadata = Keyspace.open(KEYSPACE).getMetadata().getTableOrViewNullable(TABLE);
-                return PaxosCleanup.cleanup(SharedContext.Global.instance, es.stream().map(InetAddressAndPort::getByAddress).collect(Collectors.toSet()), metadata, StorageService.instance.getLocalRanges(KEYSPACE), false, exec);
+                return PaxosCleanup.cleanup(SharedContext.Global.instance, es.stream().map(InetAddressAndPort::getByAddress).collect(Collectors.toSet()), metadata, StorageService.instance.getLocalRanges(KEYSPACE), false, exec, false);
             }).apply(endpoints, executor);
 
             Uninterruptibles.awaitUninterruptibly(haveFetchedLowBound);
@@ -430,7 +430,7 @@ public class PaxosRepairTest extends TestBaseImpl
             List<InetAddressAndPort> endpoints = cluster.stream().map(i -> InetAddressAndPort.getByAddress(i.broadcastAddress())).collect(Collectors.toList());
             Future<?> cleanup = cluster.get(1).appliesOnInstance((List<? extends InetSocketAddress> es, ExecutorService exec)-> {
                 TableMetadata metadata = Keyspace.open(KEYSPACE).getMetadata().getTableOrViewNullable(TABLE);
-                return PaxosCleanup.cleanup(SharedContext.Global.instance, es.stream().map(InetAddressAndPort::getByAddress).collect(Collectors.toSet()), metadata, StorageService.instance.getLocalRanges(KEYSPACE), false, exec);
+                return PaxosCleanup.cleanup(SharedContext.Global.instance, es.stream().map(InetAddressAndPort::getByAddress).collect(Collectors.toSet()), metadata, StorageService.instance.getLocalRanges(KEYSPACE), false, exec, false);
             }).apply(endpoints, executor);
 
             IMessageFilters.Filter dropAllTo1 = cluster.verbs(PAXOS2_PREPARE_REQ, PAXOS2_PROPOSE_REQ, PAXOS_COMMIT_REQ).from(2).to(1).outbound().drop();
@@ -509,7 +509,7 @@ public class PaxosRepairTest extends TestBaseImpl
             List<InetAddressAndPort> endpoints = cluster.stream().map(i -> InetAddressAndPort.getByAddress(i.broadcastAddress())).collect(Collectors.toList());
             Future<?> cleanup = cluster.get(1).appliesOnInstance((List<? extends InetSocketAddress> es, ExecutorService exec)-> {
                 TableMetadata metadata = Keyspace.open(KEYSPACE).getMetadata().getTableOrViewNullable(TABLE);
-                return PaxosCleanup.cleanup(SharedContext.Global.instance, es.stream().map(InetAddressAndPort::getByAddress).collect(Collectors.toSet()), metadata, StorageService.instance.getLocalRanges(KEYSPACE), false, exec);
+                return PaxosCleanup.cleanup(SharedContext.Global.instance, es.stream().map(InetAddressAndPort::getByAddress).collect(Collectors.toSet()), metadata, StorageService.instance.getLocalRanges(KEYSPACE), false, exec, false);
             }).apply(endpoints, executor);
 
             cleanup.get();

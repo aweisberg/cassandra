@@ -111,7 +111,6 @@ import static org.apache.cassandra.distributed.api.ConsistencyLevel.ANY;
 import static org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL;
 import static org.apache.cassandra.schema.SchemaConstants.SYSTEM_KEYSPACE_NAME;
 import static org.apache.cassandra.schema.SchemaConstants.VIRTUAL_ACCORD_DEBUG;
-import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision.paxosV2;
 import static org.apache.cassandra.service.paxos.PaxosState.MaybePromise.Outcome.PROMISE;
 import static org.assertj.core.api.Fail.fail;
 import static org.junit.Assert.assertEquals;
@@ -248,7 +247,7 @@ public class AccordMigrationTest extends AccordTestBase
             if (routed)
                 return super.routeAndMaybeMigrate(cm, tmd, key, consistencyLevel, requestTime, timeoutNanos, isForWrite);
             routed = true;
-            return paxosV2;
+            return ConsensusRoutingDecision.PAXOSV2;
         }
     }
 
@@ -284,7 +283,7 @@ public class AccordMigrationTest extends AccordTestBase
             if (routed)
                 return super.routeAndMaybeMigrate(cm, tmd, key, consistencyLevel, requestTime, timeoutNanos, isForWrite);
             routed = true;
-            return ConsensusRoutingDecision.accord;
+            return ConsensusRoutingDecision.ACCORD;
         }
     }
 
@@ -657,7 +656,7 @@ public class AccordMigrationTest extends AccordTestBase
                  cluster.get(1).runOnInstance(() -> ConsensusRequestRouter.setInstance(new RoutesToAccordOnce()));
                  nextMigratingKey = paxosMigratingKeys.next();
                  addExpectedMigratedKey(expectedKeyMigrations, nextMigratingKey, tableUUID);
-                 assertTargetPaxosWrite(runCasNoApply, 1, nextMigratingKey, expectedKeyMigrations, 2, 1, 1, 1, 1);
+                 assertTargetPaxosWrite(runCasNoApply, 1, nextMigratingKey, expectedKeyMigrations, 2, 1, 1, 1, 0);
 
                  // Repair the currently migrating range from when targets were switched, but it's not an Accord repair, this is to make sure the wrong repair type doesn't trigger progress
                  nodetool(coordinator, "repair", "-st", upperMidToken.toString(), "-et", maxAlignedWithLocalRanges.toString(), "--skip-accord");
@@ -829,8 +828,7 @@ public class AccordMigrationTest extends AccordTestBase
                 assertEquals( PROMISE, state.promiseIfNewer(ballot, true).outcome());
                 PartitionUpdateBuilder updateBuilder = new PartitionUpdateBuilder(metadata, key);
                 updateBuilder.row(CLUSTERING_VALUE).add("v", 42);
-                // Set isForRepair to true to force accepting the proposal for testing purposes
-                assertEquals( null, state.acceptIfLatest(new Proposal(ballot, updateBuilder.build()), true).supersededBy);
+                assertEquals( null, state.acceptIfLatest(new Proposal(ballot, updateBuilder.build())).supersededBy);
             }
         });
     }

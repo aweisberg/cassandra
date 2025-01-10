@@ -121,8 +121,9 @@ public abstract class ConsensusTableMigration
             TableMetadata tm = Schema.instance.getTableMetadata(desc.keyspace, desc.columnFamily);
             if (tm == null)
                 return;
+
             TableMigrationState tms = ClusterMetadata.current().consensusMigrationState.tableStates.get(tm.id);
-            if (tms == null || !Range.intersects(tms.migratingRanges, desc.ranges))
+            if (tms == null || tms.normalizedIntersectionWithMigratingAtEpoch(repairResult.consensusMigrationRepairResult.minEpoch, desc.ranges).isEmpty())
                 return;
 
             if (!tms.targetProtocol.isMigratedBy(repairResult.consensusMigrationRepairResult.type))
@@ -370,7 +371,7 @@ public abstract class ConsensusTableMigration
     private static RepairOption getRepairOption(Collection<TableMigrationState> tables, List<Range<Token>> intersectingRanges, boolean repairData, boolean repairPaxos, boolean repairAccord)
     {
         boolean primaryRange = false;
-        // TODO (review): Should disabling incremental repair be exposed for the Paxos repair in case someone explicitly does not do incremental repair?
+        // No need for incremental if data isn't repaired
         boolean incremental = repairData;
         boolean trace = false;
         int numJobThreads = 1;

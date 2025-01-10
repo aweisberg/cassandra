@@ -57,6 +57,7 @@ import org.apache.cassandra.utils.ObjectSizes;
 import static accord.utils.Invariants.requireArgument;
 import static accord.utils.SortedArrays.Search.CEIL;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.Boolean.FALSE;
 import static org.apache.cassandra.service.accord.AccordSerializers.consistencyLevelSerializer;
 import static org.apache.cassandra.service.accord.AccordSerializers.serialize;
 import static org.apache.cassandra.utils.ArraySerializers.deserializeArray;
@@ -251,6 +252,8 @@ public class TxnUpdate extends AccordUpdate
         @Override
         public void serialize(TxnUpdate update, DataOutputPlus out, int version) throws IOException
         {
+            // Serializing it with the condition result set shouldn't be needed
+            checkState(update.conditionResult == null, "Can't serialize if conditionResult is set without adding it to serialization");
             out.writeByte(update.preserveTimestamps ? FLAG_PRESERVE_TIMESTAMPS : 0);
             KeySerializers.keys.serialize(update.keys, out, version);
             writeWithVIntLength(update.condition, out);
@@ -356,6 +359,12 @@ public class TxnUpdate extends AccordUpdate
         for (ByteBuffer bytes : buffers)
             result.addAll(deserialize(bytes, serializer));
         return result;
+    }
+
+    @Override
+    public void failCondition()
+    {
+        conditionResult = FALSE;
     }
 
     @Override

@@ -39,7 +39,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.primitives.Ranges;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.Keyspace;
@@ -54,9 +53,11 @@ import org.apache.cassandra.repair.asymmetric.ReduceHelper;
 import org.apache.cassandra.repair.state.JobState;
 import org.apache.cassandra.schema.SystemDistributedKeyspace;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.service.accord.IAccordService.BarrierResult;
 import org.apache.cassandra.service.accord.repair.AccordRepair;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationRepairResult;
 import org.apache.cassandra.service.paxos.cleanup.PaxosCleanup;
+import org.apache.cassandra.service.paxos.cleanup.PaxosUpdateLowBallot;
 import org.apache.cassandra.streaming.PreviewKind;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
@@ -166,7 +167,11 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
         if (doPaxosRepair)
         {
             logger.info("{} {}.{} starting paxos repair", session.previewKind.logPrefix(session.getId()), desc.keyspace, desc.columnFamily);
-            paxosRepair = PaxosCleanup.cleanup(ctx, allEndpoints, metadata, desc.ranges, session.state.commonRange.hasSkippedReplicas, taskExecutor);
+            // Incremental repair flushes at the session level and Paxos repair only repairs to QUORUM
+            // which isn't good enough for consensus migration. This won't cause the synced data to end up in
+            // the repaired set, but consensus migration doesn't require that it just needs the data replicated at ALL
+            boolean flushAfterPaxosRepair = session.isIncremental && session.repairData;
+            paxosRepair = PaxosCleanup.cleanup(ctx, allEndpoints, metadata, desc.ranges, session.state.commonRange.hasSkippedReplicas, taskExecutor, flushAfterPaxosRepair);
         }
         else
         {
@@ -174,7 +179,7 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
             paxosRepair = ImmediateFuture.success(null);
         }
 
-        Future<Ranges> accordRepair;
+        Future<BarrierResult> accordRepair;
         if (doAccordRepair)
         {
             accordRepair = paxosRepair.flatMap(unused -> {
@@ -193,7 +198,15 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
                 logger.info("{} {}.{} starting accord repair, require all endpoints {}", session.previewKind.logPrefix(session.getId()), desc.keyspace, desc.columnFamily, requireAllEndpoints);
                 IPartitioner partitioner = metadata.partitioner;
                 AccordRepair repair = new AccordRepair(ctx, cfs, partitioner, desc.keyspace, desc.ranges, requireAllEndpoints, allEndpoints);
-                return repair.repair(taskExecutor);
+                return repair.repair(taskExecutor).flatMap(barrierResult -> {
+                    if (barrierResult.maxHLC != BarrierResult.NO_HLC)
+                    {
+                        PaxosUpdateLowBallot paxosLowBallot = new PaxosUpdateLowBallot(ctx, allEndpoints, barrierResult.maxHLC);
+                        paxosLowBallot.run();
+                        return paxosLowBallot.map(ignored -> barrierResult);
+                    }
+                    return ImmediateFuture.success(barrierResult);
+                }, taskExecutor);
             }, taskExecutor);
         }
         else
@@ -295,7 +308,7 @@ public class RepairJob extends AsyncFuture<RepairResult> implements Runnable
         }, taskExecutor);
     }
 
-    private Future<List<SyncTask>> createSyncTasks(Future<Ranges> accordRepair, Future<?> allSnapshotTasks, List<InetAddressAndPort> allEndpoints)
+    private Future<List<SyncTask>> createSyncTasks(Future<BarrierResult> accordRepair, Future<?> allSnapshotTasks, List<InetAddressAndPort> allEndpoints)
     {
         Future<List<TreeResponse>> treeResponses;
         if (allSnapshotTasks != null)

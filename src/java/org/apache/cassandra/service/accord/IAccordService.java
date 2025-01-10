@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import accord.api.Agent;
 import accord.api.BarrierType;
+import accord.coordinate.Barrier;
 import accord.local.CommandStores.RangesForEpoch;
 import accord.local.DurableBefore;
 import accord.local.Node;
@@ -82,13 +83,27 @@ public interface IAccordService
     IVerbHandler<? extends Request> requestHandler();
     IVerbHandler<? extends Reply> responseHandler();
 
-    Seekables<?, ?> barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException;
+    class BarrierResult
+    {
+        public static final long NO_HLC = Barrier.BarrierResult.NO_HLC;
+        public static final BarrierResult EMPTY = new BarrierResult(Ranges.EMPTY, NO_HLC);
+        public final Seekables<?, ?> barrieredRanges;
+        public final long maxHLC;
 
-    Seekables<?, ?> barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite);
+        public BarrierResult(Seekables<?, ?> barrieredRanges, long maxHLC)
+        {
+            this.barrieredRanges = barrieredRanges;
+            this.maxHLC = maxHLC;
+        }
+    }
 
-    Seekables<?, ?> repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException;
+    BarrierResult barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException;
 
-    Seekables<?, ?> repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints);
+    BarrierResult barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite);
+
+    BarrierResult repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException;
+
+    BarrierResult repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints);
 
     default void postStreamReceivingBarrier(ColumnFamilyStore cfs, List<Range<Token>> ranges)
     {
@@ -104,7 +119,12 @@ public interface IAccordService
         }
     }
 
-    @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime);
+    @Nonnull default TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+    {
+        return coordinate(minEpoch, txn, consistencyLevel, requestTime, BarrierResult.NO_HLC);
+    }
+
+    @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime, long minHlc);
 
     class AsyncTxnResult extends AsyncPromise<TxnResult>
     {
@@ -128,7 +148,14 @@ public interface IAccordService
     }
 
     @Nonnull
-    AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime);
+    AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime, long minHlc);
+
+    @Nonnull
+    default AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+    {
+        return coordinateAsync(minEpoch, txn, consistencyLevel, requestTime, BarrierResult.NO_HLC);
+    }
+
     TxnResult getTxnResult(AsyncTxnResult asyncTxnResult);
 
     long currentEpoch();
@@ -206,6 +233,11 @@ public interface IAccordService
 
     Node node();
 
+    /**
+     * Ensure Accord's hlc is at least larger than this for anything accepted at this node
+     */
+    void ensureMinHlc(long minHlc);
+
     // Implementation for the NO_OP service that also has what used to be the default implementations
     // that had to be overridden by the real AccordService anyways
     class NoOpAccordService implements IAccordService
@@ -225,37 +257,37 @@ public interface IAccordService
         }
 
         @Override
-        public Seekables<?, ?> barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
+        public BarrierResult barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
         {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public Seekables<?, ?> barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
+        public BarrierResult barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
         {
             throw new UnsupportedOperationException("No accord barriers should be executed when accord.enabled = false in cassandra.yaml");
         }
 
         @Override
-        public Seekables<?, ?> repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
+        public BarrierResult repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
         {
             return null;
         }
 
         @Override
-        public Seekables<?, ?> repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
+        public BarrierResult repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
         {
             throw new UnsupportedOperationException("No accord repairs should be executed when accord.enabled = false in cassandra.yaml");
         }
 
         @Override
-        public @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
+        public @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime, long minHlc)
         {
             throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
         }
 
         @Override
-        public @Nonnull AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
+        public @Nonnull AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime, long minHlc)
         {
             throw new UnsupportedOperationException("No accord transaction should be executed when accord.enabled = false in cassandra.yaml");
         }
@@ -375,6 +407,12 @@ public interface IAccordService
         {
             return null;
         }
+
+        @Override
+        public void ensureMinHlc(long minHlc)
+        {
+
+        }
     }
 
     class DelegatingAccordService implements IAccordService
@@ -399,25 +437,25 @@ public interface IAccordService
         }
 
         @Override
-        public Seekables<?, ?> barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
+        public BarrierResult barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
         {
             return delegate.barrierWithRetries(keysOrRanges, minEpoch, barrierType, isForWrite);
         }
 
         @Override
-        public Seekables<?, ?> barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
+        public BarrierResult barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
         {
             return delegate.barrier(keysOrRanges, minEpoch, requestTime, timeoutNanos, barrierType, isForWrite);
         }
 
         @Override
-        public Seekables<?, ?> repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
+        public BarrierResult repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
         {
             return delegate.repairWithRetries(keysOrRanges, minEpoch, barrierType, isForWrite, allEndpoints);
         }
 
         @Override
-        public Seekables<?, ?> repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
+        public BarrierResult repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
         {
             return delegate.repair(keysOrRanges, epoch, requestTime, timeoutNanos, barrierType, isForWrite, allEndpoints);
         }
@@ -430,16 +468,16 @@ public interface IAccordService
 
         @Nonnull
         @Override
-        public TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, RequestTime requestTime)
+        public TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, RequestTime requestTime, long minHlc)
         {
-            return delegate.coordinate(minEpoch, txn, consistencyLevel, requestTime);
+            return delegate.coordinate(minEpoch, txn, consistencyLevel, requestTime, minHlc);
         }
 
         @Nonnull
         @Override
-        public AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, RequestTime requestTime)
+        public AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, RequestTime requestTime, long minHlc)
         {
-            return delegate.coordinateAsync(minEpoch, txn, consistencyLevel, requestTime);
+            return delegate.coordinateAsync(minEpoch, txn, consistencyLevel, requestTime, minHlc);
         }
 
         @Override
@@ -561,6 +599,12 @@ public interface IAccordService
         public Node node()
         {
             return delegate.node();
+        }
+
+        @Override
+        public void ensureMinHlc(long minHlc)
+        {
+            delegate.ensureMinHlc(minHlc);
         }
     }
 }

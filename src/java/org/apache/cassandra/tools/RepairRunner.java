@@ -21,11 +21,11 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.text.SimpleDateFormat;
 import java.util.List;
-
 import javax.management.ListenerNotFoundException;
 import javax.management.remote.JMXConnector;
 
 import org.apache.cassandra.service.StorageServiceMBean;
+import org.apache.cassandra.utils.Closeable;
 import org.apache.cassandra.utils.concurrent.Condition;
 import org.apache.cassandra.utils.progress.ProgressEvent;
 import org.apache.cassandra.utils.progress.ProgressEventType;
@@ -42,7 +42,7 @@ import static org.apache.cassandra.utils.progress.ProgressEventType.COMPLETE;
 import static org.apache.cassandra.utils.progress.ProgressEventType.ERROR;
 import static org.apache.cassandra.utils.progress.ProgressEventType.PROGRESS;
 
-public class RepairRunner extends JMXNotificationProgressListener
+public class RepairRunner extends JMXNotificationProgressListener implements Closeable
 {
     public static abstract class RepairCmd
     {
@@ -52,8 +52,6 @@ public class RepairRunner extends JMXNotificationProgressListener
         {
             this.keyspace = keyspace;
         }
-
-
 
         public abstract Integer start();
     }
@@ -84,6 +82,7 @@ public class RepairRunner extends JMXNotificationProgressListener
         this.cmd = repairCmd.start();
     }
 
+    @Override
     public void close()
     {
         try

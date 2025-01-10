@@ -24,11 +24,14 @@ import org.junit.Test;
 
 import org.apache.cassandra.simulator.paxos.AccordSimulationRunner;
 
+/**
+ * See ShortPaxosSimulationTest for the parameters you need to run this test in IntelliJ
+ */
 public class ShortAccordSimulationTest
 {
     @Test
     public void simulationTest() throws IOException
     {
-        AccordSimulationRunner.main(new String[] { "run", "-n", "3..6", "-t", "1000", "--cluster-action-limit", "-1", "-c", "2", "-s", "30"});
+        AccordSimulationRunner.main(new String[] { "run", "-n", "3..6", "-t", "1000", "--cluster-action-limit", "-1", "-c", "20", "-s", "30"});
     }
 }

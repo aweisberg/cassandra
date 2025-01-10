@@ -25,10 +25,12 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.exceptions.RequestFailure;
+import org.apache.cassandra.exceptions.RetryOnDifferentSystemException;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.service.FailureRecordingCallback;
+import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ClusterMetadataService;
 
 import static org.apache.cassandra.exceptions.RequestFailure.TIMEOUT;
@@ -45,7 +47,7 @@ public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T
     @Override
     public void onResponse(Message<T> message)
     {
-        ClusterMetadataService.instance().fetchLogFromCMS(message.epoch());
+        ClusterMetadataService.instance().fetchLogFromPeerOrCMS(ClusterMetadata.current(), message.from(), message.epoch());
         onResponse(message.payload, message.from());
     }
 
@@ -57,6 +59,11 @@ public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T
             response = execute.apply(parameter, getBroadcastAddressAndPort());
             if (response == null)
                 return;
+        }
+        catch (RetryOnDifferentSystemException e)
+        {
+            onFailure(getBroadcastAddressAndPort(), RequestFailure.RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM);
+            return;
         }
         catch (Exception ex)
         {
@@ -83,6 +90,11 @@ public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T
             response = execute.apply(parameter1, parameter2, getBroadcastAddressAndPort());
             if (response == null)
                 return;
+        }
+        catch (RetryOnDifferentSystemException e)
+        {
+            onFailure(getBroadcastAddressAndPort(), RequestFailure.RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM);
+            return;
         }
         catch (Exception ex)
         {

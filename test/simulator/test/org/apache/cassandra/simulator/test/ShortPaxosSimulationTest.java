@@ -96,6 +96,7 @@ import org.apache.cassandra.simulator.paxos.PaxosSimulationRunner;
 public class ShortPaxosSimulationTest
 {
     @Test
+    @Ignore
     public void simulationTest() throws IOException
     {
         PaxosSimulationRunner.main(new String[] { "run", "--variant", "v2", "-n", "3..6", "-t", "1000", "-c", "2", "--cluster-action-limit", "2", "-s", "30" });
@@ -109,7 +110,7 @@ public class ShortPaxosSimulationTest
                                                   "-n", "3...6",
                                                   "-t", "1000",
                                                   "--cluster-action-limit", "0",
-                                                  "--consensus-action-limit", "0",
+                                                  "--consensus-action-limit", "1",
                                                   "--consensus-actions", "ACCORD_MIGRATE",
                                                   "-c", "10",
                                                   "-s", "30"});

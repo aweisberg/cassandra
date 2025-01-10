@@ -30,12 +30,14 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import accord.coordinate.CoordinationFailed;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
 import org.apache.cassandra.distributed.api.Row;
 import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.distributed.impl.Query;
+import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.simulator.Action;
 import org.apache.cassandra.simulator.ActionListener;
@@ -254,6 +256,13 @@ public class PairOfSequencesPaxosSimulation extends AbstractPairOfSequencesPaxos
     }
 
     @Override
+    protected Class<? extends Throwable>[] expectedExceptions()
+    {
+        return (Class<? extends Throwable>[]) new Class<?>[] { RequestExecutionException.class,
+                                                               CoordinationFailed.class };
+    }
+
+    @Override
     protected String createTableStmt()
     {
         return "CREATE TABLE " + KEYSPACE + ".tbl (pk int, count int, seq1 text, seq2 list<int>, PRIMARY KEY (pk)) WITH " + transactionalMode.asCqlParam();
@@ -278,12 +287,6 @@ public class PairOfSequencesPaxosSimulation extends AbstractPairOfSequencesPaxos
     private Operation modifying(int operationId, IInvokableInstance instance, int primaryKey, HistoryChecker historyChecker)
     {
         return new ModifyingOperation(operationId, instance, ANY, serialConsistency, primaryKey, historyChecker);
-    }
-
-    @Override
-    protected Class<? extends Throwable>[] expectedExceptions()
-    {
-        return maybeAccord() ? expectedExceptionsAccord() : expectedExceptionsPaxos();
     }
 
     private boolean maybeAccord()

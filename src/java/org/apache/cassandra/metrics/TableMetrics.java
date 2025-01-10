@@ -810,7 +810,7 @@ public class TableMetrics
         casPropose = createLatencyMetrics("CasPropose", cfs.keyspace.metric.casPropose);
         casCommit = createLatencyMetrics("CasCommit", cfs.keyspace.metric.casCommit);
         keyMigration = createLatencyMetrics("KeyMigration", cfs.keyspace.metric.keyMigration, GLOBAL_KEY_MIGRATION_LATENCY);
-        accordRepair = createLatencyMetrics("AccordRepair", cfs.keyspace.metric.rangeMigration, GLOBAL_RANGE_MIGRATION_LATENCY);
+        accordRepair = createLatencyMetrics("AccordRepair", cfs.keyspace.metric.accordRepair, GLOBAL_RANGE_MIGRATION_LATENCY);
         accordRepairUnexpectedFailures = createTableMeter("AccordRepairUnexpectedFailures", cfs.keyspace.metric.rangeMigrationUnexpectedFailures);
         accordRepairDependencyLimitFailures = createTableMeter("AccordRepairDependencyLimitFaiures", cfs.keyspace.metric.rangeMigrationDependencyLimitFailures);
         mutationsRejectedOnWrongSystem = createTableMeter("MutationsRejectedOnWrongSystem", cfs.keyspace.metric.mutationsRejectedOnWrongSystem);

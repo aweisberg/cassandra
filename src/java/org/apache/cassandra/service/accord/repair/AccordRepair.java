@@ -41,9 +41,11 @@ import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.repair.SharedContext;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.AccordTopology;
+import org.apache.cassandra.service.accord.IAccordService.BarrierResult;
 import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.Epoch;
+import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.AsyncPromise;
 import org.apache.cassandra.utils.concurrent.Future;
 
@@ -90,17 +92,22 @@ public class AccordRepair
         return minEpoch;
     }
 
-    public Ranges repair() throws Throwable
+    public BarrierResult repair() throws Throwable
     {
         List<accord.primitives.Range> repairedRanges = new ArrayList<>();
+        long maxHLC = Long.MIN_VALUE;
         for (accord.primitives.Range range : ranges)
-            repairedRanges.addAll(repairRange((TokenRange)range));
-        return Ranges.of(repairedRanges.toArray(new accord.primitives.Range[0]));
+        {
+            Pair<List<accord.primitives.Range>, Long> rangesAndMaxHLC = repairRange((TokenRange) range);
+            repairedRanges.addAll(rangesAndMaxHLC.left);
+            maxHLC = Math.max(maxHLC, rangesAndMaxHLC.right);
+        }
+        return new BarrierResult(Ranges.of(repairedRanges.toArray(new accord.primitives.Range[0])), maxHLC);
     }
 
-    public Future<Ranges> repair(Executor executor)
+    public Future<BarrierResult> repair(Executor executor)
     {
-        AsyncPromise<Ranges> future = new AsyncPromise<>();
+        AsyncPromise<BarrierResult> future = new AsyncPromise<>();
         executor.execute(() -> {
             try
             {
@@ -119,9 +126,10 @@ public class AccordRepair
         shouldAbort = reason == null ? new RuntimeException("Abort") : reason;
     }
 
-    private List<accord.primitives.Range> repairRange(TokenRange range) throws Throwable
+    private Pair<List<accord.primitives.Range>, Long> repairRange(TokenRange range) throws Throwable
     {
         List<accord.primitives.Range> repairedRanges = new ArrayList<>();
+        long maxHLC = Long.MIN_VALUE;
         int rangeStepUpdateInterval = ACCORD_REPAIR_RANGE_STEP_UPDATE_INTERVAL.getInt();
         RoutingKey remainingStart = range.start();
         // TODO (expected): repair ranges should have a configurable lower limit of split size so already small repairs aren't broken up into excessively tiny ones
@@ -158,8 +166,8 @@ public class AccordRepair
                 {
                     if (remainingStart.equals(range.end()))
                     {
-                        logger.info("Completed barriers for {} in {} iterations", range, iteration - 1);
-                        return repairedRanges;
+                        logger.info("Completed barriers for {} in {} iterations maxHLC {}", range, iteration - 1, maxHLC);
+                        return Pair.create(repairedRanges, maxHLC);
                     }
 
                     // Final repair is whatever remains
@@ -174,13 +182,24 @@ public class AccordRepair
                 checkState(lastRepaired == null || toRepair.start().equals(lastRepaired.end()), "Next range should directly follow previous range");
                 lastRepaired = toRepair;
 
-                Ranges barrieredRanges;
+                BarrierResult barrierResult;
                 if (requireAllEndpoints)
-                    barrieredRanges = (Ranges)AccordService.instance().repairWithRetries(Seekables.of(toRepair), minEpoch.getEpoch(), BarrierType.global_sync, false, endpoints);
+                    barrierResult = AccordService.instance().repairWithRetries(Seekables.of(toRepair), minEpoch.getEpoch(), BarrierType.global_sync, false, endpoints);
                 else
-                    barrieredRanges = (Ranges)AccordService.instance().barrierWithRetries(Seekables.of(toRepair), minEpoch.getEpoch(), BarrierType.global_sync, false);
-                for (accord.primitives.Range barrieredRange : barrieredRanges)
-                    repairedRanges.add(barrieredRange);
+                    barrierResult = AccordService.instance().barrierWithRetries(Seekables.of(toRepair), minEpoch.getEpoch(), BarrierType.global_sync, false);
+
+                // For some reason
+                if (barrierResult.maxHLC == BarrierResult.NO_HLC)
+                {
+                    logger.warn("Repair barrier result for ranges " + barrierResult.barrieredRanges + " not considered barriered because the max HLC was not returned. " +
+                                "This occurs when this coordinator is not a replica of the ranges being barriered.");
+                }
+                else
+                {
+                    maxHLC = Math.max(maxHLC, barrierResult.maxHLC);
+                    for (accord.primitives.Range barrieredRange : (Ranges)barrierResult.barrieredRanges)
+                        repairedRanges.add(barrieredRange);
+                }
 
                 remainingStart = toRepair.end();
             }

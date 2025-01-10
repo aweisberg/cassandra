@@ -129,7 +129,7 @@ public class PaxosBallotTrackerTest
             case PROPOSE:
                 try (PaxosState state = PaxosState.get(commit))
                 {
-                    state.acceptIfLatest(commit, false);
+                    state.acceptIfLatest(commit);
                 }
                 break;
             case COMMIT:
@@ -223,7 +223,7 @@ public class PaxosBallotTrackerTest
         DecoratedKey key = dk(1);
         try (PaxosState state = PaxosState.get(key, cfm))
         {
-            Ballot result = state.acceptIfLatest(new Commit.Proposal(ballot2, PartitionUpdate.emptyUpdate(cfm, key)), false).supersededBy;
+            Ballot result = state.acceptIfLatest(new Commit.Proposal(ballot2, PartitionUpdate.emptyUpdate(cfm, key))).supersededBy;
             Assert.assertNull(result);
         }
 
@@ -231,7 +231,7 @@ public class PaxosBallotTrackerTest
         ballotTracker.updateLowBound(ballot4);
         try (PaxosState state = PaxosState.get(key, cfm))
         {
-            Ballot result = state.acceptIfLatest(new Commit.Proposal(ballot3, PartitionUpdate.emptyUpdate(cfm, key)), false).supersededBy;
+            Ballot result = state.acceptIfLatest(new Commit.Proposal(ballot3, PartitionUpdate.emptyUpdate(cfm, key))).supersededBy;
             Assert.assertEquals(ballot4, result);
         }
     }

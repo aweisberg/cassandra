@@ -56,6 +56,7 @@ public class PaxosCleanup extends AsyncFuture<Void> implements Runnable
     private final boolean skippedReplicas;
     private final Executor executor;
     private final boolean isUrgent;
+    private final boolean flushAfter;
 
     // references kept for debugging
     private PaxosStartPrepareCleanup startPrepare;
@@ -63,7 +64,7 @@ public class PaxosCleanup extends AsyncFuture<Void> implements Runnable
     private PaxosCleanupSession session;
     private PaxosCleanupComplete complete;
 
-    public PaxosCleanup(SharedContext ctx, Collection<InetAddressAndPort> endpoints, TableMetadata table, Collection<Range<Token>> ranges, boolean skippedReplicas, Executor executor)
+    public PaxosCleanup(SharedContext ctx, Collection<InetAddressAndPort> endpoints, TableMetadata table, Collection<Range<Token>> ranges, boolean skippedReplicas, Executor executor, boolean flushAfter)
     {
         this.ctx = ctx;
         this.endpoints = endpoints;
@@ -72,6 +73,7 @@ public class PaxosCleanup extends AsyncFuture<Void> implements Runnable
         this.skippedReplicas = skippedReplicas;
         this.executor = executor;
         this.isUrgent = Keyspace.open(table.keyspace).getMetadata().params.replication.isMeta();
+        this.flushAfter = flushAfter;
     }
 
     private <T> void addCallback(Future<T> future, Consumer<T> onComplete)
@@ -79,9 +81,9 @@ public class PaxosCleanup extends AsyncFuture<Void> implements Runnable
         future.addCallback(onComplete, this::tryFailure);
     }
 
-    public static PaxosCleanup cleanup(SharedContext ctx, Collection<InetAddressAndPort> endpoints, TableMetadata table, Collection<Range<Token>> ranges, boolean skippedReplicas, Executor executor)
+    public static PaxosCleanup cleanup(SharedContext ctx, Collection<InetAddressAndPort> endpoints, TableMetadata table, Collection<Range<Token>> ranges, boolean skippedReplicas, Executor executor, boolean flushAfter)
     {
-        PaxosCleanup cleanup = new PaxosCleanup(ctx, endpoints, table, ranges, skippedReplicas, executor);
+        PaxosCleanup cleanup = new PaxosCleanup(ctx, endpoints, table, ranges, skippedReplicas, executor, flushAfter);
         executor.execute(cleanup);
         return cleanup;
     }
@@ -110,7 +112,7 @@ public class PaxosCleanup extends AsyncFuture<Void> implements Runnable
 
     private void finish(Ballot lowBound)
     {
-        complete = new PaxosCleanupComplete(ctx, endpoints, table.id, ranges, lowBound, skippedReplicas, isUrgent);
+        complete = new PaxosCleanupComplete(ctx, endpoints, table.id, ranges, lowBound, skippedReplicas, isUrgent, flushAfter);
         addCallback(complete, this::trySuccess);
         executor.execute(complete);
     }

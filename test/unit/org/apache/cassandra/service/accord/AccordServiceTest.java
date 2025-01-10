@@ -32,8 +32,8 @@ import accord.coordinate.Preempted;
 import accord.coordinate.Timeout;
 import accord.impl.IntKey;
 import accord.primitives.Ranges;
-import accord.primitives.Seekables;
 import accord.primitives.TxnId;
+import org.apache.cassandra.service.accord.IAccordService.BarrierResult;
 import org.apache.cassandra.utils.Blocking;
 import org.assertj.core.api.Condition;
 import org.mockito.Mockito;
@@ -51,12 +51,12 @@ public class AccordServiceTest
     public void retryExpectedFailures() throws InterruptedException
     {
         Blocking blocking = Mockito.mock(Blocking.class);
-        class Task implements Supplier<Seekables>
+        class Task implements Supplier<BarrierResult>
         {
             private int attempts = 0;
 
             @Override
-            public Seekables get()
+            public BarrierResult get()
             {
                 switch (attempts)
                 {
@@ -79,7 +79,7 @@ public class AccordServiceTest
                         attempts++;
                         throw AccordService.newBarrierExhausted(TxnId.NONE, BarrierType.local, true, Ranges.EMPTY);
                     default:
-                        return Ranges.of(IntKey.range(1, 2));
+                        return new BarrierResult(Ranges.of(IntKey.range(1, 2)), BarrierResult.NO_HLC);
                 }
             }
         }
@@ -104,10 +104,10 @@ public class AccordServiceTest
             timeoutFailures.add(() -> {throw AccordService.newBarrierPreempted(TxnId.NONE, BarrierType.local, true, Ranges.EMPTY);});
             Collections.shuffle(timeoutFailures, rs.asJdkRandom());
             Iterator<Runnable> it = timeoutFailures.iterator();
-            Supplier<Seekables> failing = () -> {
+            Supplier<BarrierResult> failing = () -> {
                 if (!it.hasNext()) throw new IllegalStateException("Called too many times");
                 it.next().run(); // this throws...
-                return Ranges.EMPTY;
+                return BarrierResult.EMPTY;
             };
             assertThatThrownBy(() -> doWithRetries(blocking, failing, timeoutFailures.size(), 100, 1000)).is(new Condition<>(AccordService::isTimeout, "timeout"));
             assertThat(it).isExhausted();
@@ -127,10 +127,10 @@ public class AccordServiceTest
             timeoutFailures.add(() -> {throw new Exhausted(null, null, null);});
             Collections.shuffle(timeoutFailures, rs.asJdkRandom());
             Iterator<Runnable> it = timeoutFailures.iterator();
-            Supplier<Seekables> failing = () -> {
+            Supplier<BarrierResult> failing = () -> {
                 if (!it.hasNext()) throw new IllegalStateException("Called too many times");
                 it.next().run(); // this throws...
-                return Ranges.EMPTY;
+                return BarrierResult.EMPTY;
             };
             assertThatThrownBy(() -> doWithRetries(blocking, failing, timeoutFailures.size(), 100, 1000)).isInstanceOf(Exhausted.class);
             assertThat(it).isExhausted();
@@ -176,10 +176,10 @@ public class AccordServiceTest
                 }
             }
             Iterator<Runnable> it = failures.iterator();
-            Supplier<Seekables> failing = () -> {
+            Supplier<BarrierResult> failing = () -> {
                 if (!it.hasNext()) throw new IllegalStateException("Called too many times");
                 it.next().run(); // this throws...
-                return Ranges.EMPTY;
+                return BarrierResult.EMPTY;
             };
             Blocking blocking = Mockito.mock(Blocking.class);
             assertThatThrownBy(() -> doWithRetries(blocking, failing, failures.size(), 100, 1000)).isInstanceOf(isError ? AssertionError.class : NullPointerException.class);

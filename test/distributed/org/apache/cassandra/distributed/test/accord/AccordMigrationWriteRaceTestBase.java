@@ -90,6 +90,7 @@ import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.accord.AccordService;
+import org.apache.cassandra.service.accord.IAccordService.BarrierResult;
 import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.service.accord.api.TokenKey;
 import org.apache.cassandra.service.consensus.TransactionalMode;
@@ -120,6 +121,7 @@ import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteR
 import static org.apache.cassandra.distributed.test.accord.AccordMigrationWriteRaceTestBase.Scenario.MUTATION;
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.apache.cassandra.exceptions.RequestFailureReason.RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM;
+import static org.apache.cassandra.utils.Clock.Global.currentTimeMillis;
 import static org.apache.cassandra.utils.Throwables.runUnchecked;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -796,7 +798,8 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                     RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
                     TokenRange range = TokenRange.create(new TokenKey(tableId, new LongToken(midTokenLong)), new TokenKey(tableId, new LongToken(maxTokenLong)));
                     Ranges accordRanges = Ranges.of(range);
-                    ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
+                    BarrierResult barrierResult = new BarrierResult(accordRanges, TimeUnit.MILLISECONDS.toMicros(currentTimeMillis()));
+                    ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, barrierResult, true, true, true, false);
                     ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
                     return epochAfterRepair.getEpoch();
                 });

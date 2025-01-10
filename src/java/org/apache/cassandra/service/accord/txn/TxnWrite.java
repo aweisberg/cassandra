@@ -58,6 +58,7 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.accord.AccordObjectSizes;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.utils.BooleanSerializer;
@@ -65,6 +66,8 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.ObjectSizes;
 
 import static com.google.common.base.Preconditions.checkState;
+import static org.apache.cassandra.service.StorageProxy.ARIEL_DEBUG;
+import static org.apache.cassandra.service.StorageProxy.ARIEL_DEBUG_KEY;
 import static org.apache.cassandra.service.accord.AccordSerializers.partitionUpdateSerializer;
 import static org.apache.cassandra.utils.ArraySerializers.deserializeArray;
 import static org.apache.cassandra.utils.ArraySerializers.serializeArray;
@@ -137,6 +140,17 @@ public class TxnWrite extends AbstractKeySorted<TxnWrite.Update> implements Writ
             PartitionUpdate update = get();
             if (!preserveTimestamps)
                 update = new PartitionUpdate.Builder(get(), 0).updateAllTimestamp(timestamp).build();
+            if (ARIEL_DEBUG)
+            {
+                String hostId = "UNKNOWN";
+                if (StorageService.instance.getLocalHostUUID() != null)
+                {
+                    hostId = StorageService.instance.getLocalHostId();
+                    hostId = "node" + hostId.substring(hostId.length() - 1, hostId.length());
+                }
+                if (update.metadata().keyspace.equals("simple_paxos_simulation") && update.partitionKey().getKey().getInt(0) == ARIEL_DEBUG_KEY)
+                    System.out.println(hostId + "-" + Thread.currentThread().getName() + ": " + update);
+            }
             Mutation mutation = new Mutation(update, PotentialTxnConflicts.ALLOW);
             return AsyncChains.ofRunnable(Stage.MUTATION.executor(), mutation::applyUnsafe);
         }

@@ -19,20 +19,32 @@
 package org.apache.cassandra.simulator.cluster;
 
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
+import org.apache.cassandra.distributed.api.SimpleQueryResult;
 import org.apache.cassandra.simulator.systems.SimulatedQuery;
 
 import static org.apache.cassandra.simulator.Action.Modifiers.RELIABLE_NO_TIMEOUTS;
 
 class ClusterReliableQueryAction extends SimulatedQuery
 {
+    final String query;
+
     ClusterReliableQueryAction(String id, ClusterActions actions, int on, String query, long timestamp, ConsistencyLevel consistencyLevel, Object... params)
     {
         super(id, RELIABLE_NO_TIMEOUTS, RELIABLE_NO_TIMEOUTS, actions, actions.cluster.get(on), query, timestamp, consistencyLevel, params);
+        this.query = query;
     }
 
     public static ClusterReliableQueryAction schemaChange(String id, ClusterActions actions, int on, String query)
     {
         // this isn't used on 4.0+ nodes, but no harm in supplying it anyway
         return new ClusterReliableQueryAction(id, actions, on, query, actions.time.nextGlobalMonotonicMicros(), ConsistencyLevel.ALL);
+    }
+
+    @Override
+    public void accept(SimpleQueryResult success, Throwable failure)
+    {
+        if (failure == null)
+            System.err.println("Query succeeded: " + query);
+        super.accept(success, failure);
     }
 }

@@ -21,6 +21,7 @@ package org.apache.cassandra.service.consensus.migration;
 import javax.annotation.Nullable;
 
 import accord.primitives.Ranges;
+import org.apache.cassandra.service.accord.IAccordService.BarrierResult;
 import org.apache.cassandra.tcm.Epoch;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -40,10 +41,12 @@ public class ConsensusMigrationRepairResult
         this.barrieredRanges = barrieredRanges;
     }
 
-    public static ConsensusMigrationRepairResult fromRepair(Epoch minEpoch, Ranges barrieredRanges, boolean dataRepaired, boolean paxosRepaired, boolean accordRepaired, boolean deadNodesExcluded)
+    public static ConsensusMigrationRepairResult fromRepair(Epoch minEpoch, BarrierResult barrierResult, boolean dataRepaired, boolean paxosRepaired, boolean accordRepaired, boolean deadNodesExcluded)
     {
         checkArgument(!accordRepaired || minEpoch.isAfter(Epoch.EMPTY), "Epoch should not be empty if Accord repairs was performed");
         if (deadNodesExcluded) return INELIGIBLE;
-        return new ConsensusMigrationRepairResult(new ConsensusMigrationRepairType(dataRepaired, paxosRepaired, accordRepaired), minEpoch, barrieredRanges);
+        boolean eligibleAccordRepair = accordRepaired && barrierResult != null && barrierResult.maxHLC != BarrierResult.NO_HLC;
+        Ranges barrieredRanges = eligibleAccordRepair ? (Ranges)barrierResult.barrieredRanges : null;
+        return new ConsensusMigrationRepairResult(new ConsensusMigrationRepairType(dataRepaired, paxosRepaired, eligibleAccordRepair), minEpoch, barrieredRanges);
     }
 }

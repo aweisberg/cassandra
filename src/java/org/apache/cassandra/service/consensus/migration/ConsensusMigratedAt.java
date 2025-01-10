@@ -36,6 +36,7 @@ public class ConsensusMigratedAt
         public void serialize(ConsensusMigratedAt t, DataOutputPlus out, int version) throws IOException
         {
             Epoch.messageSerializer.serialize(t.migratedAtEpoch, out, version);
+            out.writeUnsignedVInt(t.maxHLC);
             out.writeByte(t.migratedAtTarget.value);
         }
 
@@ -43,15 +44,17 @@ public class ConsensusMigratedAt
         public ConsensusMigratedAt deserialize(DataInputPlus in, int version) throws IOException
         {
             Epoch migratedAtEpoch = Epoch.messageSerializer.deserialize(in, version);
+            long maxHLC = in.readUnsignedVInt();
             ConsensusMigrationTarget target = ConsensusMigrationTarget.fromValue(in.readByte());
-            return new ConsensusMigratedAt(migratedAtEpoch, target);
+            return new ConsensusMigratedAt(migratedAtEpoch,  maxHLC, target);
         }
 
         @Override
         public long serializedSize(ConsensusMigratedAt t, int version)
         {
             return TypeSizes.sizeof(ConsensusMigrationTarget.accord.value)
-                   + Epoch.messageSerializer.serializedSize(t.migratedAtEpoch, version);
+                   + Epoch.messageSerializer.serializedSize(t.migratedAtEpoch, version)
+                   + TypeSizes.sizeofUnsignedVInt(t.maxHLC);
         }
     });
 
@@ -59,12 +62,15 @@ public class ConsensusMigratedAt
     @Nullable
     public final Epoch migratedAtEpoch;
 
+    public final long maxHLC;
+
     @Nullable
     public final ConsensusMigrationTarget migratedAtTarget;
 
-    public ConsensusMigratedAt(Epoch migratedAtEpoch, ConsensusMigrationTarget migratedAtTarget)
+    public ConsensusMigratedAt(Epoch migratedAtEpoch, long maxHLC, ConsensusMigrationTarget migratedAtTarget)
     {
         this.migratedAtEpoch = migratedAtEpoch;
+        this.maxHLC = maxHLC;
         this.migratedAtTarget = migratedAtTarget;
     }
 }

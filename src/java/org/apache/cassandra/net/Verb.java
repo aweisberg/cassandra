@@ -81,14 +81,15 @@ import org.apache.cassandra.service.SnapshotVerbHandler;
 import org.apache.cassandra.service.accord.AccordService;
 import org.apache.cassandra.service.accord.AccordSyncPropagator;
 import org.apache.cassandra.service.accord.AccordSyncPropagator.Notification;
-import org.apache.cassandra.service.accord.FetchTopology;
 import org.apache.cassandra.service.accord.FetchMinEpoch;
+import org.apache.cassandra.service.accord.FetchTopology;
 import org.apache.cassandra.service.accord.interop.AccordInteropApply;
 import org.apache.cassandra.service.accord.interop.AccordInteropRead;
 import org.apache.cassandra.service.accord.interop.AccordInteropReadRepair;
 import org.apache.cassandra.service.accord.interop.AccordInteropStableThenRead;
 import org.apache.cassandra.service.accord.serializers.AcceptSerializers;
 import org.apache.cassandra.service.accord.serializers.ApplySerializers;
+import org.apache.cassandra.service.accord.serializers.AwaitSerializers;
 import org.apache.cassandra.service.accord.serializers.BeginInvalidationSerializers;
 import org.apache.cassandra.service.accord.serializers.CheckStatusSerializers;
 import org.apache.cassandra.service.accord.serializers.CommitSerializers;
@@ -102,7 +103,6 @@ import org.apache.cassandra.service.accord.serializers.QueryDurableBeforeSeriali
 import org.apache.cassandra.service.accord.serializers.ReadDataSerializers;
 import org.apache.cassandra.service.accord.serializers.RecoverySerializers;
 import org.apache.cassandra.service.accord.serializers.SetDurableSerializers;
-import org.apache.cassandra.service.accord.serializers.AwaitSerializers;
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState;
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.ConsensusKeyMigrationFinished;
 import org.apache.cassandra.service.paxos.Commit;
@@ -120,6 +120,7 @@ import org.apache.cassandra.service.paxos.cleanup.PaxosCleanupRequest;
 import org.apache.cassandra.service.paxos.cleanup.PaxosCleanupResponse;
 import org.apache.cassandra.service.paxos.cleanup.PaxosFinishPrepareCleanup;
 import org.apache.cassandra.service.paxos.cleanup.PaxosStartPrepareCleanup;
+import org.apache.cassandra.service.paxos.cleanup.PaxosUpdateLowBallot;
 import org.apache.cassandra.service.paxos.v1.PrepareVerbHandler;
 import org.apache.cassandra.service.paxos.v1.ProposeVerbHandler;
 import org.apache.cassandra.streaming.DataMovement;
@@ -282,6 +283,8 @@ public enum Verb
     PAXOS2_CLEANUP_FINISH_PREPARE_REQ(47, P2, repairTimeout, IMMEDIATE,         () -> PaxosCleanupHistory.serializer,          () -> PaxosFinishPrepareCleanup.verbHandler,                 PAXOS2_CLEANUP_FINISH_PREPARE_RSP),
     PAXOS2_CLEANUP_COMPLETE_RSP      (59, P2, repairTimeout, PAXOS_REPAIR,      () -> NoPayload.serializer,                    RESPONSE_HANDLER                                                            ),
     PAXOS2_CLEANUP_COMPLETE_REQ      (48, P2, repairTimeout, PAXOS_REPAIR,      () -> PaxosCleanupComplete.serializer,         () -> PaxosCleanupComplete.verbHandler,                      PAXOS2_CLEANUP_COMPLETE_RSP      ),
+    PAXOS2_UPDATE_LOW_BALLOT_RSP     (67, P2, repairTimeout, PAXOS_REPAIR,      () -> NoPayload.serializer,                    RESPONSE_HANDLER                                                            ),
+    PAXOS2_UPDATE_LOW_BALLOT_REQ     (64, P2, repairTimeout, PAXOS_REPAIR,      () -> PaxosUpdateLowBallot.serializer,         () -> PaxosUpdateLowBallot.verbHandler,                      PAXOS2_UPDATE_LOW_BALLOT_RSP     ),
 
     // transactional cluster metadata
     TCM_COMMIT_RSP         (801, P0, rpcTimeout,      INTERNAL_METADATA,    MessageSerializers::commitResultSerializer,         RESPONSE_HANDLER                                 ),

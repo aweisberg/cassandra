@@ -268,7 +268,7 @@ public class KeyspaceActions extends ClusterActions
             {
                 case ACCORD_MIGRATE:
                     haveConsensusMigrated = true;
-                    return schedule(new OnClusterMigrateConsensus(this), options.topologyChangeInterval);
+                    return schedule(new OnClusterConsensusMigrations(this, options.consensusChangeLimit), options.topologyChangeInterval);
             }
        }
 

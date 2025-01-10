@@ -73,6 +73,7 @@ import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.StorageService;
 import org.apache.cassandra.service.accord.AccordService;
+import org.apache.cassandra.service.accord.IAccordService.BarrierResult;
 import org.apache.cassandra.service.accord.TokenRange;
 import org.apache.cassandra.service.accord.api.TokenKey;
 import org.apache.cassandra.service.consensus.TransactionalMode;
@@ -101,6 +102,7 @@ import static org.apache.cassandra.distributed.test.accord.InteropTokenRangeTest
 import static org.apache.cassandra.distributed.test.accord.InteropTokenRangeTest.TokenOperator.lte;
 import static org.apache.cassandra.distributed.util.QueryResultUtil.assertThat;
 import static org.apache.cassandra.utils.ByteBufferUtil.bytesToHex;
+import static org.apache.cassandra.utils.Clock.Global.currentTimeMillis;
 import static org.junit.Assert.assertEquals;
 
 /*
@@ -412,7 +414,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
             {
                 if (BATCH_INDEX == null || BATCH_INDEX == batchCount)
                 {
-                    logger.info("Executing batch {}", batchCount);
+                    logger.info("Executing batch {} with query count {}", batchCount, queryBatch.size());
                     testBoundsBatch(queryBatch, validationBatch, expectRetry, batchCount);
                 }
                 else
@@ -427,7 +429,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
 
         if (!queryBatch.isEmpty())
         {
-            logger.info("Executing batch " + batchCount);
+            logger.info("Executing trailing batch " + batchCount + " with query count " + queryBatch.size());
             testBoundsBatch(queryBatch, validationBatch, expectRetry, batchCount);
         }
     }
@@ -621,7 +623,8 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                                                                              RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
                                                                              TokenRange range = TokenRange.create(new TokenKey(tableId, new LongToken(migratingTokenStart)), new TokenKey(tableId, new LongToken(migratingTokenEnd)));
                                                                              Ranges accordRanges = Ranges.of(range);
-                                                                             ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
+                                                                             BarrierResult barrierResult = new BarrierResult(accordRanges, TimeUnit.MILLISECONDS.toMicros(currentTimeMillis()));
+                                                                             ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, barrierResult, true, true, true, false);
                                                                              ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
                                                                          }).call();
             result.get();

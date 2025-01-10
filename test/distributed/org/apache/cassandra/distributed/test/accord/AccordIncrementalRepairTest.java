@@ -87,33 +87,33 @@ public class AccordIncrementalRepairTest extends AccordTestBase
         }
 
         @Override
-        public Seekables<?, ?> barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
+        public BarrierResult barrierWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
         {
-            Seekables<?, ?> retval = delegate.barrierWithRetries(keysOrRanges, minEpoch, barrierType, isForWrite);
+            BarrierResult retval = delegate.barrierWithRetries(keysOrRanges, minEpoch, barrierType, isForWrite);
             executedBarriers = true;
             return retval;
         }
 
         @Override
-        public Seekables<?, ?> barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
+        public BarrierResult barrier(@Nonnull Seekables<?, ?> keysOrRanges, long minEpoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
         {
-            Seekables<?, ?> retval = delegate.barrier(keysOrRanges, minEpoch, requestTime, timeoutNanos, barrierType, isForWrite);
+            BarrierResult retval = delegate.barrier(keysOrRanges, minEpoch, requestTime, timeoutNanos, barrierType, isForWrite);
             executedBarriers = true;
             return retval;
         }
 
         @Override
-        public Seekables<?, ?> repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
+        public BarrierResult repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
         {
-            Seekables<?, ?> retval = delegate.repairWithRetries(keysOrRanges, minEpoch, barrierType, isForWrite, allEndpoints);
+            BarrierResult retval = delegate.repairWithRetries(keysOrRanges, minEpoch, barrierType, isForWrite, allEndpoints);
             executedBarriers = true;
             return retval;
         }
 
         @Override
-        public Seekables<?, ?> repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
+        public BarrierResult repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
         {
-            Seekables<?, ?> retval = delegate.repair(keysOrRanges, epoch, requestTime, timeoutNanos, barrierType, isForWrite, allEndpoints);
+            BarrierResult retval = delegate.repair(keysOrRanges, epoch, requestTime, timeoutNanos, barrierType, isForWrite, allEndpoints);
             executedBarriers = true;
             return retval;
         }

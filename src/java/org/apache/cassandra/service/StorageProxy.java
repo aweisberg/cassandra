@@ -149,6 +149,7 @@ import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.SplitConsumer;
 import org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.SplitMutations;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
+import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.SplitReads;
 import org.apache.cassandra.service.consensus.migration.TransactionalMigrationFromMode;
 import org.apache.cassandra.service.paxos.Ballot;
@@ -212,7 +213,6 @@ import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.range_read;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
 import static org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.mutateWithAccordAsync;
 import static org.apache.cassandra.service.consensus.migration.ConsensusMigrationMutationHelper.splitMutationsIntoAccordAndNormal;
-import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.ConsensusRoutingDecision;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.shouldReadEphemerally;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.splitReadsIntoAccordAndNormal;
@@ -309,6 +309,9 @@ public class StorageProxy implements StorageProxyMBean
         }
     }
 
+    public static final boolean ARIEL_DEBUG = true;
+    public static int ARIEL_DEBUG_KEY = -2018735255;
+
     /**
      * Apply @param updates if and only if the current values in the row for @param key
      * match the provided @param conditions.  The algorithm is "raw" Paxos: that is, Paxos
@@ -369,12 +372,24 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         ConsensusAttemptResult lastAttemptResult;
+        boolean firstAttempt = true;
         do
         {
             ClusterMetadata cm = ClusterMetadata.current();
             TableMetadata metadata = Schema.instance.validateTable(keyspaceName, cfName);
             ConsensusRoutingDecision decision = consensusRouting(cm, metadata, key, consistencyForPaxos, requestTime, true);
-            switch (decision)
+            if (ARIEL_DEBUG && firstAttempt == false)
+            {
+                String hostId = "UNKNOWN";
+                if (StorageService.instance.getLocalHostUUID() != null)
+                {
+                    hostId = StorageService.instance.getLocalHostId();
+                    hostId = "node" + hostId.substring(hostId.length() - 1, hostId.length());
+                }
+                if (metadata.keyspace.equals("simple_paxos_simulation") && key.getKey().getInt(0) == ARIEL_DEBUG_KEY)
+                    System.out.println(hostId + "-" + Thread.currentThread().getName() + ": Retrying on " + decision);
+            }
+            switch (decision.target)
             {
                 case paxosV2:
                     lastAttemptResult = Paxos.cas(key,
@@ -382,7 +397,8 @@ public class StorageProxy implements StorageProxyMBean
                                                   consistencyForPaxos,
                                                   consistencyForCommit,
                                                   clientState,
-                                                  requestTime);
+                                                  requestTime,
+                                                  decision.minHLC);
                     break;
                 case paxosV1:
                     lastAttemptResult = legacyCas(metadata,
@@ -404,12 +420,14 @@ public class StorageProxy implements StorageProxyMBean
                     TxnResult txnResult = accordService.coordinate(metadata.epoch.getEpoch(),
                                                                    txn,
                                                                    consistencyForPaxos,
-                                                                   requestTime);
+                                                                   requestTime,
+                                                                   decision.minHLC);
                     lastAttemptResult = request.toCasResult(txnResult);
                     break;
                 default:
                     throw new IllegalStateException("Unsupported consensus " + decision);
             }
+            firstAttempt = false;
         } while (lastAttemptResult.shouldRetryOnNewConsensusProtocol);
         return lastAttemptResult.casResult;
     }
@@ -2129,7 +2147,7 @@ public class StorageProxy implements StorageProxyMBean
     private static ConsensusRoutingDecision consensusRouting(ClusterMetadata cm, TableMetadata metadata, DecoratedKey partitionKey, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime, boolean isForWrite)
     {
         if (metadata.keyspace.equals(SchemaConstants.METADATA_KEYSPACE_NAME))
-            return ConsensusRoutingDecision.paxosV2;
+            return ConsensusRoutingDecision.PAXOSV2;
         return ConsensusRequestRouter.instance.routeAndMaybeMigrate(cm,
                                                                     partitionKey,
                                                                     metadata.id,
@@ -2148,10 +2166,10 @@ public class StorageProxy implements StorageProxyMBean
             ClusterMetadata cm = ClusterMetadata.current();
             SinglePartitionReadCommand command = group.queries.get(0);
             ConsensusRoutingDecision decision = consensusRouting(cm, group.metadata(), command.partitionKey(), consistencyLevel, requestTime, false);
-            switch (decision)
+            switch (decision.target)
             {
                 case paxosV2:
-                    lastResult = Paxos.read(group, consistencyLevel, requestTime);
+                    lastResult = Paxos.read(group, consistencyLevel, requestTime, decision.minHLC);
                     break;
                 case paxosV1:
                     lastResult = legacyReadWithPaxos(group, consistencyLevel, requestTime);

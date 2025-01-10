@@ -35,7 +35,6 @@ import org.slf4j.LoggerFactory;
 
 import accord.api.BarrierType;
 import accord.primitives.Keys;
-import accord.primitives.Seekables;
 import com.github.benmanes.caffeine.cache.CacheLoader;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
@@ -62,6 +61,7 @@ import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.accord.AccordService;
+import org.apache.cassandra.service.accord.IAccordService.BarrierResult;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.paxos.AbstractPaxosRepair.Failure;
 import org.apache.cassandra.service.paxos.AbstractPaxosRepair.Result;
@@ -171,14 +171,14 @@ public abstract class ConsensusKeyMigrationState
          * This will trigger a distributed migration for the key, but will only block on local completion
          * so Paxos reads can return a result as soon as the local state is ready
          */
-        public void maybePerformAccordToPaxosKeyMigration(boolean isForWrite)
+        public long maybePerformAccordToPaxosKeyMigration(boolean isForWrite)
         {
             if (paxosReadSatisfiedByKeyMigration())
-                return;
+                return BarrierResult.NO_HLC;
 
             // TODO (desired): Better query start time
             TableMigrationState tms = tableMigrationState;
-            repairKeyAccord(key, tms.tableId, tms.minMigrationEpoch(key.getToken()).getEpoch(), Dispatcher.RequestTime.forImmediateExecution(), false, isForWrite);
+            return repairKeyAccord(key, tms.tableId, tms.minMigrationEpoch(key.getToken()).getEpoch(), Dispatcher.RequestTime.forImmediateExecution(), false, isForWrite);
         }
 
         boolean paxosReadSatisfiedByKeyMigration()
@@ -192,24 +192,26 @@ public abstract class ConsensusKeyMigrationState
     }
 
     private static final int EMPTY_KEY_SIZE = Ints.checkedCast(ObjectSizes.measureDeep(Pair.create(null, UUID.randomUUID())));
-    private static final int VALUE_SIZE = Ints.checkedCast(ObjectSizes.measureDeep(new ConsensusMigratedAt(Epoch.EMPTY, ConsensusMigrationTarget.accord)));
+    private static final int VALUE_SIZE = Ints.checkedCast(ObjectSizes.measureDeep(new ConsensusMigratedAt(Epoch.EMPTY, BarrierResult.NO_HLC, ConsensusMigrationTarget.accord)));
 
     private static final CacheLoader<Pair<ByteBuffer, UUID>, ConsensusMigratedAt> LOADING_FUNCTION = k -> SystemKeyspace.loadConsensusKeyMigrationState(k.left, k.right);
     private static final Weigher<Pair<ByteBuffer, UUID>, ConsensusMigratedAt> WEIGHER_FUNCTION = (k, v) -> EMPTY_KEY_SIZE + Ints.checkedCast(ByteBufferUtil.estimatedSizeOnHeap(k.left)) + VALUE_SIZE;
 
     @VisibleForTesting
     public static final LoadingCache<Pair<ByteBuffer, UUID>, ConsensusMigratedAt> MIGRATION_STATE_CACHE =
-            Caffeine.newBuilder()
-                    .maximumWeight(DatabaseDescriptor.getConsensusMigrationCacheSizeInMiB() << 20)
-                    .weigher(WEIGHER_FUNCTION)
-                    .executor(ImmediateExecutor.INSTANCE)
-                    .build(LOADING_FUNCTION);
+    Caffeine.newBuilder()
+            .maximumWeight(DatabaseDescriptor.getConsensusMigrationCacheSizeInMiB() << 20)
+            .weigher(WEIGHER_FUNCTION)
+            .executor(ImmediateExecutor.INSTANCE)
+            .build(LOADING_FUNCTION);
 
     public static final IVerbHandler<ConsensusKeyMigrationFinished> consensusKeyMigrationFinishedHandler = message -> {
         saveConsensusKeyMigrationLocally(message.payload.partitionKey, message.payload.tableId, message.payload.consensusMigratedAt);
     };
 
-    private ConsensusKeyMigrationState() {}
+    private ConsensusKeyMigrationState()
+    {
+    }
 
     @VisibleForTesting
     public static void reset()
@@ -217,8 +219,10 @@ public abstract class ConsensusKeyMigrationState
         MIGRATION_STATE_CACHE.invalidateAll();
     }
 
-    public static void maybeSaveAccordKeyMigrationLocally(PartitionKey partitionKey, Epoch epoch)
+    public static void maybeSaveAccordKeyMigrationLocally(PartitionKey partitionKey, Epoch epoch, long maxHLC)
     {
+        if (maxHLC == BarrierResult.NO_HLC)
+            return;
         TableId tableId = partitionKey.table();
         UUID tableUUID = tableId.asUUID();
         DecoratedKey dk = partitionKey.partitionKey();
@@ -228,7 +232,7 @@ public abstract class ConsensusKeyMigrationState
         if (tms == null)
             return;
 
-        ConsensusMigratedAt migratedAt = new ConsensusMigratedAt(epoch, paxos);
+        ConsensusMigratedAt migratedAt = new ConsensusMigratedAt(epoch, maxHLC, paxos);
         if (!tms.paxosReadSatisfiedByKeyMigrationAtEpoch(dk, migratedAt))
             return;
 
@@ -237,7 +241,11 @@ public abstract class ConsensusKeyMigrationState
 
     public static KeyMigrationState getKeyMigrationState(TableId tableId, DecoratedKey key)
     {
-        ClusterMetadata cm = ClusterMetadata.current();
+        return getKeyMigrationState(ClusterMetadata.current(), tableId, key);
+    }
+
+    public static KeyMigrationState getKeyMigrationState(ClusterMetadata cm, TableId tableId, DecoratedKey key)
+    {
         TableMigrationState tms = cm.consensusMigrationState.tableStates.get(tableId);
         // No state means no migration for this table
         if (tms == null)
@@ -272,17 +280,17 @@ public abstract class ConsensusKeyMigrationState
     /*
      * Trigger a distributed repair of Accord state for this key.
      */
-    static void repairKeyAccord(DecoratedKey key,
+    static long repairKeyAccord(DecoratedKey key,
                                 TableId tableId,
                                 long minEpoch,
                                 Dispatcher.RequestTime requestTime,
                                 boolean global,
                                 boolean isForWrite)
     {
-        repairKeysAccord(ImmutableList.of(key), tableId, minEpoch, requestTime, global, isForWrite);
+        return repairKeysAccord(ImmutableList.of(key), tableId, minEpoch, requestTime, global, isForWrite);
     }
 
-    static void repairKeysAccord(List<DecoratedKey> keys,
+    static long repairKeysAccord(List<DecoratedKey> keys,
                                  TableId tableId,
                                  long minEpoch,
                                  Dispatcher.RequestTime requestTime,
@@ -302,10 +310,10 @@ public abstract class ConsensusKeyMigrationState
             // Local will only create a transaction if it can't find an existing one to wait on
             BarrierType barrierType = global ? BarrierType.global_async : BarrierType.local;
             SortedSet<PartitionKey> partitionKeys = keys.stream().map(key -> new PartitionKey(tableId, key)).collect(Collectors3.toSortedSet());
-            Seekables keysOrRanges = AccordService.instance().barrier(new Keys(partitionKeys), minEpoch, requestTime, DatabaseDescriptor.getTransactionTimeout(TimeUnit.NANOSECONDS), barrierType, isForWrite);
-            if (keysOrRanges.isEmpty())
+            BarrierResult barrierResult = AccordService.instance().barrier(new Keys(partitionKeys), minEpoch, requestTime, DatabaseDescriptor.getTransactionTimeout(TimeUnit.NANOSECONDS), barrierType, isForWrite);
+            if (barrierResult.barrieredRanges.isEmpty())
                 throw new RetryOnDifferentSystemException();
-            // We don't save the state to the cache here. Accord will notify the agent every time a barrier happens.
+            return barrierResult.maxHLC;
         }
         finally
         {
@@ -313,7 +321,7 @@ public abstract class ConsensusKeyMigrationState
         }
     }
 
-    static void repairKeyPaxos(EndpointsForToken naturalReplicas,
+    static long repairKeyPaxos(EndpointsForToken naturalReplicas,
                                Epoch currentEpoch,
                                DecoratedKey key,
                                ColumnFamilyStore cfs,
@@ -346,8 +354,8 @@ public abstract class ConsensusKeyMigrationState
                         saveConsensusKeyMigration(naturalReplicas,
                                                   new ConsensusKeyMigrationFinished(tableMetadata.id.asUUID(),
                                                                                     key.getKey(),
-                                                                                    new ConsensusMigratedAt(currentEpoch, ConsensusMigrationTarget.accord)));
-                    return;
+                                                                                    new ConsensusMigratedAt(currentEpoch, BarrierResult.NO_HLC, ConsensusMigrationTarget.accord)));
+                    return repair.maxHlc();
                 case FAILURE:
                     Failure failure = (Failure)result;
                     if (failure.failure == null)

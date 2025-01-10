@@ -118,8 +118,10 @@ import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.dht.AccordSplitter;
 import org.apache.cassandra.exceptions.InvalidRequestException;
+import org.apache.cassandra.exceptions.ReadFailureException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
+import org.apache.cassandra.exceptions.RequestFailureException;
 import org.apache.cassandra.exceptions.RequestTimeoutException;
 import org.apache.cassandra.exceptions.WriteTimeoutException;
 import org.apache.cassandra.journal.Params;
@@ -545,7 +547,7 @@ public class AccordService implements IAccordService, Shutdownable
         return node.durabilityScheduling().immutableView();
     }
 
-    private Seekables<?, ?> barrier(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, BiFunction<Node, FullRoute<?>, AsyncSyncPoint> syncPoint)
+    private BarrierResult barrier(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, BiFunction<Node, FullRoute<?>, AsyncSyncPoint> syncPoint)
     {
         Stopwatch sw = Stopwatch.createStarted();
         keysOrRanges = intersectionWithAccordManagedRanges(keysOrRanges);
@@ -553,29 +555,29 @@ public class AccordService implements IAccordService, Shutdownable
         if (keysOrRanges.isEmpty())
         {
             logger.info("Skipping barrier because there are no ranges managed by Accord");
-            return keysOrRanges;
+            return new BarrierResult(keysOrRanges, Long.MIN_VALUE);
         }
 
-        FullRoute<?> route = node.computeRoute(epoch, keysOrRanges);
         AccordClientRequestMetrics metrics = isForWrite ? accordWriteMetrics : accordReadMetrics;
         try
         {
             logger.debug("Starting barrier key: {} epoch: {} barrierType: {} isForWrite {}", keysOrRanges, epoch, barrierType, isForWrite);
-            AsyncResult<TxnId> asyncResult = syncPoint == null
-                                                 ? Barrier.barrier(node, keysOrRanges, route, epoch, barrierType)
-                                                 : Barrier.barrier(node, keysOrRanges, route, epoch, barrierType, syncPoint);
+            AsyncResult<Barrier> asyncResult = syncPoint == null
+                                                 ? Barrier.barrier(node, keysOrRanges, epoch, barrierType)
+                                                 : Barrier.barrier(node, keysOrRanges, epoch, barrierType, syncPoint);
             long deadlineNanos = requestTime.startedAtNanos() + timeoutNanos;
-            TxnId txnId = AsyncChains.getBlocking(asyncResult, deadlineNanos - nanoTime(), NANOSECONDS);
+            accord.coordinate.Barrier.BarrierResult barrierResult = AsyncChains.getBlocking(asyncResult.flatMap(i->i), deadlineNanos - nanoTime(), NANOSECONDS);
+            TxnId txnId = barrierResult.txnId;
             if (keysOrRanges.domain() == Key)
             {
                 PartitionKey key = (PartitionKey)keysOrRanges.get(0);
-                maybeSaveAccordKeyMigrationLocally(key, Epoch.create(txnId.epoch()));
+                maybeSaveAccordKeyMigrationLocally(key, Epoch.create(txnId.epoch()), barrierResult.maxHLC);
             }
             logger.debug("Completed barrier attempt in {}ms, {}ms since attempts start, barrier key: {} epoch: {} barrierType: {} isForWrite {}",
                          sw.elapsed(MILLISECONDS),
                          NANOSECONDS.toMillis(nanoTime() - requestTime.startedAtNanos()),
                          keysOrRanges, epoch, barrierType, isForWrite);
-            return keysOrRanges;
+            return new BarrierResult(keysOrRanges, barrierResult.maxHLC);
         }
         catch (ExecutionException e)
         {
@@ -627,7 +629,7 @@ public class AccordService implements IAccordService, Shutdownable
     }
 
     @Override
-    public Seekables<?, ?> barrier(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
+    public BarrierResult barrier(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite)
     {
         return barrier(keysOrRanges, epoch, requestTime, timeoutNanos, barrierType, isForWrite, null);
     }
@@ -642,7 +644,7 @@ public class AccordService implements IAccordService, Shutdownable
     }
 
     @Override
-    public Seekables<?, ?> repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
+    public BarrierResult repair(@Nonnull Seekables<?, ?> keysOrRanges, long epoch, Dispatcher.RequestTime requestTime, long timeoutNanos, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints)
     {
         Set<Node.Id> allNodes = allEndpoints.stream().map(configService::mappedId).collect(Collectors.toUnmodifiableSet());
         return barrier(keysOrRanges, epoch, requestTime, timeoutNanos, barrierType, isForWrite, repairSyncPoint(allNodes));
@@ -721,11 +723,11 @@ public class AccordService implements IAccordService, Shutdownable
     }
 
     @VisibleForTesting
-    static Seekables doWithRetries(Blocking blocking, Supplier<Seekables> action, int retryAttempts, long initialBackoffMillis, long maxBackoffMillis) throws InterruptedException
+    static BarrierResult doWithRetries(Blocking blocking, Supplier<BarrierResult> action, int retryAttempts, long initialBackoffMillis, long maxBackoffMillis) throws InterruptedException
     {
         // Since we could end up having the barrier transaction or the transaction it listens to invalidated
         Throwable existingFailures = null;
-        Seekables success = null;
+        BarrierResult success = null;
         long backoffMillis = initialBackoffMillis;
         for (int attempt = 0; attempt < retryAttempts; attempt++)
         {
@@ -776,7 +778,7 @@ public class AccordService implements IAccordService, Shutdownable
     }
 
     @Override
-    public Seekables barrierWithRetries(Seekables keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
+    public BarrierResult barrierWithRetries(Seekables keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite) throws InterruptedException
     {
         return doWithRetries(Blocking.Default.instance, () -> AccordService.instance().barrier(keysOrRanges, minEpoch, Dispatcher.RequestTime.forImmediateExecution(), DatabaseDescriptor.getAccordRangeSyncPointTimeoutNanos(), barrierType, isForWrite),
                              DatabaseDescriptor.getAccordBarrierRetryAttempts(),
@@ -785,7 +787,7 @@ public class AccordService implements IAccordService, Shutdownable
     }
 
     @Override
-    public Seekables<?, ?> repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
+    public BarrierResult repairWithRetries(Seekables<?, ?> keysOrRanges, long minEpoch, BarrierType barrierType, boolean isForWrite, List<InetAddressAndPort> allEndpoints) throws InterruptedException
     {
         return doWithRetries(Blocking.Default.instance, () -> AccordService.instance().repair(keysOrRanges, minEpoch, Dispatcher.RequestTime.forImmediateExecution(), DatabaseDescriptor.getAccordRangeSyncPointTimeoutNanos(), barrierType, isForWrite, allEndpoints),
                              DatabaseDescriptor.getAccordBarrierRetryAttempts(),
@@ -838,16 +840,39 @@ public class AccordService implements IAccordService, Shutdownable
      * with non-Accord operations.
      */
     @Override
-    public @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
+    public @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime, long minHlc)
     {
-        AsyncTxnResult asyncTxnResult = coordinateAsync(minEpoch, txn, consistencyLevel, requestTime);
+        AsyncTxnResult asyncTxnResult = coordinateAsync(minEpoch, txn, consistencyLevel, requestTime, minHlc);
         return getTxnResult(asyncTxnResult);
     }
 
-    @Override
-    public @Nonnull AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
+    /*
+     * Interop execution with AccordInteropExecution can throw a bunch of C* read not Accord errors
+     * that we want to preserve and make the top level exception here.
+     */
+    private static Throwable maybeWrappedInRequestFailureException(Timeout timeout)
     {
-        TxnId txnId = node.nextTxnId(txn.kind(), txn.keys().domain(), cardinality(txn.keys()));
+        Throwable toCheck = timeout;
+        do
+        {
+            if (toCheck instanceof ReadTimeoutException)
+            {
+                ReadTimeoutException rte = (ReadTimeoutException) toCheck;
+                return new ReadTimeoutException(rte.consistency, rte.received, rte.blockFor, rte.dataPresent, timeout);
+            }
+            else if (toCheck instanceof ReadFailureException)
+            {
+                ReadFailureException rfe = (ReadFailureException) toCheck;
+                return new ReadFailureException(rfe.getMessage(), rfe.consistency, rfe.received, rfe.blockFor, rfe.dataPresent, rfe.failureReasonByEndpoint, timeout);
+            }
+        } while ((toCheck = toCheck.getCause()) != null);
+        return timeout;
+    }
+
+    @Override
+    public @Nonnull AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime, long minHlc)
+    {
+        TxnId txnId = node.nextTxnId(txn.kind(), txn.keys().domain(), cardinality(txn.keys()), minHlc >= 0 ? minHlc : 0);
         ClientRequestMetrics sharedMetrics;
         AccordClientRequestMetrics metrics;
         if (txn.isWrite())
@@ -886,9 +911,14 @@ public class AccordService implements IAccordService, Shutdownable
 
             if (cause instanceof Timeout)
             {
+                // Preserve the interop execution created exception if there is one
+                Throwable maybeWrappedInRequestFailureException = maybeWrappedInRequestFailureException((Timeout)cause);
                 // Don't mark the metric here, should be done in getTxnResult to ensure it only happens once
                 // since both Accord and the thread blocked on the result can trigger a timeout
-                asyncTxnResult.tryFailure(newTimeout(txnId, txn.isWrite(), consistencyLevel));
+                if (maybeWrappedInRequestFailureException instanceof RequestFailureException)
+                    asyncTxnResult.setFailure(maybeWrappedInRequestFailureException);
+                else
+                    asyncTxnResult.tryFailure(newTimeout(txnId, txn.isWrite(), consistencyLevel, cause));
                 return;
             }
             if (cause instanceof Preempted || cause instanceof Invalidated)
@@ -975,11 +1005,11 @@ public class AccordService implements IAccordService, Shutdownable
         {
             metrics.timeouts.mark();
             sharedMetrics.timeouts.mark();
-            throw newTimeout(asyncTxnResult.txnId, asyncTxnResult.isWrite, asyncTxnResult.consistencyLevel);
+            throw newTimeout(asyncTxnResult.txnId, asyncTxnResult.isWrite, asyncTxnResult.consistencyLevel, e);
         }
     }
 
-    private static RequestTimeoutException newTimeout(TxnId txnId, boolean isWrite, ConsistencyLevel consistencyLevel)
+    private static RequestTimeoutException newTimeout(TxnId txnId, boolean isWrite, ConsistencyLevel consistencyLevel, Throwable cause)
     {
         // Client protocol doesn't handle null consistency level so use ANY
         if (consistencyLevel == null)
@@ -1249,6 +1279,12 @@ public class AccordService implements IAccordService, Shutdownable
     public Node node()
     {
         return node;
+    }
+
+    @Override
+    public void ensureMinHlc(long minHlc)
+    {
+        node.updateMinHlc(minHlc >= 0 ? minHlc : 0);
     }
 
     public AccordJournal journal()

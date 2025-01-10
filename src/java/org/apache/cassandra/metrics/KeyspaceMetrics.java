@@ -102,7 +102,7 @@ public class KeyspaceMetrics
     /** Latency for locally run key migrations **/
     public final LatencyMetrics keyMigration;
     /** Latency for range migrations run by locally coordinated Accord repairs **/
-    public final LatencyMetrics rangeMigration;
+    public final LatencyMetrics accordRepair;
     public final Meter rangeMigrationUnexpectedFailures;
     public final Meter rangeMigrationDependencyLimitFailures;
     public final Meter mutationsRejectedOnWrongSystem;
@@ -251,7 +251,7 @@ public class KeyspaceMetrics
         casPropose = createLatencyMetrics("CasPropose");
         casCommit = createLatencyMetrics("CasCommit");
         keyMigration = createLatencyMetrics("KeyMigration");
-        rangeMigration = createLatencyMetrics("RangeMigration");
+        accordRepair = createLatencyMetrics("AccordRepair");
         rangeMigrationUnexpectedFailures = createKeyspaceMeter("RangeMigrationUnexpectedFailures");
         rangeMigrationDependencyLimitFailures = createKeyspaceMeter("RangeMigratingDependencyLimitFailures");
         mutationsRejectedOnWrongSystem = createKeyspaceMeter("MutationsRejectedOnWrongSystem");

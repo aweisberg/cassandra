@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.ColumnFamilyStore.FlushReason;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.IPartitioner;
@@ -39,6 +40,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.Message;
+import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.RequestCallbackWithFailure;
 import org.apache.cassandra.repair.SharedContext;
 import org.apache.cassandra.schema.Schema;
@@ -59,8 +61,9 @@ public class PaxosCleanupComplete extends AsyncFuture<Void> implements RequestCa
     final boolean skippedReplicas;
     private final SharedContext ctx;
     private final boolean isUrgent;
+    private final boolean flush;
 
-    PaxosCleanupComplete(SharedContext ctx, Collection<InetAddressAndPort> endpoints, TableId tableId, Collection<Range<Token>> ranges, Ballot lowBound, boolean skippedReplicas, boolean isUrgent)
+    PaxosCleanupComplete(SharedContext ctx, Collection<InetAddressAndPort> endpoints, TableId tableId, Collection<Range<Token>> ranges, Ballot lowBound, boolean skippedReplicas, boolean isUrgent, boolean flush)
     {
         this.ctx = ctx;
         this.waitingResponse = new HashSet<>(endpoints);
@@ -69,12 +72,13 @@ public class PaxosCleanupComplete extends AsyncFuture<Void> implements RequestCa
         this.lowBound = lowBound;
         this.skippedReplicas = skippedReplicas;
         this.isUrgent = isUrgent;
+        this.flush = flush;
     }
 
     public synchronized void run()
     {
-        Request request = !skippedReplicas ? new Request(tableId, lowBound, ranges)
-                                           : new Request(tableId, Ballot.none(), Collections.emptyList());
+        Request request = !skippedReplicas ? new Request(tableId, lowBound, ranges, flush)
+                                           : new Request(tableId, Ballot.none(), Collections.emptyList(), flush);
 
         Message<Request> message = Message.out(PAXOS2_CLEANUP_COMPLETE_REQ, request, isUrgent);
 
@@ -106,12 +110,14 @@ public class PaxosCleanupComplete extends AsyncFuture<Void> implements RequestCa
         final TableId tableId;
         final Ballot lowBound;
         final Collection<Range<Token>> ranges;
+        final boolean flush;
 
-        Request(TableId tableId, Ballot lowBound, Collection<Range<Token>> ranges)
+        Request(TableId tableId, Ballot lowBound, Collection<Range<Token>> ranges, boolean flush)
         {
             this.tableId = tableId;
             this.ranges = ranges;
             this.lowBound = lowBound;
+            this.flush = flush;
         }
     }
 
@@ -124,6 +130,8 @@ public class PaxosCleanupComplete extends AsyncFuture<Void> implements RequestCa
             out.writeInt(request.ranges.size());
             for (Range<Token> rt : request.ranges)
                 AbstractBounds.tokenSerializer.serialize(rt, out, version);
+            if (version >= MessagingService.VERSION_51)
+                out.writeBoolean(request.flush);
         }
 
         public Request deserialize(DataInputPlus in, int version) throws IOException
@@ -139,7 +147,10 @@ public class PaxosCleanupComplete extends AsyncFuture<Void> implements RequestCa
                 Range<Token> range = (Range<Token>) AbstractBounds.tokenSerializer.deserialize(in, partitioner, version);
                 ranges.add(range);
             }
-            return new Request(tableId, lowBound, ranges);
+            boolean flush = false;
+            if (version >= MessagingService.VERSION_51)
+                flush = in.readBoolean();
+            return new Request(tableId, lowBound, ranges, flush);
         }
 
         public long serializedSize(Request request, int version)
@@ -149,6 +160,8 @@ public class PaxosCleanupComplete extends AsyncFuture<Void> implements RequestCa
             size += TypeSizes.sizeof(request.ranges.size());
             for (Range<Token> range : request.ranges)
                 size += AbstractBounds.tokenSerializer.serializedSize(range, version);
+            if (version >= MessagingService.VERSION_51)
+                size += TypeSizes.sizeof(request.flush);
             return size;
         }
     };
@@ -158,6 +171,8 @@ public class PaxosCleanupComplete extends AsyncFuture<Void> implements RequestCa
         return (in) -> {
             ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(in.payload.tableId);
             cfs.onPaxosRepairComplete(in.payload.ranges, in.payload.lowBound);
+            if (in.payload.flush)
+                cfs.forceFlush(FlushReason.POST_PAXOS_REPAIR);
             ctx.messaging().respond(noPayload, in);
         };
     }
