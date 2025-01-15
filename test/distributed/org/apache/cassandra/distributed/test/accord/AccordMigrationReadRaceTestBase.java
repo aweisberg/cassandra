@@ -622,7 +622,7 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                                                                              TableId tableId = Schema.instance.getTableMetadata(keyspace, table).id;
                                                                              List<Range<Token>> ranges = ImmutableList.of(new Range<>(new LongToken(migratingTokenStart), new LongToken(migratingTokenEnd)));
                                                                              RepairJobDesc desc = new RepairJobDesc(null, null, keyspace, table, ranges);
-                                                                             TokenRange range = new TokenRange(new TokenKey(tableId, new LongToken(migratingTokenStart)), new TokenKey(tableId, new LongToken(migratingTokenEnd)));
+                                                                             TokenRange range = TokenRange.create(new TokenKey(tableId, new LongToken(migratingTokenStart)), new TokenKey(tableId, new LongToken(migratingTokenEnd)));
                                                                              Ranges accordRanges = Ranges.of(range);
                                                                              ConsensusMigrationRepairResult repairResult = ConsensusMigrationRepairResult.fromRepair(startEpoch, accordRanges, true, true, true, false);
                                                                              ConsensusTableMigration.completedRepairJobHandler.onSuccess(new RepairResult(desc, null, repairResult));
