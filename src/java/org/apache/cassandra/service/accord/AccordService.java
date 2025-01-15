@@ -155,7 +155,6 @@ import org.apache.cassandra.service.accord.exceptions.ReadPreemptedException;
 import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
 import org.apache.cassandra.service.accord.interop.AccordInteropAdapter.AccordInteropFactory;
 import org.apache.cassandra.service.accord.repair.RepairSyncPointAdapter;
-import org.apache.cassandra.service.accord.txn.RetryWithNewProtocolResult;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.TableMigrationState;
@@ -747,17 +746,17 @@ public class AccordService implements IAccordService, Shutdownable
     public @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
     {
         AsyncTxnResult asyncTxnResult = coordinateAsync(minEpoch, txn, consistencyLevel, requestTime);
-        try
-        {
+//        try
+//        {
             return getTxnResult(asyncTxnResult);
-        }
-        catch (TopologyMismatch e)
-        {
-            // For now assuming topology mismatch is caused by a race misrouting
-            Tracing.trace("Accord returned topology mismatch: " + e.getMessage());
-            logger.debug("Accord returned topology mismatch: " + e.getMessage());
-            return RetryWithNewProtocolResult.instance;
-        }
+//        }
+//        catch (TopologyMismatch e)
+//        {
+//            // For now assuming topology mismatch is caused by a race misrouting
+//            Tracing.trace("Accord returned topology mismatch: " + e.getMessage());
+//            logger.debug("Accord returned topology mismatch: " + e.getMessage());
+//            return RetryWithNewProtocolResult.instance;
+//        }
     }
 
     @Override

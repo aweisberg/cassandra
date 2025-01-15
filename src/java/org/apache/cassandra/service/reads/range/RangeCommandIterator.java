@@ -22,9 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -63,16 +61,12 @@ import org.apache.cassandra.service.reads.ReadCallback;
 import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.service.reads.repair.ReadRepair;
 import org.apache.cassandra.tcm.ClusterMetadata;
-import org.apache.cassandra.tcm.ClusterMetadataService;
-import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
-import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static com.google.common.base.Preconditions.checkState;
-import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetrics;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetricsForLevel;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
@@ -418,27 +412,27 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                         Tracing.trace("Got {} from range reads, will retry", e);
                     }
                     // Fetch the next epoch to retry
-                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getRangeRpcTimeout(NANOSECONDS));
-                    Optional<Epoch> pending = ClusterMetadataService.instance().log().highestPending();
-                    logger.debug("Pending highest epoch is {}", pending);
-                    pending.ifPresent(epoch ->
-                           {
-                               try
-                               {
-                                   ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
-                               }
-                               catch (InterruptedException e)
-                               {
-                                   Thread.currentThread().interrupt();
-                                   throw new UncheckedInterruptedException(e);
-                               }
-                               catch (TimeoutException e)
-                               {
-                                   Tracing.trace("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
-                                   logger.warn("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
-                                   throw new ReadTimeoutException(cl, 0, 0, false, "Timed out waiting for updated cluster metadata");
-                               }
-                           });
+//                    long timeout = requestTime.computeTimeout(nanoTime(), DatabaseDescriptor.getRangeRpcTimeout(NANOSECONDS));
+//                    Optional<Epoch> pending = ClusterMetadataService.instance().log().highestPending();
+//                    logger.debug("Pending highest epoch is {}", pending);
+//                    pending.ifPresent(epoch ->
+//                           {
+//                               try
+//                               {
+//                                   ClusterMetadataService.instance().awaitAtLeast(epoch, timeout, NANOSECONDS);
+//                               }
+//                               catch (InterruptedException e)
+//                               {
+//                                   Thread.currentThread().interrupt();
+//                                   throw new UncheckedInterruptedException(e);
+//                               }
+//                               catch (TimeoutException e)
+//                               {
+//                                   Tracing.trace("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
+//                                   logger.warn("Range read timed out fetching next epoch " + lastClusterMetadata.nextEpoch());
+//                                   throw new ReadTimeoutException(cl, 0, 0, false, "Timed out waiting for updated cluster metadata");
+//                               }
+//                           });
                     lastClusterMetadata = ClusterMetadata.current();
                     delegate = attempt.apply(lastClusterMetadata);
                 }
