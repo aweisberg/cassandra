@@ -69,6 +69,7 @@ import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
+import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -201,10 +202,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
 
     private PartitionIterator executeAccord(ClusterMetadata cm, PartitionRangeReadCommand rangeCommand, ConsistencyLevel cl)
     {
-        //TODO (nicetohave): This is very inefficient because it will not map to the command store owned ranges
-        // so every command store will return results up to the limit and most could be discarded.
-        // Really we want to split the ranges by command stores owned ranges and then query one at a time
-        // For this to work well it really needs to integrated upwards where the ranges to query are being picked
+        //TODO (nicetohave): https://issues.apache.org/jira/browse/CASSANDRA-20210 More efficient reads across command stores
         AsyncTxnResult result = StorageProxy.readWithAccord(cm, rangeCommand, ImmutableList.of(rangeCommand.dataRange().keyRange()), cl, requestTime);
         return new AccordRangeResponse(result, rangeCommand.isReversed(), cl, requestTime);
     }
@@ -431,7 +429,8 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                                }
                                catch (InterruptedException e)
                                {
-                                   throw new RuntimeException(e);
+                                   Thread.currentThread().interrupt();
+                                   throw new UncheckedInterruptedException(e);
                                }
                                catch (TimeoutException e)
                                {

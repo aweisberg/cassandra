@@ -193,11 +193,6 @@ public class AccordService implements IAccordService, Shutdownable
 {
     private static final Logger logger = LoggerFactory.getLogger(AccordService.class);
 
-    // Single flag to enable debug logging in AccordMessageSink, AccordVerbHandler
-    // These are always logged at trace, but it's easier to just flip this flag and see
-    // output in tests
-    public static final boolean DEBUG_LOG_MESSAGING = true;
-
     private enum State {INIT, STARTED, SHUTTING_DOWN, SHUTDOWN}
 
     private final Node node;

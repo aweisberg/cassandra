@@ -267,16 +267,6 @@ public class InstanceConfig implements IInstanceConfig
         return this;
     }
 
-    public InstanceConfig extendTimeouts(int seconds)
-    {
-        return set("range_request_timeout", "180s")
-              .set("read_request_timeout", "180s")
-              .set("transaction_timeout", "180s")
-              .set("write_request_timeout", "180s")
-              .set("native_transport_timeout", "180s")
-              .set("slow_query_log_timeout", "180s");
-    }
-
     private Map<String, Object> getParams(String fieldName)
     {
         Map<String, Object> map = params;

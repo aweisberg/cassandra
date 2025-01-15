@@ -145,7 +145,7 @@ public abstract class ReadCommand extends AbstractReadQuery
                                                 boolean isDigest,
                                                 int digestVersion,
                                                 boolean acceptsTransient,
-                                                boolean allowsOutOfRangeReads,
+                                                boolean allowsPotentialTxnConflicts,
                                                 TableMetadata metadata,
                                                 long nowInSec,
                                                 ColumnFilter columnFilter,
@@ -1089,7 +1089,7 @@ public abstract class ReadCommand extends AbstractReadQuery
         private static final int HAS_INDEX = 0x04;
         private static final int ACCEPTS_TRANSIENT = 0x08;
         private static final int NEEDS_RECONCILIATION = 0x10;
-        private static final int ALLOWS_OUT_OF_RANGE_READS = 0x20;
+        private static final int ALLOWS_POTENTIAL_TXN_CONFLICTS = 0x20;
 
         private final SchemaProvider schema;
 
@@ -1154,14 +1154,14 @@ public abstract class ReadCommand extends AbstractReadQuery
             return (flags & NEEDS_RECONCILIATION) != 0;
         }
 
-        private static int allowsOutOfRangeReadsFlag(boolean allowsOutOfRangeReads)
+        private static int allowsPotentialTxnConflicts(boolean allowsPotentialTxnConflicts)
         {
-            return allowsOutOfRangeReads ? ALLOWS_OUT_OF_RANGE_READS: 0;
+            return allowsPotentialTxnConflicts ? ALLOWS_POTENTIAL_TXN_CONFLICTS : 0;
         }
 
-        private static boolean allowsOutOfRangeReads(int flags)
+        private static boolean allowsPotentialTxnConflicts(int flags)
         {
-            return (flags & ALLOWS_OUT_OF_RANGE_READS) != 0;
+            return (flags & ALLOWS_POTENTIAL_TXN_CONFLICTS) != 0;
         }
 
         public void serialize(ReadCommand command, DataOutputPlus out, int version) throws IOException
@@ -1172,7 +1172,7 @@ public abstract class ReadCommand extends AbstractReadQuery
                     | indexFlag(null != command.indexQueryPlan())
                     | acceptsTransientFlag(command.acceptsTransient())
                     | needsReconciliationFlag(command.rowFilter().needsReconciliation())
-                    | allowsOutOfRangeReadsFlag(command.allowsPotentialTxnConflicts)
+                    | allowsPotentialTxnConflicts(command.allowsPotentialTxnConflicts)
             );
             if (command.isDigestQuery())
                 out.writeUnsignedVInt32(command.digestVersion());
@@ -1198,7 +1198,7 @@ public abstract class ReadCommand extends AbstractReadQuery
             int flags = in.readByte();
             boolean isDigest = isDigest(flags);
             boolean acceptsTransient = acceptsTransient(flags);
-            boolean allowsOutOfRangeReads = allowsOutOfRangeReads(flags);
+            boolean allowsPotentialTxnConflicts = allowsPotentialTxnConflicts(flags);
             // Shouldn't happen or it's a user error (see comment above) but
             // better complain loudly than doing the wrong thing.
             if (isForThrift(flags))
@@ -1244,7 +1244,7 @@ public abstract class ReadCommand extends AbstractReadQuery
                     indexQueryPlan = indexGroup.queryPlanFor(rowFilter);
             }
 
-            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, isDigest, digestVersion, acceptsTransient, allowsOutOfRangeReads, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan);
+            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, isDigest, digestVersion, acceptsTransient, allowsPotentialTxnConflicts, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan);
         }
 
         private IndexMetadata deserializeIndexMetadata(DataInputPlus in, int version, TableMetadata metadata) throws IOException

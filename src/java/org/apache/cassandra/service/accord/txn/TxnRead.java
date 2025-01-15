@@ -82,16 +82,14 @@ public class TxnRead extends AbstractKeySorted<TxnNamedRead> implements Read
     {
         super(items);
         checkNotNull(items, "items is null");
-        checkArgument(cassandraConsistencyLevel == null || SUPPORTED_READ_CONSISTENCY_LEVELS.contains(cassandraConsistencyLevel), "Unsupported consistency level for read");
-        this.cassandraConsistencyLevel = cassandraConsistencyLevel;
+        checkArgument(cassandraConsistencyLevel == null || SUPPORTED_READ_CONSISTENCY_LEVELS.contains(cassandraConsistencyLevel), "Unsupported consistency level for read: %s", cassandraConsistencyLevel);        this.cassandraConsistencyLevel = cassandraConsistencyLevel;
     }
 
     private TxnRead(@Nonnull List<TxnNamedRead> items, @Nullable ConsistencyLevel cassandraConsistencyLevel)
     {
         super(items);
         checkNotNull(items, "items is null");
-        checkArgument(cassandraConsistencyLevel == null || SUPPORTED_READ_CONSISTENCY_LEVELS.contains(cassandraConsistencyLevel), "Unsupported consistency level for read");
-        this.cassandraConsistencyLevel = cassandraConsistencyLevel;
+        checkArgument(cassandraConsistencyLevel == null || SUPPORTED_READ_CONSISTENCY_LEVELS.contains(cassandraConsistencyLevel), "Unsupported consistency level for read: %s", cassandraConsistencyLevel);        this.cassandraConsistencyLevel = cassandraConsistencyLevel;
     }
 
     private static void sortReads(List<TxnNamedRead> reads)

@@ -330,17 +330,6 @@ public abstract class UnfilteredPartitionIterators
         return Transformation.apply(iterator, new Logging());
     }
 
-    public static void log(UnfilteredPartitionIterator partitions, String id, boolean fullDetails)
-    {
-        UnfilteredPartitionIterator logging = loggingIterator(partitions, id, fullDetails);
-        while (logging.hasNext())
-        {
-            UnfilteredRowIterator row = logging.next();
-            while (row.hasNext())
-                row.next();
-        }
-    }
-
     /**
      * Serialize each UnfilteredSerializer one after the other, with an initial byte that indicates whether
      * we're done or not.

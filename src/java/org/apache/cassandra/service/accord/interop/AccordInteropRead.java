@@ -51,8 +51,6 @@ import org.apache.cassandra.db.ReadCommandVerbHandler;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
-import org.apache.cassandra.db.partitions.UnfilteredPartitionIterators;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -77,7 +75,6 @@ import static com.google.common.base.Preconditions.checkState;
 
 public class AccordInteropRead extends ReadData
 {
-    private static final boolean LOG_READ_RESULTS = false;
 
     public static final IVersionedSerializer<AccordInteropRead> requestSerializer = new ReadDataSerializer<AccordInteropRead>()
     {
@@ -272,17 +269,7 @@ public class AccordInteropRead extends ReadData
                 readCommandFinal = ((SinglePartitionReadCommand)readCommand).withTransactionalSettings(TxnNamedRead.readsWithoutReconciliation(txnRead.cassandraConsistencyLevel()), nowInSeconds);
             }
             AccordRoutingKey routingKeyFinal = routingKey;
-            chains.add(AsyncChains.ofCallable(Stage.READ.executor(), () ->
-            {
-                if (LOG_READ_RESULTS && !readCommandFinal.isDigestQuery())
-                {
-                    try (UnfilteredPartitionIterator i = ReadCommandVerbHandler.instance.doRead(readCommandFinal, false).makeIterator(readCommandFinal))
-                    {
-                        UnfilteredPartitionIterators.log(i, safeStore.commandStore().toString(), true);
-                    }
-                }
-                return new LocalReadData(routingKeyFinal, ReadCommandVerbHandler.instance.doRead(readCommandFinal, false), readCommand);
-            }));
+            chains.add(AsyncChains.ofCallable(Stage.READ.executor(), () -> new LocalReadData(routingKeyFinal, ReadCommandVerbHandler.instance.doRead(readCommandFinal, false), readCommand)));
         }
 
         if (chains.isEmpty())

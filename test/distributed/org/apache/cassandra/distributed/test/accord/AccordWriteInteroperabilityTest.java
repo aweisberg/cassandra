@@ -40,6 +40,7 @@ import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
+import org.apache.cassandra.distributed.shared.InstanceClassLoader;
 import org.apache.cassandra.io.sstable.SSTableReadsListener;
 import org.apache.cassandra.net.Verb;
 import org.apache.cassandra.service.consensus.TransactionalMode;
@@ -157,14 +158,12 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
                              // It can be async if it's migrated
                              if (migrated)
                                  return;
-                             String currentThread = Thread.currentThread().getName();
-                             char nodeIndexChar = currentThread.charAt(4);
-                             int nodeIndex = Integer.parseInt(String.valueOf(nodeIndexChar));
+                             int nodeIndex = ((InstanceClassLoader)ClassLoader.getSystemClassLoader()).getInstanceId();
                              try
                              {
                                  String keyspace = KEYSPACE;
                                  String tableName = accordTableName;
-                                 String fail = SHARED_CLUSTER.get(nodeIndex).callOnInstance(() -> {
+                                 SHARED_CLUSTER.get(nodeIndex).runOnInstance(() -> {
                                      ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(keyspace, tableName);
                                      Memtable memtable = cfs.getCurrentMemtable();
                                      int expectedPartitions = query.startsWith("BEGIN BATCH") ? 2 : 1;
@@ -180,10 +179,7 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
                                          assertFalse(rows.hasNext());
                                      }
                                      assertFalse(partitions.hasNext());
-                                     return null;
                                  });
-                                 if (fail != null)
-                                     failures.add(fail);
                              }
                              catch (Throwable t)
                              {

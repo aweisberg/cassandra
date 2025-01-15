@@ -180,7 +180,6 @@ final class HintsDispatcher implements AutoCloseable
 
     private Action sendHintsAndAwait(HintsReader.Page page)
     {
-        long epoch = ClusterMetadata.current().epoch.getEpoch();
         try
         {
             return doSendHintsAndAwait(page, null);
@@ -253,7 +252,7 @@ final class HintsDispatcher implements AutoCloseable
         }
 
         // The batchlog Accord hints need to return abort if any hint needs to be retried and retry the whole page
-        // since we don't want hints to ping pong back and forth vai hintsNeedingRehinting
+        // since we don't want hints to ping pong back and forth via hintsNeedingRehinting
         if (failures > 0 || timeouts > 0 || failedRetryDifferentSystem || (isBatchLogHints && retryDifferentSystem > 0))
         {
             HintDiagnostics.pageFailureResult(this, success, failures, timeouts, retryDifferentSystem);

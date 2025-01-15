@@ -362,7 +362,6 @@ public class ConsensusMigrationMutationHelper
             // should continue to write through Accord. Accord might still be executing txns pre-migration so continue
             // to route writes through Accord until migration is completed.
             if (migrationFromWritesThroughAccord)
-//                return !tms.migratingAndMigratedRanges.intersects(token);
                 return !tms.migratedRanges.intersects(token);
         }
         return false;

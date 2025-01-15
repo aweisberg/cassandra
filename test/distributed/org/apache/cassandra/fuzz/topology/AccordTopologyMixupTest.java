@@ -177,7 +177,6 @@ public class AccordTopologyMixupTest extends TopologyMixupTestBase<AccordTopolog
     {
         switch (mode)
         {
-            case test_unsafe_writes:
             case mixed_reads:
             case full:
                 return true;

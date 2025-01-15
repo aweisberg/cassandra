@@ -48,7 +48,7 @@ public class Collectors3
 
     private static final Collector.Characteristics[] SET_CHARACTERISTICS = new Collector.Characteristics[]{ Collector.Characteristics.UNORDERED };
 
-    private static final Collector.Characteristics[] SORTED_SET_CHARACTERISTICS = new Collector.Characteristics[]{};
+    private static final Collector.Characteristics[] SORTED_SET_CHARACTERISTICS = new Collector.Characteristics[]{ Collector.Characteristics.UNORDERED };
 
     public static <T> Collector<T, ?, ImmutableSet<T>> toImmutableSet()
     {

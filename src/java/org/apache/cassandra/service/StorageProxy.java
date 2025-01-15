@@ -390,7 +390,8 @@ public class StorageProxy implements StorageProxyMBean
                            }
                            catch (InterruptedException e)
                            {
-                               throw new RuntimeException(e);
+                               Thread.currentThread().interrupt();
+                               throw new UncheckedInterruptedException(e);
                            }
                            catch (TimeoutException e)
                            {
@@ -1295,7 +1296,8 @@ public class StorageProxy implements StorageProxyMBean
                            }
                            catch (InterruptedException e)
                            {
-                               throw new RuntimeException(e);
+                               Thread.currentThread().interrupt();
+                               throw new UncheckedInterruptedException(e);
                            }
                            catch (TimeoutException e)
                            {
@@ -1492,7 +1494,8 @@ public class StorageProxy implements StorageProxyMBean
                                }
                                catch (InterruptedException e)
                                {
-                                   throw new RuntimeException(e);
+                                   Thread.currentThread().interrupt();
+                                   throw new UncheckedInterruptedException(e);
                                }
                                catch (TimeoutException e)
                                {

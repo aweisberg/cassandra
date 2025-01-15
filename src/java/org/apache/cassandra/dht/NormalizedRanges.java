@@ -202,7 +202,7 @@ public class NormalizedRanges<T extends RingPosition<T>> extends AbstractList<Ra
     }
 
     @VisibleForTesting
-    public NormalizedRanges<T> invert()
+    NormalizedRanges<T> invert()
     {
         checkState(!isEmpty());
 

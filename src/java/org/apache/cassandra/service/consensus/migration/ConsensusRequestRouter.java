@@ -530,7 +530,7 @@ public class ConsensusRequestRouter
         ClusterMetadata cm = ClusterMetadata.current();
         TableId tableId = command.metadata().id;
         TableMetadata tableMetadata = getTableMetadata(cm, tableId);
-        // Null for local tables
+        // Null for local or dropped tables
         if (tableMetadata == null)
             return;
 
@@ -774,8 +774,7 @@ public class ConsensusRequestRouter
             }
         }
 
-        //TODO (later): The range reads need a barrier for now only going to provide READ_COMMITTED
-        // Even if the barriers were being done they would probably time out like they tend to do in repair
+        //TODO (later): https://issues.apache.org/jira/browse/CASSANDRA-20211 Range reads could use a barrier
         if (hadAccordReads)
         {
             // do barrier

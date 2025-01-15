@@ -102,8 +102,8 @@ import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.US
 import static org.apache.cassandra.service.accord.txn.TxnData.txnDataName;
 import static org.apache.cassandra.service.accord.txn.TxnRead.createTxnRead;
 import static org.apache.cassandra.service.accord.txn.TxnResult.Kind.retry_new_protocol;
-import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.shouldReadEphemerally;
 import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.getTableMetadata;
+import static org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter.shouldReadEphemerally;
 
 public class TransactionStatement implements CQLStatement.CompositeCQLStatement, CQLStatement.ReturningCQLStatement
 {
@@ -350,12 +350,7 @@ public class TransactionStatement implements CQLStatement.CompositeCQLStatement,
         return new Keys(keySet);
     }
 
-    private static TransactionalMode transactionalModeForSingleKey(Keys keys)
-    {
-        return Schema.instance.getTableMetadata(((AccordRoutableKey) keys.get(0)).table()).params.transactionalMode;
-    }
-
-    private ConsistencyLevel consistencyLevelForAccordRead(ClusterMetadata cm, Set<Key> keys, ConsistencyLevel consistencyLevel)
+    private ConsistencyLevel consistencyLevelForAccordRead(ClusterMetadata cm, Set<Key> keys, @Nullable ConsistencyLevel consistencyLevel)
     {
         // Write transactions are read/write so it creates a read and ends up needing a consistency level
         // which is fine to leave null
