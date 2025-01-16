@@ -64,7 +64,6 @@ import org.apache.cassandra.dht.Murmur3Partitioner.LongToken;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Cluster;
-import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.ICoordinator;
 import org.apache.cassandra.distributed.api.IInstance;
 import org.apache.cassandra.distributed.api.IInvokableInstance;
@@ -606,8 +605,12 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                      {
                          // Accord will block until we unpause enactment so to test the routing we wait until the transaction
                          // has started so the epoch it is created in is the old one
-                         Util.spinUntilTrue(() -> outOfSyncInstance.callOnInstance(() -> !((AccordService)AccordService.instance()).node().coordinating().isEmpty()), 20);
-                         logger.info("Accord node is now coordinating something");
+                         Util.spinUntilTrue(() -> outOfSyncInstance.callOnInstance(() -> {
+                             Map<TxnId, AsyncResult<? extends Outcome>> coordinating = AccordService.instance().node().coordinating();
+                             if (!coordinating.isEmpty())
+                                 logger.info("Accord coordinating: " + coordinating);
+                             return !coordinating.isEmpty();
+                         }), 20);
                          try
                          {
                              validation.accept(cluster);
@@ -828,13 +831,5 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
     private static String insertCQL(String qualifiedTableName, int pkey, int value)
     {
         return format("INSERT INTO %s ( id, c, v ) VALUES ( %d, %d, %d )", qualifiedTableName, pkey, CLUSTERING_VALUE, value);
-    }
-
-    // Prevents the creation of transactions in an older epoch because later writes need to order after earlier
-    private void writeAccordRowViaAccord()
-    {
-        logger.info("Initiating Accord row write");
-        SHARED_CLUSTER.coordinator(1).execute(insertCQL(qualifiedAccordTableName, PKEY_ACCORD, 99), ConsistencyLevel.QUORUM);
-        logger.info("Finished Accord row write");
     }
 }

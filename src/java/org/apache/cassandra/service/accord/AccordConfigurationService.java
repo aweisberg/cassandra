@@ -330,6 +330,7 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
 
     void reportMetadataInternal(ClusterMetadata metadata)
     {
+        System.out.println("Reporting new epoch to Accord " + metadata.epoch);
         updateMapping(metadata);
         Topology topology = AccordTopology.createAccordTopology(metadata);
         if (Invariants.isParanoid())
@@ -406,10 +407,12 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
     @VisibleForTesting
     void maybeReportMetadata(ClusterMetadata metadata)
     {
+        System.out.println("Maybe report metadata for epoch " + metadata.epoch);
         // don't report metadata until the previous one has been acknowledged
         long epoch = metadata.epoch.getEpoch();
         synchronized (epochs)
         {
+            System.out.println("Synchronize in maybe report metadata");
             if (epochs.maxEpoch() == 0)
             {
                 getOrCreateEpochState(epoch);  // touch epoch state so subsequent calls see it

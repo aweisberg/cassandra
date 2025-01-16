@@ -19,6 +19,7 @@
 package org.apache.cassandra.service.accord.txn;
 
 import java.io.IOException;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import javax.annotation.Nullable;
 
@@ -29,10 +30,13 @@ import accord.api.Query;
 import accord.api.Read;
 import accord.api.Result;
 import accord.api.Update;
+import accord.coordinate.EpochTimeout;
+import accord.coordinate.Timeout;
 import accord.primitives.Ranges;
 import accord.primitives.Seekables;
 import accord.primitives.Timestamp;
 import accord.primitives.TxnId;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.EmptyIterators;
 import org.apache.cassandra.db.PartitionRangeReadCommand;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
@@ -47,11 +51,14 @@ import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind;
 import org.apache.cassandra.service.consensus.migration.ConsensusRequestRouter;
 import org.apache.cassandra.tcm.ClusterMetadata;
+import org.apache.cassandra.tcm.ClusterMetadataService;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.utils.ObjectSizes;
+import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind.CAS_READ;
 import static org.apache.cassandra.service.accord.txn.TxnData.txnDataName;
 
@@ -208,6 +215,20 @@ public abstract class TxnQuery implements Query
     public Result compute(TxnId txnId, Timestamp executeAt, Seekables<?, ?> keys, @Nullable Data data, @Nullable Read read, @Nullable Update update)
     {
         Epoch epoch = Epoch.create(executeAt.epoch());
+        // TODO (required): This is not the cluster metadata of the current transaction
+        try
+        {
+            ClusterMetadata cm = ClusterMetadataService.instance().awaitAtLeast(epoch, DatabaseDescriptor.getTransactionTimeout(NANOSECONDS), NANOSECONDS)
+        }
+        catch (InterruptedException e)
+        {
+            Thread.interrupted();
+            throw new UncheckedInterruptedException();
+        }
+        catch (TimeoutException e)
+        {
+            throw new EpochTimeout(executeAt.epoch());
+        };
         boolean reads = read != null && !read.keys().isEmpty();
         if (transactionShouldBeBlocked(reads, epoch, keys))
         {
@@ -257,21 +278,20 @@ public abstract class TxnQuery implements Query
         }
     };
 
-    private static boolean transactionShouldBeBlocked(boolean reads, Epoch epoch, Seekables<?, ?> keys)
+    private static boolean transactionShouldBeBlocked(ClusterMetadata cm, boolean reads, Epoch epoch, Seekables<?, ?> keys)
     {
         // TxnQuery needs to be smart enough to allow blind writes through for the non-transactional use cases during migration
         // This also allows blind write TransactionStatement to run before TransactionStatemetns with reads can run,
         // but this is harmless since we only promise that TransactionStatement works when migrated to Accord.
         // TODO (lowpri): This could look at read keys vs write keys to see if it can run in more cases
         if (reads)
-            return !transactionIsSafeToReadAndWrite(epoch, keys);
+            return !transactionIsSafeToReadAndWrite(cm, keys);
         else
-            return !transactionIsSafeToWrite(epoch, keys);
+            return !transactionIsSafeToWrite(cm, keys);
     }
 
-    private static boolean transactionIsSafeToReadAndWrite(Epoch epoch, Seekables<?, ?> keys)
+    private static boolean transactionIsSafeToReadAndWrite(ClusterMetadata clusterMetadata, Seekables<?, ?> keys)
     {
-        // TODO (required): This is not the cluster metadata of the current transaction
         ClusterMetadata clusterMetadata = ClusterMetadata.current();
         switch (keys.domain())
         {

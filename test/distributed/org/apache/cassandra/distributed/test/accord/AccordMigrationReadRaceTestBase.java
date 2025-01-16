@@ -528,9 +528,6 @@ public abstract class AccordMigrationReadRaceTestBase extends AccordTestBase
                  }
                  catch (ExecutionException e)
                  {
-//                     // This is expected when inverting the migration
-//                     if (migrateAwayFromAccord && e.getCause() instanceof CoordinatorBehindException)
-//                         throw e;
                      throw e;
                  }
 

@@ -36,7 +36,6 @@ import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.coordinate.TopologyMismatch;
 import org.apache.cassandra.concurrent.DebuggableTask.RunnableDebuggableTask;
 import org.apache.cassandra.concurrent.ImmediateExecutor;
 import org.apache.cassandra.concurrent.Stage;
@@ -545,11 +544,11 @@ final class HintsDispatcher implements AutoCloseable
                 else
                     accordOutcome = SUCCESS;
             }
-            catch (WriteTimeoutException | WriteFailureException | RetryOnDifferentSystemException | TopologyMismatch e)
+            catch (WriteTimeoutException | WriteFailureException | RetryOnDifferentSystemException e)//| TopologyMismatch e)
             {
-                if (e instanceof TopologyMismatch || e instanceof RetryOnDifferentSystemException)
-                    accordOutcome = RETRY_DIFFERENT_SYSTEM;
-                else
+//                if (e instanceof TopologyMismatch || e instanceof RetryOnDifferentSystemException)
+//                    accordOutcome = RETRY_DIFFERENT_SYSTEM;
+//                else
                     accordOutcome = TIMEOUT;
                 String msg = "Accord hint delivery transaction failed retriably";
                 if (noSpamLogger.getStatement(msg).shouldLog(Clock.Global.nanoTime()))

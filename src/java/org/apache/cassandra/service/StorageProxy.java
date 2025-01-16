@@ -53,7 +53,6 @@ import com.google.common.util.concurrent.Uninterruptibles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.coordinate.TopologyMismatch;
 import accord.primitives.Txn;
 import org.apache.cassandra.batchlog.Batch;
 import org.apache.cassandra.batchlog.BatchlogManager;
@@ -62,7 +61,6 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.cql3.statements.RequestValidations;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.CounterMutation;
@@ -1315,6 +1313,7 @@ public class StorageProxy implements StorageProxyMBean
                 List<? extends IMutation> accordMutations = splitMutations.accordMutations();
                 AsyncTxnResult accordResult = accordMutations != null ? mutateWithAccordAsync(cm, accordMutations, consistencyLevel, requestTime) : null;
                 List<? extends IMutation> normalMutations = splitMutations.normalMutations();
+                logger.debug("Split mutations using epoch {} into Accord {} and normal {}", cm.epoch.getEpoch(), accordMutations, normalMutations);
                 Tracing.trace("Split mutations into Accord {} and normal {}", accordMutations, normalMutations);
 
                 Throwable failure = null;
@@ -1364,24 +1363,24 @@ public class StorageProxy implements StorageProxyMBean
                         Tracing.trace("Successfully wrote Accord mutations");
                     }
                 }
-                catch (TopologyMismatch e)
-                {
-                    // Don't suppress existing failure
-                    if (failure == null)
-                    {
-                        // For now assuming topology mismatch is caused by a race misrouting
-                        Tracing.trace("Accord returned topology mismatch, retrying: " + e.getMessage());
-                        logger.debug("Accord returned topology mismatch, retrying: " + e.getMessage());
-                        continue;
-                    }
-                    else
-                    {
-                        // For now assuming topology mismatch is caused by a race misrouting
-                        Tracing.trace("Accord returned topology mismatch, not retrying due to other failures: " + e.getMessage());
-                        logger.debug("Accord returned topology mismatch, not retrying due to other failures: {}", e.getMessage());
-                        failure = Throwables.merge(failure, RequestValidations.invalidRequest(e.getMessage()));
-                    }
-                }
+//                catch (TopologyMismatch e)
+//                {
+//                    // Don't suppress existing failure
+//                    if (failure == null)
+//                    {
+//                        // For now assuming topology mismatch is caused by a race misrouting
+//                        Tracing.trace("Accord returned topology mismatch, retrying: " + e.getMessage());
+//                        logger.debug("Accord returned topology mismatch, retrying: " + e.getMessage());
+//                        continue;
+//                    }
+//                    else
+//                    {
+//                        // For now assuming topology mismatch is caused by a race misrouting
+//                        Tracing.trace("Accord returned topology mismatch, not retrying due to other failures: " + e.getMessage());
+//                        logger.debug("Accord returned topology mismatch, not retrying due to other failures: {}", e.getMessage());
+//                        failure = Throwables.merge(failure, RequestValidations.invalidRequest(e.getMessage()));
+//                    }
+//                }
                 catch (Exception e)
                 {
                     failure = Throwables.merge(failure, e);
@@ -1544,6 +1543,7 @@ public class StorageProxy implements StorageProxyMBean
                 splitMutationsIntoAccordAndNormal(cm, mutations,  splitConsumer);
                 attributeNonAccordLatency = !wrappers.isEmpty();
                 cleanup.setMutationsWaitingFor(wrappers.size() + (accordMutations.isEmpty() ? 0 : 1));
+                logger.debug("Split batch using epoch {} into Accord {} and normal {}", cm.epoch.getEpoch(), accordMutations, wrappers);
                 Tracing.trace("Split batch into Accord {} and normal {}", accordMutations, wrappers);
 
                 // If the entire batch can execute on Accord then we can skip the batch log entirely
@@ -1619,24 +1619,24 @@ public class StorageProxy implements StorageProxyMBean
                         cleanup.ackMutation();
                     }
                 }
-                catch (TopologyMismatch e)
-                {
-                    // Don't suppress existing failure
-                    if (failure == null)
-                    {
-                        // For now assuming topology mismatch is caused by a race misrouting
-                        Tracing.trace("Accord returned topology mismatch, retrying: " + e.getMessage());
-                        logger.debug("Accord returned topology mismatch, retrying: " + e.getMessage());
-                        continue;
-                    }
-                    else
-                    {
-                        // For now assuming topology mismatch is caused by a race misrouting
-                        Tracing.trace("Accord returned topology mismatch, not retrying due to other failures: " + e.getMessage());
-                        logger.debug("Accord returned topology mismatch, not retrying due to other failures: {}", e.getMessage());
-                        failure = Throwables.merge(failure, RequestValidations.invalidRequest(e.getMessage()));
-                    }
-                }
+//                catch (TopologyMismatch e)
+//                {
+//                    // Don't suppress existing failure
+//                    if (failure == null)
+//                    {
+//                        // For now assuming topology mismatch is caused by a race misrouting
+//                        Tracing.trace("Accord returned topology mismatch, retrying: " + e.getMessage());
+//                        logger.debug("Accord returned topology mismatch, retrying: " + e.getMessage());
+//                        continue;
+//                    }
+//                    else
+//                    {
+//                        // For now assuming topology mismatch is caused by a race misrouting
+//                        Tracing.trace("Accord returned topology mismatch, not retrying due to other failures: " + e.getMessage());
+//                        logger.debug("Accord returned topology mismatch, not retrying due to other failures: {}", e.getMessage());
+//                        failure = Throwables.merge(failure, RequestValidations.invalidRequest(e.getMessage()));
+//                    }
+//                }
                 catch (Exception e)
                 {
                     failure = Throwables.merge(failure, e);
@@ -2377,18 +2377,7 @@ public class StorageProxy implements StorageProxyMBean
      */
     public static ConsensusAttemptResult getConsensusAttemptResultFromAsyncTxnResult(AsyncTxnResult asyncTxnResult, int numQueries, IntPredicate isQueryReversed)
     {
-        TxnResult txnResult;
-        try
-        {
-            txnResult = AccordService.instance().getTxnResult(asyncTxnResult);
-        }
-        catch (TopologyMismatch e)
-        {
-            // For now assuming topology mismatch is caused by a race misrouting
-            Tracing.trace("Accord returned topology mismatch, retrying: " + e.getMessage());
-            logger.debug("Accord returned topology mismatch, retrying: " + e.getMessage());
-            return RETRY_NEW_PROTOCOL;
-        }
+        TxnResult txnResult = AccordService.instance().getTxnResult(asyncTxnResult);
         // TODO (required): Converge on a single approach to RETRY_NEW_PROTOCOL, this works for now because reads don't support it anyways
         if (txnResult.kind() == retry_new_protocol)
             return RETRY_NEW_PROTOCOL;

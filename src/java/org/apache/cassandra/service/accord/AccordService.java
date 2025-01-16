@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -122,6 +123,7 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.WriteType;
 import org.apache.cassandra.dht.AccordSplitter;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.exceptions.ReadTimeoutException;
 import org.apache.cassandra.exceptions.RequestExecutionException;
 import org.apache.cassandra.exceptions.RequestTimeoutException;
@@ -155,6 +157,7 @@ import org.apache.cassandra.service.accord.exceptions.ReadPreemptedException;
 import org.apache.cassandra.service.accord.exceptions.WritePreemptedException;
 import org.apache.cassandra.service.accord.interop.AccordInteropAdapter.AccordInteropFactory;
 import org.apache.cassandra.service.accord.repair.RepairSyncPointAdapter;
+import org.apache.cassandra.service.accord.txn.RetryWithNewProtocolResult;
 import org.apache.cassandra.service.accord.txn.TxnResult;
 import org.apache.cassandra.service.consensus.TransactionalMode;
 import org.apache.cassandra.service.consensus.migration.TableMigrationState;
@@ -738,6 +741,34 @@ public class AccordService implements IAccordService, Shutdownable
         return node.topology();
     }
 
+    private static Set<TableId> txnDroppedTables(Seekables<?,?> keys)
+    {
+        Set<TableId> tables = new HashSet<>();
+        for (Seekable seekable : keys)
+        {
+            switch (seekable.domain())
+            {
+                default:
+                    throw new IllegalStateException("Unhandled domain " + seekable.domain());
+                case Key:
+                    tables.add(((PartitionKey) seekable).table());
+                    break;
+                case Range:
+                    tables.add(((TokenRange) seekable).table());
+                    break;
+            }
+        }
+
+        Iterator<TableId> tablesIterator = tables.iterator();
+        while (tablesIterator.hasNext())
+        {
+            TableId table = tablesIterator.next();
+            if (Schema.instance.getTableMetadata(table) != null)
+                tablesIterator.remove();
+        }
+        return tables;
+    }
+
     /**
      * Consistency level is just echoed back in timeouts, in the future it may be used for interoperability
      * with non-Accord operations.
@@ -746,23 +777,14 @@ public class AccordService implements IAccordService, Shutdownable
     public @Nonnull TxnResult coordinate(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
     {
         AsyncTxnResult asyncTxnResult = coordinateAsync(minEpoch, txn, consistencyLevel, requestTime);
-//        try
-//        {
-            return getTxnResult(asyncTxnResult);
-//        }
-//        catch (TopologyMismatch e)
-//        {
-//            // For now assuming topology mismatch is caused by a race misrouting
-//            Tracing.trace("Accord returned topology mismatch: " + e.getMessage());
-//            logger.debug("Accord returned topology mismatch: " + e.getMessage());
-//            return RetryWithNewProtocolResult.instance;
-//        }
+        return getTxnResult(asyncTxnResult);
     }
 
     @Override
     public @Nonnull AsyncTxnResult coordinateAsync(long minEpoch, @Nonnull Txn txn, @Nonnull ConsistencyLevel consistencyLevel, @Nonnull Dispatcher.RequestTime requestTime)
     {
         TxnId txnId = node.nextTxnId(txn.kind(), txn.keys().domain());
+        logger.info("Coordinating accord transaction with minEpoch {}", minEpoch);
         ClientRequestMetrics sharedMetrics;
         AccordClientRequestMetrics metrics;
         if (txn.isWrite())
@@ -778,8 +800,10 @@ public class AccordService implements IAccordService, Shutdownable
         metrics.keySize.update(txn.keys().size());
         long deadlineNanos = requestTime.computeDeadline(DatabaseDescriptor.getTransactionTimeout(NANOSECONDS));
         AsyncResult<Result> asyncResult = node.coordinate(txnId, txn, minEpoch, deadlineNanos);
+        Seekables<?, ?> keys = txn.keys();
         AsyncTxnResult asyncTxnResult = new AsyncTxnResult(txnId, minEpoch, consistencyLevel, txn.isWrite(), requestTime);
         asyncResult.addCallback((success, failure) -> {
+            logger.info("Result from accord was {}", success, failure);
             long durationNanos = nanoTime() - requestTime.startedAtNanos();
             sharedMetrics.addNano(durationNanos);
             metrics.addNano(durationNanos);
@@ -817,8 +841,22 @@ public class AccordService implements IAccordService, Shutdownable
             // or the txn accessing tables that don't exist or something.
             if (cause instanceof TopologyMismatch)
             {
+                // Excluding bugs topology mismatch can occur because a table was dropped in between creating the txn
+                // and executing it.
+                // It could also race with the table stopping/starting being managed by Accord.
+                // The caller can retry if the table indeed exists and is managed by Accord.
+                Set<TableId> txnDroppedTables = txnDroppedTables(keys);
+                Tracing.trace("Accord returned topology mismatch: " + cause.getMessage());
+                logger.debug("Accord returned topology mismatch", cause);
                 metrics.topologyMismatches.mark();
-                asyncTxnResult.tryFailure(cause);
+                // Throw IRE in case the caller fails to check if the table still exists
+                if (!txnDroppedTables.isEmpty())
+                {
+                    Tracing.trace("Accord txn uses dropped tables {}", txnDroppedTables);
+                    logger.debug("Accord txn uses dropped tables {}", txnDroppedTables);
+                    asyncTxnResult.setFailure(new InvalidRequestException("Accord transaction uses dropped tables"));
+                }
+                asyncTxnResult.setSuccess(RetryWithNewProtocolResult.instance);
                 return;
             }
             metrics.failures.mark();
@@ -862,6 +900,8 @@ public class AccordService implements IAccordService, Shutdownable
             }
             else if (cause instanceof RuntimeException)
                 throw (RuntimeException) cause;
+            else if (cause instanceof InvalidRequestException)
+                throw ((InvalidRequestException)cause);
             else
                 throw new RuntimeException(cause);
         }

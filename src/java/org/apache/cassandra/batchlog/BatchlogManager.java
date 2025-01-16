@@ -40,7 +40,6 @@ import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import accord.coordinate.TopologyMismatch;
 import org.apache.cassandra.concurrent.ScheduledExecutorPlus;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -459,8 +458,10 @@ public class BatchlogManager implements BatchlogManagerMBean
                         throw new RetryOnDifferentSystemException();
                 }
             }
-            catch (WriteTimeoutException | WriteFailureException | RetryOnDifferentSystemException | TopologyMismatch e)
+            catch (WriteTimeoutException | WriteFailureException | RetryOnDifferentSystemException e )//| TopologyMismatch e)
             {
+                logger.debug("Failed replaying a batched mutation on Accord, will write a hint");
+                logger.debug("Failure was :", e);
                 logger.trace("Failed replaying a batched mutation on Accord, will write a hint");
                 logger.trace("Failure was : {}", e.getMessage());
                 writeHintsForUndeliveredAccordTxns(hintedNodes);
