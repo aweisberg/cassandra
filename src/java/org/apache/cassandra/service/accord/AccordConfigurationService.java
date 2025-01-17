@@ -53,6 +53,7 @@ import org.apache.cassandra.repair.SharedContext;
 import org.apache.cassandra.service.accord.AccordKeyspace.EpochDiskState;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ClusterMetadataService;
+import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.tcm.listeners.ChangeListener;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Simulate;
@@ -415,6 +416,8 @@ public class AccordConfigurationService extends AbstractConfigurationService<Acc
     @Override
     protected void fetchTopologyInternal(long epoch)
     {
+        if (ClusterMetadata.current().epoch.getEpoch() < epoch)
+            ClusterMetadataService.instance().fetchLogFromCMS(Epoch.create(epoch));
         try
         {
             Set<InetAddressAndPort> peers = new HashSet<>(ClusterMetadata.current().directory.allJoinedEndpoints());
