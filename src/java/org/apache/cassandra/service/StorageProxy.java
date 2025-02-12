@@ -183,6 +183,7 @@ import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static accord.primitives.Txn.Kind.Read;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Iterables.concat;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -369,9 +370,12 @@ public class StorageProxy implements StorageProxyMBean
         }
 
         ConsensusAttemptResult lastAttemptResult;
+        ClusterMetadata cm = null;
         do
         {
-            ClusterMetadata cm = ClusterMetadata.current();
+            ClusterMetadata nextClusterMetadata = ClusterMetadata.current();
+            checkState(cm == null || nextClusterMetadata.epoch.compareTo(cm.epoch) > 0 || ConsensusRequestRouter.instance.getClass() != ConsensusRequestRouter.class, "New cluster metadata (%s) should have epoch > last cluster metadata (%s)", nextClusterMetadata.epoch, cm != null ? cm.epoch : null);
+            cm = nextClusterMetadata;
             TableMetadata metadata = Schema.instance.validateTable(keyspaceName, cfName);
             ConsensusRoutingDecision decision = consensusRouting(cm, metadata, key, consistencyForPaxos, requestTime, true);
             switch (decision)
@@ -1248,9 +1252,12 @@ public class StorageProxy implements StorageProxyMBean
 
     public static void dispatchMutationsWithRetryOnDifferentSystem(List<? extends IMutation> mutations, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
     {
+        ClusterMetadata cm = null;
         while (true)
         {
-            ClusterMetadata cm = ClusterMetadata.current();
+            ClusterMetadata nextClusterMetadata = ClusterMetadata.current();
+            checkState(cm == null || nextClusterMetadata.epoch.compareTo(cm.epoch) > 0, "New cluster metadata (%s) should have epoch > last cluster metadata (%s)", nextClusterMetadata.epoch, cm != null ? cm.epoch : null);
+            cm = nextClusterMetadata;
             try
             {
                 SplitMutations splitMutations = splitMutationsIntoAccordAndNormal(cm, (List<IMutation>)mutations);
@@ -1402,14 +1409,18 @@ public class StorageProxy implements StorageProxyMBean
             ReplicaPlan.ForWrite batchlogReplicaPlan = ReplicaPlans.forBatchlogWrite(ClusterMetadata.current(), batchConsistencyLevel == ConsistencyLevel.ANY);
             final TimeUUID batchUUID = nextTimeUUID();
             boolean wroteToBatchLog = false;
+            ClusterMetadata cm = null;
             while (true)
             {
-                ClusterMetadata cm = ClusterMetadata.current();
+                ClusterMetadata nextClusterMetadata = ClusterMetadata.current();
+                checkState(cm == null || nextClusterMetadata.epoch.compareTo(cm.epoch) > 0, "New cluster metadata (%s) should have epoch > last cluster metadata (%s)", nextClusterMetadata.epoch, cm != null ? cm.epoch : null);
+                cm = nextClusterMetadata;
                 // In case we hit an error in before/during splitting
                 attributeNonAccordLatency = true;
                 List<WriteResponseHandlerWrapper> wrappers = new ArrayList<>(mutations.size());
                 List<Mutation> accordMutations = new ArrayList<>(mutations.size());
                 BatchlogCleanup cleanup = new BatchlogCleanup(() -> asyncRemoveFromBatchlog(batchlogReplicaPlan, batchUUID, requestTime));
+                ClusterMetadata cmFinal = cm;
 
                 // add a handler for each mutation that will not be written on Accord - includes checking availability, but doesn't initiate any writes, yet
                 SplitConsumer<Mutation> splitConsumer = (accordMutation, normalMutation, originalMutations, mutationIndex) -> {
@@ -1424,7 +1435,7 @@ public class StorageProxy implements StorageProxyMBean
                         return;
 
                     // Always construct the replica plan to check availability
-                    ReplicaPlan.ForWrite dataReplicaPlan = ReplicaPlans.forWrite(cm, keyspace, consistencyLevel, tk, ReplicaPlans.writeNormal);
+                    ReplicaPlan.ForWrite dataReplicaPlan = ReplicaPlans.forWrite(cmFinal, keyspace, consistencyLevel, tk, ReplicaPlans.writeNormal);
 
                     if (dataReplicaPlan.lookup(FBUtilities.getBroadcastAddressAndPort()) != null)
                         writeMetrics.localRequests.mark();
@@ -2143,9 +2154,12 @@ public class StorageProxy implements StorageProxyMBean
     throws InvalidRequestException, UnavailableException, ReadFailureException, ReadTimeoutException
     {
         ConsensusAttemptResult lastResult;
+        ClusterMetadata cm = null;
         do
         {
-            ClusterMetadata cm = ClusterMetadata.current();
+            ClusterMetadata nextClusterMetadata = ClusterMetadata.current();
+            checkState(cm == null || nextClusterMetadata.epoch.compareTo(cm.epoch) > 0 || ConsensusRequestRouter.instance.getClass() != ConsensusRequestRouter.class, "New cluster metadata (%s) should have epoch > last cluster metadata (%s)", nextClusterMetadata.epoch, cm != null ? cm.epoch : null);
+            cm = nextClusterMetadata;
             SinglePartitionReadCommand command = group.queries.get(0);
             ConsensusRoutingDecision decision = consensusRouting(cm, group.metadata(), command.partitionKey(), consistencyLevel, requestTime, false);
             switch (decision)
@@ -2361,9 +2375,12 @@ public class StorageProxy implements StorageProxyMBean
     public static PartitionIterator dispatchReadWithRetryOnDifferentSystem(SinglePartitionReadCommand.Group group, ConsistencyLevel consistencyLevel, ReadCoordinator coordinator, Dispatcher.RequestTime requestTime)
     throws UnavailableException, ReadFailureException, ReadTimeoutException
     {
+        ClusterMetadata cm = null;
         while (true)
         {
-            ClusterMetadata cm = ClusterMetadata.current();
+            ClusterMetadata nextClusterMetadata = ClusterMetadata.current();
+            checkState(cm == null || nextClusterMetadata.epoch.compareTo(cm.epoch) > 0, "New cluster metadata (%s) should have epoch > last cluster metadata (%s)", nextClusterMetadata.epoch, cm != null ? cm.epoch : null);
+            cm = nextClusterMetadata;
             try
             {
                 SplitReads splitReads = splitReadsIntoAccordAndNormal(cm, group, coordinator, requestTime);

@@ -411,7 +411,9 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                         Tracing.trace("Got {} from range reads, will retry", e);
                     }
                     // Fetch the next epoch to retry
-                    lastClusterMetadata = ClusterMetadata.current();
+                    ClusterMetadata nextClusterMetadata = ClusterMetadata.current();
+                    checkState(nextClusterMetadata.epoch.compareTo(lastClusterMetadata.epoch) > 0, "New cluster metadata (%s) should have epoch > last cluster metadata (%s)", nextClusterMetadata.epoch, lastClusterMetadata.epoch);
+                    lastClusterMetadata = nextClusterMetadata;
                     delegate = attempt.apply(lastClusterMetadata);
                 }
             }

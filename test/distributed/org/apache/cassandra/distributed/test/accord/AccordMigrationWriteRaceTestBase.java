@@ -21,7 +21,6 @@ package org.apache.cassandra.distributed.test.accord;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -43,14 +42,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import accord.api.RoutingKey;
-import accord.coordinate.Outcome;
 import accord.messages.PreAccept;
 import accord.primitives.PartialKeyRoute;
 import accord.primitives.Ranges;
 import accord.primitives.Routable.Domain;
 import accord.primitives.Route;
-import accord.primitives.TxnId;
-import accord.utils.async.AsyncResult;
 import org.apache.cassandra.ServerTestUtils;
 import org.apache.cassandra.Util;
 import org.apache.cassandra.batchlog.BatchlogManager;
@@ -565,10 +561,10 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                                          // otherwise it will just be routed straight to non-Accord.
                                          logger.info("Spinning waiting on a transaction");
                                          Util.spinUntilTrue(() -> {
-                                             Map<TxnId, AsyncResult<? extends Outcome>> txns = AccordService.instance().node().coordinating();
-                                             if (!txns.isEmpty())
+                                             long txnCount = AccordService.instance().node().coordinating().keySet().stream().filter(txnId -> !txnId.isSyncPoint()).count();
+                                             if (txnCount > 0)
                                              {
-                                                 logger.info("Found txns {}", txns);
+                                                 logger.info("Found txns {}", txnCount);
                                                  return true;
                                              }
                                              return false;
@@ -606,10 +602,10 @@ public abstract class AccordMigrationWriteRaceTestBase extends AccordTestBase
                          // Accord will block until we unpause enactment so to test the routing we wait until the transaction
                          // has started so the epoch it is created in is the old one
                          Util.spinUntilTrue(() -> outOfSyncInstance.callOnInstance(() -> {
-                             Map<TxnId, AsyncResult<? extends Outcome>> coordinating = AccordService.instance().node().coordinating();
-                             if (!coordinating.isEmpty())
-                                 logger.info("Accord coordinating: " + coordinating);
-                             return !coordinating.isEmpty();
+                             long count = AccordService.instance().node().coordinating().keySet().stream().filter(txnId -> !txnId.isSyncPoint()).count();
+                             if (count > 0)
+                                 logger.info("Accord coordinating: " + count);
+                             return count > 0;
                          }), 20);
                          try
                          {

@@ -18,20 +18,11 @@
 
 package org.apache.cassandra.distributed.test.accord;
 
-import org.junit.Ignore;
-
 public class MigrationToAccordReadRaceTest extends AccordMigrationReadRaceTestBase
 {
     @Override
     protected boolean migratingAwayFromAccord()
     {
         return false;
-    }
-
-    @Ignore
-    @Override
-    public void testBounds() throws Throwable
-    {
-        super.testBounds();
     }
 }
