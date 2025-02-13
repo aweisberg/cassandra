@@ -112,6 +112,7 @@ import org.apache.cassandra.utils.concurrent.SharedCloseable;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static org.apache.cassandra.concurrent.ExecutorFactory.Global.executorFactory;
+import static org.apache.cassandra.utils.TimeUUID.unixMicrosToRawTimestamp;
 import static org.apache.cassandra.utils.concurrent.BlockingQueues.newBlockingQueue;
 import static org.apache.cassandra.utils.concurrent.SharedCloseable.sharedCopyOrNull;
 
@@ -149,7 +150,7 @@ import static org.apache.cassandra.utils.concurrent.SharedCloseable.sharedCopyOr
  * <p>
  * TODO: fill in details about Tracker and lifecycle interactions for tools, and for compaction strategies
  */
-public abstract class SSTableReader extends SSTable implements UnfilteredSource, SelfRefCounted<SSTableReader>
+public abstract class SSTableReader extends SSTable implements UnfilteredSource, SelfRefCounted<SSTableReader>, Comparable<SSTableReader>
 {
     private static final Logger logger = LoggerFactory.getLogger(SSTableReader.class);
 
@@ -177,11 +178,25 @@ public abstract class SSTableReader extends SSTable implements UnfilteredSource,
     public static final Comparator<SSTableReader> maxTimestampAscending = Comparator.comparingLong(SSTableReader::getMaxTimestamp);
     public static final Comparator<SSTableReader> maxTimestampDescending = maxTimestampAscending.reversed();
 
-    // it's just an object, which we use regular Object equality on; we introduce a special class just for easy recognition
-    public static final class UniqueIdentifier
+    private static final TimeUUID.Generator.Factory<UniqueIdentifier> UNIQUE_IDENTIFIER_FACTORY = new TimeUUID.Generator.Factory<UniqueIdentifier>()
     {
+        @Override
+        public UniqueIdentifier atUnixMicrosWithLsb(long unixMicros, long clockSeqAndNode)
+        {
+            return new UniqueIdentifier(unixMicrosToRawTimestamp(unixMicros), clockSeqAndNode);
+        }
+    };
+
+    // it's just an object, which we use regular Object equality on; we introduce a special class just for easy recognition
+    // Also includes a TimeUUID to make these sortable
+    public static final class UniqueIdentifier extends TimeUUID
+    {
+        private UniqueIdentifier(long unixMicros, long clockSeqAndNode)
+        {
+            super(unixMicros, clockSeqAndNode);
+        }
     }
-    public final UniqueIdentifier instanceId = new UniqueIdentifier();
+    public final UniqueIdentifier instanceId = TimeUUID.Generator.nextTimeUUID(UNIQUE_IDENTIFIER_FACTORY);
 
     public static final Comparator<SSTableReader> firstKeyComparator = (o1, o2) -> o1.getFirst().compareTo(o2.getFirst());
     public static final Ordering<SSTableReader> firstKeyOrdering = Ordering.from(firstKeyComparator);
@@ -1844,6 +1859,13 @@ public abstract class SSTableReader extends SSTable implements UnfilteredSource,
                                           OutputHandler outputHandler,
                                           boolean isOffline,
                                           IVerifier.Options options);
+
+    @Override
+    public int compareTo(SSTableReader other)
+    {
+        // Used in IntervalTree with the expecation that compareTo uniquely identifies an SSTableReader
+        return instanceId.compareTo(other.instanceId);
+    }
 
     /**
      * A method to be called by {@link #getPosition(PartitionPosition, Operator, boolean, SSTableReadsListener)}

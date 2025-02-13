@@ -17,63 +17,83 @@
  */
 package org.apache.cassandra.utils;
 
-import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.Iterators;
-import org.apache.commons.lang3.function.TriFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.io.ISerializer;
-import org.apache.cassandra.io.IVersionedSerializer;
-import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.utils.AsymmetricOrdering.Op;
 
-public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval<C, D>> implements Iterable<I>
+public class IntervalTree<C extends Comparable<? super C>, D extends Comparable<? super D>, I extends Interval<C, D>> implements Iterable<I>
 {
     private static final Logger logger = LoggerFactory.getLogger(IntervalTree.class);
+
+    private static final Interval[] EMPTY_ARRAY = new Interval[0];
 
     @SuppressWarnings("unchecked")
     private static final IntervalTree EMPTY_TREE = new IntervalTree(null);
 
     private final IntervalNode head;
-    private final int count;
+    private final I[] intervalsByMinOrder;
+    private final I[] intervalsByMaxOrder;
 
     protected IntervalTree(Collection<I> intervals)
     {
         if (intervals == null || intervals.isEmpty())
         {
             this.head = null;
-            this.count = 0;
+            intervalsByMinOrder = intervalsByMaxOrder = (I[])EMPTY_ARRAY;
         }
         else if (intervals.size() == 1)
         {
+            intervalsByMinOrder = intervalsByMaxOrder = (I[])new Interval[] { intervals.iterator().next() };
             this.head = new IntervalNode(intervals);
-            this.count = intervals.size();
         }
         else
         {
             List<I> minSortedIntervals = new ArrayList<>(intervals);
             Collections.sort(minSortedIntervals, Interval.minOrdering());
+            intervalsByMinOrder = (I[])new Interval[minSortedIntervals.size()];
+            minSortedIntervals.toArray(intervalsByMinOrder);
             List<I> maxSortedIntervals = new ArrayList<>(intervals);
             Collections.sort(maxSortedIntervals, Interval.maxOrdering());
-            this.head = new IntervalNode(minSortedIntervals, minSortedIntervals, maxSortedIntervals);
-            this.count = intervals.size();
+            intervalsByMaxOrder = (I[])new Interval[maxSortedIntervals.size()];
+            maxSortedIntervals.toArray(intervalsByMaxOrder);
+            this.head = new IntervalNode(minSortedIntervals, maxSortedIntervals);
         }
     }
 
-    public static <C extends Comparable<? super C>, D, I extends Interval<C, D>> IntervalTree<C, D, I> build(Collection<I> intervals)
+    protected IntervalTree(I[] minSortedIntervals, I[] maxSortedIntervals)
+    {
+        if (minSortedIntervals == null || minSortedIntervals.length == 0)
+        {
+            this.head = null;
+            intervalsByMinOrder = intervalsByMaxOrder = (I[])EMPTY_ARRAY;
+        }
+        else if (minSortedIntervals.length == 1)
+        {
+            intervalsByMinOrder = intervalsByMaxOrder = minSortedIntervals;
+            List<I> intervals = Collections.singletonList(minSortedIntervals[0]);
+            this.head = new IntervalNode(intervals, intervals);
+        }
+        else
+        {
+            intervalsByMinOrder = minSortedIntervals;
+            intervalsByMaxOrder = maxSortedIntervals;
+            this.head = new IntervalNode(Arrays.asList(minSortedIntervals), Arrays.asList(maxSortedIntervals));
+        }
+    }
+
+    public static <C extends Comparable<? super C>, D extends Comparable<? super D>, I extends Interval<C, D>> IntervalTree<C, D, I> build(Collection<I> intervals)
     {
         if (intervals == null || intervals.isEmpty())
             return emptyTree();
@@ -81,20 +101,15 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
         return new IntervalTree<C, D, I>(intervals);
     }
 
-    public static <C extends Comparable<? super C>, D, I extends Interval<C, D>> Serializer<C, D, I> serializer(ISerializer<C> pointSerializer, ISerializer<D> dataSerializer, TriFunction<C, C, D, I> constructor)
-    {
-        return new Serializer<>(pointSerializer, dataSerializer, constructor);
-    }
-
     @SuppressWarnings("unchecked")
-    public static <C extends Comparable<? super C>, D, I extends Interval<C, D>> IntervalTree<C, D, I> emptyTree()
+    public static <C extends Comparable<? super C>, D extends Comparable<? super D>, I extends Interval<C, D>> IntervalTree<C, D, I> emptyTree()
     {
         return EMPTY_TREE;
     }
 
     public int intervalCount()
     {
-        return count;
+        return intervalsByMinOrder.length;
     }
 
     public boolean isEmpty()
@@ -131,6 +146,97 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
     public List<D> search(C point)
     {
         return search(Interval.<C, D>create(point, point, null));
+    }
+
+    public IntervalTree<C, D, I> update(List<I> removals, List<I> additions)
+    {
+        if ((removals == null || removals.isEmpty()) && (additions == null || additions.isEmpty()))
+        {
+            return this;
+        }
+
+        I[] removalsArray = removals.toArray((I[])EMPTY_ARRAY);
+        I[] additionsArray = additions.toArray((I[])EMPTY_ARRAY);
+        Arrays.sort(removalsArray, Interval.<C, D>minOrdering());
+        Arrays.sort(additionsArray, Interval.<C, D>minOrdering());
+
+        I[] newByMin = buildUpdatedArray(
+            intervalsByMinOrder,
+            removalsArray,
+            additionsArray,
+            Interval.<C, D>minOrdering()
+        );
+
+        Arrays.sort(removalsArray, Interval.<C, D>maxOrdering());
+        Arrays.sort(additionsArray, Interval.<C, D>maxOrdering());
+
+        I[] newByMax = buildUpdatedArray(
+            intervalsByMaxOrder,
+            removalsArray,
+            additionsArray,
+            Interval.<C, D>maxOrdering()
+        );
+
+        return new IntervalTree<C, D, I>(newByMin, newByMax);
+    }
+
+    @SuppressWarnings("unchecked")
+    private I[] buildUpdatedArray(I[] existingSorted,
+                                  I[] removalsSorted,
+                                  I[] additionsSorted,
+                                  AsymmetricOrdering<Interval<C, D>, C> cmp)
+    {
+        int finalSize = existingSorted.length + additionsSorted.length - removalsSorted.length;
+        I[] result = (I[]) new Interval[finalSize];
+
+        int existingIndex  = 0;
+        int removalsIndex  = 0;
+        int additionsIndex = 0;
+        int resultIndex    = 0;
+
+        while (existingIndex < existingSorted.length)
+        {
+            I currentExisting = existingSorted[existingIndex];
+
+            while (removalsIndex < removalsSorted.length
+                   && cmp.compare(removalsSorted[removalsIndex], currentExisting) <= 0)
+            {
+                int c = cmp.compare(removalsSorted[removalsIndex], currentExisting);
+                if (c < 0)
+                {
+                    throw new IllegalStateException("Removal interval not found in the existing tree: " + removalsSorted[removalsIndex]);
+                }
+                else
+                {
+                    existingIndex++;
+                    removalsIndex++;
+
+                    if (existingIndex >= existingSorted.length)
+                        break;
+                    currentExisting = existingSorted[existingIndex];
+                }
+            }
+
+            if (existingIndex >= existingSorted.length )
+                break;
+
+            while (additionsIndex < additionsSorted.length
+                   && cmp.compare(additionsSorted[additionsIndex], currentExisting) <= 0)
+            {
+                result[resultIndex++] = additionsSorted[additionsIndex++];
+            }
+
+            result[resultIndex++] = currentExisting;
+            existingIndex++;
+        }
+
+        if (removalsIndex < removalsSorted.length)
+            throw new IllegalStateException("Removal interval not found in the existing tree: " + removalsSorted[removalsIndex]);
+
+        while (additionsIndex < additionsSorted.length)
+            result[resultIndex++] = additionsSorted[additionsIndex++];
+
+        return result;
     }
 
     public Iterator<I> iterator()
@@ -177,8 +283,6 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
         final IntervalNode left;
         final IntervalNode right;
 
-
-
         public IntervalNode(Collection<I> toBisect)
         {
             assert toBisect.size() == 1;
@@ -193,16 +297,16 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
             right = null;
         }
 
-        public IntervalNode(List<I> toBisect, List<I> minOrder, List<I> maxOrder)
+        public IntervalNode(List<I> minOrder, List<I> maxOrder)
         {
-            assert !toBisect.isEmpty();
-            logger.trace("Creating IntervalNode from {}", toBisect);
+            assert !minOrder.isEmpty();
+            logger.trace("Creating IntervalNode from {}", minOrder);
 
             // Building IntervalTree with one interval will be a reasonably
             // common case for range tombstones, so it's worth optimizing
-            if (toBisect.size() == 1)
+            if (minOrder.size() == 1)
             {
-                I interval = toBisect.iterator().next();
+                I interval = minOrder.iterator().next();
                 low = interval.min;
                 center = interval.max;
                 high = interval.max;
@@ -237,17 +341,17 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
             // Separate interval in intersecting center, left of center and right of center
             intersectsLeft = new ArrayList<I>();
             intersectsRight = new ArrayList<I>();
-            List<I> leftSegment = new ArrayList<I>();
+            List<I> leftSegmentMinOrder = new ArrayList<I>();
             List<I> leftSegmentMaxOrder = new ArrayList<>();
-            List<I> rightSegment = new ArrayList<I>();
+            List<I> rightSegmentMinOrder = new ArrayList<I>();
             List<I> rightSegmentMaxOrder = new ArrayList<>();
 
             for (I candidate : minOrder)
             {
                 if (candidate.max.compareTo(center) < 0)
-                    leftSegment.add(candidate);
+                    leftSegmentMinOrder.add(candidate);
                 else if (candidate.min.compareTo(center) > 0)
-                    rightSegment.add(candidate);
+                    rightSegmentMinOrder.add(candidate);
                 else
                     intersectsLeft.add(candidate);
             }
@@ -262,15 +366,15 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
                     intersectsRight.add(candidate);
             }
 
-            left = leftSegment.isEmpty() ? null : new IntervalNode(leftSegment, leftSegment, leftSegmentMaxOrder);
-            right = rightSegment.isEmpty() ? null : new IntervalNode(rightSegment, rightSegment, rightSegmentMaxOrder);
+            left = leftSegmentMinOrder.isEmpty() ? null : new IntervalNode(leftSegmentMinOrder, leftSegmentMaxOrder);
+            right = rightSegmentMinOrder.isEmpty() ? null : new IntervalNode(rightSegmentMinOrder, rightSegmentMaxOrder);
 
             assert (intersectsLeft.size() == intersectsRight.size());
-            assert (intersectsLeft.size() + leftSegment.size() + rightSegment.size()) == toBisect.size() :
+            assert (intersectsLeft.size() + leftSegmentMinOrder.size() + rightSegmentMinOrder.size()) == minOrder.size() :
                     "intersects (" + String.valueOf(intersectsLeft.size()) +
-                            ") + leftSegment (" + String.valueOf(leftSegment.size()) +
-                            ") + rightSegment (" + String.valueOf(rightSegment.size()) +
-                            ") != toBisect (" + String.valueOf(toBisect.size()) + ")";
+                            ") + leftSegment (" + String.valueOf(leftSegmentMinOrder.size()) +
+                            ") + rightSegment (" + String.valueOf(rightSegmentMinOrder.size()) +
+                            ") != toBisect (" + String.valueOf(minOrder.size()) + ")";
         }
 
 
@@ -353,68 +457,6 @@ public class IntervalTree<C extends Comparable<? super C>, D, I extends Interval
                 node = node.left;
             }
 
-        }
-    }
-
-    public static class Serializer<C extends Comparable<? super C>, D, I extends Interval<C, D>> implements IVersionedSerializer<IntervalTree<C, D, I>>
-    {
-        private final ISerializer<C> pointSerializer;
-        private final ISerializer<D> dataSerializer;
-        private final TriFunction<C, C, D, I> constructor;
-
-        private Serializer(ISerializer<C> pointSerializer, ISerializer<D> dataSerializer, TriFunction<C, C, D, I> constructor)
-        {
-            this.pointSerializer = pointSerializer;
-            this.dataSerializer = dataSerializer;
-            this.constructor = constructor;
-        }
-
-        public void serialize(IntervalTree<C, D, I> it, DataOutputPlus out, int version) throws IOException
-        {
-            out.writeInt(it.count);
-            for (Interval<C, D> interval : it)
-            {
-                pointSerializer.serialize(interval.min, out);
-                pointSerializer.serialize(interval.max, out);
-                dataSerializer.serialize(interval.data, out);
-            }
-        }
-
-        /**
-         * Deserialize an IntervalTree whose keys use the natural ordering.
-         * Use deserialize(DataInput, int, Comparator) instead if the interval
-         * tree is to use a custom comparator, as the comparator is *not*
-         * serialized.
-         */
-        public IntervalTree<C, D, I> deserialize(DataInputPlus in, int version) throws IOException
-        {
-            return deserialize(in, version, null);
-        }
-
-        public IntervalTree<C, D, I> deserialize(DataInputPlus in, int version, Comparator<C> comparator) throws IOException
-        {
-            int count = in.readInt();
-            List<I> intervals = new ArrayList<I>(count);
-            for (int i = 0; i < count; i++)
-            {
-                C min = pointSerializer.deserialize(in);
-                C max = pointSerializer.deserialize(in);
-                D data = dataSerializer.deserialize(in);
-                intervals.add(constructor.apply(min, max, data));
-            }
-            return new IntervalTree<C, D, I>(intervals);
-        }
-
-        public long serializedSize(IntervalTree<C, D, I> it, int version)
-        {
-            long size = TypeSizes.sizeof(0);
-            for (Interval<C, D> interval : it)
-            {
-                size += pointSerializer.serializedSize(interval.min);
-                size += pointSerializer.serializedSize(interval.max);
-                size += dataSerializer.serializedSize(interval.data);
-            }
-            return size;
         }
     }
 }

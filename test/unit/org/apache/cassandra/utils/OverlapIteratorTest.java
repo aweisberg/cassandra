@@ -76,7 +76,7 @@ public class OverlapIteratorTest
         compare(randomIntervals(range, increment, count), random(range, increment, count), 3);
     }
 
-    private <I extends Comparable<I>, V> void compare(List<Interval<I, V>> intervals, List<I> points, int initCount)
+    private <I extends Comparable<I>, V extends Comparable<? super V>> void compare(List<Interval<I, V>> intervals, List<I> points, int initCount)
     {
         Collections.sort(points);
         IntervalTree<I, V, Interval<I, V>> tree = IntervalTree.build(intervals);

@@ -1,27 +1,22 @@
 package org.apache.cassandra.utils;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import org.junit.Test;
 
-import org.apache.cassandra.db.TypeSizes;
-import org.apache.cassandra.io.ISerializer;
-import org.apache.cassandra.io.IVersionedSerializer;
-import org.apache.cassandra.io.util.DataInputBuffer;
-import org.apache.cassandra.io.util.DataInputPlus;
-import org.apache.cassandra.io.util.DataOutputBuffer;
-import org.apache.cassandra.io.util.DataOutputPlus;
 import org.quicktheories.WithQuickTheories;
 import org.quicktheories.core.Gen;
 import org.quicktheories.generators.SourceDSL;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -30,48 +25,10 @@ import static org.junit.Assert.fail;
 
 public class IntervalTreeTest implements WithQuickTheories
 {
-    private static final ISerializer<Integer> INT_SERIALIZER = new ISerializer<>()
-    {
-        public void serialize(Integer i, DataOutputPlus out) throws IOException
-        {
-            out.writeInt(i);
-        }
-
-        public Integer deserialize(DataInputPlus in) throws IOException
-        {
-            return in.readInt();
-        }
-
-        public long serializedSize(Integer i)
-        {
-            return 4;
-        }
-    };
-
-    private static final ISerializer<String> STRING_SERIALIZER = new ISerializer<>()
-    {
-        public void serialize(String v, DataOutputPlus out) throws IOException
-        {
-            out.writeUTF(v);
-        }
-
-        public String deserialize(DataInputPlus in) throws IOException
-        {
-            return in.readUTF();
-        }
-
-        public long serializedSize(String v)
-        {
-            return TypeSizes.sizeof(v);
-        }
-    };
-
-    private static final IVersionedSerializer<IntervalTree<Integer, String, Interval<Integer, String>>> TREE_SERIALIZER = IntervalTree.serializer(INT_SERIALIZER, STRING_SERIALIZER, Interval::new);
-
     @Test
     public void testSearch()
     {
-        List<Interval<Integer, Void>> intervals = new ArrayList<>();
+        List<Interval<Integer, Integer>> intervals = new ArrayList<>();
 
         intervals.add(Interval.create(-300, -200));
         intervals.add(Interval.create(-3, -2));
@@ -86,8 +43,7 @@ public class IntervalTreeTest implements WithQuickTheories
         intervals.add(Interval.create(40, 50));
         intervals.add(Interval.create(49, 60));
 
-
-        IntervalTree<Integer, Void, Interval<Integer, Void>> it = IntervalTree.build(intervals);
+        IntervalTree<Integer, Integer, Interval<Integer, Integer>> it = IntervalTree.build(intervals);
 
         assertEquals(3, it.search(Interval.create(4, 4)).size());
         assertEquals(4, it.search(Interval.create(4, 5)).size());
@@ -97,7 +53,7 @@ public class IntervalTreeTest implements WithQuickTheories
         assertEquals(2, it.search(Interval.create(0, 1)).size());
         assertEquals(0, it.search(Interval.create(10, 12)).size());
 
-        List<Interval<Integer, Void>> intervals2 = new ArrayList<>();
+        List<Interval<Integer, Integer>> intervals2 = new ArrayList<>();
 
         //stravinsky 1880-1971
         intervals2.add(Interval.create(1880, 1971));
@@ -112,11 +68,11 @@ public class IntervalTreeTest implements WithQuickTheories
         //Schuetz
         intervals2.add(Interval.create(1585, 1672));
 
-        IntervalTree<Integer, Void, Interval<Integer, Void>> it2 = IntervalTree.build(intervals2);
+        IntervalTree<Integer, Integer, Interval<Integer, Integer>> it2 = IntervalTree.build(intervals2);
 
         assertEquals(0, it2.search(Interval.create(1829, 1842)).size());
 
-        List<Void> intersection1 = it2.search(Interval.create(1907, 1907));
+        List<Integer> intersection1 = it2.search(Interval.create(1907, 1907));
         assertEquals(3, intersection1.size());
 
         intersection1 = it2.search(Interval.create(1780, 1790));
@@ -126,7 +82,7 @@ public class IntervalTreeTest implements WithQuickTheories
     @Test
     public void testIteration()
     {
-        List<Interval<Integer, Void>> intervals = new ArrayList<>();
+        List<Interval<Integer, Integer>> intervals = new ArrayList<>();
 
         intervals.add(Interval.create(-300, -200));
         intervals.add(Interval.create(-3, -2));
@@ -141,11 +97,11 @@ public class IntervalTreeTest implements WithQuickTheories
         intervals.add(Interval.create(40, 50));
         intervals.add(Interval.create(49, 60));
 
-        IntervalTree<Integer, Void, Interval<Integer, Void>> it = IntervalTree.build(intervals);
+        IntervalTree<Integer, Integer, Interval<Integer, Integer>> it = IntervalTree.build(intervals);
 
         Collections.sort(intervals, Interval.minOrdering());
 
-        List<Interval<Integer, Void>> l = ImmutableList.copyOf(it);
+        List<Interval<Integer, Integer>> l = ImmutableList.copyOf(it);
 
         assertEquals(intervals, l);
     }
@@ -312,38 +268,6 @@ public class IntervalTreeTest implements WithQuickTheories
     }
 
     @Test
-    public void testSerialization() throws Exception
-    {
-        List<Interval<Integer, String>> intervals = new ArrayList<>();
-        intervals.add(Interval.create(-300, -200, "a"));
-        intervals.add(Interval.create(-3, -2, "b"));
-        intervals.add(Interval.create(1, 2, "c"));
-        intervals.add(Interval.create(1, 3, "d"));
-        intervals.add(Interval.create(2, 4, "e"));
-        intervals.add(Interval.create(3, 6, "f"));
-        intervals.add(Interval.create(4, 6, "g"));
-        intervals.add(Interval.create(5, 7, "h"));
-        intervals.add(Interval.create(8, 9, "i"));
-        intervals.add(Interval.create(15, 20, "j"));
-        intervals.add(Interval.create(40, 50, "k"));
-        intervals.add(Interval.create(49, 60, "l"));
-
-        IntervalTree<Integer, String, Interval<Integer, String>> it = IntervalTree.build(intervals);
-
-        DataOutputBuffer out = new DataOutputBuffer();
-        TREE_SERIALIZER.serialize(it, out, 0);
-
-        DataInputPlus in = new DataInputBuffer(out.toByteArray());
-        IntervalTree<Integer, String, Interval<Integer, String>> itDeserialized = TREE_SERIALIZER.deserialize(in, 0);
-
-        assertEquals("Deserialized IntervalTree should match the original", it, itDeserialized);
-
-        List<Interval<Integer, String>> intervals2 = ImmutableList.copyOf(itDeserialized);
-
-        assertEquals("Interval lists should match after deserialization", intervals, intervals2);
-    }
-
-    @Test
     public void testPointSearchEquivalence()
     {
         List<Interval<Integer, String>> intervals = new ArrayList<>();
@@ -362,13 +286,14 @@ public class IntervalTreeTest implements WithQuickTheories
 
     private Gen<Interval<Integer, String>> intervalGen()
     {
+        AtomicInteger id = new AtomicInteger();
         return SourceDSL.integers().between(-5, 5)
                         .flatMap(start ->
                                  SourceDSL.integers().between(-5, 5)
                                           .map(end -> {
                                               int lo = Math.min(start, end);
                                               int hi = Math.max(start, end);
-                                              String data = "(" + lo + "," + hi + ")";
+                                              String data = "(" + lo + "," + hi + "," + id.getAndIncrement() + ")";
                                               return Interval.create(lo, hi, data);
                                           }));
     }
@@ -385,13 +310,11 @@ public class IntervalTreeTest implements WithQuickTheories
                         .flatMap(isPoint -> {
                             if (isPoint)
                             {
-                                // Single-point
                                 return SourceDSL.integers().between(-5, 5)
                                                 .map(x -> Interval.create(x, x, "queryPoint(" + x + ")"));
                             }
                             else
                             {
-                                // Actual intervals
                                 return intervalGen().map(i -> Interval.create(i.min, i.max, "query[" + i.min + "," + i.max + "]"));
                             }
                         });
@@ -434,43 +357,82 @@ public class IntervalTreeTest implements WithQuickTheories
                     assertEquals(setExpected, new HashSet<>(actualPoint));
                 }
 
-                List<Interval<Integer, String>> sortedByMin = new ArrayList<>(intervals);
-                sortedByMin.sort(Interval.minOrdering());
-
-                List<Interval<Integer, String>> fromTree = ImmutableList.copyOf(tree);
+                Set<Interval<Integer, String>> fromTree = ImmutableSet.copyOf(tree);
 
                 assertEquals(intervals.size(), fromTree.size());
-                List<Interval<Integer, String>> fromTreeSorted = new ArrayList<>(fromTree);
-                Collections.sort(fromTreeSorted, Interval.minOrdering());
-                List<Interval<Integer, String>> sortedOriginal = new ArrayList<>(intervals);
-                sortedOriginal.sort(Interval.minOrdering());
+                Set<Interval<Integer, String>> original = ImmutableSet.copyOf(intervals);
 
-                assertEquals(sortedOriginal, fromTreeSorted);
+                assertEquals(original, fromTree);
 
-                IntervalTree<Integer, String, Interval<Integer, String>> tree2 = IntervalTree.build(sortedByMin);
+                IntervalTree<Integer, String, Interval<Integer, String>> tree2 = IntervalTree.build(intervals);
                 assertEquals(tree, tree2);
                 assertEquals(tree.hashCode(), tree2.hashCode());
 
-                try (DataOutputBuffer out = new DataOutputBuffer())
+                return true;
+            });
+    }
+
+    @Test
+    public void qtUpdateFunctionTest()
+    {
+        qt().withExamples(-1).withTestingTime(30, SECONDS).forAll(intervalsListGen(),
+                    intervalsListGen(),
+                    SourceDSL.lists().of(queryGen()).ofSizeBetween(1, 4),
+                    SourceDSL.integers().all())
+            .check((original, toAdd, queries, seed) -> {
+                // 1. Build the original interval tree
+                IntervalTree<Integer, String, Interval<Integer, String>> originalTree = IntervalTree.build(original);
+
+                // Use the 'seed' to create a Random for picking which intervals to remove
+                java.util.Random rng = new java.util.Random(seed);
+
+                // 2. Pick a random subset of 'original' for removals,
+                //    ensuring these intervals definitely exist in 'originalTree'.
+                //    For each interval in 'original', we decide randomly to remove it or not.
+                List<Interval<Integer, String>> removals = new ArrayList<>();
+                for (Interval<Integer, String> candidate : original)
                 {
-                    TREE_SERIALIZER.serialize(tree, out, 0);
-                    IntervalTree<Integer, String, Interval<Integer, String>> roundTrip;
-                    try (DataInputBuffer in = new DataInputBuffer(out.toByteArray()))
+                    // 50% chance to include in removals
+                    if (rng.nextBoolean())
+                        removals.add(candidate);
+                }
+
+                // 3. Build the updated tree
+                IntervalTree<Integer, String, Interval<Integer, String>> updatedTree =
+                originalTree.update(removals, toAdd);
+
+                // 4. Naive model: final set = (original - removals) + toAdd
+                //    We'll represent it just as a List, but we must ensure duplicates can exist if the tree allows them.
+                //    So we will just remove exactly the "removals" from "original" by identity, then add "toAdd".
+                Set<Interval<Integer, String>> naiveFinal = new HashSet<>(original);
+                naiveFinal.removeAll(removals);
+                naiveFinal.addAll(toAdd);
+
+                // 6. Compare iteration over updatedTree to the naive final set
+                Set<Interval<Integer, String>> iteratedTree = ImmutableSet.copyOf(updatedTree);
+                // They should match the naive list (in ascending order by min)
+                assertEquals(naiveFinal, iteratedTree);
+
+                // 7. Also check a few random queries for the updatedTree vs naive set
+                //    We'll do both interval queries and point queries.
+                //    Because we are inside a check(...) statement, we can do multiple queries:
+                for (Interval<Integer, String> query : queries)
+                {
+                    List<String> actualResults = updatedTree.search(query);
+                    List<String> expectedResults = search(naiveFinal, query);
+
+                    // Compare sets (because duplicates or ordering may differ if intervals overlap the same range)
+                    assertEquals(new HashSet<>(expectedResults), new HashSet<>(actualResults));
+
+                    // If it's effectively a point query, also test updatedTree.search(point)
+                    if (query.min.equals(query.max))
                     {
-                        roundTrip = TREE_SERIALIZER.deserialize(in, 0);
+                        List<String> pointResults = updatedTree.search(query.min);
+                        assertEquals(new HashSet<>(expectedResults), new HashSet<>(pointResults));
                     }
-
-                    List<Interval<Integer, String>> roundTripIntervals = ImmutableList.copyOf(roundTrip);
-
-                    assertEquals(fromTree, roundTripIntervals);
-                    assertEquals(tree, roundTrip);
-                    assertEquals(tree.hashCode(), roundTrip.hashCode());
-                }
-                catch (IOException e)
-                {
-                    throw new RuntimeException(e);
                 }
 
+                // If we got here without assertion failures, the test passes for this data
                 return true;
             });
     }

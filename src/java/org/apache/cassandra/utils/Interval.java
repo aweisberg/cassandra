@@ -42,6 +42,21 @@ public class Interval<C, D>
         return new Interval(min, max, data);
     }
 
+    public C min()
+    {
+        return min;
+    }
+
+    public C max()
+    {
+        return max;
+    }
+
+    public D data()
+    {
+        return data;
+    }
+
     @Override
     public String toString()
     {
@@ -75,20 +90,14 @@ public class Interval<C, D>
 
         public int compare(Interval<Comparable, Comparable> i1, Interval<Comparable, Comparable> i2)
         {
-            // Order on all fields to get a deterministic iteration order
-            int minCmp = i1.min.compareTo(i2.min);
-            if (minCmp != 0)
-                return minCmp;
-            int maxCmp = i1.max.compareTo(i2.max);
-            if (maxCmp != 0)
-                return maxCmp;
-            if (i1.data == null && i2.data == null)
-                return 0;
-            if (i1.data == null)
-                return -1;
-            if (i2.data == null)
-                return 1;
-            return i1.data.compareTo(i2.data);
+            int cmpMin = i1.min.compareTo(i2.min);
+            if (cmpMin != 0)
+                return cmpMin;
+            int cmpMax = i1.max.compareTo(i2.max);
+            if (cmpMax != 0)
+                return cmpMax;
+            // Null is allowed if all data values are null otherwise NPE
+            return i1 == i2 ? 0 : i1.data.compareTo(i2.data);
         }
     };
 
@@ -102,20 +111,14 @@ public class Interval<C, D>
 
         public int compare(Interval<Comparable, Comparable> i1, Interval<Comparable, Comparable> i2)
         {
-            // Order on all fields to get a deterministic iteration order
-            int minCmp = i1.max.compareTo(i2.max);
-            if (minCmp != 0)
-                return minCmp;
-            int maxCmp = i1.max.compareTo(i2.max);
-            if (maxCmp != 0)
-                return maxCmp;
-            if (i1.data == null && i2.data == null)
-                return 0;
-            if (i1.data == null)
-                return -1;
-            if (i2.data == null)
-                return 1;
-            return i1.data.compareTo(i2.data);
+            int cmpMax = i1.max.compareTo(i2.max);
+            if (cmpMax != 0)
+                return cmpMax;
+            int cmpMin = i1.min.compareTo(i2.min);
+            if (cmpMin != 0)
+                return cmpMin;
+            // Null is allowed if all data values are null otherwise NPE
+            return i1 == i2 ? 0 : i1.data.compareTo(i2.data);
         }
     };
 
