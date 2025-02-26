@@ -843,7 +843,7 @@ public class ColumnFamilyStoreTest
         {
 
             @Override
-            public long put(PartitionUpdate update, UpdateTransaction indexer, Group opGroup)
+            public long put(MutationId mutationId, PartitionUpdate update, UpdateTransaction indexer, Group opGroup)
             {
                 return 0;
             }
@@ -858,6 +858,12 @@ public class ColumnFamilyStoreTest
             public long getLiveDataSize()
             {
                 return 0;
+            }
+
+            @Override
+            public MutationIdRanges getMutationIdRanges()
+            {
+                return MutationIdRanges.NONE;
             }
 
             @Override

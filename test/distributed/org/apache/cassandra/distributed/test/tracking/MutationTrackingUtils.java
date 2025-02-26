@@ -28,6 +28,7 @@ import java.util.Set;
 import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.replication.*;
+import org.apache.cassandra.db.MutationIdRanges;
 import org.junit.Assert;
 import org.junit.Assume;
 
@@ -177,6 +178,11 @@ public class MutationTrackingUtils
             if (!summary.contains(id))
                 throw new AssertionError(String.format("%s doesn't contain %s", summary, id));
         }
+    }
+
+    public static MutationIdRanges generateRanges()
+    {
+        return new MutationIdRanges(MutationId.fixme(), MutationId.fixme());
     }
 
     public static void assertIdsForKey(IInvokableInstance node, String keyspaceName, String tableName, int key, Set<MutationId> expected)

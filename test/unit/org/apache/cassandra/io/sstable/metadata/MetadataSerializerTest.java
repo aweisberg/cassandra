@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.cassandra.db.MutationIdRanges;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -50,6 +51,7 @@ import org.apache.cassandra.io.util.File;
 import org.apache.cassandra.io.util.FileOutputStreamPlus;
 import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.io.util.RandomAccessReader;
+import org.apache.cassandra.replication.MutationId;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.Throwables;
 
@@ -154,7 +156,9 @@ public class MetadataSerializerTest
         collector.updateClusteringValues(Clustering.make(UTF8Type.instance.decompose("cba"), withNulls ? null : Int32Type.instance.decompose(234)));
         ByteBuffer first = AsciiType.instance.decompose("a");
         ByteBuffer last = AsciiType.instance.decompose("b");
-        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, false, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
+        // MutationIdRanges mutationIdRanges = new MutationIdRanges(MutationId.create(1, 12345), MutationId.create(2, 56789));
+        MutationIdRanges mutationIdRanges = new MutationIdRanges(MutationId.fixme(), MutationId.fixme());
+        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, false, mutationIdRanges, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
     }
 
     private void testVersions(List<String> versions) throws Throwable

@@ -20,6 +20,7 @@ package org.apache.cassandra.streaming;
 
 import java.io.IOException;
 
+import org.apache.cassandra.db.MutationIdRanges;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.utils.TimeUUID;
 
@@ -44,6 +45,8 @@ public interface OutgoingStream
 
     long getRepairedAt();
     TimeUUID getPendingRepair();
+
+    MutationIdRanges getMutationIdRanges();
 
     String getName();
 

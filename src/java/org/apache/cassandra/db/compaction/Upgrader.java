@@ -80,6 +80,7 @@ public class Upgrader
                          .setRepairedAt(metadata.repairedAt)
                          .setPendingRepair(metadata.pendingRepair)
                          .setTransientSSTable(metadata.isTransient)
+                         .setMutationIdRanges(metadata.mutationIdRanges)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(sstableMetadataCollector)
                          .setSerializationHeader(SerializationHeader.make(cfs.metadata(), Sets.newHashSet(sstable)))
