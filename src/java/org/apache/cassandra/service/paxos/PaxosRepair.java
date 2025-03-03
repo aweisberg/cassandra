@@ -496,7 +496,7 @@ public class PaxosRepair extends AbstractPaxosRepair
     public long maxHlc()
     {
         checkState(successCriteria != null);
-        return successCriteria.uuidTimestamp();
+        return successCriteria.unixMicros();
     }
 
     static class Request
