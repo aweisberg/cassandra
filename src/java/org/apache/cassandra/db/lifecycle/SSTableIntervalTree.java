@@ -75,8 +75,27 @@ public class SSTableIntervalTree extends IntervalTree<PartitionPosition, SSTable
             return IntervalTree.EMPTY_ARRAY;
         Interval<PartitionPosition, SSTableReader>[] intervals = new Interval[sstables.size()];
         int i = 0;
+        int missingIntervals = 0;
         for (SSTableReader sstable : sstables)
-            intervals[i++] = sstable.getInterval();
+        {
+            Interval<PartitionPosition, SSTableReader> interval = sstable.getInterval();
+            if (interval == null)
+            {
+                missingIntervals++;
+                continue;
+            }
+            intervals[i++] = interval;
+        }
+
+        // Offline (scrub) tools create SSTableReader without a first and last key and the old interval tree
+        // built a corrupt tree that couldn't be searched so continue to do that rather than complicate Tracker/View
+        if (missingIntervals > 0)
+        {
+            Interval<PartitionPosition, SSTableReader>[] replacementIntervals = new Interval[intervals.length - missingIntervals];
+            System.arraycopy(intervals, 0, replacementIntervals, 0, replacementIntervals.length);
+            return replacementIntervals;
+        }
+
         return intervals;
     }
 
