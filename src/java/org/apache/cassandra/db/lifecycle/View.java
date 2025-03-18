@@ -312,6 +312,20 @@ public class View
         };
     }
 
+    // construct a function to replace the SSTable that have the same [first,last] intervals
+    static Function<View, View> replaceSSTables(final Set<SSTableReader> remove, final Iterable<SSTableReader> add, final Map<SSTableReader, SSTableReader> replacementMap)
+    {
+        return new Function<View, View>()
+        {
+            public View apply(View view)
+            {
+                Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, remove, add);
+                return new View(view.liveMemtables, view.flushingMemtables, sstableMap, view.compactingMap,
+                                SSTableIntervalTree.replace(view.intervalTree, replacementMap));
+            }
+        };
+    }
+
     // called prior to initiating flush: add newMemtable to liveMemtables, making it the latest memtable
     static Function<View, View> switchMemtable(final Memtable newMemtable)
     {
@@ -361,7 +375,7 @@ public class View
 
                 Map<SSTableReader, SSTableReader> sstableMap = replace(view.sstablesMap, emptySet(), flushed);
                 return new View(view.liveMemtables, flushingMemtables, sstableMap, view.compactingMap,
-                                    SSTableIntervalTree.update(view.intervalTree, null, flushed));
+                                    SSTableIntervalTree.addSSTables(view.intervalTree, null));
             }
         };
     }
