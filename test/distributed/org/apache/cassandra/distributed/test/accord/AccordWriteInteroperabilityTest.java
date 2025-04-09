@@ -47,7 +47,7 @@ import org.apache.cassandra.service.consensus.TransactionalMode;
 
 import static com.google.common.base.Throwables.getStackTraceAsString;
 import static org.apache.cassandra.Util.dk;
-import static org.apache.cassandra.Util.spinUntilTrue;
+import static org.apache.cassandra.Util.spinAssertEquals;
 import static org.apache.commons.collections.ListUtils.synchronizedList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -58,15 +58,23 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
 {
     private static final Logger logger = LoggerFactory.getLogger(AccordInteroperabilityTest.class);
 
+    enum Migration
+    {
+        notNeeded,
+        firstPhase,
+        secondPhase,
+        finished;
+    }
+
     @Nonnull
     private final TransactionalMode mode;
 
-    private final boolean migrated;
+    private final Migration migration;
 
-    public AccordWriteInteroperabilityTest(@Nonnull TransactionalMode mode, boolean migrated)
+    public AccordWriteInteroperabilityTest(@Nonnull TransactionalMode mode, Migration migration)
     {
         this.mode = mode;
-        this.migrated = migrated;
+        this.migration = migration;
     }
 
     @Parameterized.Parameters(name = "transactionalMode={0}, migrated={1}")
@@ -76,8 +84,8 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
         {
             if (mode.accordIsEnabled)
             {
-                tests.add(new Object[]{ mode, true });
-                tests.add(new Object[]{ mode, false });
+                for (Migration migration : Migration.values())
+                    tests.add(new Object[]{ mode, migration});
             }
         }
         return tests;
@@ -144,9 +152,9 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
 
     private void testApplyIsInteropApply(String query) throws Throwable
     {
-        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c))" + (migrated ? " WITH " + transactionalMode.asCqlParam() : ""),
+        test("CREATE TABLE " + qualifiedAccordTableName + " (k int, c int, v int, PRIMARY KEY(k, c))" + (migration == Migration.notNeeded ? " WITH " + transactionalMode.asCqlParam() : ""),
              cluster -> {
-                 MessageCountingSink messageCountingSink = new MessageCountingSink(SHARED_CLUSTER);
+                 MessageCountingSink messageCountingSink = new MessageCountingSink(SHARED_CLUSTER, MessageCountingSink.EXCLUDE_SYNC_POINT_MESSAGES);
                  List<String> failures = synchronizedList(new ArrayList<>());
                  // Verify that the apply response is only sent after the row has been inserted
                  // TODO (required): Need to delay mutation stage/mutation to ensure this has time to catch it
@@ -156,7 +164,7 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
                          if (message.verb() == Verb.ACCORD_APPLY_RSP.id)
                          {
                              // It can be async if it's migrated
-                             if (migrated)
+                             if (migration == Migration.notNeeded)
                                  return;
                              int nodeIndex = ((InstanceClassLoader)ClassLoader.getSystemClassLoader()).getInstanceId();
                              try
@@ -193,11 +201,12 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
                      }
                  });
 
-                 if (!migrated)
-                 {
+                 if (migration != Migration.notNeeded)
                      cluster.coordinator(1).execute("ALTER TABLE " + qualifiedAccordTableName + " WITH " + transactionalMode.asCqlParam(), ConsistencyLevel.ALL);
+                 if (migration == Migration.secondPhase || migration == Migration.finished)
                      nodetool(cluster.coordinator(1), "repair", "-skip-paxos", "-skip-accord", KEYSPACE, accordTableName);
-                 }
+                 if (migration == Migration.finished)
+                    nodetool(cluster.coordinator(1), "repair", "-skip-accord", KEYSPACE, accordTableName);
 
                  String finalQuery = query;
                  org.apache.cassandra.distributed.api.ConsistencyLevel consistencyLevel = org.apache.cassandra.distributed.api.ConsistencyLevel.QUORUM;
@@ -207,12 +216,10 @@ public class AccordWriteInteroperabilityTest extends AccordTestBase
                      finalQuery = query + " IF NOT EXISTS";
                      consistencyLevel = org.apache.cassandra.distributed.api.ConsistencyLevel.SERIAL;
                  }
-                 long startingRegularApplyCount = messageCount(Verb.ACCORD_APPLY_REQ);
                  cluster.coordinator(1).execute(finalQuery, consistencyLevel);
-                 if (transactionalMode.ignoresSuppliedCommitCL() && migrated)
+                 if (transactionalMode.ignoresSuppliedCommitCL() && migration != migration.firstPhase)
                  {
-                     // Apply is async and there can be a lot of sources of regular APPLY
-                     spinUntilTrue(() -> messageCount(Verb.ACCORD_APPLY_REQ) > startingRegularApplyCount);
+                     spinAssertEquals(3, () -> messageCount(Verb.ACCORD_APPLY_REQ));
                      assertEquals(0, messageCount(Verb.ACCORD_INTEROP_APPLY_REQ));
                  }
                  else

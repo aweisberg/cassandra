@@ -200,7 +200,7 @@ public class ClusterSimulation<S extends Simulation> implements AutoCloseable
         protected HeapPool.Logged.Listener memoryListener;
         protected SimulatedTime.Listener timeListener = (i1, i2) -> {};
         protected LongConsumer onThreadLocalRandomCheck;
-        protected String transactionalMode = "full";
+        protected String transactionalMode = "off";
 
         public Builder<S> failures(Failures failures)
         {
@@ -780,6 +780,7 @@ public class ClusterSimulation<S extends Simulation> implements AutoCloseable
                                    .set("file_cache_size", "16MiB")
                                    .set("use_deterministic_table_id", true)
                                    .set("accord.queue_submission_model", "ASYNC")
+                                   .set("accord.range_migration", "explicit")
                                    .set("disk_access_mode", "standard")
                                    .set("failure_detector", SimulatedFailureDetector.Instance.class.getName())
                                    .set("commitlog_compression", new ParameterizedClass(LZ4Compressor.class.getName(), emptyMap()))

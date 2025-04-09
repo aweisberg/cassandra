@@ -61,10 +61,10 @@ import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.schema.TableId;
 import org.apache.cassandra.service.accord.TokenRange;
-import org.apache.cassandra.service.accord.api.TokenKey;
 import org.apache.cassandra.service.accord.api.PartitionKey;
 import org.apache.cassandra.service.accord.serializers.TableMetadatas;
 import org.apache.cassandra.service.accord.serializers.TableMetadatasAndKeys;
+import org.apache.cassandra.service.accord.api.TokenKey;
 import org.apache.cassandra.service.accord.serializers.Version;
 import org.apache.cassandra.service.accord.txn.TxnData.TxnDataNameKind;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -233,7 +233,7 @@ public class TxnNamedRead extends AbstractSerialized<ReadCommand, TableMetadatas
     {
         ReadCommand command = deserialize(tables);
         if (command == null)
-            return AsyncResults.success(TxnData.NOOP_DATA);
+            return AsyncResults.success(new TxnData());
 
         // TODO (required, safety): before release, double check reasoning that this is safe
 //        AccordCommandsForKey cfk = ((SafeAccordCommandStore)safeStore).commandsForKey(key);

@@ -92,7 +92,7 @@ public class AccordSimulationRunner extends SimulationRunner
      */
     public static void main(String[] args) throws IOException
     {
-        SimulatorUtils.verifyAndlogSimulatorArgs(logger, args);
+        SimulatorUtils.verifyAndlogSimulatorArgs(args);
         AccordClusterSimulation.Builder builder = new AccordClusterSimulation.Builder();
         builder.unique(uniqueNum.getAndIncrement());
 
