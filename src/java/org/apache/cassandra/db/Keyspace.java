@@ -617,6 +617,7 @@ public class Keyspace
         {
             MutationTrackingService.instance.startWriting(mutation);
 
+
             for (PartitionUpdate upd : mutation.getPartitionUpdates())
             {
                 ColumnFamilyStore cfs = Schema.instance.getColumnFamilyStoreInstance(upd.metadata().id);
@@ -624,6 +625,10 @@ public class Keyspace
                 {
                     logger.error("Attempting to mutate non-existant table {} ({}.{})", upd.metadata().id, upd.metadata().keyspace, upd.metadata().name);
                     continue;
+                }
+                if (cfs.keyspace.getReplicationStrategy().hasTransientReplicas())
+                {
+
                 }
 
                 cfs.getWriteHandler().write(mutation.id(), upd, ctx, true);
