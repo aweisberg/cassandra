@@ -182,7 +182,7 @@ public class CassandraStreamReader implements IStreamReader
         Preconditions.checkState(streamReceiver instanceof CassandraStreamReceiver);
         LifecycleNewTracker lifecycleNewTracker = CassandraStreamReceiver.fromReceiver(session.getAggregator(tableId)).createLifecycleNewTracker();
 
-        RangeAwareSSTableWriter writer = new RangeAwareSSTableWriter(cfs, estimatedKeys, repairedAt, pendingRepair, false, format, sstableLevel, totalSize, lifecycleNewTracker, getHeader(cfs.metadata()));
+        RangeAwareSSTableWriter writer = new RangeAwareSSTableWriter(cfs, estimatedKeys, repairedAt, pendingRepair, format, sstableLevel, totalSize, lifecycleNewTracker, getHeader(cfs.metadata()));
         return writer;
     }
 

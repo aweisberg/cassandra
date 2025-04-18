@@ -98,7 +98,6 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                  Double.NaN,
                                  null,
                                  null,
-                                 false,
                                  true,
                                  ByteBufferUtil.EMPTY_BYTE_BUFFER,
                                  ByteBufferUtil.EMPTY_BYTE_BUFFER);
@@ -354,7 +353,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
         this.hasLegacyCounterShards = this.hasLegacyCounterShards || hasLegacyCounterShards;
     }
 
-    public Map<MetadataType, MetadataComponent> finalizeMetadata(String partitioner, double bloomFilterFPChance, long repairedAt, TimeUUID pendingRepair, boolean isTransient, SerializationHeader header, ByteBuffer firstKey, ByteBuffer lastKey)
+    public Map<MetadataType, MetadataComponent> finalizeMetadata(String partitioner, double bloomFilterFPChance, long repairedAt, TimeUUID pendingRepair, SerializationHeader header, ByteBuffer firstKey, ByteBuffer lastKey)
     {
         assert minClustering.kind() == ClusteringPrefix.Kind.CLUSTERING || minClustering.kind().isStart();
         assert maxClustering.kind() == ClusteringPrefix.Kind.CLUSTERING || maxClustering.kind().isEnd();
@@ -382,7 +381,6 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                                              tokenSpaceCoverage,
                                                              originatingHostId,
                                                              pendingRepair,
-                                                             isTransient,
                                                              hasPartitionLevelDeletions,
                                                              firstKey,
                                                              lastKey));

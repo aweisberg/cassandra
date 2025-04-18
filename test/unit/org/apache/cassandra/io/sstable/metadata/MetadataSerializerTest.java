@@ -154,7 +154,7 @@ public class MetadataSerializerTest
         collector.updateClusteringValues(Clustering.make(UTF8Type.instance.decompose("cba"), withNulls ? null : Int32Type.instance.decompose(234)));
         ByteBuffer first = AsciiType.instance.decompose("a");
         ByteBuffer last = AsciiType.instance.decompose("b");
-        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, false, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
+        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
     }
 
     private void testVersions(List<String> versions) throws Throwable

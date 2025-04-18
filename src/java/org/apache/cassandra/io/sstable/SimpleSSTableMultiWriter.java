@@ -110,7 +110,6 @@ public class SimpleSSTableMultiWriter implements SSTableMultiWriter
                                             long keyCount,
                                             long repairedAt,
                                             TimeUUID pendingRepair,
-                                            boolean isTransient,
                                             TableMetadataRef metadata,
                                             IntervalSet<CommitLogPosition> commitLogPositions,
                                             int sstableLevel,
@@ -126,7 +125,6 @@ public class SimpleSSTableMultiWriter implements SSTableMultiWriter
                                             .setKeyCount(keyCount)
                                             .setRepairedAt(repairedAt)
                                             .setPendingRepair(pendingRepair)
-                                            .setTransientSSTable(isTransient)
                                             .setTableMetadataRef(metadata)
                                             .setMetadataCollector(metadataCollector)
                                             .setSerializationHeader(header)

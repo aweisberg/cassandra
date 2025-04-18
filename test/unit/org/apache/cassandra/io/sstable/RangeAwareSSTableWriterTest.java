@@ -74,7 +74,6 @@ public class RangeAwareSSTableWriterTest
                                                                      0,
                                                                      0,
                                                                      null,
-                                                                     false,
                                                                      DatabaseDescriptor.getSelectedSSTableFormat(),
                                                                      0,
                                                                      0,

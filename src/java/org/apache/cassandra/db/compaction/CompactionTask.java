@@ -390,24 +390,6 @@ public class CompactionTask extends AbstractCompactionTask
         return ids.iterator().next();
     }
 
-    public static boolean getIsTransient(Set<SSTableReader> sstables)
-    {
-        if (sstables.isEmpty())
-        {
-            return false;
-        }
-
-        boolean isTransient = sstables.iterator().next().isTransient();
-
-        if (!Iterables.all(sstables, sstable -> sstable.isTransient() == isTransient))
-        {
-            throw new RuntimeException("Attempting to compact transient sstables with non transient sstables");
-        }
-
-        return isTransient;
-    }
-
-
     /*
      * Checks if we have enough disk space to execute the compaction.  Drops the largest sstable out of the Task until
      * there's enough space (in theory) to handle the compaction.

@@ -1179,11 +1179,6 @@ public abstract class SSTableReader extends SSTable implements UnfilteredSource,
         return sstableMetadata.repairedAt;
     }
 
-    public boolean isTransient()
-    {
-        return sstableMetadata.isTransient;
-    }
-
     public boolean intersects(Collection<Range<Token>> ranges)
     {
         Bounds<Token> range = new Bounds<>(first.getToken(), last.getToken());
@@ -1336,11 +1331,11 @@ public abstract class SSTableReader extends SSTable implements UnfilteredSource,
     /**
      * Mutate sstable repair metadata with a lock to avoid racing with entire-sstable-streaming and then reload sstable metadata
      */
-    public void mutateRepairedAndReload(long newRepairedAt, TimeUUID newPendingRepair, boolean isTransient) throws IOException
+    public void mutateRepairedAndReload(long newRepairedAt, TimeUUID newPendingRepair) throws IOException
     {
         synchronized (tidy.global)
         {
-            descriptor.getMetadataSerializer().mutateRepairMetadata(descriptor, newRepairedAt, newPendingRepair, isTransient);
+            descriptor.getMetadataSerializer().mutateRepairMetadata(descriptor, newRepairedAt, newPendingRepair);
             reloadSSTableMetadata();
         }
     }

@@ -73,11 +73,10 @@ public class CompactionStrategyHolder extends AbstractStrategyHolder
     }
 
     @Override
-    public boolean managesRepairedGroup(boolean isRepaired, boolean isPendingRepair, boolean isTransient)
+    public boolean managesRepairedGroup(boolean isRepaired, boolean isPendingRepair)
     {
         if (!isPendingRepair)
         {
-            Preconditions.checkArgument(!isTransient, "isTransient can only be true for sstables pending repairs");
             return this.isRepaired == isRepaired;
         }
         else
@@ -225,7 +224,6 @@ public class CompactionStrategyHolder extends AbstractStrategyHolder
                                                        long keyCount,
                                                        long repairedAt,
                                                        TimeUUID pendingRepair,
-                                                       boolean isTransient,
                                                        IntervalSet<CommitLogPosition> commitLogPositions,
                                                        int sstableLevel,
                                                        SerializationHeader header,
@@ -250,7 +248,6 @@ public class CompactionStrategyHolder extends AbstractStrategyHolder
                                                  keyCount,
                                                  repairedAt,
                                                  pendingRepair,
-                                                 isTransient,
                                                  commitLogPositions,
                                                  sstableLevel,
                                                  header,
