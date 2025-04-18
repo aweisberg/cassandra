@@ -171,18 +171,11 @@ public class AntiCompactionTest
                 {
                     UnfilteredRowIterator row = scanner.next();
                     Token token = row.partitionKey().getToken();
-                    if (sstable.isPendingRepair() && !sstable.isTransient())
+                    if (sstable.isPendingRepair())
                     {
                         assertTrue(fullContains.test(token));
                         assertFalse(transContains.test(token));
                         stats.pendingKeys++;
-                    }
-                    else if (sstable.isPendingRepair() && sstable.isTransient())
-                    {
-
-                        assertTrue(transContains.test(token));
-                        assertFalse(fullContains.test(token));
-                        stats.transKeys++;
                     }
                     else
                     {
@@ -274,7 +267,7 @@ public class AntiCompactionTest
         File dir = cfs.getDirectories().getDirectoryForNewSSTables();
         Descriptor desc = cfs.newSSTableDescriptor(dir);
 
-        try (SSTableTxnWriter writer = SSTableTxnWriter.create(cfs, desc, 0, 0, NO_PENDING_REPAIR, false, CoordinatorLogBoundaries.NONE, new SerializationHeader(true, cfs.metadata(), cfs.metadata().regularAndStaticColumns(), EncodingStats.NO_STATS)))
+        try (SSTableTxnWriter writer = SSTableTxnWriter.create(cfs, desc, 0, 0, NO_PENDING_REPAIR, CoordinatorLogBoundaries.NONE, new SerializationHeader(true, cfs.metadata(), cfs.metadata().regularAndStaticColumns(), EncodingStats.NO_STATS)))
         {
             for (int i = 0; i < count; i++)
             {

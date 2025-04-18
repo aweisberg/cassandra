@@ -393,23 +393,6 @@ public class CompactionTask extends AbstractCompactionTask
         return ids.iterator().next();
     }
 
-    public static boolean getIsTransient(Set<SSTableReader> sstables)
-    {
-        if (sstables.isEmpty())
-        {
-            return false;
-        }
-
-        boolean isTransient = sstables.iterator().next().isTransient();
-
-        if (!Iterables.all(sstables, sstable -> sstable.isTransient() == isTransient))
-        {
-            throw new RuntimeException("Attempting to compact transient sstables with non transient sstables");
-        }
-
-        return isTransient;
-    }
-
     public static CoordinatorLogBoundaries getCoordinatorLogBoundaries(Set<SSTableReader> sstables)
     {
         CoordinatorLogBoundariesBuilder builder = new CoordinatorLogBoundariesBuilder();

@@ -79,7 +79,6 @@ public class Upgrader
                          .setKeyCount(estimatedRows)
                          .setRepairedAt(metadata.repairedAt)
                          .setPendingRepair(metadata.pendingRepair)
-                         .setTransientSSTable(metadata.isTransient)
                          .setCoordinatorLogBoundaries(metadata.coordinatorLogBoundaries)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(sstableMetadataCollector)

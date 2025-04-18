@@ -274,19 +274,19 @@ public class CompactionStrategyManagerTest
         DatabaseDescriptor.setAutomaticSSTableUpgradeEnabled(false);
     }
 
-    private static void assertHolderExclusivity(boolean isRepaired, boolean isPendingRepair, boolean isTransient, Class<? extends AbstractStrategyHolder> expectedType)
+    private static void assertHolderExclusivity(boolean isRepaired, boolean isPendingRepair, Class<? extends AbstractStrategyHolder> expectedType)
     {
         ColumnFamilyStore cfs = Keyspace.open(KS_PREFIX).getColumnFamilyStore(TABLE_PREFIX);
         CompactionStrategyManager csm = cfs.getCompactionStrategyManager();
 
-        AbstractStrategyHolder holder = csm.getHolder(isRepaired, isPendingRepair, isTransient);
+        AbstractStrategyHolder holder = csm.getHolder(isRepaired, isPendingRepair);
         assertNotNull(holder);
         assertSame(expectedType, holder.getClass());
 
         int matches = 0;
         for (AbstractStrategyHolder other : csm.getHolders())
         {
-            if (other.managesRepairedGroup(isRepaired, isPendingRepair, isTransient))
+            if (other.managesRepairedGroup(isRepaired, isPendingRepair))
             {
                 assertSame("holder assignment should be mutually exclusive", holder, other);
                 matches++;
@@ -295,13 +295,13 @@ public class CompactionStrategyManagerTest
         assertEquals(1, matches);
     }
 
-    private static void assertInvalieHolderConfig(boolean isRepaired, boolean isPendingRepair, boolean isTransient)
+    private static void assertInvalieHolderConfig(boolean isRepaired, boolean isPendingRepair)
     {
         ColumnFamilyStore cfs = Keyspace.open(KS_PREFIX).getColumnFamilyStore(TABLE_PREFIX);
         CompactionStrategyManager csm = cfs.getCompactionStrategyManager();
         try
         {
-            csm.getHolder(isRepaired, isPendingRepair, isTransient);
+            csm.getHolder(isRepaired, isPendingRepair);
             fail("Expected IllegalArgumentException");
         }
         catch (IllegalArgumentException e)
@@ -317,14 +317,14 @@ public class CompactionStrategyManagerTest
     @Test
     public void testMutualExclusiveHolderClassification() throws Exception
     {
-        assertHolderExclusivity(false, false, false, CompactionStrategyHolder.class);
-        assertHolderExclusivity(true, false, false, CompactionStrategyHolder.class);
-        assertHolderExclusivity(false, true, false, PendingRepairHolder.class);
-        assertHolderExclusivity(false, true, true, PendingRepairHolder.class);
-        assertInvalieHolderConfig(true, true, false);
-        assertInvalieHolderConfig(true, true, true);
-        assertInvalieHolderConfig(false, false, true);
-        assertInvalieHolderConfig(true, false, true);
+        assertHolderExclusivity(false, false, CompactionStrategyHolder.class);
+        assertHolderExclusivity(true, false, CompactionStrategyHolder.class);
+        assertHolderExclusivity(false, true, PendingRepairHolder.class);
+        assertHolderExclusivity(false, true, PendingRepairHolder.class);
+        assertInvalieHolderConfig(true, true);
+        assertInvalieHolderConfig(true, true);
+        assertInvalieHolderConfig(false, false);
+        assertInvalieHolderConfig(true, false);
     }
 
     PartitionPosition forKey(int key)
@@ -343,7 +343,6 @@ public class CompactionStrategyManagerTest
         ColumnFamilyStore cfs = createJBODMockCFS(numDir);
         Keyspace.open(cfs.getKeyspaceName()).getColumnFamilyStore(cfs.name).disableAutoCompaction();
         assertTrue(cfs.getLiveSSTables().isEmpty());
-        List<SSTableReader> transientRepairs = new ArrayList<>();
         List<SSTableReader> pendingRepair = new ArrayList<>();
         List<SSTableReader> unrepaired = new ArrayList<>();
         List<SSTableReader> repaired = new ArrayList<>();
@@ -351,13 +350,11 @@ public class CompactionStrategyManagerTest
         for (int i = 0; i < numDir; i++)
         {
             int key = 100 * i;
-            transientRepairs.add(createSSTableWithKey(cfs.getKeyspaceName(), cfs.name, key++));
             pendingRepair.add(createSSTableWithKey(cfs.getKeyspaceName(), cfs.name, key++));
             unrepaired.add(createSSTableWithKey(cfs.getKeyspaceName(), cfs.name, key++));
             repaired.add(createSSTableWithKey(cfs.getKeyspaceName(), cfs.name, key++));
         }
 
-        cfs.getCompactionStrategyManager().mutateRepaired(transientRepairs, 0, nextTimeUUID(), true);
         cfs.getCompactionStrategyManager().mutateRepaired(pendingRepair, 0, nextTimeUUID(), false);
         cfs.getCompactionStrategyManager().mutateRepaired(repaired, 1000, null, false);
 
@@ -367,7 +364,7 @@ public class CompactionStrategyManagerTest
 
         CompactionStrategyManager csm = new CompactionStrategyManager(cfs, () -> boundaries, true);
 
-        List<GroupedSSTableContainer> grouped = csm.groupSSTables(Iterables.concat( transientRepairs, pendingRepair, repaired, unrepaired));
+        List<GroupedSSTableContainer> grouped = csm.groupSSTables(Iterables.concat( pendingRepair, repaired, unrepaired));
 
         for (int x=0; x<grouped.size(); x++)
         {
@@ -382,14 +379,7 @@ public class CompactionStrategyManagerTest
                     expected = repaired.get(y);
                 else if (sstable.isPendingRepair())
                 {
-                    if (sstable.isTransient())
-                    {
-                        expected = transientRepairs.get(y);
-                    }
-                    else
-                    {
-                        expected = pendingRepair.get(y);
-                    }
+                    expected = pendingRepair.get(y);
                 }
                 else
                     expected = unrepaired.get(y);

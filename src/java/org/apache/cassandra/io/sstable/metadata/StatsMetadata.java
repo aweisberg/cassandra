@@ -80,7 +80,6 @@ public class StatsMetadata extends MetadataComponent
     public final long totalRows;
     public final UUID originatingHostId;
     public final TimeUUID pendingRepair;
-    public final boolean isTransient;
     public final CoordinatorLogBoundaries coordinatorLogBoundaries;
     // just holds the current encoding stats to avoid allocating - it is not serialized
     public final EncodingStats encodingStats;
@@ -123,7 +122,6 @@ public class StatsMetadata extends MetadataComponent
                          double tokenSpaceCoverage,
                          UUID originatingHostId,
                          TimeUUID pendingRepair,
-                         boolean isTransient,
                          boolean hasPartitionLevelDeletions,
                          CoordinatorLogBoundaries coordinatorLogBoundaries,
                          ByteBuffer firstKey,
@@ -150,7 +148,6 @@ public class StatsMetadata extends MetadataComponent
         this.tokenSpaceCoverage = tokenSpaceCoverage;
         this.originatingHostId = originatingHostId;
         this.pendingRepair = pendingRepair;
-        this.isTransient = isTransient;
         this.coordinatorLogBoundaries = coordinatorLogBoundaries;
         this.encodingStats = new EncodingStats(minTimestamp, minLocalDeletionTime, minTTL);
         this.hasPartitionLevelDeletions = hasPartitionLevelDeletions;
@@ -210,14 +207,13 @@ public class StatsMetadata extends MetadataComponent
                                  tokenSpaceCoverage,
                                  originatingHostId,
                                  pendingRepair,
-                                 isTransient,
                                  hasPartitionLevelDeletions,
                                  coordinatorLogBoundaries,
                                  firstKey,
                                  lastKey);
     }
 
-    public StatsMetadata mutateRepairedMetadata(long newRepairedAt, TimeUUID newPendingRepair, boolean newIsTransient)
+    public StatsMetadata mutateRepairedMetadata(long newRepairedAt, TimeUUID newPendingRepair)
     {
         return new StatsMetadata(estimatedPartitionSize,
                                  estimatedCellPerPartitionCount,
@@ -240,7 +236,6 @@ public class StatsMetadata extends MetadataComponent
                                  tokenSpaceCoverage,
                                  originatingHostId,
                                  newPendingRepair,
-                                 newIsTransient,
                                  hasPartitionLevelDeletions,
                                  coordinatorLogBoundaries,
                                  firstKey,
@@ -364,7 +359,7 @@ public class StatsMetadata extends MetadataComponent
 
             if (version.hasIsTransient())
             {
-                size += TypeSizes.sizeof(component.isTransient);
+                size += TypeSizes.sizeof(false); // deprecated field
             }
 
             if (version.hasOriginatingHostId())
@@ -485,7 +480,7 @@ public class StatsMetadata extends MetadataComponent
 
             if (version.hasIsTransient())
             {
-                out.writeBoolean(component.isTransient);
+                out.writeBoolean(false); // deprecated field
             }
 
             if (version.hasOriginatingHostId())
@@ -694,7 +689,6 @@ public class StatsMetadata extends MetadataComponent
                                      tokenSpaceCoverage,
                                      originatingHostId,
                                      pendingRepair,
-                                     isTransient,
                                      hasPartitionLevelDeletions,
                                      coordinatorLogBoundaries,
                                      firstKey,

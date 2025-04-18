@@ -1282,7 +1282,7 @@ public class LogTransactionTest extends AbstractTransactionalTest
             DecoratedKey key = MockSchema.readerBounds(generation);
             SerializationHeader header = SerializationHeader.make(cfs.metadata(), Collections.emptyList());
             StatsMetadata metadata = (StatsMetadata) new MetadataCollector(cfs.metadata().comparator)
-                                                     .finalizeMetadata(cfs.metadata().partitioner.getClass().getCanonicalName(), 0.01f, -1, null, false, CoordinatorLogBoundaries.NONE, header, key.getKey().slice(), key.getKey().slice())
+                                                     .finalizeMetadata(cfs.metadata().partitioner.getClass().getCanonicalName(), 0.01f, -1, null, CoordinatorLogBoundaries.NONE, header, key.getKey().slice(), key.getKey().slice())
                                                      .get(MetadataType.STATS);
             SSTableReader reader = new BigTableReader.Builder(descriptor).setComponents(components)
                                                                          .setTableMetadataRef(cfs.metadata)
@@ -1318,7 +1318,7 @@ public class LogTransactionTest extends AbstractTransactionalTest
             DecoratedKey key = MockSchema.readerBounds(generation);
             SerializationHeader header = SerializationHeader.make(cfs.metadata(), Collections.emptyList());
             StatsMetadata metadata = (StatsMetadata) new MetadataCollector(cfs.metadata().comparator)
-                                                     .finalizeMetadata(cfs.metadata().partitioner.getClass().getCanonicalName(), 0.01f, -1, null, false, CoordinatorLogBoundaries.NONE, header, key.getKey().slice(), key.getKey().slice())
+                                                     .finalizeMetadata(cfs.metadata().partitioner.getClass().getCanonicalName(), 0.01f, -1, null, CoordinatorLogBoundaries.NONE, header, key.getKey().slice(), key.getKey().slice())
                                                      .get(MetadataType.STATS);
             SSTableReader reader = new BtiTableReader.Builder(descriptor).setComponents(components)
                                                                          .setTableMetadataRef(cfs.metadata)

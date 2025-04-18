@@ -159,7 +159,7 @@ public class MetadataSerializerTest
         MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
         boundaries.add(new MutationId(1, 12345));
         boundaries.add(new MutationId(2, 56789));
-        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, false, boundaries, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
+        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, boundaries, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
     }
 
     private void testVersions(List<String> versions) throws Throwable

@@ -74,7 +74,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
 
     protected long repairedAt;
     protected TimeUUID pendingRepair;
-    protected boolean isTransient;
     protected CoordinatorLogBoundaries coordinatorLogBoundaries;
     protected long maxDataAge = -1;
     protected final long keyCount;
@@ -104,7 +103,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         this.keyCount = builder.getKeyCount();
         this.repairedAt = builder.getRepairedAt();
         this.pendingRepair = builder.getPendingRepair();
-        this.isTransient = builder.isTransientSSTable();
         this.coordinatorLogBoundaries = builder.getCoordinatorLogBoundaries();
         this.metadataCollector = builder.getMetadataCollector();
         this.header = builder.getSerializationHeader();
@@ -337,7 +335,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
                                                   metadata().params.bloomFilterFpChance,
                                                   repairedAt,
                                                   pendingRepair,
-                                                  isTransient,
                                                   coordinatorLogBoundaries,
                                                   header,
                                                   first.retainable().getKey(),
@@ -440,7 +437,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         private long keyCount;
         private long repairedAt;
         private TimeUUID pendingRepair;
-        private boolean transientSSTable;
         private SerializationHeader serializationHeader;
         private List<Index.Group> indexGroups;
         private CoordinatorLogBoundaries coordinatorLogBoundaries;
@@ -472,12 +468,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         public B setCoordinatorLogBoundaries(CoordinatorLogBoundaries coordinatorLogBoundaries)
         {
             this.coordinatorLogBoundaries = coordinatorLogBoundaries;
-            return (B) this;
-        }
-
-        public B setTransientSSTable(boolean transientSSTable)
-        {
-            this.transientSSTable = transientSSTable;
             return (B) this;
         }
 
@@ -548,11 +538,6 @@ public abstract class SSTableWriter extends SSTable implements Transactional
             return pendingRepair;
         }
 
-        public boolean isTransientSSTable()
-        {
-            return transientSSTable;
-        }
-
         public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
         {
             return coordinatorLogBoundaries;
@@ -579,7 +564,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         {
             checkNotNull(getComponents());
 
-            validateRepairedMetadata(getRepairedAt(), getPendingRepair(), isTransientSSTable());
+            validateRepairedMetadata(getRepairedAt(), getPendingRepair());
 
             return buildInternal(lifecycleNewTracker, owner);
         }

@@ -1605,7 +1605,7 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
         {
             StatsMetadata metadata = sstable.getSSTableMetadata();
             // TODO(aratnofsky): filter coordinatorLogBoundaries to exclude any CoordinatorLogIds we're no longer responsible for, after ownership change
-            writer.switchWriter(createWriter(cfs, compactionFileLocation, expectedBloomFilterSize, metadata.repairedAt, metadata.pendingRepair, metadata.isTransient, metadata.coordinatorLogBoundaries, sstable, txn));
+            writer.switchWriter(createWriter(cfs, compactionFileLocation, expectedBloomFilterSize, metadata.repairedAt, metadata.pendingRepair, metadata.coordinatorLogBoundaries, sstable, txn));
             long lastBytesScanned = 0;
 
             while (ci.hasNext())
@@ -1769,7 +1769,6 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                                              long expectedBloomFilterSize,
                                              long repairedAt,
                                              TimeUUID pendingRepair,
-                                             boolean isTransient,
                                              CoordinatorLogBoundaries coordinatorLogBoundaries,
                                              SSTableReader sstable,
                                              LifecycleTransaction txn)
@@ -1781,7 +1780,6 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                          .setKeyCount(expectedBloomFilterSize)
                          .setRepairedAt(repairedAt)
                          .setPendingRepair(pendingRepair)
-                         .setTransientSSTable(isTransient)
                          .setCoordinatorLogBoundaries(coordinatorLogBoundaries)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(new MetadataCollector(cfs.metadata().comparator).sstableLevel(sstable.getSSTableLevel()))
@@ -1796,7 +1794,6 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                                                               int expectedBloomFilterSize,
                                                               long repairedAt,
                                                               TimeUUID pendingRepair,
-                                                              boolean isTransient,
                                                               Collection<SSTableReader> sstables,
                                                               ILifecycleTransaction txn)
     {
@@ -1825,7 +1822,6 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                          .setRepairedAt(repairedAt)
                          .setPendingRepair(pendingRepair)
                          .setCoordinatorLogBoundaries(boundaries.build())
-                         .setTransientSSTable(isTransient)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(new MetadataCollector(sstables, cfs.metadata().comparator).sstableLevel(minLevel))
                          .setSerializationHeader(SerializationHeader.make(cfs.metadata(), sstables))
@@ -1946,7 +1942,6 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
         CompactionStrategyManager strategy = cfs.getCompactionStrategyManager();
         try (SharedTxn sharedTxn = new SharedTxn(txn);
              SSTableRewriter fullWriter = SSTableRewriter.constructWithoutEarlyOpening(sharedTxn, false, groupMaxDataAge);
-             SSTableRewriter transWriter = SSTableRewriter.constructWithoutEarlyOpening(sharedTxn, false, groupMaxDataAge);
              SSTableRewriter unrepairedWriter = SSTableRewriter.constructWithoutEarlyOpening(sharedTxn, false, groupMaxDataAge);
 
              AbstractCompactionStrategy.ScannerList scanners = strategy.getScanners(txn.originals());
@@ -1955,12 +1950,10 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
         {
             int expectedBloomFilterSize = Math.max(cfs.metadata().params.minIndexInterval, (int)(SSTableReader.getApproximateKeyCount(sstableAsSet)));
 
-            fullWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, pendingRepair, false, sstableAsSet, txn));
-            transWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, pendingRepair, true, sstableAsSet, txn));
-            unrepairedWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, NO_PENDING_REPAIR, false, sstableAsSet, txn));
+            fullWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, pendingRepair, sstableAsSet, txn));
+            unrepairedWriter.switchWriter(CompactionManager.createWriterForAntiCompaction(cfs, destination, expectedBloomFilterSize, UNREPAIRED_SSTABLE, NO_PENDING_REPAIR, sstableAsSet, txn));
 
             Predicate<Token> fullChecker = !ranges.onlyFull().isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.onlyFull().ranges()) : t -> false;
-            Predicate<Token> transChecker = !ranges.onlyTransient().isEmpty() ? new Range.OrderedRangeContainmentChecker(ranges.onlyTransient().ranges()) : t -> false;
             double compressionRatio = scanners.getCompressionRatio();
             if (compressionRatio == MetadataCollector.NO_COMPRESSION_RATIO)
                 compressionRatio = 1.0;
@@ -1978,11 +1971,6 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                         fullWriter.append(partition);
                         ci.setTargetDirectory(fullWriter.currentWriter().getFilename());
                     }
-                    else if (transChecker.test(token))
-                    {
-                        transWriter.append(partition);
-                        ci.setTargetDirectory(transWriter.currentWriter().getFilename());
-                    }
                     else
                     {
                         // otherwise, append it to the unrepaired sstable
@@ -1996,18 +1984,15 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
             }
 
             fullWriter.prepareToCommit();
-            transWriter.prepareToCommit();
             unrepairedWriter.prepareToCommit();
             txn.checkpoint();
             txn.obsoleteOriginals();
             txn.prepareToCommit();
 
             List<SSTableReader> fullSSTables = new ArrayList<>(fullWriter.finished());
-            List<SSTableReader> transSSTables = new ArrayList<>(transWriter.finished());
             List<SSTableReader> unrepairedSSTables = new ArrayList<>(unrepairedWriter.finished());
 
             fullWriter.commit();
-            transWriter.commit();
             unrepairedWriter.commit();
             txn.commit();
             logger.info("Anticompacted {} in {}.{} to full = {}, transient = {}, unrepaired = {} for {}",
@@ -2015,10 +2000,9 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                         cfs.getKeyspaceName(),
                         cfs.getTableName(),
                         fullSSTables,
-                        transSSTables,
                         unrepairedSSTables,
                         pendingRepair);
-            return fullSSTables.size() + transSSTables.size() + unrepairedSSTables.size();
+            return fullSSTables.size() + unrepairedSSTables.size();
         }
         catch (Throwable e)
         {
