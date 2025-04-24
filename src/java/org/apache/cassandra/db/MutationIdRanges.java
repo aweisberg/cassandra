@@ -30,6 +30,8 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import static org.apache.cassandra.db.memtable.AbstractMemtable.MutationIdCollector;
 
 /**
@@ -47,7 +49,8 @@ public class MutationIdRanges
     // Keyed by CoordinatorLogId, this should only contain a handful of elements, because there's only one coordinator
     // log per range. Iterating across keys should not be expensive, but this would benefit from a more compact
     // representation since it's updated on every write.
-    private final Long2ObjectHashMap<MutationId> ids;
+    @VisibleForTesting
+    final Long2ObjectHashMap<MutationId> ids;
 
     private MutationIdRanges()
     {
@@ -112,6 +115,14 @@ public class MutationIdRanges
         else
             return this;
         return new MutationIdRanges(newIds);
+    }
+
+    public int maxOffset(long logId)
+    {
+        MutationId id = ids.get(logId);
+        if (id == null)
+            return MutationId.none().offset();
+        return id.offset();
     }
 
     public static final IVersionedSerializer<MutationIdRanges> serializer = new IVersionedSerializer<>()

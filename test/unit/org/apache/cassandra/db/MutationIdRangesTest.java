@@ -21,6 +21,7 @@ package org.apache.cassandra.db;
 import org.junit.Test;
 
 import accord.utils.Gen;
+import accord.utils.Gens;
 import org.apache.cassandra.io.util.DataInputBuffer;
 import org.apache.cassandra.io.util.DataOutputBuffer;
 import org.apache.cassandra.net.MessagingService;
@@ -32,32 +33,32 @@ import static accord.utils.Property.qt;
 
 public class MutationIdRangesTest
 {
+    private static final Gen<Long> LOG_ID_GEN = rs -> {
+        int hostId = rs.nextInt(1, 4);
+        int hostLogId = rs.nextInt(1, 11);
+        return CoordinatorLogId.asLong(hostId, hostLogId);
+    };
+
+    private static final Gen<Long> SEQUENCE_ID_GEN = rs -> {
+        int offset = rs.nextBiasedInt(1, 10_000, 1_000_000);
+        return MutationId.sequenceId(offset, offset);
+    };
+
+    private static final Gen<MutationId> MUTATION_ID_GEN = rs -> new MutationId(LOG_ID_GEN.next(rs), SEQUENCE_ID_GEN.next(rs));
+
+    private static final Gen<MutationIdRanges> MUTATION_ID_RANGES_GEN = rs -> {
+        MutationIdRanges ranges = MutationIdRanges.NONE;
+        int numIds = rs.nextBiasedInt(0, 10, 1000);
+        for (int i = 0; i < numIds; i++)
+            ranges = ranges.add(MUTATION_ID_GEN.next(rs));
+        return ranges;
+    };
+
     @Test
     public void roundtripSerde()
     {
-        Gen<Long> logIdGen = rs -> {
-            int hostId = rs.nextBiasedInt(1, 10, 1000);
-            int hostLogId = rs.nextBiasedInt(1, 100, 10_000);
-            return CoordinatorLogId.asLong(hostId, hostLogId);
-        };
-        Gen<Long> sequenceIdGen = rs -> {
-            int offset = rs.nextBiasedInt(1, 10_000, 1_000_000);
-            int timestamp = rs.nextBiasedInt(1, 10_000, 1_000_000);
-            return MutationId.sequenceId(offset, timestamp);
-        };
-        Gen<MutationIdRanges> mutationIdRangesGen = rs -> {
-            MutationIdRanges ranges = MutationIdRanges.NONE;
-            int numIds = rs.nextBiasedInt(0, 10, 1000);
-            for (int i = 0; i < numIds; i++)
-            {
-                long logId = logIdGen.next(rs);
-                long sequenceId = sequenceIdGen.next(rs);
-                ranges = ranges.add(new MutationId(logId, sequenceId));
-            }
-            return ranges;
-        };
         qt()
-        .forAll(mutationIdRangesGen)
+        .forAll(MUTATION_ID_RANGES_GEN)
         .check(ranges -> {
             try (DataOutputBuffer outputBuffer = DataOutputBuffer.scratchBuffer.get())
             {
@@ -74,8 +75,41 @@ public class MutationIdRangesTest
     }
 
     @Test
-    public void example()
+    public void monotonicAdd()
     {
+        qt()
+        .forAll(Gens.lists(MUTATION_ID_GEN).ofSizeBetween(3, 100))
+        .check(ids -> {
+            MutationIdRanges ranges = MutationIdRanges.NONE;
+            for (MutationId id : ids)
+            {
+                MutationIdRanges updated = ranges.add(id);
+                int originalOffset = ranges.maxOffset(id.logId());
+                int updatedOffset = updated.maxOffset(id.logId());
+                Assertions.assertThat(updatedOffset).isGreaterThanOrEqualTo(originalOffset);
+                Assertions.assertThat(updatedOffset).isEqualTo(Math.max(originalOffset, id.offset()));
 
+                ranges = updated;
+            }
+        });
+    }
+
+    @Test
+    public void monotonicMerge()
+    {
+        qt()
+        .forAll(MUTATION_ID_RANGES_GEN, MUTATION_ID_RANGES_GEN)
+        .check((left, right) -> {
+            MutationIdRanges merged = left.merge(right);
+            for (Long logId : merged.ids.keySet())
+            {
+                int leftOffset = left.maxOffset(logId);
+                int rightOffset = right.maxOffset(logId);
+                int mergedOffset = merged.maxOffset(logId);
+                Assertions.assertThat(mergedOffset).isGreaterThanOrEqualTo(leftOffset);
+                Assertions.assertThat(mergedOffset).isGreaterThanOrEqualTo(rightOffset);
+                Assertions.assertThat(mergedOffset).isIn(leftOffset, rightOffset);
+            }
+        });
     }
 }
