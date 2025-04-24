@@ -156,8 +156,9 @@ public class MetadataSerializerTest
         collector.updateClusteringValues(Clustering.make(UTF8Type.instance.decompose("cba"), withNulls ? null : Int32Type.instance.decompose(234)));
         ByteBuffer first = AsciiType.instance.decompose("a");
         ByteBuffer last = AsciiType.instance.decompose("b");
-        // MutationIdRanges mutationIdRanges = new MutationIdRanges(MutationId.create(1, 12345), MutationId.create(2, 56789));
-        MutationIdRanges mutationIdRanges = new MutationIdRanges(MutationId.fixme(), MutationId.fixme());
+        MutationIdRanges mutationIdRanges = MutationIdRanges.NONE;
+        mutationIdRanges = mutationIdRanges.add(new MutationId(1, 12345));
+        mutationIdRanges = mutationIdRanges.add(new MutationId(2, 56789));
         return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, false, mutationIdRanges, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
     }
 

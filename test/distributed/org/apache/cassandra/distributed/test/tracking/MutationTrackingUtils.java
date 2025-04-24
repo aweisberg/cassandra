@@ -180,11 +180,6 @@ public class MutationTrackingUtils
         }
     }
 
-    public static MutationIdRanges generateRanges()
-    {
-        return new MutationIdRanges(MutationId.fixme(), MutationId.fixme());
-    }
-
     public static void assertIdsForKey(IInvokableInstance node, String keyspaceName, String tableName, int key, Set<MutationId> expected)
     {
         MutationSummary summary = summaryForKey(node, keyspaceName, tableName, key);

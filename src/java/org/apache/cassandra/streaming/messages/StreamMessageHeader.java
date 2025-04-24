@@ -57,7 +57,8 @@ public class StreamMessageHeader
                                int sessionIndex,
                                int sequenceNumber,
                                long repairedAt,
-                               TimeUUID pendingRepair, MutationIdRanges mutationIdRanges)
+                               TimeUUID pendingRepair,
+                               MutationIdRanges mutationIdRanges)
     {
         this.tableId = tableId;
         this.sender = sender;

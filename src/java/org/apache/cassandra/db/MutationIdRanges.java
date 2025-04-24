@@ -17,39 +17,54 @@
  */
 package org.apache.cassandra.db;
 
+import org.agrona.collections.Long2ObjectHashMap;
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.replication.MutationId;
+import org.apache.cassandra.replication.ShortMutationId;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.Objects;
 
+import static org.apache.cassandra.db.memtable.AbstractMemtable.MutationIdCollector;
+
 /**
- * range of mutation ids contained by sstable/stream/memtable
- *
- * currently just min max, but should expand to contain per-coordinator/shard id ranges
+ * Max mutation ID present in this SSTable for each coordinator log, to determine whether an SSTable is reconciled or
+ * not. Once max mutation IDs are reconciled, next compaction can safely mark this SSTabled as repaired. Note that peers
+ * may have reconciled all mutations included in an SSTable, but {@link StatsMetadata#repairedAt} is dependent on
+ * compaction timing, so "nodetool repair --validate" may report temporary disagreements on the repaired set.
+ * <p>
+ * This is immutable, so update-heavy paths are expected to use {@link MutationIdCollector}.
  */
 public class MutationIdRanges
 {
-    public static final MutationIdRanges NONE = new MutationIdRanges(MutationId.none(), MutationId.none());
-    public final MutationId minId;
-    public final MutationId maxId;
+    public static final MutationIdRanges NONE = new MutationIdRanges();
 
-    public MutationIdRanges(MutationId minId, MutationId maxId)
+    // Keyed by CoordinatorLogId, this should only contain a handful of elements, because there's only one coordinator
+    // log per range. Iterating across keys should not be expensive, but this would benefit from a more compact
+    // representation since it's updated on every write.
+    private final Long2ObjectHashMap<MutationId> ids;
+
+    private MutationIdRanges()
     {
-        this.minId = minId;
-        this.maxId = maxId;
+        this.ids = new Long2ObjectHashMap<>();
+    }
+
+    private MutationIdRanges(Long2ObjectHashMap<MutationId> ids)
+    {
+        this.ids = ids;
     }
 
     @Override
     public String toString()
     {
         return "MutationIdRanges{" +
-                "minId=" + minId +
-                ", maxId=" + maxId +
-                '}';
+               "ids=" + ids +
+               '}';
     }
 
     @Override
@@ -57,13 +72,13 @@ public class MutationIdRanges
     {
         if (o == null || getClass() != o.getClass()) return false;
         MutationIdRanges that = (MutationIdRanges) o;
-        return Objects.equals(minId, that.minId) && Objects.equals(maxId, that.maxId);
+        return Objects.equals(ids, that.ids);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(minId, maxId);
+        return Objects.hashCode(ids);
     }
 
     public MutationIdRanges merge(MutationIdRanges that)
@@ -72,41 +87,46 @@ public class MutationIdRanges
             return that;
         if (that == NONE)
             return this;
-        // return new MutationIdRanges(MutationId.minNotNone(this.minId, that.minId), MutationId.max(this.maxId, that.maxId));
-        return new MutationIdRanges(MutationId.fixme(), MutationId.fixme());
-    }
+        Long2ObjectHashMap<MutationId> newIds = new Long2ObjectHashMap<>(ids);
+        that.ids.forEachLong((logId, right) -> {
+            MutationId left = newIds.get(logId);
+            if (left == null)
+                newIds.put(logId, right);
+            else if (ShortMutationId.comparator.compare(left, right) < 0)
+                newIds.put(logId, right);
+        });
 
-    public MutationIdRanges subset(PartitionPosition from, PartitionPosition to)
-    {
-        return this;
-    }
-
-    public static MutationIdRanges merge(MutationIdRanges l, MutationIdRanges r)
-    {
-        // return new MutationIdRanges(MutationId.minNotNone(l.minId, r.minId), MutationId.max(l.maxId, r.maxId));
-        return new MutationIdRanges(MutationId.fixme(), MutationId.fixme());
+        return new MutationIdRanges(newIds);
     }
 
     public MutationIdRanges add(MutationId mutationId)
     {
-        // return new MutationIdRanges(MutationId.minNotNone(minId, mutationId), MutationId.max(maxId, mutationId));
-        return new MutationIdRanges(MutationId.fixme(), MutationId.fixme());
+        // Will this allocation will be elided on the path where no update happens?
+        Long2ObjectHashMap<MutationId> newIds = new Long2ObjectHashMap<>(ids);
+        long logId = mutationId.logId();
+        MutationId existing = ids.get(logId);
+        if (existing == null)
+            newIds.put(logId, mutationId);
+        else if (ShortMutationId.comparator.compare(existing, mutationId) < 0)
+            newIds.put(logId, mutationId);
+        else
+            return this;
+        return new MutationIdRanges(newIds);
     }
 
-    public static MutationIdRanges fixme()
-    {
-        throw new RuntimeException("TODO");
-    }
-
-    public static final IVersionedSerializer<MutationIdRanges> serializer = new IVersionedSerializer<MutationIdRanges>()
+    public static final IVersionedSerializer<MutationIdRanges> serializer = new IVersionedSerializer<>()
     {
         @Override
         public void serialize(MutationIdRanges metadata, DataOutputPlus out, int version) throws IOException
         {
             if (version < MessagingService.VERSION_52)
                 return;
-            MutationId.serializer.serialize(metadata.minId, out, version);
-            MutationId.serializer.serialize(metadata.maxId, out, version);
+            out.writeInt(metadata.ids.size());
+            for (Map.Entry<Long, MutationId> entry : metadata.ids.entrySet())
+            {
+                out.writeLong(entry.getKey());
+                MutationId.serializer.serialize(entry.getValue(), out, version);
+            }
         }
 
         @Override
@@ -114,8 +134,15 @@ public class MutationIdRanges
         {
             if (version < MessagingService.VERSION_52)
                 return MutationIdRanges.NONE;
-            return new MutationIdRanges(MutationId.serializer.deserialize(in, version),
-                                        MutationId.serializer.deserialize(in, version));
+            int size = in.readInt();
+            Long2ObjectHashMap<MutationId> ids = new Long2ObjectHashMap<>(size, 0.9f);
+            for (int i = 0; i < size; i++)
+            {
+                long logId = in.readLong();
+                MutationId id = MutationId.serializer.deserialize(in, version);
+                ids.put(logId, id);
+            }
+            return new MutationIdRanges(ids);
         }
 
         @Override
@@ -123,8 +150,14 @@ public class MutationIdRanges
         {
             if (version < MessagingService.VERSION_52)
                 return 0;
-            return MutationId.serializer.serializedSize(metadata.minId, version)
-                    + MutationId.serializer.serializedSize(metadata.maxId, version);
+            long size = 0;
+            size += TypeSizes.INT_SIZE;
+            for (Map.Entry<Long, MutationId> entry : metadata.ids.entrySet())
+            {
+                size += TypeSizes.LONG_SIZE;
+                size += MutationId.serializer.serializedSize(entry.getValue(), version);
+            }
+            return size;
         }
     };
 }

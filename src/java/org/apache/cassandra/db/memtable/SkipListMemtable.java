@@ -281,7 +281,7 @@ public class SkipListMemtable extends AbstractAllocatorMemtable
         }
         final long partitionKeysSize = keysSize;
         final long partitionCount = keyCount;
-        MutationIdRanges mutationIdRanges = mutationIdCollector.get().subset(from, to);
+        MutationIdRanges mutationIdRanges = mutationIdCollector.get();
 
         return new AbstractFlushablePartitionSet<AtomicBTreePartition>()
         {

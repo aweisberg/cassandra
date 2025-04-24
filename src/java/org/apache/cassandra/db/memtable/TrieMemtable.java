@@ -369,7 +369,7 @@ public class TrieMemtable extends AbstractShardedMemtable
         {
             MutationIdRanges tempRanges = MutationIdRanges.NONE;
             for (MemtableShard shard : shards)
-                tempRanges = tempRanges.merge(shard.mutationIdCollector.get().subset(from, to));
+                tempRanges = tempRanges.merge(shard.mutationIdCollector.get());
             mutationIdRanges = tempRanges;
         }
 

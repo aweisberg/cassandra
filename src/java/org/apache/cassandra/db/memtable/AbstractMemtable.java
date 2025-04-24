@@ -224,10 +224,15 @@ public abstract class AbstractMemtable implements Memtable
         }
     }
 
-    protected static class MutationIdCollector
+    public static class MutationIdCollector
     {
         private final AtomicReference<MutationIdRanges> ranges = new AtomicReference<>(MutationIdRanges.NONE);
 
+        /**
+         * This is called on every memtable write, so would be a good optimization target. In particular, {@link #get}
+         * is called on expensive infrequent operations (mainly flush), so we would benefit from moving some effort out
+         * of this method.
+         */
         public void add(MutationId mutationId)
         {
             if (mutationId.isNone())

@@ -29,6 +29,8 @@ import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.replication.MutationId;
+import org.apache.cassandra.replication.MutationJournal;
+import org.apache.cassandra.replication.MutationTrackingService;
 import org.apache.cassandra.schema.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.junit.Assert;
@@ -50,6 +52,7 @@ public class MutationIdRangeTest
     static
     {
         DatabaseDescriptor.daemonInitialization();
+        MutationJournal.instance.start();
     }
 
     @BeforeClass
@@ -86,7 +89,8 @@ public class MutationIdRangeTest
     {
         DecoratedKey key = tableMetadata.partitioner.decorateKey(ByteBufferUtil.bytes(1));
         // SimpleBuilders.MutationBuilder builder = new SimpleBuilders.MutationBuilder(MutationId.createFor(tableMetadata), tableMetadata.keyspace, key);
-        SimpleBuilders.MutationBuilder builder = new SimpleBuilders.MutationBuilder(MutationId.fixme(), tableMetadata.keyspace, key);
+        MutationId mutationId = MutationTrackingService.instance.nextMutationId(tableMetadata.keyspace, key.getToken());
+        SimpleBuilders.MutationBuilder builder = new SimpleBuilders.MutationBuilder(mutationId, tableMetadata.keyspace, key);
         PartitionUpdate.SimpleBuilder partition = builder.update(tableMetadata);
         partition.row().add("v", 1);
         Mutation mutation = builder.build();
@@ -125,6 +129,16 @@ public class MutationIdRangeTest
     private static String nextKeyspaceName()
     {
         return "ks_" + keyspaceNumber.getAndIncrement();
+    }
+
+    private static MutationIdRanges mutationIdRanges(MutationId... ids)
+    {
+        MutationIdRanges ranges = MutationIdRanges.NONE;
+        for (MutationId id : ids)
+        {
+            ranges = ranges.add(id);
+        }
+        return ranges;
     }
 
     /**
@@ -170,7 +184,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 0);
 
             Memtable memtable = view.getCurrentMemtable();
-            Assert.assertEquals(new MutationIdRanges(id1, id2), memtable.getMutationIdRanges());
+            Assert.assertEquals(mutationIdRanges(id1, id2), memtable.getMutationIdRanges());
         }
 
         // flush 1
@@ -182,7 +196,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 1);
 
             SSTableReader sstable = Iterables.getOnlyElement(view.liveSSTables());
-            Assert.assertEquals(new MutationIdRanges(id1, id2), sstable.getMutationIdRanges());
+            Assert.assertEquals(mutationIdRanges(id1, id2), sstable.getMutationIdRanges());
         }
 
         MutationId id3;
@@ -197,7 +211,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 1);
 
             Memtable memtable = view.getCurrentMemtable();
-            Assert.assertEquals(new MutationIdRanges(id3, id4), memtable.getMutationIdRanges());
+            Assert.assertEquals(mutationIdRanges(id3, id4), memtable.getMutationIdRanges());
         }
 
         // flush 2
@@ -210,8 +224,8 @@ public class MutationIdRangeTest
 
             List<SSTableReader> sstables = Lists.newArrayList(view.liveSSTables());
             sstables.sort(Comparator.comparing(sst -> sst.descriptor.id.asBytes()));
-            Assert.assertEquals(new MutationIdRanges(id1, id2), sstables.get(0).getMutationIdRanges());
-            Assert.assertEquals(new MutationIdRanges(id3, id4), sstables.get(1).getMutationIdRanges());
+            Assert.assertEquals(mutationIdRanges(id1, id2), sstables.get(0).getMutationIdRanges());
+            Assert.assertEquals(mutationIdRanges(id3, id4), sstables.get(1).getMutationIdRanges());
         }
 
         // compaction
@@ -223,7 +237,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 1);
 
             SSTableReader sstable = Iterables.getOnlyElement(view.liveSSTables());
-            Assert.assertEquals(new MutationIdRanges(id1, id4), sstable.getMutationIdRanges());
+            Assert.assertEquals(mutationIdRanges(id1, id4), sstable.getMutationIdRanges());
         }
     }
 }
