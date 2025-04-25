@@ -22,7 +22,6 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.UUID;
 
-import org.apache.cassandra.db.*;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
@@ -30,6 +29,11 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.db.BufferClusteringBound;
+import org.apache.cassandra.db.ClusteringBound;
+import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.Slice;
+import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
 import org.apache.cassandra.db.commitlog.IntervalSet;
 import org.apache.cassandra.db.marshal.AbstractType;

@@ -31,7 +31,11 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.replication.MutationId;
 import org.apache.cassandra.replication.MutationJournal;
 import org.apache.cassandra.replication.MutationTrackingService;
-import org.apache.cassandra.schema.*;
+import org.apache.cassandra.schema.KeyspaceParams;
+import org.apache.cassandra.schema.MemtableParams;
+import org.apache.cassandra.schema.ReplicationType;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.junit.Assert;
 import org.junit.BeforeClass;
@@ -41,7 +45,10 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @RunWith(Parameterized.class)
@@ -88,7 +95,6 @@ public class MutationIdRangeTest
     private static Mutation createMutation(TableMetadata tableMetadata, int k, int v)
     {
         DecoratedKey key = tableMetadata.partitioner.decorateKey(ByteBufferUtil.bytes(1));
-        // SimpleBuilders.MutationBuilder builder = new SimpleBuilders.MutationBuilder(MutationId.createFor(tableMetadata), tableMetadata.keyspace, key);
         MutationId mutationId = MutationTrackingService.instance.nextMutationId(tableMetadata.keyspace, key.getToken());
         SimpleBuilders.MutationBuilder builder = new SimpleBuilders.MutationBuilder(mutationId, tableMetadata.keyspace, key);
         PartitionUpdate.SimpleBuilder partition = builder.update(tableMetadata);
