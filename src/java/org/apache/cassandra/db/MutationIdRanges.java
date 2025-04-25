@@ -25,10 +25,13 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.replication.MutationId;
 import org.apache.cassandra.replication.ShortMutationId;
+import org.apache.cassandra.utils.CollectionSerializer;
+import org.apache.cassandra.utils.Int64Serializer;
 
 import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.IntFunction;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -132,12 +135,7 @@ public class MutationIdRanges
         {
             if (version < MessagingService.VERSION_52)
                 return;
-            out.writeInt(metadata.ids.size());
-            for (Map.Entry<Long, MutationId> entry : metadata.ids.entrySet())
-            {
-                out.writeLong(entry.getKey());
-                MutationId.serializer.serialize(entry.getValue(), out, version);
-            }
+            CollectionSerializer.serializeMap(Int64Serializer.serializer, MutationId.serializer, metadata.ids, out, version);
         }
 
         @Override
@@ -145,14 +143,8 @@ public class MutationIdRanges
         {
             if (version < MessagingService.VERSION_52)
                 return MutationIdRanges.NONE;
-            int size = in.readInt();
-            Long2ObjectHashMap<MutationId> ids = new Long2ObjectHashMap<>(size, 0.9f);
-            for (int i = 0; i < size; i++)
-            {
-                long logId = in.readLong();
-                MutationId id = MutationId.serializer.deserialize(in, version);
-                ids.put(logId, id);
-            }
+            IntFunction<Long2ObjectHashMap<MutationId>> map = size -> new Long2ObjectHashMap<>(size, 0.9f);
+            Long2ObjectHashMap<MutationId> ids = CollectionSerializer.deserializeMap(Int64Serializer.serializer, MutationId.serializer, map, in, version);
             return new MutationIdRanges(ids);
         }
 

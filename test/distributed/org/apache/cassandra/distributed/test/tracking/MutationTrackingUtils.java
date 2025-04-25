@@ -28,7 +28,6 @@ import java.util.Set;
 import com.google.common.primitives.Ints;
 
 import org.apache.cassandra.replication.*;
-import org.apache.cassandra.db.MutationIdRanges;
 import org.junit.Assert;
 import org.junit.Assume;
 
