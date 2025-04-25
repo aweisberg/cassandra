@@ -43,6 +43,7 @@ import org.apache.cassandra.db.transform.BaseRows;
 import org.apache.cassandra.exceptions.CoordinatorBehindException;
 import org.apache.cassandra.exceptions.QueryCancelledException;
 import org.apache.cassandra.exceptions.UnknownTableException;
+import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.metrics.TCMMetrics;
 import org.apache.cassandra.net.MessageFlag;
 import org.apache.cassandra.net.MessagingService;
@@ -61,7 +62,6 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.metrics.TableMetrics;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.replication.MutationSummary;
@@ -115,7 +115,6 @@ public abstract class ReadCommand extends AbstractReadQuery
     private final Kind kind;
 
     private final boolean isDigestQuery;
-    private final boolean acceptsTransient;
     private final Epoch serializedAtEpoch;
     // if a digest query, the version for which the digest is expected. Ignored if not a digest.
     private int digestVersion;
@@ -134,7 +133,6 @@ public abstract class ReadCommand extends AbstractReadQuery
                                                 Epoch serializedAtEpoch,
                                                 boolean isDigest,
                                                 int digestVersion,
-                                                boolean acceptsTransient,
                                                 TableMetadata metadata,
                                                 long nowInSec,
                                                 ColumnFilter columnFilter,
@@ -160,7 +158,6 @@ public abstract class ReadCommand extends AbstractReadQuery
                           Kind kind,
                           boolean isDigestQuery,
                           int digestVersion,
-                          boolean acceptsTransient,
                           TableMetadata metadata,
                           long nowInSec,
                           ColumnFilter columnFilter,
@@ -171,13 +168,9 @@ public abstract class ReadCommand extends AbstractReadQuery
                           DataRange dataRange)
     {
         super(metadata, nowInSec, columnFilter, rowFilter, limits);
-        if (acceptsTransient && isDigestQuery)
-            throw new IllegalArgumentException("Attempted to issue a digest response to transient replica");
-
         this.kind = kind;
         this.isDigestQuery = isDigestQuery;
         this.digestVersion = digestVersion;
-        this.acceptsTransient = acceptsTransient;
         this.indexQueryPlan = indexQueryPlan;
         this.trackWarnings = trackWarnings;
         this.serializedAtEpoch = serializedAtEpoch;
@@ -257,14 +250,6 @@ public abstract class ReadCommand extends AbstractReadQuery
         return this;
     }
 
-    /**
-     * @return Whether this query expects only a transient data response, or a full response
-     */
-    public boolean acceptsTransient()
-    {
-        return acceptsTransient;
-    }
-
     @Override
     public void trackWarnings()
     {
@@ -324,28 +309,6 @@ public abstract class ReadCommand extends AbstractReadQuery
      * @return a copy of this command.
      */
     public abstract ReadCommand copy();
-
-    /**
-     * Returns a copy of this command with acceptsTransient set to true.
-     */
-    public ReadCommand copyAsTransientQuery(Replica replica)
-    {
-        Preconditions.checkArgument(replica.isTransient(),
-                                    "Can't make a transient request on a full replica: " + replica);
-        return copyAsTransientQuery();
-    }
-
-    /**
-     * Returns a copy of this command with acceptsTransient set to true.
-     */
-    public ReadCommand copyAsTransientQuery(Iterable<Replica> replicas)
-    {
-        if (any(replicas, Replica::isFull))
-            throw new IllegalArgumentException("Can't make a transient request on full replicas: " + Iterables.toString(filter(replicas, Replica::isFull)));
-        return copyAsTransientQuery();
-    }
-
-    protected abstract ReadCommand copyAsTransientQuery();
 
     /**
      * Returns a copy of this command with isDigestQuery set to true.
@@ -1355,7 +1318,7 @@ public abstract class ReadCommand extends AbstractReadQuery
             out.writeByte(
                     digestFlag(command.isDigestQuery())
                     | indexFlag(null != command.indexQueryPlan())
-                    | acceptsTransientFlag(command.acceptsTransient())
+                    // | acceptsTransientFlag(false) Deprecated flag, could be reused?
                     | needsReconciliationFlag(command.rowFilter().needsReconciliation())
             );
             if (command.isDigestQuery())
@@ -1381,7 +1344,8 @@ public abstract class ReadCommand extends AbstractReadQuery
             Kind kind = Kind.values()[in.readByte()];
             int flags = in.readByte();
             boolean isDigest = isDigest(flags);
-            boolean acceptsTransient = acceptsTransient(flags);
+            // Ignored flag, not used, could be reused?
+            //boolean acceptsTransient = acceptsTransient(flags);
             // Shouldn't happen or it's a user error (see comment above) but
             // better complain loudly than doing the wrong thing.
             if (isForThrift(flags))
@@ -1427,7 +1391,7 @@ public abstract class ReadCommand extends AbstractReadQuery
                     indexQueryPlan = indexGroup.queryPlanFor(rowFilter);
             }
 
-            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, isDigest, digestVersion, acceptsTransient, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan);
+            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, isDigest, digestVersion, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan);
         }
 
         private IndexMetadata deserializeIndexMetadata(DataInputPlus in, int version, TableMetadata metadata) throws IOException

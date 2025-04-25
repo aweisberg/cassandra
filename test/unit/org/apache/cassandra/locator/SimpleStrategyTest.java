@@ -42,6 +42,7 @@ import org.apache.cassandra.dht.RandomPartitioner.BigIntegerToken;
 import org.apache.cassandra.distributed.test.log.ClusterMetadataTestHelper;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.schema.ReplicationParams;
+import org.apache.cassandra.schema.ReplicationType;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.tcm.transformations.Register;
 import org.apache.cassandra.schema.KeyspaceMetadata;
@@ -323,7 +324,7 @@ public class SimpleStrategyTest
         Map<String, String> configOptions = new HashMap<>();
 
         @SuppressWarnings("unused")
-        SimpleStrategy strategy = new SimpleStrategy("ks", configOptions);
+        SimpleStrategy strategy = new SimpleStrategy("ks", configOptions, ReplicationType.untracked);
     }
     
     @Test
@@ -334,7 +335,7 @@ public class SimpleStrategyTest
         HashMap<String, String> configOptions = new HashMap<>();
         configOptions.put("replication_factor", "1");
         
-        SimpleStrategy strategy = new SimpleStrategy("ks", configOptions);
+        SimpleStrategy strategy = new SimpleStrategy("ks", configOptions, ReplicationType.untracked);
 
         EndpointsForRange replicas = strategy.calculateNaturalReplicas(null, new ClusterMetadata(Murmur3Partitioner.instance));
         assertTrue(replicas.endpoints().isEmpty());
@@ -347,7 +348,7 @@ public class SimpleStrategyTest
         HashMap<String, String> configOptions = new HashMap<>();
         configOptions.put("replication_factor", "2");
 
-        SimpleStrategy strategy = new SimpleStrategy("ks", configOptions);
+        SimpleStrategy strategy = new SimpleStrategy("ks", configOptions, ReplicationType.untracked);
         ClusterMetadataTestHelper.addEndpoint(1);
         ClientWarn.instance.captureWarnings();
         strategy.maybeWarnOnOptions(null);
@@ -359,7 +360,8 @@ public class SimpleStrategyTest
         KeyspaceMetadata ksmd = Schema.instance.getKeyspaceMetadata(keyspaceName);
         return AbstractReplicationStrategy.createReplicationStrategy(keyspaceName,
                                                                      ksmd.params.replication.klass,
-                                                                     ksmd.params.replication.options);
+                                                                     ksmd.params.replication.options,
+                                                                     ksmd.params.replicationType);
     }
 
     public static EndpointsForToken getWriteEndpoints(ClusterMetadata metadata,

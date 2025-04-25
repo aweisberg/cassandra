@@ -74,7 +74,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
     protected PartitionRangeReadCommand(Epoch serializedAtEpoch,
                                         boolean isDigest,
                                         int digestVersion,
-                                        boolean acceptsTransient,
                                         TableMetadata metadata,
                                         long nowInSec,
                                         ColumnFilter columnFilter,
@@ -84,7 +83,7 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
                                         Index.QueryPlan indexQueryPlan,
                                         boolean trackWarnings)
     {
-        super(serializedAtEpoch, Kind.PARTITION_RANGE, isDigest, digestVersion, acceptsTransient, metadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan, trackWarnings, dataRange);
+        super(serializedAtEpoch, Kind.PARTITION_RANGE, isDigest, digestVersion, metadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan, trackWarnings, dataRange);
         this.requestedSlices = dataRange.clusteringIndexFilter.getSlices(metadata());
     }
 
@@ -96,7 +95,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
     private static PartitionRangeReadCommand create(Epoch serializedAtEpoch,
                                                     boolean isDigest,
                                                     int digestVersion,
-                                                    boolean acceptsTransient,
                                                     TableMetadata metadata,
                                                     long nowInSec,
                                                     ColumnFilter columnFilter,
@@ -110,7 +108,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         {
             return new VirtualTablePartitionRangeReadCommand(isDigest,
                                                              digestVersion,
-                                                             acceptsTransient,
                                                              metadata,
                                                              nowInSec,
                                                              columnFilter,
@@ -123,7 +120,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return new PartitionRangeReadCommand(serializedAtEpoch,
                                              isDigest,
                                              digestVersion,
-                                             acceptsTransient,
                                              metadata,
                                              nowInSec,
                                              columnFilter,
@@ -144,7 +140,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return create(metadata.epoch,
                       false,
                       0,
-                      false,
                       metadata,
                       nowInSec,
                       columnFilter,
@@ -168,7 +163,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return create(metadata.epoch,
                       false,
                       0,
-                      false,
                       metadata,
                       nowInSec,
                       ColumnFilter.all(metadata),
@@ -214,7 +208,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return create(serializedAtEpoch(),
                       isDigestQuery(),
                       digestVersion(),
-                      acceptsTransient(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -230,7 +223,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return create(serializedAtEpoch(),
                       isDigestQuery(),
                       digestVersion(),
-                      acceptsTransient(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -247,24 +239,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return create(serializedAtEpoch(),
                       true,
                       digestVersion(),
-                      false,
-                      metadata(),
-                      nowInSec(),
-                      columnFilter(),
-                      rowFilter(),
-                      limits(),
-                      dataRange(),
-                      indexQueryPlan(),
-                      isTrackingWarnings());
-    }
-
-    @Override
-    protected PartitionRangeReadCommand copyAsTransientQuery()
-    {
-        return create(serializedAtEpoch(),
-                      false,
-                      0,
-                      true,
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -281,7 +255,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return create(serializedAtEpoch(),
                       isDigestQuery(),
                       digestVersion(),
-                      acceptsTransient(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -298,7 +271,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         return create(serializedAtEpoch(),
                       isDigestQuery(),
                       digestVersion(),
-                      acceptsTransient(),
                       metadata(),
                       nowInSec(),
                       columnFilter(),
@@ -549,7 +521,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
                                        Epoch serializedAtEpoch,
                                        boolean isDigest,
                                        int digestVersion,
-                                       boolean acceptsTransient,
                                        TableMetadata metadata,
                                        long nowInSec,
                                        ColumnFilter columnFilter,
@@ -559,7 +530,7 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
         throws IOException
         {
             DataRange range = DataRange.serializer.deserialize(in, version, metadata);
-            return PartitionRangeReadCommand.create(serializedAtEpoch, isDigest, digestVersion, acceptsTransient, metadata, nowInSec, columnFilter, rowFilter, limits, range, indexQueryPlan, false);
+            return PartitionRangeReadCommand.create(serializedAtEpoch, isDigest, digestVersion, metadata, nowInSec, columnFilter, rowFilter, limits, range, indexQueryPlan, false);
         }
     }
 
@@ -567,7 +538,6 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
     {
         private VirtualTablePartitionRangeReadCommand(boolean isDigest,
                                                       int digestVersion,
-                                                      boolean acceptsTransient,
                                                       TableMetadata metadata,
                                                       long nowInSec,
                                                       ColumnFilter columnFilter,
@@ -577,7 +547,7 @@ public class PartitionRangeReadCommand extends ReadCommand implements PartitionR
                                                       Index.QueryPlan indexQueryPlan,
                                                       boolean trackWarnings)
         {
-            super(metadata.epoch, isDigest, digestVersion, acceptsTransient, metadata, nowInSec, columnFilter, rowFilter, limits, dataRange, indexQueryPlan, trackWarnings);
+            super(metadata.epoch, isDigest, digestVersion, metadata, nowInSec, columnFilter, rowFilter, limits, dataRange, indexQueryPlan, trackWarnings);
         }
 
         @Override

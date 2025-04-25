@@ -56,6 +56,7 @@ import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.AbstractIterator;
 import org.apache.cassandra.utils.CloseableIterator;
 
+import static accord.utils.Invariants.checkState;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 
 @VisibleForTesting
@@ -205,6 +206,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                 new DataResolver<>(rangeCommand, sharedReplicaPlan, readRepair, requestTime, trackRepairedStatus);
         ReadCallback<EndpointsForRange, ReplicaPlan.ForRangeRead> handler =
                 new ReadCallback<>(resolver, rangeCommand, sharedReplicaPlan, requestTime);
+        checkState(!replicaPlan.contacts().anyMatch(Replica::isTransient), "Transient replication requires mutation tracking");
 
         if (replicaPlan.contacts().size() == 1 && replicaPlan.contacts().get(0).isSelf())
         {
@@ -215,8 +217,7 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
             for (Replica replica : replicaPlan.contacts())
             {
                 Tracing.trace("Enqueuing request to {}", replica);
-                ReadCommand command = replica.isFull() ? rangeCommand : rangeCommand.copyAsTransientQuery(replica);
-                Message<ReadCommand> message = command.createMessage(trackRepairedStatus && replica.isFull(), requestTime);
+                Message<ReadCommand> message = rangeCommand.createMessage(trackRepairedStatus && replica.isFull(), requestTime);
                 MessagingService.instance().sendWithCallback(message, replica.endpoint(), handler);
             }
         }

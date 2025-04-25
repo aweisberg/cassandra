@@ -48,6 +48,8 @@ import org.apache.cassandra.service.StorageProxy;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.Dispatcher;
 
+import static com.google.common.base.Preconditions.checkState;
+
 public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowIterator> implements MorePartitions<UnfilteredPartitionIterator>
 {
     private static final Logger logger = LoggerFactory.getLogger(ShortReadPartitionsProtection.class);
@@ -187,8 +189,7 @@ public class ShortReadPartitionsProtection extends Transformation<UnfilteredRowI
         }
         else
         {
-            if (source.isTransient())
-                cmd = cmd.copyAsTransientQuery(source);
+            checkState(!source.isTransient());
             MessagingService.instance().sendWithCallback(cmd.createMessage(false, requestTime), source.endpoint(), handler);
         }
 

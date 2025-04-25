@@ -280,7 +280,6 @@ public class RepairedDataVerifierTest
             super(metadata.epoch,
                   isDigest,
                   0,
-                  false,
                   metadata,
                   FBUtilities.nowInSeconds(),
                   ColumnFilter.all(metadata),
