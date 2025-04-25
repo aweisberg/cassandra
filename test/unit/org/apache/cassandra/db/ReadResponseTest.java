@@ -254,7 +254,6 @@ public class ReadResponseTest
             super(metadata.epoch,
                   responseType,
                   0,
-                  false,
                   metadata,
                   FBUtilities.nowInSeconds(),
                   ColumnFilter.all(metadata),

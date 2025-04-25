@@ -48,8 +48,8 @@ public class TrackedResolver<E extends Endpoints<E>, P extends ReplicaPlan.ForRe
     @Override
     protected void validateResponse(Message<IReadResponse> message)
     {
-        if (replicaPlan().lookup(message.from()).isTransient())
-            throw new IllegalArgumentException("Response received from transient replica");
+        if (replicaPlan().lookup(message.from()).isTransient() && message.payload instanceof TrackedReadResponse.Data)
+            throw new IllegalArgumentException("Data response received from transient replica");
     }
 
     @Override

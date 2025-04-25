@@ -172,11 +172,11 @@ public class ReadCommandVerbHandler implements IVerbHandler<ReadCommand>
                 throw InvalidRoutingException.forTokenRead(message.from(), token, metadata.epoch, message.payload);
             }
 
-            if (!command.acceptsTransient() && localReplica.isTransient())
+            if (command.responseType() != ReadCommand.ResponseType.TRACKED_SUMMARY && localReplica.isTransient())
             {
                 MessagingService.instance().metrics.recordDroppedMessage(message, message.elapsedSinceCreated(NANOSECONDS), NANOSECONDS);
                 throw new InvalidRequestException(String.format("Attempted to serve %s data request from %s node in %s",
-                                                                command.acceptsTransient() ? "transient" : "full",
+                                                                command.responseType(),
                                                                 localReplica.isTransient() ? "transient" : "full",
                                                                 this));
             }
@@ -201,11 +201,11 @@ public class ReadCommandVerbHandler implements IVerbHandler<ReadCommand>
 
 
             // TODO: preexisting issue: we should change the whole range for transient-ness, not just the right token
-            if (command.acceptsTransient() != maxTokenLocalReplica.isTransient())
+            if (command.responseType() != ReadCommand.ResponseType.TRACKED_SUMMARY && maxTokenLocalReplica.isTransient())
             {
                 MessagingService.instance().metrics.recordDroppedMessage(message, message.elapsedSinceCreated(NANOSECONDS), NANOSECONDS);
                 throw new InvalidRequestException(String.format("Attempted to serve %s data request from %s node in %s",
-                                                                command.acceptsTransient() ? "transient" : "full",
+                                                                command.responseType(),
                                                                 maxTokenLocalReplica.isTransient() ? "transient" : "full",
                                                                 this));
             }

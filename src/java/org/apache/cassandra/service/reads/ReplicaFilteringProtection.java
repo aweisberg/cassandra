@@ -77,6 +77,8 @@ import org.apache.cassandra.transport.Dispatcher;
 import org.apache.cassandra.utils.NoSpamLogger;
 import org.apache.cassandra.utils.btree.BTreeSet;
 
+import static com.google.common.base.Preconditions.checkState;
+
 /**
  * Helper in charge of collecting additional queries to be done on the coordinator to protect against invalid results
  * being included due to replica-side filtering (secondary indexes or {@code ALLOW * FILTERING}).
@@ -153,15 +155,14 @@ public class ReplicaFilteringProtection<E extends Endpoints<E>>
             new DataResolver<>(cmd, replicaPlan, (NoopReadRepair<EndpointsForToken, ReplicaPlan.ForTokenRead>) NoopReadRepair.instance, requestTime);
 
         ReadCallback<EndpointsForToken, ReplicaPlan.ForTokenRead> handler = new ReadCallback<>(resolver, cmd, replicaPlan, requestTime);
-
+        // TODO No tracked path here yet so assert it doesn't handle transient replication correctly
+        checkState(!source.isTransient());
         if (source.isSelf())
         {
             Stage.READ.maybeExecuteImmediately(new StorageProxy.LocalReadRunnable(cmd, handler, requestTime));
         }
         else
         {
-            if (source.isTransient())
-                cmd = cmd.copyAsTransientQuery(source);
             MessagingService.instance().sendWithCallback(cmd.createMessage(false, requestTime), source.endpoint(), handler);
         }
 

@@ -20,7 +20,6 @@ package org.apache.cassandra.service.reads.repair;
 
 import java.util.function.Consumer;
 
-import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +47,7 @@ import org.apache.cassandra.service.reads.untracked.UntrackedReadRepair;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.transport.Dispatcher;
 
+import static com.google.common.base.Preconditions.checkState;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 
 public abstract class AbstractReadRepair<E extends Endpoints<E>, P extends ReplicaPlan.ForRead<E, P>>
@@ -101,13 +101,7 @@ implements UntrackedReadRepair<E, P>
             return;
         }
 
-        if (to.isTransient())
-        {
-            // It's OK to send queries to transient nodes during RR, as we may have contacted them for their data request initially
-            // So long as we don't use these to generate repair mutations, we're fine, and this is enforced by requiring
-            // ReadOnlyReadRepair for transient keyspaces.
-            command = command.copyAsTransientQuery(to);
-        }
+        checkState(!to.isTransient(), "Transient replication requires mutation tracking so there should be no read repair");
 
         if (Tracing.isTracing())
         {
@@ -186,7 +180,7 @@ implements UntrackedReadRepair<E, P>
 
     public void maybeSendAdditionalReads()
     {
-        Preconditions.checkState(command instanceof SinglePartitionReadCommand,
+        checkState(command instanceof SinglePartitionReadCommand,
                                  "maybeSendAdditionalReads can only be called for SinglePartitionReadCommand");
         DigestRepair<E, P> repair = digestRepair;
         if (repair == null)

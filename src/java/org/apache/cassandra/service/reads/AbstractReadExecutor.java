@@ -135,27 +135,19 @@ public abstract class AbstractReadExecutor
         makeRequests(command, replicas);
     }
 
-    protected void makeTransientDataRequests(Iterable<Replica> replicas)
-    {
-        makeRequests(command.copyAsTransientQuery(replicas), replicas);
-    }
-
     protected void makeDigestRequests(Iterable<Replica> replicas)
     {
-        assert all(replicas, Replica::isFull);
-        // only send digest requests to full replicas, send data requests instead to the transient replicas
-        makeRequests(command.copyAsSummaryQuery(replicas), replicas);
+        makeRequests(command.copyAsSummaryQuery(), replicas);
     }
 
     private void makeRequests(ReadCommand readCommand, Iterable<Replica> replicas)
     {
-        assert !readCommand.acceptsTransient() || !readCommand.responseType().isTracked() : "TODO";
         boolean hasLocalEndpoint = false;
         Message<ReadCommand> message = null;
 
         for (Replica replica: replicas)
         {
-            assert replica.isFull() || readCommand.acceptsTransient();
+            assert replica.isFull() || readCommand.responseType() == ReadCommand.ResponseType.TRACKED_SUMMARY;
 
             InetAddressAndPort endpoint = replica.endpoint();
             if (replica.isSelf())
@@ -195,8 +187,7 @@ public abstract class AbstractReadExecutor
         EndpointsForToken selected = replicaPlan().contacts();
         EndpointsForToken fullDataRequests = selected.filter(Replica::isFull, initialDataRequestCount);
         makeFullDataRequests(fullDataRequests);
-        makeTransientDataRequests(selected.filterLazily(Replica::isTransient));
-        makeDigestRequests(selected.filterLazily(r -> r.isFull() && !fullDataRequests.contains(r)));
+        makeDigestRequests(selected.filterLazily(r -> !fullDataRequests.contains(r)));
     }
 
     /**
@@ -340,9 +331,7 @@ public abstract class AbstractReadExecutor
                     // we should only use a SpeculatingReadExecutor if we have an extra replica to speculate against
                     assert extraReplica != null;
 
-                    retryCommand = extraReplica.isTransient()
-                            ? command.copyAsTransientQuery(extraReplica)
-                            : command.copyAsSummaryQuery(extraReplica);
+                    retryCommand = command.copyAsSummaryQuery();
                 }
                 else
                 {

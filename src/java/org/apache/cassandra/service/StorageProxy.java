@@ -1492,7 +1492,7 @@ public class StorageProxy implements StorageProxyMBean
         Keyspace keyspace = Keyspace.open(keyspaceName);
         Token tk = mutation.key().getToken();
 
-        ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forWrite(keyspace, consistencyLevel, tk, ReplicaPlans.writeNormal);
+        ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forWrite(keyspace, consistencyLevel, tk, ReplicaPlans.writeAll);
 
         if (replicaPlan.lookup(FBUtilities.getBroadcastAddressAndPort()) != null)
             writeMetrics.localRequests.mark();
@@ -1517,7 +1517,7 @@ public class StorageProxy implements StorageProxyMBean
         Keyspace keyspace = Keyspace.open(mutation.getKeyspaceName());
         Token tk = mutation.key().getToken();
 
-        ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forWrite(keyspace, consistencyLevel, tk, ReplicaPlans.writeNormal);
+        ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forWrite(keyspace, consistencyLevel, tk, ReplicaPlans.writeAll);
 
         if (replicaPlan.lookup(FBUtilities.getBroadcastAddressAndPort()) != null)
             writeMetrics.localRequests.mark();

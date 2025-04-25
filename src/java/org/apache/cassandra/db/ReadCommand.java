@@ -61,7 +61,6 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
-import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.metrics.TableMetrics;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.replication.MutationSummary;
@@ -87,8 +86,6 @@ import org.apache.cassandra.utils.NoSpamLogger;
 import org.apache.cassandra.utils.ObjectSizes;
 import org.apache.cassandra.utils.TimeUUID;
 
-import static com.google.common.collect.Iterables.any;
-import static com.google.common.collect.Iterables.filter;
 import static org.apache.cassandra.utils.Clock.Global.nanoTime;
 import static org.apache.cassandra.db.partitions.UnfilteredPartitionIterators.MergeListener.NOOP;
 import static org.apache.cassandra.utils.MonotonicClock.Global.approxTime;
@@ -197,7 +194,6 @@ public abstract class ReadCommand extends AbstractReadQuery
     private final Kind kind;
 
     private final ResponseType responseType;
-    private final boolean acceptsTransient;
     private final Epoch serializedAtEpoch;
     // if a digest query, the version for which the digest is expected. Ignored if not a digest.
     private int digestVersion;
@@ -216,7 +212,6 @@ public abstract class ReadCommand extends AbstractReadQuery
                                                 Epoch serializedAtEpoch,
                                                 ResponseType responseType,
                                                 int digestVersion,
-                                                boolean acceptsTransient,
                                                 TableMetadata metadata,
                                                 long nowInSec,
                                                 ColumnFilter columnFilter,
@@ -242,7 +237,6 @@ public abstract class ReadCommand extends AbstractReadQuery
                           Kind kind,
                           ResponseType responseType,
                           int digestVersion,
-                          boolean acceptsTransient,
                           TableMetadata metadata,
                           long nowInSec,
                           ColumnFilter columnFilter,
@@ -253,13 +247,9 @@ public abstract class ReadCommand extends AbstractReadQuery
                           DataRange dataRange)
     {
         super(metadata, nowInSec, columnFilter, rowFilter, limits);
-        if (acceptsTransient && responseType == ResponseType.UNTRACKED_DIGEST)
-            throw new IllegalArgumentException("Attempted to issue a digest response to transient replica");
-
         this.kind = kind;
         this.responseType = responseType;
         this.digestVersion = digestVersion;
-        this.acceptsTransient = acceptsTransient;
         this.indexQueryPlan = indexQueryPlan;
         this.trackWarnings = trackWarnings;
         this.serializedAtEpoch = serializedAtEpoch;
@@ -345,14 +335,6 @@ public abstract class ReadCommand extends AbstractReadQuery
         return this;
     }
 
-    /**
-     * @return Whether this query expects only a transient data response, or a full response
-     */
-    public boolean acceptsTransient()
-    {
-        return acceptsTransient;
-    }
-
     @Override
     public void trackWarnings()
     {
@@ -414,49 +396,9 @@ public abstract class ReadCommand extends AbstractReadQuery
     public abstract ReadCommand copy();
 
     /**
-     * Returns a copy of this command with acceptsTransient set to true.
-     */
-    public ReadCommand copyAsTransientQuery(Replica replica)
-    {
-        Preconditions.checkArgument(replica.isTransient(),
-                                    "Can't make a transient request on a full replica: " + replica);
-        return copyAsTransientQuery();
-    }
-
-    /**
-     * Returns a copy of this command with acceptsTransient set to true.
-     */
-    public ReadCommand copyAsTransientQuery(Iterable<Replica> replicas)
-    {
-        if (any(replicas, Replica::isFull))
-            throw new IllegalArgumentException("Can't make a transient request on full replicas: " + Iterables.toString(filter(replicas, Replica::isFull)));
-        return copyAsTransientQuery();
-    }
-
-    protected abstract ReadCommand copyAsTransientQuery();
-
-    /**
      * Returns a copy of this command with isDigestQuery set to true.
      */
-    public ReadCommand copyAsSummaryQuery(Replica replica)
-    {
-        Preconditions.checkArgument(replica.isFull(),
-                                    "Can't make a digest request on a transient replica " + replica);
-        return copyAsSummaryQuery();
-    }
-
-    /**
-     * Returns a copy of this command with isDigestQuery set to true.
-     */
-    public ReadCommand copyAsSummaryQuery(Iterable<Replica> replicas)
-    {
-        if (any(replicas, Replica::isTransient))
-            throw new IllegalArgumentException("Can't make a digest request on a transient replica " + Iterables.toString(filter(replicas, Replica::isTransient)));
-
-        return copyAsSummaryQuery();
-    }
-
-    protected abstract ReadCommand copyAsSummaryQuery();
+    public abstract ReadCommand copyAsSummaryQuery();
 
     protected abstract UnfilteredPartitionIterator queryStorage(ColumnFamilyStore cfs, ReadExecutionController executionController);
 
@@ -1426,7 +1368,7 @@ public abstract class ReadCommand extends AbstractReadQuery
             out.writeByte(
             digestFlag(responseType.isSummary())
             | indexFlag(null != command.indexQueryPlan())
-            | acceptsTransientFlag(command.acceptsTransient())
+            | acceptsTransientFlag(false) // Deprecated flag, could be reused?
             | needsReconciliationFlag(command.rowFilter().needsReconciliation())
             | isTrackedFlag(responseType.isTracked())
             );
@@ -1455,7 +1397,8 @@ public abstract class ReadCommand extends AbstractReadQuery
             Kind kind = Kind.values()[in.readByte()];
             int flags = in.readByte();
             ResponseType responseType = ResponseType.fromFlags(isDigest(flags), isTracked(flags));
-            boolean acceptsTransient = acceptsTransient(flags);
+            // Ignored flag, not used, could be reused?
+            //boolean acceptsTransient = acceptsTransient(flags);
             // Shouldn't happen or it's a user error (see comment above) but
             // better complain loudly than doing the wrong thing.
             if (isForThrift(flags))
@@ -1501,7 +1444,7 @@ public abstract class ReadCommand extends AbstractReadQuery
                     indexQueryPlan = indexGroup.queryPlanFor(rowFilter);
             }
 
-            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, responseType, digestVersion, acceptsTransient, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan);
+            return kind.selectionDeserializer.deserialize(in, version, schemaVersion, responseType, digestVersion, tableMetadata, nowInSec, columnFilter, rowFilter, limits, indexQueryPlan);
         }
 
         private IndexMetadata deserializeIndexMetadata(DataInputPlus in, int version, TableMetadata metadata) throws IOException
