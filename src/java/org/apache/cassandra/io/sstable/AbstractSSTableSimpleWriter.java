@@ -114,6 +114,11 @@ abstract class AbstractSSTableSimpleWriter implements Closeable
 
     protected SSTableTxnWriter createWriter(SSTable.Owner owner) throws IOException
     {
+        // This will prevent cassandra-analytics from producing SSTables for tables with mutation tracking enabled.
+        // We'll eventually support this with coordinated nodetool import
+        if (metadata.get().keyspaceReplicationType.isTracked())
+            throw new IllegalStateException("Can't create writer for table with mutation tracking enabled");
+
         SerializationHeader header = new SerializationHeader(true, metadata.get(), columns, EncodingStats.NO_STATS);
 
         if (makeRangeAware)

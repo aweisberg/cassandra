@@ -79,6 +79,10 @@ public class SSTableImporter
         UUID importID = UUID.randomUUID();
         logger.info("[{}] Loading new SSTables for {}/{}: {}", importID, cfs.getKeyspaceName(), cfs.getTableName(), options);
 
+        // This will be supported in the future
+        if (cfs.metadata().replicationType().isTracked())
+            throw new IllegalStateException("Can't import into tables with mutation tracking enabled");
+
         List<Pair<Directories.SSTableLister, String>> listers = getSSTableListers(options.srcPaths);
 
         Set<Descriptor> currentDescriptors = new HashSet<>();
