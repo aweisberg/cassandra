@@ -441,7 +441,7 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         private boolean transientSSTable;
         private SerializationHeader serializationHeader;
         private List<Index.Group> indexGroups;
-        private MutationIdRanges mutationIdRanges = MutationIdRanges.NONE;
+        private MutationIdRanges mutationIdRanges;
 
         public B setMetadataCollector(MetadataCollector metadataCollector)
         {
