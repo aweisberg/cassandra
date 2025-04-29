@@ -49,9 +49,10 @@ public class MutationIdRanges
 {
     public static final MutationIdRanges NONE = new MutationIdRanges();
 
-    // Keyed by CoordinatorLogId, this should only contain a handful of elements, because there's only one coordinator
-    // log per range. Iterating across keys should not be expensive, but this would benefit from a more compact
-    // representation since it's updated on every write.
+    // Keyed by CoordinatorLogId.
+    // A replica can only receive writes from another replica it shares ranges with, and tracked writes are executed by
+    // coordinators, so this should contain up to (2*RF - 1) keys. Iterating across keys should not be expensive, but
+    // this could benefit from a more compact representation since it's updated on every write.
     @VisibleForTesting
     final Long2ObjectHashMap<MutationId> ids;
 
