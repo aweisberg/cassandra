@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.BufferClusteringBound;
 import org.apache.cassandra.db.ClusteringBound;
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.Slice;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
@@ -81,7 +81,7 @@ public class StatsMetadata extends MetadataComponent
     public final UUID originatingHostId;
     public final TimeUUID pendingRepair;
     public final boolean isTransient;
-    public final MutationIdRanges mutationIdRanges;
+    public final CoordinatorLogBoundaries coordinatorLogBoundaries;
     // just holds the current encoding stats to avoid allocating - it is not serialized
     public final EncodingStats encodingStats;
 
@@ -125,7 +125,7 @@ public class StatsMetadata extends MetadataComponent
                          TimeUUID pendingRepair,
                          boolean isTransient,
                          boolean hasPartitionLevelDeletions,
-                         MutationIdRanges mutationIdRanges,
+                         CoordinatorLogBoundaries coordinatorLogBoundaries,
                          ByteBuffer firstKey,
                          ByteBuffer lastKey)
     {
@@ -151,7 +151,7 @@ public class StatsMetadata extends MetadataComponent
         this.originatingHostId = originatingHostId;
         this.pendingRepair = pendingRepair;
         this.isTransient = isTransient;
-        this.mutationIdRanges = mutationIdRanges;
+        this.coordinatorLogBoundaries = coordinatorLogBoundaries;
         this.encodingStats = new EncodingStats(minTimestamp, minLocalDeletionTime, minTTL);
         this.hasPartitionLevelDeletions = hasPartitionLevelDeletions;
         this.firstKey = firstKey;
@@ -212,7 +212,7 @@ public class StatsMetadata extends MetadataComponent
                                  pendingRepair,
                                  isTransient,
                                  hasPartitionLevelDeletions,
-                                 mutationIdRanges,
+                                 coordinatorLogBoundaries,
                                  firstKey,
                                  lastKey);
     }
@@ -242,7 +242,7 @@ public class StatsMetadata extends MetadataComponent
                                  newPendingRepair,
                                  newIsTransient,
                                  hasPartitionLevelDeletions,
-                                 mutationIdRanges,
+                                 coordinatorLogBoundaries,
                                  firstKey,
                                  lastKey);
     }
@@ -276,7 +276,7 @@ public class StatsMetadata extends MetadataComponent
                        .append(originatingHostId, that.originatingHostId)
                        .append(pendingRepair, that.pendingRepair)
                        .append(hasPartitionLevelDeletions, that.hasPartitionLevelDeletions)
-                       .append(mutationIdRanges, that.mutationIdRanges)
+                       .append(coordinatorLogBoundaries, that.coordinatorLogBoundaries)
                        .append(firstKey, that.firstKey)
                        .append(lastKey, that.lastKey)
                        .build();
@@ -307,7 +307,7 @@ public class StatsMetadata extends MetadataComponent
                        .append(originatingHostId)
                        .append(pendingRepair)
                        .append(hasPartitionLevelDeletions)
-                       .append(mutationIdRanges)
+                       .append(coordinatorLogBoundaries)
                        .append(firstKey)
                        .append(lastKey)
                        .build();
@@ -396,7 +396,7 @@ public class StatsMetadata extends MetadataComponent
             }
 
             if (version.hasMutationTrackingMetadata())
-                size += MutationIdRanges.serializer.serializedSize(component.mutationIdRanges, version.correspondingMessagingVersion());
+                size += CoordinatorLogBoundaries.serializer.serializedSize(component.coordinatorLogBoundaries, version.correspondingMessagingVersion());
 
             return size;
         }
@@ -523,7 +523,7 @@ public class StatsMetadata extends MetadataComponent
             }
 
             if (version.hasMutationTrackingMetadata())
-                MutationIdRanges.serializer.serialize(component.mutationIdRanges, out, version.correspondingMessagingVersion());
+                CoordinatorLogBoundaries.serializer.serialize(component.coordinatorLogBoundaries, out, version.correspondingMessagingVersion());
         }
 
         private void serializeImprovedMinMax(Version version, StatsMetadata component, DataOutputPlus out) throws IOException
@@ -669,9 +669,9 @@ public class StatsMetadata extends MetadataComponent
                 tokenSpaceCoverage = in.readDouble();
             }
 
-            MutationIdRanges mutationIdRanges = MutationIdRanges.NONE;
+            CoordinatorLogBoundaries coordinatorLogBoundaries = CoordinatorLogBoundaries.NONE;
             if (version.hasMutationTrackingMetadata())
-                mutationIdRanges = MutationIdRanges.serializer.deserialize(in, version.correspondingMessagingVersion());
+                coordinatorLogBoundaries = CoordinatorLogBoundaries.serializer.deserialize(in, version.correspondingMessagingVersion());
 
             return new StatsMetadata(partitionSizes,
                                      columnCounts,
@@ -696,7 +696,7 @@ public class StatsMetadata extends MetadataComponent
                                      pendingRepair,
                                      isTransient,
                                      hasPartitionLevelDeletions,
-                                     mutationIdRanges,
+                                     coordinatorLogBoundaries,
                                      firstKey,
                                      lastKey);
         }

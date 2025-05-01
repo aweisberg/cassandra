@@ -20,7 +20,7 @@ package org.apache.cassandra.io.sstable;
 
 import java.io.IOException;
 
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -76,7 +76,7 @@ public class RangeAwareSSTableWriterTest
                                                                      0,
                                                                      null,
                                                                      false,
-                                                                     MutationIdRanges.NONE,
+                                                                     CoordinatorLogBoundaries.NONE,
                                                                      DatabaseDescriptor.getSelectedSSTableFormat(),
                                                                      0,
                                                                      0,

@@ -30,7 +30,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.RateLimiter;
-import org.apache.cassandra.db.MutationIdRanges;
+
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.compaction.unified.UnifiedCompactionTask;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
@@ -408,16 +409,13 @@ public class CompactionTask extends AbstractCompactionTask
         return isTransient;
     }
 
-    public static MutationIdRanges getMutationIdRanges(Set<SSTableReader> sstables)
+    public static CoordinatorLogBoundaries getCoordinatorLogBoundaries(Set<SSTableReader> sstables)
     {
-        MutationIdRanges mutationIdRanges = MutationIdRanges.NONE;
-        if (sstables.isEmpty())
-            return mutationIdRanges;
+        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
+        for (SSTableReader sstable : sstables)
+            builder.addAll(sstable.getCoordinatorLogBoundaries());
 
-        for (SSTableReader sstable: sstables)
-            mutationIdRanges = mutationIdRanges.merge(sstable.getMutationIdRanges());
-
-        return mutationIdRanges;
+        return builder.build();
     }
 
 

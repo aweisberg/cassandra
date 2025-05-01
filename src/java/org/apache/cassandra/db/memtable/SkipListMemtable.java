@@ -31,9 +31,9 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.BufferDecoratedKey;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.MutationIdRanges;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.Slices;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
@@ -135,7 +135,7 @@ public class SkipListMemtable extends AbstractAllocatorMemtable
         liveDataSize.addAndGet(initialSize + updater.dataSize);
         columnsCollector.update(update.columns());
         statsCollector.update(update.stats());
-        mutationIdCollector.add(mutationId);
+        coordinatorLogBoundaries.add(mutationId);
         currentOperations.addAndGet(update.operationCount());
         return updater.colUpdateTimeDelta;
     }
@@ -147,9 +147,9 @@ public class SkipListMemtable extends AbstractAllocatorMemtable
     }
 
     @Override
-    public MutationIdRanges getMutationIdRanges()
+    public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
     {
-        return mutationIdCollector.get();
+        return coordinatorLogBoundaries;
     }
 
     @Override
@@ -286,7 +286,7 @@ public class SkipListMemtable extends AbstractAllocatorMemtable
         }
         final long partitionKeysSize = keysSize;
         final long partitionCount = keyCount;
-        MutationIdRanges mutationIdRanges = mutationIdCollector.get();
+        CoordinatorLogBoundaries coordinatorLogBoundaries = getCoordinatorLogBoundaries();
 
         return new AbstractFlushablePartitionSet<AtomicBTreePartition>()
         {
@@ -327,9 +327,9 @@ public class SkipListMemtable extends AbstractAllocatorMemtable
             }
 
             @Override
-            public MutationIdRanges mutationIdRanges()
+            public CoordinatorLogBoundaries coordinatorLogBoundaries()
             {
-                return mutationIdRanges;
+                return coordinatorLogBoundaries;
             }
         };
     }

@@ -22,11 +22,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.apache.cassandra.db.MutationIdRanges;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
@@ -62,7 +62,7 @@ public class ShardedMultiWriter implements SSTableMultiWriter
     private final long repairedAt;
     private final TimeUUID pendingRepair;
     private final boolean isTransient;
-    private final MutationIdRanges mutationIdRanges;
+    private final CoordinatorLogBoundaries coordinatorLogBoundaries;
     private final IntervalSet<CommitLogPosition> commitLogPositions;
     private final SerializationHeader header;
     private final Collection<Index.Group> indexGroups;
@@ -77,7 +77,7 @@ public class ShardedMultiWriter implements SSTableMultiWriter
                               long repairedAt,
                               TimeUUID pendingRepair,
                               boolean isTransient,
-                              MutationIdRanges mutationIdRanges,
+                              CoordinatorLogBoundaries coordinatorLogBoundaries,
                               IntervalSet<CommitLogPosition> commitLogPositions,
                               SerializationHeader header,
                               Collection<Index.Group> indexGroups,
@@ -90,7 +90,7 @@ public class ShardedMultiWriter implements SSTableMultiWriter
         this.repairedAt = repairedAt;
         this.pendingRepair = pendingRepair;
         this.isTransient = isTransient;
-        this.mutationIdRanges = mutationIdRanges;
+        this.coordinatorLogBoundaries = coordinatorLogBoundaries;
         this.commitLogPositions = commitLogPositions;
         this.header = header;
         this.indexGroups = indexGroups;
@@ -116,7 +116,7 @@ public class ShardedMultiWriter implements SSTableMultiWriter
                          .setKeyCount(forSplittingKeysBy(boundaries.count()))
                          .setRepairedAt(repairedAt)
                          .setPendingRepair(pendingRepair)
-                         .setMutationIdRanges(mutationIdRanges)
+                         .setCoordinatorLogBoundaries(coordinatorLogBoundaries)
                          .setTransientSSTable(isTransient)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(metadataCollector)

@@ -26,7 +26,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.dht.Range;
 import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -145,9 +145,9 @@ public class CassandraOutgoingFile implements OutgoingStream
     }
 
     @Override
-    public MutationIdRanges getMutationIdRanges()
+    public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
     {
-        return ref.get().getMutationIdRanges();
+        return ref.get().getCoordinatorLogBoundaries();
     }
 
     @Override

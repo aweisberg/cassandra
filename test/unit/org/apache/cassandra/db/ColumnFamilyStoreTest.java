@@ -861,9 +861,9 @@ public class ColumnFamilyStoreTest
             }
 
             @Override
-            public MutationIdRanges getMutationIdRanges()
+            public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
             {
-                return MutationIdRanges.NONE;
+                return CoordinatorLogBoundaries.NONE;
             }
 
             @Override

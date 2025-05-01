@@ -28,13 +28,12 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
 import org.apache.cassandra.db.partitions.Partition;
 import org.apache.cassandra.db.rows.EncodingStats;
-import org.apache.cassandra.replication.MutationId;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
@@ -46,7 +45,8 @@ public abstract class AbstractMemtable implements Memtable
     protected final AtomicLong currentOperations = new AtomicLong(0);
     protected final ColumnsCollector columnsCollector;
     protected final StatsCollector statsCollector = new StatsCollector();
-    protected final MutationIdCollector mutationIdCollector = new MutationIdCollector();
+    // TODO: Handle concurrency
+    protected final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
     // The smallest timestamp for all partitions stored in this memtable
     protected AtomicLong minTimestamp = new AtomicLong(Long.MAX_VALUE);
     // The smallest local deletion time for all partitions in this memtable
@@ -221,35 +221,6 @@ public abstract class AbstractMemtable implements Memtable
         public EncodingStats get()
         {
             return stats.get();
-        }
-    }
-
-    public static class MutationIdCollector
-    {
-        private final AtomicReference<MutationIdRanges> ranges = new AtomicReference<>(MutationIdRanges.NONE);
-
-        /**
-         * This is called on every memtable write, so would be a good optimization target. In particular, {@link #get}
-         * is called on expensive infrequent operations (mainly flush), so we would benefit from moving some effort out
-         * of this method.
-         */
-        public void add(MutationId mutationId)
-        {
-            if (mutationId.isNone())
-                return;
-
-            while (true)
-            {
-                MutationIdRanges current = ranges.get();
-                MutationIdRanges updated = current.add(mutationId);
-                if (ranges.compareAndSet(current, updated))
-                    return;
-            }
-        }
-
-        public MutationIdRanges get()
-        {
-            return ranges.get();
         }
     }
 

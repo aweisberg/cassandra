@@ -305,7 +305,7 @@ public class BtiFormat extends AbstractSSTableFormat<BtiTableReader, BtiTableWri
 
             isLatestVersion = version.compareTo(current_version) == 0;
             correspondingMessagingVersion = MessagingService.VERSION_52;
-            hasMutationTrackingMetadata = version.compareTo("ob") >= 0;
+            hasMutationTrackingMetadata = version.compareTo("db") >= 0;
         }
 
         @Override

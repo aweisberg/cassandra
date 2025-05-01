@@ -52,7 +52,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @RunWith(Parameterized.class)
-public class MutationIdRangeTest
+public class CoordinatorLogBoundariesLifecycleTest
 {
     private static final AtomicInteger keyspaceNumber = new AtomicInteger();
 
@@ -111,12 +111,6 @@ public class MutationIdRangeTest
         return mutation.id();
     }
 
-    private static void assertViewContents(View view, int numMemtables, int numSSTables)
-    {
-        Assert.assertEquals(numMemtables, view.liveMemtables.size());
-        Assert.assertEquals(numSSTables, view.liveSSTables().size());
-    }
-
     private static void assertEmptyMemtable(View view)
     {
         Assert.assertEquals(0, view.getCurrentMemtable().operationCount());
@@ -137,14 +131,12 @@ public class MutationIdRangeTest
         return "ks_" + keyspaceNumber.getAndIncrement();
     }
 
-    private static MutationIdRanges mutationIdRanges(MutationId... ids)
+    private static CoordinatorLogBoundaries coordinatorLogBoundaries(MutationId... ids)
     {
-        MutationIdRanges ranges = MutationIdRanges.NONE;
+        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
         for (MutationId id : ids)
-        {
-            ranges = ranges.add(id);
-        }
-        return ranges;
+            builder.add(id);
+        return builder.build();
     }
 
     /**
@@ -190,7 +182,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 0);
 
             Memtable memtable = view.getCurrentMemtable();
-            Assert.assertEquals(mutationIdRanges(id2), memtable.getMutationIdRanges());
+            Assert.assertEquals(coordinatorLogBoundaries(id2), memtable.getCoordinatorLogBoundaries());
         }
 
         // flush 1
@@ -202,7 +194,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 1);
 
             SSTableReader sstable = Iterables.getOnlyElement(view.liveSSTables());
-            Assert.assertEquals(mutationIdRanges(id2), sstable.getMutationIdRanges());
+            Assert.assertEquals(coordinatorLogBoundaries(id2), sstable.getCoordinatorLogBoundaries());
         }
 
         MutationId id3;
@@ -217,7 +209,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 1);
 
             Memtable memtable = view.getCurrentMemtable();
-            Assert.assertEquals(mutationIdRanges(id4), memtable.getMutationIdRanges());
+            Assert.assertEquals(coordinatorLogBoundaries(id4), memtable.getCoordinatorLogBoundaries());
         }
 
         // flush 2
@@ -230,8 +222,8 @@ public class MutationIdRangeTest
 
             List<SSTableReader> sstables = Lists.newArrayList(view.liveSSTables());
             sstables.sort(Comparator.comparing(sst -> sst.descriptor.id.asBytes()));
-            Assert.assertEquals(mutationIdRanges(id2), sstables.get(0).getMutationIdRanges());
-            Assert.assertEquals(mutationIdRanges(id4), sstables.get(1).getMutationIdRanges());
+            Assert.assertEquals(coordinatorLogBoundaries(id2), sstables.get(0).getCoordinatorLogBoundaries());
+            Assert.assertEquals(coordinatorLogBoundaries(id4), sstables.get(1).getCoordinatorLogBoundaries());
         }
 
         // compaction
@@ -243,7 +235,7 @@ public class MutationIdRangeTest
             assertNumSSTables(view, 1);
 
             SSTableReader sstable = Iterables.getOnlyElement(view.liveSSTables());
-            Assert.assertEquals(mutationIdRanges(id4), sstable.getMutationIdRanges());
+            Assert.assertEquals(coordinatorLogBoundaries(id4), sstable.getCoordinatorLogBoundaries());
         }
     }
 }

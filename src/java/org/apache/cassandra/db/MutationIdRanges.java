@@ -35,15 +35,13 @@ import java.util.function.IntFunction;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import static org.apache.cassandra.db.memtable.AbstractMemtable.MutationIdCollector;
-
 /**
  * Max mutation ID present in this SSTable for each coordinator log, to determine whether an SSTable is reconciled or
  * not. Once max mutation IDs are reconciled, next compaction can safely mark this SSTabled as repaired. Note that peers
  * may have reconciled all mutations included in an SSTable, but {@link StatsMetadata#repairedAt} is dependent on
  * compaction timing, so "nodetool repair --validate" may report temporary disagreements on the repaired set.
  * <p>
- * This is immutable, so update-heavy paths are expected to use {@link MutationIdCollector}.
+ * This is immutable, so update-heavy paths are expected to use {@link MutableCoordinatorLogBoundaries}.
  */
 public class MutationIdRanges
 {

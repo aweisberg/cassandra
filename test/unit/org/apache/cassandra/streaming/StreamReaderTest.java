@@ -37,10 +37,10 @@ import org.apache.cassandra.ServerTestUtils;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.MutationIdRanges;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.Rows;
@@ -461,7 +461,7 @@ public class StreamReaderTest
                                        fakeSeq,
                                        System.currentTimeMillis(),
                                        pendingRepair,
-                                       MutationIdRanges.NONE);
+                                       CoordinatorLogBoundaries.NONE);
     }
 
     private static CassandraStreamHeader streamMessageHeader(int...tokens)
@@ -500,9 +500,9 @@ public class StreamReaderTest
             super(header, streamHeader, session);
         }
 
-        protected SSTableMultiWriter createWriter(ColumnFamilyStore cfs, long totalSize, long repairedAt, TimeUUID pendingRepair, MutationIdRanges mutationIdRanges, SSTableFormat<?,?> format) throws IOException
+        protected SSTableMultiWriter createWriter(ColumnFamilyStore cfs, long totalSize, long repairedAt, TimeUUID pendingRepair, CoordinatorLogBoundaries coordinatorLogBoundaries, SSTableFormat<?,?> format) throws IOException
         {
-            return super.createWriter(cfs, totalSize, repairedAt, pendingRepair, mutationIdRanges, format);
+            return super.createWriter(cfs, totalSize, repairedAt, pendingRepair, coordinatorLogBoundaries, format);
         }
 
         @Override

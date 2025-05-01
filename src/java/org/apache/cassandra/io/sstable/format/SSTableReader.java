@@ -55,8 +55,8 @@ import org.apache.cassandra.concurrent.ScheduledExecutors;
 import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.MutationIdRanges;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.SystemKeyspace;
@@ -1175,9 +1175,9 @@ public abstract class SSTableReader extends SSTable implements UnfilteredSource,
         return sstableMetadata.pendingRepair;
     }
 
-    public MutationIdRanges getMutationIdRanges()
+    public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
     {
-        return sstableMetadata.mutationIdRanges;
+        return sstableMetadata.coordinatorLogBoundaries;
     }
 
     public long getRepairedAt()

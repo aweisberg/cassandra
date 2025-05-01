@@ -67,11 +67,11 @@ import org.apache.cassandra.concurrent.ExecutorFactory;
 import org.apache.cassandra.concurrent.WrappedExecutorPlus;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.DiskBoundaries;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.MutationIdRanges;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.compaction.CompactionInfo.Holder;
@@ -1604,7 +1604,7 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
         {
             StatsMetadata metadata = sstable.getSSTableMetadata();
             // TODO(aratnofsky): filter mutationIdRanges to exclude any CoordinatorLogIds we're no longer responsible for, after ownership change
-            writer.switchWriter(createWriter(cfs, compactionFileLocation, expectedBloomFilterSize, metadata.repairedAt, metadata.pendingRepair, metadata.isTransient, metadata.mutationIdRanges, sstable, txn));
+            writer.switchWriter(createWriter(cfs, compactionFileLocation, expectedBloomFilterSize, metadata.repairedAt, metadata.pendingRepair, metadata.isTransient, metadata.coordinatorLogBoundaries, sstable, txn));
             long lastBytesScanned = 0;
 
             while (ci.hasNext())
@@ -1769,7 +1769,7 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                                              long repairedAt,
                                              TimeUUID pendingRepair,
                                              boolean isTransient,
-                                             MutationIdRanges mutationIdRanges,
+                                             CoordinatorLogBoundaries coordinatorLogBoundaries,
                                              SSTableReader sstable,
                                              LifecycleTransaction txn)
     {
@@ -1781,7 +1781,7 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                          .setRepairedAt(repairedAt)
                          .setPendingRepair(pendingRepair)
                          .setTransientSSTable(isTransient)
-                         .setMutationIdRanges(mutationIdRanges)
+                         .setCoordinatorLogBoundaries(coordinatorLogBoundaries)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(new MetadataCollector(cfs.metadata().comparator).sstableLevel(sstable.getSSTableLevel()))
                          .setSerializationHeader(sstable.header)
@@ -1801,16 +1801,16 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
     {
         FileUtils.createDirectory(compactionFileLocation);
         int minLevel = Integer.MAX_VALUE;
-        MutationIdRanges mutationIdRanges = MutationIdRanges.NONE;
-        // if all sstables have the same level, we can compact them together without creating overlap during anticompaction
-        // note that we only anticompact from unrepaired sstables, which is not leveled, but we still keep original level
-        // after first migration to be able to drop the sstables back in their original place in the repaired sstable manifest
+        CoordinatorLogBoundaries.Builder boundariesBuilder = CoordinatorLogBoundaries.builder();
         for (SSTableReader sstable : sstables)
         {
+            boundariesBuilder.addAll(sstable.getCoordinatorLogBoundaries());
+
+            // if all sstables have the same level, we can compact them together without creating overlap during anticompaction
+            // note that we only anticompact from unrepaired sstables, which is not leveled, but we still keep original level
+            // after first migration to be able to drop the sstables back in their original place in the repaired sstable manifest
             if (minLevel == Integer.MAX_VALUE)
                 minLevel = sstable.getSSTableLevel();
-
-            mutationIdRanges = mutationIdRanges.merge(sstable.getMutationIdRanges());
             if (minLevel != sstable.getSSTableLevel())
             {
                 minLevel = 0;
@@ -1823,7 +1823,7 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                          .setKeyCount(expectedBloomFilterSize)
                          .setRepairedAt(repairedAt)
                          .setPendingRepair(pendingRepair)
-                         .setMutationIdRanges(mutationIdRanges)
+                         .setCoordinatorLogBoundaries(boundariesBuilder.build())
                          .setTransientSSTable(isTransient)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(new MetadataCollector(sstables, cfs.metadata().comparator).sstableLevel(minLevel))

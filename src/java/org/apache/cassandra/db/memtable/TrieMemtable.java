@@ -36,10 +36,11 @@ import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionInfo;
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.Slices;
@@ -238,12 +239,12 @@ public class TrieMemtable extends AbstractShardedMemtable
     }
 
     @Override
-    public MutationIdRanges getMutationIdRanges()
+    public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
     {
-        MutationIdRanges ranges = MutationIdRanges.NONE;
+        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
         for (MemtableShard shard : shards)
-            ranges = ranges.merge(shard.mutationIdCollector.get());
-        return ranges;
+            builder.addAll(shard.coordinatorLogBoundaries);
+        return builder.build();
     }
 
     /**
@@ -374,12 +375,12 @@ public class TrieMemtable extends AbstractShardedMemtable
         }
         long partitionKeySize = keySize;
         int partitionCount = keyCount;
-        MutationIdRanges mutationIdRanges;
+        CoordinatorLogBoundaries coordinatorLogBoundaries;
         {
-            MutationIdRanges tempRanges = MutationIdRanges.NONE;
+            CoordinatorLogBoundaries.Builder boundariesBuilder = CoordinatorLogBoundaries.builder();
             for (MemtableShard shard : shards)
-                tempRanges = tempRanges.merge(shard.mutationIdCollector.get());
-            mutationIdRanges = tempRanges;
+                boundariesBuilder.addAll(shard.coordinatorLogBoundaries);
+            coordinatorLogBoundaries = boundariesBuilder.build();
         }
 
         return new AbstractFlushablePartitionSet<MemtablePartition>()
@@ -418,9 +419,9 @@ public class TrieMemtable extends AbstractShardedMemtable
             }
 
             @Override
-            public MutationIdRanges mutationIdRanges()
+            public CoordinatorLogBoundaries coordinatorLogBoundaries()
             {
-                return mutationIdRanges;
+                return coordinatorLogBoundaries;
             }
         };
     }
@@ -461,7 +462,7 @@ public class TrieMemtable extends AbstractShardedMemtable
         private final ColumnsCollector columnsCollector;
 
         private final StatsCollector statsCollector;
-        private final MutationIdCollector mutationIdCollector;
+        private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
 
         @Unmetered  // total pool size should not be included in memtable's deep size
         private final MemtableAllocator allocator;
@@ -475,7 +476,6 @@ public class TrieMemtable extends AbstractShardedMemtable
             this.data = new InMemoryTrie<>(BUFFER_TYPE);
             this.columnsCollector = new AbstractMemtable.ColumnsCollector(metadata.get().regularAndStaticColumns());
             this.statsCollector = new AbstractMemtable.StatsCollector();
-            this.mutationIdCollector = new AbstractMemtable.MutationIdCollector();
             this.allocator = allocator;
             this.metrics = metrics;
         }
@@ -518,7 +518,7 @@ public class TrieMemtable extends AbstractShardedMemtable
 
                     columnsCollector.update(update.columns());
                     statsCollector.update(update.stats());
-                    mutationIdCollector.add(mutationId);
+                    coordinatorLogBoundaries.add(mutationId);
                 }
             }
             finally

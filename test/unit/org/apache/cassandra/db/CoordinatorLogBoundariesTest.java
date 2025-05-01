@@ -31,7 +31,7 @@ import org.assertj.core.api.Assertions;
 
 import static accord.utils.Property.qt;
 
-public class MutationIdRangesTest
+public class CoordinatorLogBoundariesTest
 {
     private static final Gen<Long> LOG_ID_GEN = rs -> {
         int hostId = rs.nextInt(1, 4);
@@ -46,29 +46,29 @@ public class MutationIdRangesTest
 
     private static final Gen<MutationId> MUTATION_ID_GEN = rs -> new MutationId(LOG_ID_GEN.next(rs), SEQUENCE_ID_GEN.next(rs));
 
-    private static final Gen<MutationIdRanges> MUTATION_ID_RANGES_GEN = rs -> {
-        MutationIdRanges ranges = MutationIdRanges.NONE;
+    private static final Gen<CoordinatorLogBoundaries> COORDINATOR_LOG_BOUNDARIES_GEN = rs -> {
+        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
         int numIds = rs.nextBiasedInt(0, 10, 1000);
         for (int i = 0; i < numIds; i++)
-            ranges = ranges.add(MUTATION_ID_GEN.next(rs));
-        return ranges;
+            builder.add(MUTATION_ID_GEN.next(rs));
+        return builder.build();
     };
 
     @Test
     public void roundtripSerde()
     {
         qt()
-        .forAll(MUTATION_ID_RANGES_GEN)
-        .check(ranges -> {
+        .forAll(COORDINATOR_LOG_BOUNDARIES_GEN)
+        .check(boundaries -> {
             try (DataOutputBuffer outputBuffer = DataOutputBuffer.scratchBuffer.get())
             {
-                MutationIdRanges.serializer.serialize(ranges, outputBuffer, MessagingService.current_version);
+                CoordinatorLogBoundaries.serializer.serialize(boundaries, outputBuffer, MessagingService.current_version);
                 byte[] bytes = outputBuffer.toByteArray();
                 try (DataInputBuffer inputBuffer = new DataInputBuffer(bytes))
                 {
-                    MutationIdRanges deserialized = MutationIdRanges.serializer.deserialize(inputBuffer, MessagingService.current_version);
-                    Assertions.assertThat(ranges).isEqualTo(deserialized);
-                    Assertions.assertThat(bytes.length).isEqualTo(MutationIdRanges.serializer.serializedSize(ranges, MessagingService.current_version));
+                    CoordinatorLogBoundaries deserialized = CoordinatorLogBoundaries.serializer.deserialize(inputBuffer, MessagingService.current_version);
+                    Assertions.assertThat(boundaries).isEqualTo(deserialized);
+                    Assertions.assertThat(bytes.length).isEqualTo(CoordinatorLogBoundaries.serializer.serializedSize(boundaries, MessagingService.current_version));
                 }
             }
         });
@@ -80,16 +80,14 @@ public class MutationIdRangesTest
         qt()
         .forAll(Gens.lists(MUTATION_ID_GEN).ofSizeBetween(3, 100))
         .check(ids -> {
-            MutationIdRanges ranges = MutationIdRanges.NONE;
+            MutableCoordinatorLogBoundaries boundaries = new MutableCoordinatorLogBoundaries();
             for (MutationId id : ids)
             {
-                MutationIdRanges updated = ranges.add(id);
-                int originalOffset = ranges.maxOffset(id.logId());
-                int updatedOffset = updated.maxOffset(id.logId());
+                int originalOffset = boundaries.maxOffset(id.logId());
+                boundaries.add(id);
+                int updatedOffset = boundaries.maxOffset(id.logId());
                 Assertions.assertThat(updatedOffset).isGreaterThanOrEqualTo(originalOffset);
                 Assertions.assertThat(updatedOffset).isEqualTo(Math.max(originalOffset, id.offset()));
-
-                ranges = updated;
             }
         });
     }
@@ -98,10 +96,13 @@ public class MutationIdRangesTest
     public void monotonicMerge()
     {
         qt()
-        .forAll(MUTATION_ID_RANGES_GEN, MUTATION_ID_RANGES_GEN)
+        .forAll(COORDINATOR_LOG_BOUNDARIES_GEN, COORDINATOR_LOG_BOUNDARIES_GEN)
         .check((left, right) -> {
-            MutationIdRanges merged = left.merge(right);
-            for (Long logId : merged.ids.keySet())
+            CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
+            builder.addAll(left);
+            builder.addAll(right);
+            CoordinatorLogBoundaries merged = builder.build();
+            for (Long logId : merged)
             {
                 int leftOffset = left.maxOffset(logId);
                 int rightOffset = right.maxOffset(logId);

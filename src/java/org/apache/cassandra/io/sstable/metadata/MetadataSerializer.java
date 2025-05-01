@@ -122,6 +122,7 @@ public class MetadataSerializer implements IMetadataSerializer
         Map<MetadataType, MetadataComponent> components;
         logger.trace("Load metadata for {}", descriptor);
         File statsFile = descriptor.fileFor(Components.STATS);
+        // TODO: Don't tolerate missing StatsMetadata
         if (!statsFile.exists())
         {
             logger.trace("No sstable stats for {}", descriptor);

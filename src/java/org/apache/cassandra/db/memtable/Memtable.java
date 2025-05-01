@@ -24,7 +24,7 @@ import javax.annotation.concurrent.NotThreadSafe;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
@@ -208,7 +208,7 @@ public interface Memtable extends Comparable<Memtable>, UnfilteredSource
 
     /** Snapshot of the mutation id ranges applied to this memtable */
     @VisibleForTesting
-    MutationIdRanges getMutationIdRanges();
+    CoordinatorLogBoundaries getCoordinatorLogBoundaries();
 
     /**
      * Number of "operations" (in the sense defined in {@link PartitionUpdate#operationCount()}) the memtable has
@@ -330,7 +330,7 @@ public interface Memtable extends Comparable<Memtable>, UnfilteredSource
         /** Statistics required for writing an sstable efficiently */
         EncodingStats encodingStats();
 
-        MutationIdRanges mutationIdRanges();
+        CoordinatorLogBoundaries coordinatorLogBoundaries();
 
         default TableMetadata metadata()
         {

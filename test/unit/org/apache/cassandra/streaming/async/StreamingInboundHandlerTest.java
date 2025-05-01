@@ -22,7 +22,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 
 import org.apache.cassandra.SchemaLoader;
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 
 import org.junit.After;
 import org.junit.Assert;
@@ -118,7 +118,7 @@ public class StreamingInboundHandlerTest
     public void StreamDeserializingTask_deserialize_ISM_NoSession() throws IOException
     {
         StreamMessageHeader header = new StreamMessageHeader(TableId.generate(), REMOTE_ADDR, nextTimeUUID(), true,
-                                                             0, 0, 0, nextTimeUUID(), MutationIdRanges.NONE);
+                                                             0, 0, 0, nextTimeUUID(), CoordinatorLogBoundaries.NONE);
 
         ByteBuffer temp = ByteBuffer.allocate(1024);
         DataOutputPlus out = new DataOutputBuffer(temp);
@@ -137,7 +137,7 @@ public class StreamingInboundHandlerTest
         StreamResultFuture future = StreamResultFuture.createFollower(0, planId, StreamOperation.REPAIR, REMOTE_ADDR, streamingChannel, MessagingService.current_version, nextTimeUUID(), PreviewKind.ALL);
         StreamManager.instance.registerFollower(future);
         StreamMessageHeader header = new StreamMessageHeader(TableId.generate(), REMOTE_ADDR, planId, false,
-                                                             0, 0, 0, nextTimeUUID(), MutationIdRanges.NONE);
+                                                             0, 0, 0, nextTimeUUID(), CoordinatorLogBoundaries.NONE);
 
         // IncomingStreamMessage.serializer.deserialize
         StreamSession session = StreamManager.instance.findSession(header.sender, header.planId, header.sessionIndex, header.sendByFollower);

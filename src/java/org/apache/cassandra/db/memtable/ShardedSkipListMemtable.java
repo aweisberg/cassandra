@@ -30,9 +30,10 @@ import com.google.common.collect.Iterators;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.Slices;
@@ -159,12 +160,12 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
     }
 
     @Override
-    public MutationIdRanges getMutationIdRanges()
+    public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
     {
-        MutationIdRanges ranges = MutationIdRanges.NONE;
+        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
         for (MemtableShard shard : shards)
-            ranges = ranges.merge(shard.mutationIdCollector.get());
-        return ranges;
+            builder.addAll(shard.coordinatorLogBoundaries);
+        return builder.build();
     }
 
     /**
@@ -286,12 +287,12 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
         int partitionCount = keyCount;
         Iterator<AtomicBTreePartition> toFlush = getPartitionIterator(from, true, to, false);
 
-        MutationIdRanges mutationIdRanges;
+        CoordinatorLogBoundaries coordinatorLogBoundaries;
         {
-            MutationIdRanges tempRanges = MutationIdRanges.NONE;
+            CoordinatorLogBoundaries.Builder boundariesBuilder = CoordinatorLogBoundaries.builder();
             for (MemtableShard shard : shards)
-                tempRanges = tempRanges.merge(shard.mutationIdCollector.get());
-            mutationIdRanges = tempRanges;
+                boundariesBuilder.addAll(shard.coordinatorLogBoundaries);
+            coordinatorLogBoundaries = boundariesBuilder.build();
         }
 
         return new AbstractFlushablePartitionSet<AtomicBTreePartition>()
@@ -327,9 +328,9 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
             }
 
             @Override
-            public MutationIdRanges mutationIdRanges()
+            public CoordinatorLogBoundaries coordinatorLogBoundaries()
             {
-                return mutationIdRanges;
+                return coordinatorLogBoundaries;
             }
         };
     }
@@ -356,7 +357,7 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
         private final ColumnsCollector columnsCollector;
 
         private final StatsCollector statsCollector;
-        private final MutationIdCollector mutationIdCollector;
+        private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
 
         @Unmetered  // total pool size should not be included in memtable's deep size
         private final MemtableAllocator allocator;
@@ -368,7 +369,6 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
         {
             this.columnsCollector = new ColumnsCollector(metadata.get().regularAndStaticColumns());
             this.statsCollector = new StatsCollector();
-            this.mutationIdCollector = new MutationIdCollector();
             this.allocator = allocator;
             this.metadata = metadata;
         }
@@ -402,7 +402,7 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
             liveDataSize.addAndGet(initialSize + updater.dataSize);
             columnsCollector.update(update.columns());
             statsCollector.update(update.stats());
-            mutationIdCollector.add(mutationId);
+            coordinatorLogBoundaries.add(mutationId);
             currentOperations.addAndGet(update.operationCount());
             return updater.colUpdateTimeDelta;
         }

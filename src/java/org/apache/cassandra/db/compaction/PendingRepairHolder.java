@@ -27,7 +27,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
-import org.apache.cassandra.db.MutationIdRanges;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
 import org.apache.cassandra.db.commitlog.IntervalSet;
@@ -247,7 +247,7 @@ public class PendingRepairHolder extends AbstractStrategyHolder
                                                        long repairedAt,
                                                        TimeUUID pendingRepair,
                                                        boolean isTransient,
-                                                       MutationIdRanges mutationIdRanges,
+                                                       CoordinatorLogBoundaries coordinatorLogBoundaries,
                                                        IntervalSet<CommitLogPosition> commitLogPositions,
                                                        int sstableLevel,
                                                        SerializationHeader header,
@@ -265,7 +265,7 @@ public class PendingRepairHolder extends AbstractStrategyHolder
                                                  repairedAt,
                                                  pendingRepair,
                                                  isTransient,
-                                                 mutationIdRanges,
+                                                 coordinatorLogBoundaries,
                                                  commitLogPositions,
                                                  sstableLevel,
                                                  header,

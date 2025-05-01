@@ -39,10 +39,10 @@ import org.apache.cassandra.Util;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.MutationIdRanges;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.marshal.UTF8Type;
 import org.apache.cassandra.db.memtable.Memtable;
@@ -184,6 +184,7 @@ public class MockSchema
 
     public static SSTableReader sstable(int generation, int size, boolean keepRef, long firstToken, long lastToken, int level, ColumnFamilyStore cfs, int minLocalDeletionTime, long timestamp)
     {
+        assert !cfs.metadata().replicationType().isTracked();
         SSTableFormat<?, ?> format = DatabaseDescriptor.getSelectedSSTableFormat();
         Descriptor descriptor = new Descriptor(cfs.getDirectories().getDirectoryForNewSSTables(),
                                                cfs.getKeyspaceName(),
@@ -215,7 +216,7 @@ public class MockSchema
                                                                                   UNREPAIRED_SSTABLE,
                                                                                   null,
                                                                                   false,
-                                                                                  MutationIdRanges.NONE,
+                                                                                  CoordinatorLogBoundaries.NONE,
                                                                                   header,
                                                                                   first.retainable().getKey().slice(),
                                                                                   last.retainable().getKey().slice())
@@ -258,7 +259,7 @@ public class MockSchema
                 BufferDecoratedKey first = readerBounds(firstToken);
                 BufferDecoratedKey last = readerBounds(lastToken);
                 StatsMetadata metadata = (StatsMetadata) collector.sstableLevel(level)
-                                                                  .finalizeMetadata(cfs.metadata().partitioner.getClass().getCanonicalName(), 0.01f, UNREPAIRED_SSTABLE, null, false, MutationIdRanges.NONE, header, first.retainable().getKey(), last.retainable().getKey())
+                                                                  .finalizeMetadata(cfs.metadata().partitioner.getClass().getCanonicalName(), 0.01f, UNREPAIRED_SSTABLE, null, false, CoordinatorLogBoundaries.NONE, header, first.retainable().getKey(), last.retainable().getKey())
                                                                   .get(MetadataType.STATS);
                 BtiTableReader reader = new BtiTableReader.Builder(descriptor).setComponents(components)
                                                                               .setTableMetadataRef(cfs.metadata)

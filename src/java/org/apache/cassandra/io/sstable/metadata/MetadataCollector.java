@@ -30,9 +30,9 @@ import org.apache.cassandra.db.ClusteringBound;
 import org.apache.cassandra.db.ClusteringBoundOrBoundary;
 import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.ClusteringPrefix;
+import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.LivenessInfo;
-import org.apache.cassandra.db.MutationIdRanges;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.Slice;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
@@ -101,7 +101,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                  null,
                                  false,
                                  true,
-                                 MutationIdRanges.NONE,
+                                 CoordinatorLogBoundaries.NONE,
                                  ByteBufferUtil.EMPTY_BYTE_BUFFER,
                                  ByteBufferUtil.EMPTY_BYTE_BUFFER);
     }
@@ -356,7 +356,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
         this.hasLegacyCounterShards = this.hasLegacyCounterShards || hasLegacyCounterShards;
     }
 
-    public Map<MetadataType, MetadataComponent> finalizeMetadata(String partitioner, double bloomFilterFPChance, long repairedAt, TimeUUID pendingRepair, boolean isTransient, MutationIdRanges mutationIdRanges, SerializationHeader header, ByteBuffer firstKey, ByteBuffer lastKey)
+    public Map<MetadataType, MetadataComponent> finalizeMetadata(String partitioner, double bloomFilterFPChance, long repairedAt, TimeUUID pendingRepair, boolean isTransient, CoordinatorLogBoundaries coordinatorLogBoundaries, SerializationHeader header, ByteBuffer firstKey, ByteBuffer lastKey)
     {
         assert minClustering.kind() == ClusteringPrefix.Kind.CLUSTERING || minClustering.kind().isStart();
         assert maxClustering.kind() == ClusteringPrefix.Kind.CLUSTERING || maxClustering.kind().isEnd();
@@ -386,7 +386,7 @@ public class MetadataCollector implements PartitionStatisticsCollector
                                                              pendingRepair,
                                                              isTransient,
                                                              hasPartitionLevelDeletions,
-                                                             mutationIdRanges,
+                                                             coordinatorLogBoundaries,
                                                              firstKey,
                                                              lastKey));
         components.put(MetadataType.COMPACTION, new CompactionMetadata(cardinality));
