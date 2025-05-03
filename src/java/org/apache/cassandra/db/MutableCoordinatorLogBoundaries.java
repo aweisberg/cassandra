@@ -22,17 +22,19 @@ import java.util.Iterator;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
+import javax.annotation.concurrent.ThreadSafe;
+
 import org.apache.cassandra.replication.MutationId;
 import org.apache.cassandra.replication.ShortMutationId;
 
-/**
- * Thread-safe.
- */
+@ThreadSafe
 public class MutableCoordinatorLogBoundaries extends CoordinatorLogBoundaries
 {
     private static final MutationId NONE = MutationId.none();
     private static final int NONE_OFFSET = NONE.offset();
 
+    // A replica can only receive writes from another replica it shares ranges with, and tracked writes are executed by
+    // coordinators, so this should contain up to (2*RF - 1) keys
     private final ConcurrentHashMap<Long, MutationId> ids = new ConcurrentHashMap<>();
 
     public void add(MutationId mutationId)
@@ -83,6 +85,14 @@ public class MutableCoordinatorLogBoundaries extends CoordinatorLogBoundaries
                 return iterator.next();
             }
         };
+    }
+
+    @Override
+    public String toString()
+    {
+        return "MutableCoordinatorLogBoundaries{" +
+               "ids=" + ids +
+               '}';
     }
 
     @Override

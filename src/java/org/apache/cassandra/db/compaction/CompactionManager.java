@@ -1603,7 +1603,7 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
              CompactionIterator ci = new CompactionIterator(OperationType.CLEANUP, Collections.singletonList(scanner), controller, nowInSec, nextTimeUUID(), active, null))
         {
             StatsMetadata metadata = sstable.getSSTableMetadata();
-            // TODO(aratnofsky): filter mutationIdRanges to exclude any CoordinatorLogIds we're no longer responsible for, after ownership change
+            // TODO(aratnofsky): filter coordinatorLogBoundaries to exclude any CoordinatorLogIds we're no longer responsible for, after ownership change
             writer.switchWriter(createWriter(cfs, compactionFileLocation, expectedBloomFilterSize, metadata.repairedAt, metadata.pendingRepair, metadata.isTransient, metadata.coordinatorLogBoundaries, sstable, txn));
             long lastBytesScanned = 0;
 

@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 import org.apache.cassandra.io.IVersionedSerializer;
+import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
@@ -31,7 +32,12 @@ import org.apache.cassandra.replication.MutationId;
 import org.apache.cassandra.utils.vint.VIntCoding;
 
 /**
- * Immutable. Iterable over {@link CoordinatorLogId}.
+ * Max mutation ID present in this SSTable for each coordinator log, to determine whether an SSTable is reconciled or
+ * not. Once max mutation IDs are reconciled, next compaction can safely mark this SSTabled as repaired. Note that peers
+ * may have reconciled all mutations included in an SSTable, but {@link StatsMetadata#repairedAt} is dependent on
+ * compaction timing, so "nodetool repair --validate" may report temporary disagreements on the repaired set.
+ * <p>
+ * Iterable over {@link CoordinatorLogId}.
  */
 public abstract class CoordinatorLogBoundaries implements Iterable<Long>
 {
@@ -130,7 +136,7 @@ public abstract class CoordinatorLogBoundaries implements Iterable<Long>
         @Override
         public Iterator<Long> iterator()
         {
-            return new Iterator<Long>()
+            return new Iterator<>()
             {
                 @Override
                 public boolean hasNext()
