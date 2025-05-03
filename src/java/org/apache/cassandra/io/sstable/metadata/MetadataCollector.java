@@ -18,7 +18,6 @@
 package org.apache.cassandra.io.sstable.metadata;
 
 import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.UUID;
@@ -42,9 +41,7 @@ import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Unfiltered;
 import org.apache.cassandra.io.sstable.SSTable;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
-import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.StorageService;
-import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.EstimatedHistogram;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.MurmurHash;
@@ -74,36 +71,6 @@ public class MetadataCollector implements PartitionStatisticsCollector
     static TombstoneHistogram defaultTombstoneDropTimeHistogram()
     {
         return TombstoneHistogram.createDefault();
-    }
-
-    public static StatsMetadata defaultStatsMetadata()
-    {
-        return new StatsMetadata(defaultPartitionSizeHistogram(),
-                                 defaultCellPerPartitionCountHistogram(),
-                                 IntervalSet.empty(),
-                                 Long.MIN_VALUE,
-                                 Long.MAX_VALUE,
-                                 Integer.MAX_VALUE,
-                                 Integer.MAX_VALUE,
-                                 0,
-                                 Integer.MAX_VALUE,
-                                 NO_COMPRESSION_RATIO,
-                                 defaultTombstoneDropTimeHistogram(),
-                                 0,
-                                 Collections.emptyList(),
-                                 Slice.ALL,
-                                 true,
-                                 ActiveRepairService.UNREPAIRED_SSTABLE,
-                                 -1,
-                                 -1,
-                                 Double.NaN,
-                                 null,
-                                 null,
-                                 false,
-                                 true,
-                                 CoordinatorLogBoundaries.NONE,
-                                 ByteBufferUtil.EMPTY_BYTE_BUFFER,
-                                 ByteBufferUtil.EMPTY_BYTE_BUFFER);
     }
 
     protected EstimatedHistogram estimatedPartitionSize = defaultPartitionSizeHistogram();
