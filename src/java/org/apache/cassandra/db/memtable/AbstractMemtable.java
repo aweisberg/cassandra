@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.annotations.VisibleForTesting;
 
-import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
 import org.apache.cassandra.db.lifecycle.LifecycleTransaction;
@@ -45,8 +44,6 @@ public abstract class AbstractMemtable implements Memtable
     protected final AtomicLong currentOperations = new AtomicLong(0);
     protected final ColumnsCollector columnsCollector;
     protected final StatsCollector statsCollector = new StatsCollector();
-    // TODO: Handle concurrency
-    protected final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
     // The smallest timestamp for all partitions stored in this memtable
     protected AtomicLong minTimestamp = new AtomicLong(Long.MAX_VALUE);
     // The smallest local deletion time for all partitions in this memtable

@@ -21,8 +21,6 @@ package org.apache.cassandra.db.memtable;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.concurrent.NotThreadSafe;
 
-import com.google.common.annotations.VisibleForTesting;
-
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.PartitionPosition;
@@ -207,7 +205,6 @@ public interface Memtable extends Comparable<Memtable>, UnfilteredSource
     long getLiveDataSize();
 
     /** Snapshot of the mutation id ranges applied to this memtable */
-    @VisibleForTesting
     CoordinatorLogBoundaries getCoordinatorLogBoundaries();
 
     /**
@@ -330,6 +327,7 @@ public interface Memtable extends Comparable<Memtable>, UnfilteredSource
         /** Statistics required for writing an sstable efficiently */
         EncodingStats encodingStats();
 
+        /** The boundaries in coordinator logs for all included tracked mutations */
         CoordinatorLogBoundaries coordinatorLogBoundaries();
 
         default TableMetadata metadata()

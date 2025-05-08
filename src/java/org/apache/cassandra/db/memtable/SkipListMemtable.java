@@ -34,6 +34,7 @@ import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.Slices;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
@@ -85,6 +86,8 @@ public class SkipListMemtable extends AbstractAllocatorMemtable
     // to select key range using Token.KeyBound. However put() ensures that we
     // actually only store DecoratedKey.
     private final ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> partitions = new ConcurrentSkipListMap<>();
+
+    private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
 
     private final AtomicLong liveDataSize = new AtomicLong(0);
 
