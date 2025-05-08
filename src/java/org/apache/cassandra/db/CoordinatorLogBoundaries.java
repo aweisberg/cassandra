@@ -90,6 +90,8 @@ public abstract class CoordinatorLogBoundaries implements Iterable<Long>
         @Override
         public CoordinatorLogBoundaries deserialize(DataInputPlus in, int version) throws IOException
         {
+            if (version < MessagingService.VERSION_52)
+                return CoordinatorLogBoundaries.NONE;
             int size = in.readUnsignedVInt32();
             Builder builder = CoordinatorLogBoundaries.builder();
             for (int i = 0; i < size; i++)
