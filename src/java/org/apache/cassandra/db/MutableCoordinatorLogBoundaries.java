@@ -35,6 +35,8 @@ public class MutableCoordinatorLogBoundaries extends CoordinatorLogBoundaries
 
     // A replica can only receive writes from another replica it shares ranges with, and tracked writes are executed by
     // coordinators, so this should contain up to (2*RF - 1) keys
+    // Consider wrapping value in AtomicReference to avoid false sharing
+    // See https://trishagee.com/2011/07/22/dissecting_the_disruptor_why_its_so_fast_part_two__magic_cache_line_padding/
     private final NonBlockingHashMapLong<MutationId> ids = new NonBlockingHashMapLong<>();
 
     public void add(MutationId mutationId)
