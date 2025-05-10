@@ -113,4 +113,25 @@ public class CoordinatorLogBoundariesTest
             }
         });
     }
+
+    @Test
+    public void builderEquivalentToMutable()
+    {
+        qt()
+        .forAll(Gens.lists(MUTATION_ID_GEN).ofSizeBetween(3, 100))
+        .check(ids -> {
+            MutableCoordinatorLogBoundaries boundaries = new MutableCoordinatorLogBoundaries();
+            CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
+            for (MutationId id : ids)
+            {
+                boundaries.add(id);
+                builder.add(id);
+            }
+
+            CoordinatorLogBoundaries fromBuilder = builder.build();
+            Assertions.assertThat(fromBuilder).hasSize(boundaries.size());
+            for (Long logId : boundaries)
+                Assertions.assertThat(fromBuilder.max(logId)).isEqualTo(boundaries.max(logId));
+        });
+    }
 }
