@@ -21,7 +21,11 @@ package org.apache.cassandra.db;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
+import javax.annotation.concurrent.NotThreadSafe;
+
+import org.agrona.collections.Long2ObjectHashMap;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.sstable.metadata.StatsMetadata;
 import org.apache.cassandra.io.util.DataInputPlus;
@@ -29,6 +33,7 @@ import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.replication.CoordinatorLogId;
 import org.apache.cassandra.replication.MutationId;
+import org.apache.cassandra.replication.ShortMutationId;
 import org.apache.cassandra.utils.vint.VIntCoding;
 
 /**
@@ -37,22 +42,23 @@ import org.apache.cassandra.utils.vint.VIntCoding;
  * may have reconciled all mutations included in an SSTable, but {@link StatsMetadata#repairedAt} is dependent on
  * compaction timing, so "nodetool repair --validate" may report temporary disagreements on the repaired set.
  * <p>
+ * A reference to this class should be treated as immutable. Do not cast to {@link MutableCoordinatorLogBoundaries}.
  * Iterable over {@link CoordinatorLogId}.
  */
 public abstract class CoordinatorLogBoundaries implements Iterable<Long>
 {
     public static class Builder
     {
-        private final MutableCoordinatorLogBoundaries boundaries = new MutableCoordinatorLogBoundaries();
+        private final MutableBuilderHelper helper = new MutableBuilderHelper();
 
         public CoordinatorLogBoundaries build()
         {
-            return boundaries;
+            return helper;
         }
 
         public void add(MutationId id)
         {
-            boundaries.add(id);
+            helper.add(id);
         }
 
         public void addAll(CoordinatorLogBoundaries from)
@@ -61,8 +67,16 @@ public abstract class CoordinatorLogBoundaries implements Iterable<Long>
             {
                 MutationId max = from.max(logId);
                 if (!max.isNone())
-                    boundaries.add(max);
+                    helper.add(max);
             }
+        }
+
+        @Override
+        public String toString()
+        {
+            return "Builder{" +
+                   "helper=" + helper +
+                   '}';
         }
     }
 
@@ -154,4 +168,82 @@ public abstract class CoordinatorLogBoundaries implements Iterable<Long>
             };
         }
     };
+
+    @NotThreadSafe
+    private static class MutableBuilderHelper extends CoordinatorLogBoundaries
+    {
+        private final Long2ObjectHashMap<MutationId> ids = new Long2ObjectHashMap<>();
+
+        public void add(MutationId mutationId)
+        {
+            long logId = mutationId.logId();
+            MutationId existing = ids.get(logId);
+            if (existing == null)
+                ids.put(logId, mutationId);
+            else if (ShortMutationId.comparator.compare(existing, mutationId) < 0)
+                ids.put(logId, mutationId);
+        }
+
+        @Override
+        public int maxOffset(long logId)
+        {
+            MutationId id = ids.get(logId);
+            return id == null ? MutationId.none().offset() : id.offset();
+        }
+
+        @Override
+        protected MutationId max(long logId)
+        {
+            return ids.getOrDefault(logId, MutationId.none());
+        }
+
+        @Override
+        protected int size()
+        {
+            return ids.size();
+        }
+
+        @Override
+        public Iterator<Long> iterator()
+        {
+            return new Iterator<>()
+            {
+                final Iterator<Long> iterator = ids.keySet().iterator();
+
+                @Override
+                public boolean hasNext()
+                {
+                    return iterator.hasNext();
+                }
+
+                @Override
+                public Long next()
+                {
+                    return iterator.next();
+                }
+            };
+        }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (o == null || getClass() != o.getClass()) return false;
+            MutableBuilderHelper longs = (MutableBuilderHelper) o;
+            return Objects.equals(ids, longs.ids);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hashCode(ids);
+        }
+
+        @Override
+        public String toString()
+        {
+            return "MutableBuilderHelper{" +
+                   "ids=" + ids +
+                   '}';
+        }
+    }
 }

@@ -37,6 +37,8 @@ import org.apache.cassandra.schema.ReplicationType;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableParams;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.assertj.core.api.Assertions;
+
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -131,14 +133,6 @@ public class CoordinatorLogBoundariesLifecycleTest
         return "ks_" + keyspaceNumber.getAndIncrement();
     }
 
-    private static CoordinatorLogBoundaries coordinatorLogBoundaries(MutationId... ids)
-    {
-        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
-        for (MutationId id : ids)
-            builder.add(id);
-        return builder.build();
-    }
-
     /**
      * Test that mutation ids go from the memtable to sstables, and are combined during compaction
      */
@@ -182,7 +176,9 @@ public class CoordinatorLogBoundariesLifecycleTest
             assertNumSSTables(view, 0);
 
             Memtable memtable = view.getCurrentMemtable();
-            Assert.assertEquals(coordinatorLogBoundaries(id2), memtable.getCoordinatorLogBoundaries());
+            CoordinatorLogBoundaries boundaries = memtable.getCoordinatorLogBoundaries();
+            Assertions.assertThat(boundaries.size()).isEqualTo(1);
+            Assertions.assertThat(boundaries.max(id2.logId())).isEqualTo(id2);
         }
 
         // flush 1
@@ -194,7 +190,9 @@ public class CoordinatorLogBoundariesLifecycleTest
             assertNumSSTables(view, 1);
 
             SSTableReader sstable = Iterables.getOnlyElement(view.liveSSTables());
-            Assert.assertEquals(coordinatorLogBoundaries(id2), sstable.getCoordinatorLogBoundaries());
+            CoordinatorLogBoundaries boundaries = sstable.getCoordinatorLogBoundaries();
+            Assertions.assertThat(boundaries.size()).isEqualTo(1);
+            Assertions.assertThat(boundaries.max(id2.logId())).isEqualTo(id2);
         }
 
         MutationId id3;
@@ -209,7 +207,9 @@ public class CoordinatorLogBoundariesLifecycleTest
             assertNumSSTables(view, 1);
 
             Memtable memtable = view.getCurrentMemtable();
-            Assert.assertEquals(coordinatorLogBoundaries(id4), memtable.getCoordinatorLogBoundaries());
+            CoordinatorLogBoundaries boundaries = memtable.getCoordinatorLogBoundaries();
+            Assertions.assertThat(boundaries.size()).isEqualTo(1);
+            Assertions.assertThat(boundaries.max(id4.logId())).isEqualTo(id4);
         }
 
         // flush 2
@@ -222,8 +222,17 @@ public class CoordinatorLogBoundariesLifecycleTest
 
             List<SSTableReader> sstables = Lists.newArrayList(view.liveSSTables());
             sstables.sort(Comparator.comparing(sst -> sst.descriptor.id.asBytes()));
-            Assert.assertEquals(coordinatorLogBoundaries(id2), sstables.get(0).getCoordinatorLogBoundaries());
-            Assert.assertEquals(coordinatorLogBoundaries(id4), sstables.get(1).getCoordinatorLogBoundaries());
+            {
+                CoordinatorLogBoundaries boundaries = sstables.get(0).getCoordinatorLogBoundaries();
+                Assertions.assertThat(boundaries.size()).isEqualTo(1);
+                Assertions.assertThat(boundaries.max(id2.logId())).isEqualTo(id2);
+            }
+            {
+
+                CoordinatorLogBoundaries boundaries = sstables.get(1).getCoordinatorLogBoundaries();
+                Assertions.assertThat(boundaries.size()).isEqualTo(1);
+                Assertions.assertThat(boundaries.max(id4.logId())).isEqualTo(id4);
+            }
         }
 
         // compaction
@@ -235,7 +244,9 @@ public class CoordinatorLogBoundariesLifecycleTest
             assertNumSSTables(view, 1);
 
             SSTableReader sstable = Iterables.getOnlyElement(view.liveSSTables());
-            Assert.assertEquals(coordinatorLogBoundaries(id4), sstable.getCoordinatorLogBoundaries());
+            CoordinatorLogBoundaries boundaries = sstable.getCoordinatorLogBoundaries();
+            Assertions.assertThat(boundaries.size()).isEqualTo(1);
+            Assertions.assertThat(boundaries.max(id4.logId())).isEqualTo(id4);
         }
     }
 }
