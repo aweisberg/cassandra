@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.db.CoordinatorLogBoundaries;
+import org.apache.cassandra.db.CoordinatorLogBoundariesMap;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
@@ -162,10 +163,10 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
     @Override
     public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
     {
-        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
+        MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
         for (MemtableShard shard : shards)
-            builder.addAll(shard.coordinatorLogBoundaries);
-        return builder.build();
+            boundaries.addAll(shard.coordinatorLogBoundaries);
+        return boundaries;
     }
 
     /**
@@ -289,10 +290,10 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
 
         CoordinatorLogBoundaries coordinatorLogBoundaries;
         {
-            CoordinatorLogBoundaries.Builder boundariesBuilder = CoordinatorLogBoundaries.builder();
+            MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
             for (MemtableShard shard : shards)
-                boundariesBuilder.addAll(shard.coordinatorLogBoundaries);
-            coordinatorLogBoundaries = boundariesBuilder.build();
+                boundaries.addAll(shard.coordinatorLogBoundaries);
+            coordinatorLogBoundaries = boundaries;
         }
 
         return new AbstractFlushablePartitionSet<AtomicBTreePartition>()
@@ -357,7 +358,7 @@ public class ShardedSkipListMemtable extends AbstractShardedMemtable
         private final ColumnsCollector columnsCollector;
 
         private final StatsCollector statsCollector;
-        private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
+        private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = MutableCoordinatorLogBoundaries.create();
 
         @Unmetered  // total pool size should not be included in memtable's deep size
         private final MemtableAllocator allocator;

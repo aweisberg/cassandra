@@ -18,96 +18,29 @@
 
 package org.apache.cassandra.db;
 
-import java.util.Iterator;
-import java.util.Objects;
-
-import javax.annotation.concurrent.ThreadSafe;
-
 import org.apache.cassandra.replication.MutationId;
-import org.apache.cassandra.replication.ShortMutationId;
-import org.jctools.maps.NonBlockingHashMapLong;
 
-@ThreadSafe
-public class MutableCoordinatorLogBoundaries extends CoordinatorLogBoundaries
+public interface MutableCoordinatorLogBoundaries extends CoordinatorLogBoundaries
 {
-    private static final MutationId NONE = MutationId.none();
-    private static final int NONE_OFFSET = NONE.offset();
+    void add(MutationId mutationId);
 
-    // A replica can only receive writes from another replica it shares ranges with, and tracked writes are executed by
-    // coordinators, so this should contain up to (2*RF - 1) keys
-    // Consider wrapping value in AtomicReference to avoid false sharing
-    // See https://trishagee.com/2011/07/22/dissecting_the_disruptor_why_its_so_fast_part_two__magic_cache_line_padding/
-    private final NonBlockingHashMapLong<MutationId> ids = new NonBlockingHashMapLong<>();
-
-    public void add(MutationId mutationId)
+    default void addAll(CoordinatorLogBoundaries from)
     {
-        long logId = mutationId.logId();
-        ids.merge(logId, mutationId, (existing, updating) -> {
-            if (ShortMutationId.comparator.compare(existing, updating) < 0)
-                return updating;
-            return existing;
-        });
-    }
-
-    @Override
-    public int maxOffset(long logId)
-    {
-        MutationId id = ids.get(logId);
-        return id == null ? NONE_OFFSET : id.offset();
-    }
-
-    @Override
-    protected MutationId max(long logId)
-    {
-        return ids.getOrDefault(logId, NONE);
-    }
-
-    @Override
-    protected int size()
-    {
-        return ids.size();
-    }
-
-    @Override
-    public Iterator<Long> iterator()
-    {
-        return new Iterator<>()
+        for (long logId : from)
         {
-            final Iterator<Long> iterator = ids.keySet().iterator();
-
-            @Override
-            public boolean hasNext()
-            {
-                return iterator.hasNext();
-            }
-
-            @Override
-            public Long next()
-            {
-                return iterator.next();
-            }
-        };
+            MutationId max = from.max(logId);
+            if (!max.isNone())
+                add(max);
+        }
     }
 
-    @Override
-    public String toString()
+    static MutableCoordinatorLogBoundaries create()
     {
-        return "MutableCoordinatorLogBoundaries{" +
-               "ids=" + ids +
-               '}';
+        return new CoordinatorLogBoundariesMap();
     }
 
-    @Override
-    public boolean equals(Object o)
+    static MutableCoordinatorLogBoundaries create(int size)
     {
-        if (o == null || getClass() != o.getClass()) return false;
-        MutableCoordinatorLogBoundaries longs = (MutableCoordinatorLogBoundaries) o;
-        return Objects.equals(ids, longs.ids);
-    }
-
-    @Override
-    public int hashCode()
-    {
-        return Objects.hashCode(ids);
+        return new CoordinatorLogBoundariesMap(size);
     }
 }

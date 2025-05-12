@@ -29,6 +29,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterators;
+import org.apache.commons.lang3.mutable.Mutable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +41,7 @@ import org.apache.cassandra.db.CoordinatorLogBoundaries;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionInfo;
+import org.apache.cassandra.db.CoordinatorLogBoundariesMap;
 import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.db.RegularAndStaticColumns;
@@ -241,10 +243,10 @@ public class TrieMemtable extends AbstractShardedMemtable
     @Override
     public CoordinatorLogBoundaries getCoordinatorLogBoundaries()
     {
-        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
+        MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
         for (MemtableShard shard : shards)
-            builder.addAll(shard.coordinatorLogBoundaries);
-        return builder.build();
+            boundaries.addAll(shard.coordinatorLogBoundaries);
+        return boundaries;
     }
 
     /**
@@ -377,10 +379,10 @@ public class TrieMemtable extends AbstractShardedMemtable
         int partitionCount = keyCount;
         CoordinatorLogBoundaries coordinatorLogBoundaries;
         {
-            CoordinatorLogBoundaries.Builder boundariesBuilder = CoordinatorLogBoundaries.builder();
+            MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
             for (MemtableShard shard : shards)
-                boundariesBuilder.addAll(shard.coordinatorLogBoundaries);
-            coordinatorLogBoundaries = boundariesBuilder.build();
+                boundaries.addAll(shard.coordinatorLogBoundaries);
+            coordinatorLogBoundaries = boundaries;
         }
 
         return new AbstractFlushablePartitionSet<MemtablePartition>()
@@ -462,7 +464,7 @@ public class TrieMemtable extends AbstractShardedMemtable
         private final ColumnsCollector columnsCollector;
 
         private final StatsCollector statsCollector;
-        private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
+        private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = MutableCoordinatorLogBoundaries.create();
 
         @Unmetered  // total pool size should not be included in memtable's deep size
         private final MemtableAllocator allocator;

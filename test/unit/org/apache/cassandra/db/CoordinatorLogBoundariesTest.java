@@ -47,11 +47,11 @@ public class CoordinatorLogBoundariesTest
     private static final Gen<MutationId> MUTATION_ID_GEN = rs -> new MutationId(LOG_ID_GEN.next(rs), SEQUENCE_ID_GEN.next(rs));
 
     private static final Gen<CoordinatorLogBoundaries> COORDINATOR_LOG_BOUNDARIES_GEN = rs -> {
-        CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
+        MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
         int numIds = rs.nextBiasedInt(0, 10, 1000);
         for (int i = 0; i < numIds; i++)
-            builder.add(MUTATION_ID_GEN.next(rs));
-        return builder.build();
+            boundaries.add(MUTATION_ID_GEN.next(rs));
+        return boundaries;
     };
 
     @Test
@@ -80,7 +80,7 @@ public class CoordinatorLogBoundariesTest
         qt()
         .forAll(Gens.lists(MUTATION_ID_GEN).ofSizeBetween(3, 100))
         .check(ids -> {
-            MutableCoordinatorLogBoundaries boundaries = new MutableCoordinatorLogBoundaries();
+            CoordinatorLogBoundariesMap boundaries = new CoordinatorLogBoundariesMap();
             for (MutationId id : ids)
             {
                 int originalOffset = boundaries.maxOffset(id.logId());
@@ -98,10 +98,10 @@ public class CoordinatorLogBoundariesTest
         qt()
         .forAll(COORDINATOR_LOG_BOUNDARIES_GEN, COORDINATOR_LOG_BOUNDARIES_GEN)
         .check((left, right) -> {
-            CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
-            builder.addAll(left);
-            builder.addAll(right);
-            CoordinatorLogBoundaries merged = builder.build();
+            MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
+            boundaries.addAll(left);
+            boundaries.addAll(right);
+            CoordinatorLogBoundaries merged = boundaries;
             for (Long logId : merged)
             {
                 int leftOffset = left.maxOffset(logId);
@@ -120,15 +120,15 @@ public class CoordinatorLogBoundariesTest
         qt()
         .forAll(Gens.lists(MUTATION_ID_GEN).ofSizeBetween(3, 100))
         .check(ids -> {
-            MutableCoordinatorLogBoundaries boundaries = new MutableCoordinatorLogBoundaries();
-            CoordinatorLogBoundaries.Builder builder = CoordinatorLogBoundaries.builder();
+            CoordinatorLogBoundariesMap boundaries = new CoordinatorLogBoundariesMap();
+            MutableCoordinatorLogBoundaries builder = MutableCoordinatorLogBoundaries.create();
             for (MutationId id : ids)
             {
                 boundaries.add(id);
                 builder.add(id);
             }
 
-            CoordinatorLogBoundaries fromBuilder = builder.build();
+            CoordinatorLogBoundaries fromBuilder = builder;
             Assertions.assertThat(fromBuilder).hasSize(boundaries.size());
             for (Long logId : boundaries)
                 Assertions.assertThat(fromBuilder.max(logId)).isEqualTo(boundaries.max(logId));

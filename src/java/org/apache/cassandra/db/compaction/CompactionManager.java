@@ -72,6 +72,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.DiskBoundaries;
 import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.compaction.CompactionInfo.Holder;
@@ -1801,10 +1802,10 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
     {
         FileUtils.createDirectory(compactionFileLocation);
         int minLevel = Integer.MAX_VALUE;
-        CoordinatorLogBoundaries.Builder boundariesBuilder = CoordinatorLogBoundaries.builder();
+        MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
         for (SSTableReader sstable : sstables)
         {
-            boundariesBuilder.addAll(sstable.getCoordinatorLogBoundaries());
+            boundaries.addAll(sstable.getCoordinatorLogBoundaries());
 
             // if all sstables have the same level, we can compact them together without creating overlap during anticompaction
             // note that we only anticompact from unrepaired sstables, which is not leveled, but we still keep original level
@@ -1823,7 +1824,7 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                          .setKeyCount(expectedBloomFilterSize)
                          .setRepairedAt(repairedAt)
                          .setPendingRepair(pendingRepair)
-                         .setCoordinatorLogBoundaries(boundariesBuilder.build())
+                         .setCoordinatorLogBoundaries(boundaries)
                          .setTransientSSTable(isTransient)
                          .setTableMetadataRef(cfs.metadata)
                          .setMetadataCollector(new MetadataCollector(sstables, cfs.metadata().comparator).sstableLevel(minLevel))

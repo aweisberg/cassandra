@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
 import org.apache.cassandra.db.SerializationHeader;
 import org.apache.cassandra.db.commitlog.CommitLogPosition;
 import org.apache.cassandra.db.commitlog.IntervalSet;
@@ -156,10 +157,10 @@ public class MetadataSerializerTest
         collector.updateClusteringValues(Clustering.make(UTF8Type.instance.decompose("cba"), withNulls ? null : Int32Type.instance.decompose(234)));
         ByteBuffer first = AsciiType.instance.decompose("a");
         ByteBuffer last = AsciiType.instance.decompose("b");
-        CoordinatorLogBoundaries.Builder boundariesBuilder = CoordinatorLogBoundaries.builder();
-        boundariesBuilder.add(new MutationId(1, 12345));
-        boundariesBuilder.add(new MutationId(2, 56789));
-        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, false, boundariesBuilder.build(), SerializationHeader.make(cfm, Collections.emptyList()), first, last);
+        MutableCoordinatorLogBoundaries boundaries = MutableCoordinatorLogBoundaries.create();
+        boundaries.add(new MutationId(1, 12345));
+        boundaries.add(new MutationId(2, 56789));
+        return collector.finalizeMetadata(partitioner, bfFpChance, 0, null, false, boundaries, SerializationHeader.make(cfm, Collections.emptyList()), first, last);
     }
 
     private void testVersions(List<String> versions) throws Throwable

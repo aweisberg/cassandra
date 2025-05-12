@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.BufferDecoratedKey;
 import org.apache.cassandra.db.CoordinatorLogBoundaries;
+import org.apache.cassandra.db.CoordinatorLogBoundariesMap;
 import org.apache.cassandra.db.DataRange;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.MutableCoordinatorLogBoundaries;
@@ -87,7 +88,7 @@ public class SkipListMemtable extends AbstractAllocatorMemtable
     // actually only store DecoratedKey.
     private final ConcurrentNavigableMap<PartitionPosition, AtomicBTreePartition> partitions = new ConcurrentSkipListMap<>();
 
-    private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = new MutableCoordinatorLogBoundaries();
+    private final MutableCoordinatorLogBoundaries coordinatorLogBoundaries = MutableCoordinatorLogBoundaries.create();
 
     private final AtomicLong liveDataSize = new AtomicLong(0);
 
