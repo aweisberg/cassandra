@@ -21,10 +21,12 @@ package org.apache.cassandra.service.paxos;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -51,6 +53,7 @@ import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.ReplicaLayout.ForTokenWrite;
 import org.apache.cassandra.locator.ReplicaPlan.ForRead;
 import org.apache.cassandra.metrics.ClientRequestSizeMetrics;
+import org.apache.cassandra.net.Message;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableMetadata;
@@ -90,6 +93,10 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.FailureRecordingCallback.AsMap;
 import org.apache.cassandra.service.paxos.Commit.Proposal;
 import org.apache.cassandra.service.paxos.cleanup.PaxosRepairState;
+import org.apache.cassandra.service.reads.IReadResponse;
+import org.apache.cassandra.service.reads.tracked.TrackedReadReconciliation;
+import org.apache.cassandra.service.reads.tracked.TrackedReadResponse;
+import org.apache.cassandra.service.reads.tracked.TrackedResolver;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.service.reads.untracked.DataResolver;
 import org.apache.cassandra.service.reads.repair.NoopReadRepair;
@@ -106,6 +113,7 @@ import org.apache.cassandra.service.paxos.PaxosPrepare.FoundIncompleteAccepted;
 import org.apache.cassandra.service.paxos.PaxosPrepare.FoundIncompleteCommitted;
 import org.apache.cassandra.utils.NoSpamLogger;
 
+import static accord.utils.Invariants.checkState;
 import static java.util.Collections.emptyMap;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -339,7 +347,7 @@ public class Paxos
     /**
      * Encapsulates the peers we will talk to for this operation.
      */
-    static class Participants implements ForRead<EndpointsForToken, Participants>
+    public static class Participants implements ForRead<EndpointsForToken, Participants>
     {
         final Keyspace keyspace;
 
@@ -477,6 +485,11 @@ public class Paxos
         InetAddressAndPort voter(int i)
         {
             return electorateLive.endpoint(i);
+        }
+
+        Replica voterReplica(int i)
+        {
+            return electorateLive.get(i);
         }
 
         void assureSufficientLiveNodes(boolean isWrite) throws UnavailableException
@@ -1112,15 +1125,57 @@ public class Paxos
                     PaxosPrepare.Success success = prepare.success();
 
                     Supplier<Participants> plan = () -> success.participants;
-                    DataResolver<?, ?> resolver = new DataResolver<>(query, plan, NoopReadRepair.instance, requestTime);
-                    for (int i = 0 ; i < success.responses.size() ; ++i)
-                        resolver.preprocess(success.responses.get(i));
+                    List<Message<IReadResponse>> responses = success.responses;
+                    // Only enable read repair for PaxosV2 if mutation tracking and witnesses are enabled resulting in non-data responses
+                    boolean useTracked = false;
+                    if (query.responseType().isTracked())
+                        for (Message<IReadResponse> message : responses)
+                            useTracked |= message.payload.kind().isTracked() && !((TrackedReadResponse)message.payload).isDataResponse();
 
-                    class WasRun implements Runnable { boolean v; public void run() { v = true; } }
-                    WasRun hadShortRead = new WasRun();
-                    PartitionIterator result = resolver.resolve(hadShortRead);
+                    PartitionIterator result;
+                    boolean hadShortRead = false;
+                    if (useTracked)
+                    {
+                        TrackedReadReconciliation<EndpointsForToken, Participants> readRepair = new TrackedReadReconciliation<>(query, plan, requestTime);
+                        TrackedResolver<EndpointsForToken, Participants> resolver = new TrackedResolver<>(query, plan, requestTime);
 
-                    if (!isPromised && hadShortRead.v)
+                        for (int i = 0 ; i < responses.size() ; ++i)
+                            resolver.preprocess(responses.get(i));
+
+                        AtomicReference<PartitionIterator> resultReference = new AtomicReference<>();
+                        if (resolver.responsesMatch())
+                        {
+                            result = resolver.getData();
+                        }
+                        else
+                        {
+                            readRepair.startRepair(resolver, resultReference::set);
+                            readRepair.maybeSendAdditionalReads();
+                            readRepair.awaitReads();
+                            // TODO (review): Should this be done later?
+                            readRepair.maybeSendAdditionalWrites();
+                            readRepair.awaitWrites();
+                            result = resultReference.get();
+                        }
+
+                        // TODO (review): This needs to handle short reads somehow
+                        checkState(result != null, "Result should be set at this point");
+                    }
+                    else
+                    {
+                        DataResolver<EndpointsForToken, Participants> resolver = new DataResolver<>(query, plan, NoopReadRepair.instance, requestTime);
+
+                        for (int i = 0 ; i < responses.size() ; ++i)
+                            resolver.preprocess(responses.get(i));
+
+                        // SERIAL supports partition range reads which can result in short reads
+                        class WasRun implements Runnable { boolean v; public void run() { v = true; } }
+                        WasRun hadShortReadRunnable = new WasRun();
+                        result = resolver.resolve(hadShortReadRunnable);
+                        hadShortRead = hadShortReadRunnable.v;
+                    }
+
+                    if (!isPromised && hadShortRead)
                     {
                         // we need to propose an empty update to linearize our short read, but only had read success
                         // since we may continue to perform short reads, we ask our prepare not to accept an early
@@ -1130,7 +1185,7 @@ public class Paxos
                         break;
                     }
 
-                    return new BeginResult(success.ballot, success.participants, failedAttemptsDueToContention, result, !hadShortRead.v && success.isReadSafe, isPromised, success.supersededBy);
+                    return new BeginResult(success.ballot, success.participants, failedAttemptsDueToContention, result, !hadShortRead && success.isReadSafe, isPromised, success.supersededBy);
                 }
 
                 case MAYBE_FAILURE:

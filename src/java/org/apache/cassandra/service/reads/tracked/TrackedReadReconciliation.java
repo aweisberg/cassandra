@@ -21,6 +21,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
@@ -332,12 +333,12 @@ public class TrackedReadReconciliation<E extends Endpoints<E>, P extends Replica
     }
 
     private final ReadCommand command;
-    private final ReplicaPlan.Shared<E, P> replicaPlan;
+    private final Supplier<? extends P> replicaPlan;
     private final Dispatcher.RequestTime requestTime;
 
     private State state = State.INITIALIZED;
 
-    public TrackedReadReconciliation(ReadCommand command, ReplicaPlan.Shared<E, P> replicaPlan, Dispatcher.RequestTime requestTime)
+    public TrackedReadReconciliation(ReadCommand command, Supplier<? extends P> replicaPlan, Dispatcher.RequestTime requestTime)
     {
         this.command = command;
         this.replicaPlan = replicaPlan;

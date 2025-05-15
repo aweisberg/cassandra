@@ -24,6 +24,7 @@ import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.PartitionPosition;
 import org.apache.cassandra.dht.AbstractBounds;
 import org.apache.cassandra.dht.Token;
+import org.apache.cassandra.service.paxos.Paxos.Participants;
 import org.apache.cassandra.tcm.Epoch;
 import org.apache.cassandra.exceptions.RequestFailureReason;
 import org.apache.cassandra.tcm.ClusterMetadata;
@@ -469,5 +470,4 @@ public interface ReplicaPlan<E extends Endpoints<E>, P extends ReplicaPlan<E, P>
 
     public static SharedForTokenRead shared(ForTokenRead replicaPlan) { return new SharedForTokenRead(replicaPlan); }
     public static SharedForRangeRead shared(ForRangeRead replicaPlan) { return new SharedForRangeRead(replicaPlan); }
-
 }

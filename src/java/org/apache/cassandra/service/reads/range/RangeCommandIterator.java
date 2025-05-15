@@ -256,10 +256,6 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
      * Queries the provided sub-range.
      *
      * @param replicaPlan the subRange to query.
-     * @param isFirst in the case where multiple queries are sent in parallel, whether that's the first query on
-     * that batch or not. The reason it matters is that whe paging queries, the command (more specifically the
-     * {@code DataLimits}) may have "state" information and that state may only be valid for the first query (in
-     * that it's the query that "continues" whatever we're previously queried).
      */
     private SingleRangeResponse query(ReplicaPlan.ForRangeRead replicaPlan, boolean isFirst)
     {

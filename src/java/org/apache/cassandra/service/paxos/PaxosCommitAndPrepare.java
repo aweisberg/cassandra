@@ -76,6 +76,11 @@ public class PaxosCommitAndPrepare
             return new Request(commit, ballot, electorate, partitionKey, table, isForWrite);
         }
 
+        Request withDigestRead()
+        {
+            return new Request(commit, ballot, electorate, read.copyAsSummaryQuery(), isForWrite);
+        }
+
         public String toString()
         {
             return commit.toString("CommitAndPrepare(") + ", " + Ballot.toString(ballot) + ')';

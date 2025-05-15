@@ -44,6 +44,7 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.InetAddressAndPort;
+import org.apache.cassandra.locator.Replica;
 import org.apache.cassandra.service.reads.IReadResponse;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.metrics.PaxosMetrics;
@@ -370,20 +371,35 @@ public class PaxosPrepare extends PaxosRequestCallback<PaxosPrepare.Response> im
      */
     static <R extends AbstractRequest<R>> void start(PaxosPrepare prepare, Participants participants, Message<R> send, BiFunction<R, InetAddressAndPort, Response> selfHandler)
     {
-        boolean executeOnSelf = false;
+        Message<R> selfMessage = null;
+        Message<R> digestMessage = null;
         for (int i = 0, size = participants.sizeOfPoll() ; i < size ; ++i)
         {
-            InetAddressAndPort destination = participants.voter(i);
-            boolean isPending = participants.electorate.isPending(destination);
-            logger.trace("{} to {}", send.payload, destination);
+            Replica replica = participants.voterReplica(i);
+            InetAddressAndPort destination = replica.endpoint();
+            Message<R> toSendThisTime = send;
+
+            if (participants.electorate.isPending(destination))
+                toSendThisTime = withoutRead(send);
+            else if (replica.isTransient())
+            {
+                if (digestMessage == null)
+                    digestMessage = withDigestRead(send);
+                toSendThisTime = digestMessage;
+            }
+
+            logger.trace("{} to {}", toSendThisTime.payload, destination);
             if (shouldExecuteOnSelf(destination))
-                executeOnSelf = true;
+                selfMessage = toSendThisTime;
             else
-                MessagingService.instance().sendWithCallback(isPending ? withoutRead(send) : send, destination, prepare);
+                MessagingService.instance().sendWithCallback(toSendThisTime, destination, prepare);
         }
 
-        if (executeOnSelf)
-            send.verb().stage.execute(() -> prepare.executeOnSelf(send.payload, selfHandler));
+        if (selfMessage != null)
+        {
+            Message<R> selfMessageFinal = selfMessage;
+            send.verb().stage.execute(() -> prepare.executeOnSelf(selfMessageFinal.payload, selfHandler));
+        }
     }
 
     // TODO: extend Sync?
@@ -935,6 +951,8 @@ public class PaxosPrepare extends PaxosRequestCallback<PaxosPrepare.Response> im
 
         abstract R withoutRead();
 
+        abstract R withDigestRead();
+
         public String toString()
         {
             return "Prepare(" + ballot + ')';
@@ -956,6 +974,12 @@ public class PaxosPrepare extends PaxosRequestCallback<PaxosPrepare.Response> im
         Request withoutRead()
         {
             return read == null ? this : new Request(ballot, electorate, partitionKey, table, isForWrite);
+        }
+
+        @Override
+        Request withDigestRead()
+        {
+            return read == null ? this : new Request(ballot, electorate, read.copyAsSummaryQuery(), isForWrite);
         }
 
         public String toString()
@@ -1293,6 +1317,14 @@ public class PaxosPrepare extends PaxosRequestCallback<PaxosPrepare.Response> im
             return send;
 
         return send.withPayload(send.payload.withoutRead());
+    }
+
+    static <R extends AbstractRequest<R>> Message<R> withDigestRead(Message<R> send)
+    {
+        if (send.payload.read == null)
+            return send;
+
+        return send.withPayload(send.payload.withDigestRead());
     }
 
     public static void setOnLinearizabilityViolation(Runnable runnable)

@@ -25,6 +25,7 @@ import com.google.common.base.Preconditions;
 
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.ReadCommand.ResponseType;
 import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.db.TypeSizes;
 import org.apache.cassandra.db.filter.ColumnFilter;
@@ -43,6 +44,11 @@ public interface IReadResponse
     {
         UNTRACKED,
         TRACKED;
+
+        public boolean isTracked()
+        {
+            return this == TRACKED;
+        }
 
         public static final IVersionedSerializer<Kind> serializer = new IVersionedSerializer<>()
         {
