@@ -193,7 +193,7 @@ public class PaxosPrepareRefresh implements RequestCallbackWithFailure<PaxosPrep
         {
             Agreed commit = request.missingCommit;
 
-            if (!Paxos.isInRangeAndShouldProcess(from, commit.update.partitionKey(), commit.update.metadata(), false))
+            if (!Paxos.isInRangeAndShouldProcess(commit.getPartitionUpdate().partitionKey(), commit.getPartitionUpdate().metadata(), false))
                 return null;
 
             try (PaxosState state = PaxosState.get(commit))

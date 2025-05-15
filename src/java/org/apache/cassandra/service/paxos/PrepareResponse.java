@@ -44,8 +44,8 @@ public class PrepareResponse
 
     public PrepareResponse(boolean promised, Commit inProgressCommit, Commit mostRecentCommit)
     {
-        assert inProgressCommit.update.partitionKey().equals(mostRecentCommit.update.partitionKey());
-        assert inProgressCommit.update.metadata().id.equals(mostRecentCommit.update.metadata().id);
+        assert inProgressCommit.getPartitionUpdate().partitionKey().equals(mostRecentCommit.getPartitionUpdate().partitionKey());
+        assert inProgressCommit.getPartitionUpdate().metadata().id.equals(mostRecentCommit.getPartitionUpdate().metadata().id);
 
         this.promised = promised;
         this.mostRecentCommit = mostRecentCommit;

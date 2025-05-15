@@ -160,6 +160,7 @@ import org.apache.cassandra.service.paxos.Ballot;
 import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.service.paxos.ContentionStrategy;
 import org.apache.cassandra.service.paxos.Paxos;
+import org.apache.cassandra.service.paxos.PaxosCommitForwardRequest;
 import org.apache.cassandra.service.paxos.PaxosState;
 import org.apache.cassandra.service.paxos.v1.PrepareCallback;
 import org.apache.cassandra.service.paxos.v1.ProposeCallback;
@@ -207,6 +208,7 @@ import static org.apache.cassandra.net.NoPayload.noPayload;
 import static org.apache.cassandra.net.Verb.BATCH_STORE_REQ;
 import static org.apache.cassandra.net.Verb.MUTATION_REQ;
 import static org.apache.cassandra.net.Verb.PAXOS_COMMIT_REQ;
+import static org.apache.cassandra.net.Verb.PAXOS_COMMIT_FORWARD_REQ;
 import static org.apache.cassandra.net.Verb.PAXOS_PREPARE_REQ;
 import static org.apache.cassandra.net.Verb.PAXOS_PROPOSE_REQ;
 import static org.apache.cassandra.net.Verb.SCHEMA_VERSION_REQ;
@@ -425,7 +427,7 @@ public class StorageProxy implements StorageProxyMBean
         return lastAttemptResult.casResult;
     }
 
-    private static ConsensusAttemptResult legacyCas(TableMetadata metadata,
+private static ConsensusAttemptResult legacyCas(TableMetadata metadata,
                                                     DecoratedKey key,
                                                     CASRequest request,
                                                     ConsistencyLevel consistencyForPaxos,
@@ -623,7 +625,7 @@ public class StorageProxy implements StorageProxyMBean
                     // because we also skip replaying those same empty update in beginAndRepairPaxos (see the longer
                     // comment there). As empty update are somewhat common (serial reads and non-applying CAS propose
                     // them), this is worth bothering.
-                    if (!proposal.update.isEmpty())
+                    if (!proposal.getPartitionUpdate().isEmpty())
                         commitPaxos(proposal, consistencyForCommit, true, requestTime);
                     RowIterator result = proposalPair.right;
                     if (result != null)
@@ -728,11 +730,11 @@ public class StorageProxy implements StorageProxyMBean
                 //     replayed in that case.
                 // Tl;dr, it is safe to skip committing empty updates _as long as_ we also skip replying them below. And
                 // doing is more efficient, so we do so.
-                if (!inProgress.update.isEmpty() && inProgress.isAfter(mostRecent))
+                if (!inProgress.getPartitionUpdate().isEmpty() && inProgress.isAfter(mostRecent))
                 {
                     Tracing.trace("Finishing incomplete paxos round {}", inProgress);
                     casMetrics.unfinishedCommit.inc();
-                    Commit refreshedInProgress = Commit.newProposal(ballot, inProgress.update);
+                    Commit refreshedInProgress = Commit.newProposal(ballot, inProgress.getPartitionUpdate());
                     if (proposePaxos(refreshedInProgress, paxosPlan, false, requestTime))
                     {
                         commitPaxos(refreshedInProgress, consistencyForCommit, false, requestTime);
@@ -788,7 +790,7 @@ public class StorageProxy implements StorageProxyMBean
     private static PrepareCallback preparePaxos(Commit toPrepare, ReplicaPlan.ForPaxosWrite replicaPlan, Dispatcher.RequestTime requestTime)
     throws WriteTimeoutException
     {
-        PrepareCallback callback = new PrepareCallback(toPrepare.update.partitionKey(), toPrepare.update.metadata(), replicaPlan.requiredParticipants(), replicaPlan.consistencyLevel(), requestTime);
+        PrepareCallback callback = new PrepareCallback(toPrepare.getPartitionUpdate().partitionKey(), toPrepare.getPartitionUpdate().metadata(), replicaPlan.requiredParticipants(), replicaPlan.consistencyLevel(), requestTime);
         Message<Commit> message = Message.out(PAXOS_PREPARE_REQ, toPrepare);
 
         boolean hasLocalRequest = false;
@@ -868,10 +870,102 @@ public class StorageProxy implements StorageProxyMBean
 
     private static void commitPaxos(Commit proposal, ConsistencyLevel consistencyLevel, boolean allowHints, Dispatcher.RequestTime requestTime) throws WriteTimeoutException
     {
-        boolean shouldBlock = consistencyLevel != ConsistencyLevel.ANY;
-        Keyspace keyspace = Keyspace.open(proposal.update.metadata().keyspace);
+        // Check if this is a tracked keyspace
+        String keyspaceName = proposal.getPartitionUpdate().metadata().keyspace;
+        org.apache.cassandra.schema.KeyspaceMetadata ksMetadata = org.apache.cassandra.schema.Schema.instance.getKeyspaceMetadata(keyspaceName);
+        
+        if (ksMetadata != null && ksMetadata.params.replicationType.isTracked())
+        {
+            // For tracked keyspaces, check if we need to forward or execute directly
+            Keyspace keyspace = Keyspace.open(keyspaceName);
+            Token tk = proposal.getPartitionUpdate().partitionKey().getToken();
+            ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forWrite(keyspace, consistencyLevel, tk, ReplicaPlans.writeAll);
+            
+            if (isTrackedKeyspaceRequiringForwarding(proposal, replicaPlan.liveAndDown()))
+            {
+                // Forward to a replica coordinator
+                forwardPaxosCommit(proposal, consistencyLevel, replicaPlan);
+            }
+            else
+            {
+                // Execute directly using tracked logic
+                commitPaxosTracked(proposal, consistencyLevel, requestTime);
+            }
+        }
+        else
+        {
+            // For untracked keyspaces, use existing logic
+            commitPaxosUntracked(proposal, consistencyLevel, allowHints, requestTime);
+        }
+    }
 
-        Token tk = proposal.update.partitionKey().getToken();
+    public static void commitPaxosTracked(Commit proposal, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime) throws WriteTimeoutException
+    {
+        boolean shouldBlock = consistencyLevel != ConsistencyLevel.ANY;
+        String keyspaceName = proposal.getPartitionUpdate().metadata().keyspace;
+        Keyspace keyspace = Keyspace.open(keyspaceName);
+        Token tk = proposal.getPartitionUpdate().partitionKey().getToken();
+
+        // Generate mutation ID for tracked keyspace
+        org.apache.cassandra.replication.MutationId mutationId = org.apache.cassandra.replication.MutationTrackingService.instance.nextMutationId(keyspaceName, tk);
+        org.apache.cassandra.db.Mutation mutationWithId = proposal.makeMutation(mutationId);
+        proposal = new Commit(proposal.ballot, mutationWithId);
+
+        // NOTE: this ReplicaPlan is a lie, this usage of ReplicaPlan could do with being clarified - the selected() collection is essentially (I think) never used
+        ReplicaPlan.ForWrite replicaPlan = ReplicaPlans.forWrite(keyspace, consistencyLevel, tk, ReplicaPlans.writeAll);
+        AbstractReplicationStrategy rs = replicaPlan.replicationStrategy();
+
+        // Create tracked response handler
+        AbstractWriteResponseHandler<?> responseHandler = null;
+        if (shouldBlock)
+        {
+            AbstractWriteResponseHandler<Commit> baseHandler = rs.getWriteResponseHandler(replicaPlan, null, WriteType.SIMPLE, null, requestTime);
+            responseHandler = TrackedWriteResponseHandler.wrap(baseHandler, mutationId);
+        }
+
+        // Collect remote replicas for tracking service
+        org.agrona.collections.IntHashSet remoteReplicas = new org.agrona.collections.IntHashSet();
+        // Send messages to replicas
+        Message<Commit> message = Message.outWithFlag(PAXOS_COMMIT_REQ, proposal, MessageFlag.CALL_BACK_ON_FAILURE);
+        for (Replica replica : replicaPlan.liveAndDown())
+        {
+            InetAddressAndPort destination = replica.endpoint();
+            boolean replicaIsSelf = replica.isSelf();
+            if (!replicaIsSelf)
+            {
+                remoteReplicas.add(org.apache.cassandra.tcm.ClusterMetadata.current().directory.peerId(replica.endpoint()).id());
+            }
+
+            if (shouldBlock)
+            {
+                if (replicaIsSelf)
+                    commitPaxosLocal(replica, message, responseHandler, requestTime);
+                else
+                    MessagingService.instance().sendWriteWithCallback(message, replica, responseHandler);
+            }
+            else
+            {
+                MessagingService.instance().send(message, destination);
+            }
+        }
+
+        // Register write request with tracking service
+        if (!remoteReplicas.isEmpty())
+        {
+            org.apache.cassandra.replication.MutationTrackingService.instance.sentWriteRequest(proposal.makeMutation(), remoteReplicas);
+        }
+
+        if (shouldBlock)
+            responseHandler.get();
+    }
+
+    private static void commitPaxosUntracked(Commit proposal, ConsistencyLevel consistencyLevel, boolean allowHints, Dispatcher.RequestTime requestTime) throws WriteTimeoutException
+    {
+        boolean shouldBlock = consistencyLevel != ConsistencyLevel.ANY;
+        PartitionUpdate update = proposal.getPartitionUpdate();
+        Keyspace keyspace = Keyspace.open(update.metadata().keyspace);
+
+        Token tk = update.partitionKey().getToken();
 
         AbstractWriteResponseHandler<Commit> responseHandler = null;
         // NOTE: this ReplicaPlan is a lie, this usage of ReplicaPlan could do with being clarified - the selected() collection is essentially (I think) never used
@@ -956,6 +1050,87 @@ public class StorageProxy implements StorageProxyMBean
                 return PAXOS_COMMIT_REQ;
             }
         });
+    }
+
+    /**
+     * Checks if this commit needs to be forwarded to a replica coordinator for tracked keyspace support.
+     */
+    private static boolean isTrackedKeyspaceRequiringForwarding(Commit proposal, EndpointsForToken participants)
+    {
+        // Get keyspace metadata from the commit's table metadata
+        String keyspaceName = proposal.getPartitionUpdate().metadata().keyspace;
+        org.apache.cassandra.schema.KeyspaceMetadata ksMetadata = org.apache.cassandra.schema.Schema.instance.getKeyspaceMetadata(keyspaceName);
+        
+        if (ksMetadata == null || !ksMetadata.params.replicationType.isTracked())
+            return false;
+            
+        // Check if current coordinator is not a replica
+        InetAddressAndPort localEndpoint = org.apache.cassandra.utils.FBUtilities.getBroadcastAddressAndPort();
+        boolean isLocalReplica = participants.endpoints().contains(localEndpoint);
+        return !isLocalReplica;
+    }
+
+    /**
+     * Forwards a Paxos V1 commit operation to a replica coordinator for tracked keyspaces.
+     * Uses the replica plan to select the best live, non-local replica based on proximity.
+     */
+    private static void forwardPaxosCommit(Commit proposal, ConsistencyLevel consistencyLevel, ReplicaPlan.ForWrite replicaPlan) throws WriteTimeoutException
+    {
+        InetAddressAndPort localEndpoint = org.apache.cassandra.utils.FBUtilities.getBroadcastAddressAndPort();
+        
+        // Get live replicas and filter out local node
+        EndpointsForToken liveReplicas = replicaPlan.live().filter(replica -> !replica.endpoint().equals(localEndpoint));
+        
+        if (liveReplicas.isEmpty())
+        {
+            // No live replica available, throw exception
+            throw new WriteTimeoutException(WriteType.CAS, consistencyLevel, 0, consistencyLevel.blockFor(replicaPlan.replicationStrategy()));
+        }
+        
+        // Sort by proximity and select the best coordinator
+        EndpointsForToken sortedReplicas = DatabaseDescriptor.getNodeProximity().sortedByProximity(localEndpoint, liveReplicas);
+        InetAddressAndPort replicaCoordinator = sortedReplicas.get(0).endpoint();
+        
+        // Create forward request with participant list
+        PaxosCommitForwardRequest forwardRequest = new PaxosCommitForwardRequest(proposal, consistencyLevel);
+        org.apache.cassandra.net.Message<PaxosCommitForwardRequest> message = org.apache.cassandra.net.Message.out(PAXOS_COMMIT_FORWARD_REQ, forwardRequest);
+        
+        // Use AsyncPromise for proper callback handling
+        org.apache.cassandra.utils.concurrent.Promise<org.apache.cassandra.net.NoPayload> promise = new org.apache.cassandra.utils.concurrent.AsyncPromise<>();
+        
+        org.apache.cassandra.net.RequestCallback<org.apache.cassandra.net.NoPayload> callback = new org.apache.cassandra.net.RequestCallback<org.apache.cassandra.net.NoPayload>()
+        {
+            @Override
+            public void onResponse(org.apache.cassandra.net.Message<org.apache.cassandra.net.NoPayload> response)
+            {
+                promise.setSuccess(response.payload);
+            }
+
+            @Override
+            public void onFailure(InetAddressAndPort from, org.apache.cassandra.exceptions.RequestFailure reason)
+            {
+                promise.setFailure(new WriteTimeoutException(WriteType.CAS, consistencyLevel, 0, consistencyLevel.blockFor(replicaPlan.replicationStrategy())));
+            }
+        };
+        
+        try
+        {
+            org.apache.cassandra.net.MessagingService.instance().sendWithCallback(message, replicaCoordinator, callback);
+            
+            // Wait for response with timeout
+            promise.get(DatabaseDescriptor.getWriteRpcTimeout(java.util.concurrent.TimeUnit.MILLISECONDS), java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+        catch (java.util.concurrent.TimeoutException e)
+        {
+            throw new WriteTimeoutException(WriteType.CAS, consistencyLevel, 0, consistencyLevel.blockFor(replicaPlan.replicationStrategy()));
+        }
+        catch (Exception e)
+        {
+            if (e instanceof WriteTimeoutException)
+                throw (WriteTimeoutException) e;
+            
+            throw new WriteTimeoutException(WriteType.CAS, consistencyLevel, 0, consistencyLevel.blockFor(replicaPlan.replicationStrategy()));
+        }
     }
 
     /**

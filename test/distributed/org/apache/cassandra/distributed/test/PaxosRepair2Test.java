@@ -437,7 +437,7 @@ public class PaxosRepair2Test extends TestBaseImpl
 
     private static int ballotDeletion(Commit commit)
     {
-        return (int) TimeUnit.MICROSECONDS.toSeconds(commit.ballot.unixMicros()) + SystemKeyspace.legacyPaxosTtlSec(commit.update.metadata());
+        return (int) TimeUnit.MICROSECONDS.toSeconds(commit.ballot.unixMicros()) + SystemKeyspace.legacyPaxosTtlSec(commit.getPartitionUpdate().metadata());
     }
 
     private static void backdateTimestamps(int seconds)
@@ -528,7 +528,7 @@ public class PaxosRepair2Test extends TestBaseImpl
                             Assert.assertNull(s.accepted);
                             Assert.assertTrue(Commit.isAfter(s.committed.ballot, oldBallot));
                             Commit.CommittedWithTTL committed = new Commit.CommittedWithTTL(s.committed.ballot,
-                                                                                            s.committed.update,
+                                                                                            s.committed.getPartitionUpdate(),
                                                                                             ballotDeletion(s.committed));
                             Assert.assertTrue(committed.localDeletionTime < nowInSec);
                             return new PaxosState.Snapshot(Ballot.none(), Ballot.none(), null, committed);
@@ -545,7 +545,7 @@ public class PaxosRepair2Test extends TestBaseImpl
                             Assert.assertNull(s.accepted);
                             Assert.assertTrue(Commit.isAfter(s.committed.ballot, oldBallot));
                             Commit.CommittedWithTTL committed = new Commit.CommittedWithTTL(s.committed.ballot,
-                                                                                            s.committed.update,
+                                                                                            s.committed.getPartitionUpdate(),
                                                                                             ballotDeletion(s.committed));
                             Assert.assertTrue(committed.localDeletionTime < nowInSec);
                             return new PaxosState.Snapshot(oldBallot, oldBallot, null, committed);

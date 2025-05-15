@@ -341,7 +341,7 @@ public class PaxosRepair extends AbstractPaxosRepair
                     // with a newer ballot)
                     FoundIncompleteAccepted incomplete = input.incompleteAccepted();
 
-                    Proposal propose = new Proposal(incomplete.ballot, incomplete.accepted.update);
+                    Proposal propose = new Proposal(incomplete.ballot, incomplete.accepted.getPartitionUpdate());
                     logger.trace("PaxosRepair of {} found incomplete {}", partitionKey(), incomplete.accepted);
                     return PaxosPropose.propose(propose, participants, false,
                             new ProposingRepair(propose)); // we don't know if we're done, so we must restart
@@ -393,7 +393,7 @@ public class PaxosRepair extends AbstractPaxosRepair
                     return retry(this);
 
                 case SUCCESS:
-                    if (proposal.update.isEmpty())
+                    if (proposal.getPartitionUpdate().isEmpty())
                     {
                         logger.trace("PaxosRepair of {} complete after successful empty proposal", partitionKey());
                         return DONE;
@@ -601,7 +601,7 @@ public class PaxosRepair extends AbstractPaxosRepair
         public void doVerb(Message<PaxosRepair.Request> message)
         {
             PaxosRepair.Request request = message.payload;
-            if (!isInRangeAndShouldProcess(message.from(), request.partitionKey, request.table, false))
+            if (!isInRangeAndShouldProcess(request.partitionKey, request.table, false))
             {
                 MessagingService.instance().respondWithFailure(UNKNOWN, message);
                 return;

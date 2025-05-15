@@ -19,6 +19,7 @@
 package org.apache.cassandra.service.paxos;
 
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.slf4j.Logger;
@@ -32,10 +33,11 @@ import org.apache.cassandra.locator.InetAddressAndPort;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.service.FailureRecordingCallback;
 import org.apache.cassandra.tcm.ClusterMetadataService;
-import org.apache.cassandra.utils.TriFunction;
+import org.apache.cassandra.utils.concurrent.Future;
 
 import static org.apache.cassandra.exceptions.RequestFailure.TIMEOUT;
 import static org.apache.cassandra.exceptions.RequestFailure.UNKNOWN;
+import static com.google.common.util.concurrent.Futures.getUnchecked;
 import static org.apache.cassandra.utils.FBUtilities.getBroadcastAddressAndPort;
 
 public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T>
@@ -53,12 +55,12 @@ public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T
         onResponse(message.payload, message.from());
     }
 
-    protected <I> void executeOnSelf(I parameter, BiFunction<I, InetAddressAndPort, T> execute)
+    protected <I> void executeOnSelf(I parameter, Function<I, T> execute)
     {
         T response;
         try
         {
-            response = execute.apply(parameter, getBroadcastAddressAndPort());
+            response = execute.apply(parameter);
             if (response == null)
                 return;
         }
@@ -80,25 +82,21 @@ public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T
         onResponse(response, getBroadcastAddressAndPort());
     }
 
-    protected <I, J> void executeOnSelf(I parameter1, J parameter2, TriFunction<I, J, InetAddressAndPort, T> execute)
+    protected <I, J> void executeOnSelfAsync(I parameter1, J parameter2, BiFunction<I, J, Future<T>> execute)
     {
         T response;
         try
         {
-            response = execute.apply(parameter1, parameter2, getBroadcastAddressAndPort());
-            if (response == null)
+            Future<T> responseFuture = execute.apply(parameter1, parameter2);
+            if (responseFuture == null)
                 return;
-        }
-        catch (RetryOnDifferentSystemException e)
-        {
-            onFailure(getBroadcastAddressAndPort(), RequestFailure.RETRY_ON_DIFFERENT_TRANSACTION_SYSTEM);
-            return;
+            response = getUnchecked(responseFuture);
         }
         catch (Exception ex)
         {
             RequestFailure reason = UNKNOWN;
             if (ex instanceof WriteTimeoutException) reason = TIMEOUT;
-            else logger.error("Failed to apply {}, {} locally", parameter1, parameter2, ex);
+            else logger.error("Failed to apply {} locally", parameter1, ex);
 
             onFailure(getBroadcastAddressAndPort(), reason);
             return;

@@ -28,28 +28,28 @@ import org.apache.cassandra.net.NoPayload;
 import org.apache.cassandra.replication.MutationId;
 import org.apache.cassandra.replication.MutationTrackingService;
 
-public class TrackedWriteResponseHandler extends AbstractWriteResponseHandler<NoPayload>
+public class TrackedWriteResponseHandler<T> extends AbstractWriteResponseHandler<T>
 {
     private static final Logger logger = LoggerFactory.getLogger(TrackedWriteResponseHandler.class);
 
-    private final AbstractWriteResponseHandler<NoPayload> wrapped;
+    private final AbstractWriteResponseHandler<T> wrapped;
 
     private final MutationId mutationId;
 
-    private TrackedWriteResponseHandler(AbstractWriteResponseHandler<NoPayload> wrapped, MutationId mutationId)
+    private TrackedWriteResponseHandler(AbstractWriteResponseHandler<T> wrapped, MutationId mutationId)
     {
         super(wrapped.replicaPlan, wrapped.callback, wrapped.writeType, null, wrapped.getRequestTime());
         this.wrapped = wrapped;
         this.mutationId = mutationId;
     }
 
-    public static TrackedWriteResponseHandler wrap(AbstractWriteResponseHandler<NoPayload> handler, MutationId mutationId)
+    public static <T> TrackedWriteResponseHandler<T> wrap(AbstractWriteResponseHandler<T> handler, MutationId mutationId)
     {
-        return new TrackedWriteResponseHandler(handler, mutationId);
+        return new TrackedWriteResponseHandler<>(handler, mutationId);
     }
 
     @Override
-    public void onResponse(Message<NoPayload> msg)
+    public void onResponse(Message<T> msg)
     {
         // Local mutations are witnessed from Keyspace.applyInternalTracked
         if (msg != null)

@@ -71,6 +71,7 @@ target/
 .DS_Store
 Thumbs.db
 .ccm/
+CLAUDE.md
 
 **/.ant-targets-build.xml
 .ant_targets

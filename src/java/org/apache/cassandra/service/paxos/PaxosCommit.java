@@ -39,7 +39,12 @@ import org.apache.cassandra.net.IVerbHandler;
 import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.net.NoPayload;
+import org.apache.cassandra.replication.MutationId;
+import org.apache.cassandra.replication.MutationTrackingService;
+import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.schema.Schema;
 import org.apache.cassandra.service.paxos.Paxos.Participants;
+import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tracing.Tracing;
 import org.apache.cassandra.utils.concurrent.ConditionAsConsumer;
 
@@ -102,6 +107,10 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
     final int required;
     final OnDone onDone;
 
+    // Mutation tracking fields for tracked keyspaces
+    final MutationId mutationId;
+    final org.agrona.collections.IntHashSet remoteReplicas;
+
     /**
      * packs two 32-bit integers;
      * bit 00-31: accepts
@@ -112,15 +121,50 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
      */
     private volatile long responses;
 
-    public PaxosCommit(Agreed commit, boolean allowHints, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, Participants participants, OnDone onDone)
+    public PaxosCommit(Agreed commit, boolean allowHints, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, EndpointsForToken replicas, int required, OnDone onDone)
     {
-        this.commit = commit;
+        // Check if this is a tracked keyspace and generate mutation ID if needed
+        String keyspaceName = commit.getPartitionUpdate().metadata().keyspace;
+        KeyspaceMetadata ksMetadata = Schema.instance.getKeyspaceMetadata(keyspaceName);
+        boolean isTracked = ksMetadata != null && ksMetadata.params.replicationType.isTracked();
+        
+        MutationId mutationId = null;
+        Agreed commitToUse = commit;
+        org.agrona.collections.IntHashSet remoteReplicas = null;
+        
+        if (isTracked)
+        {
+            // Generate mutation ID for tracked keyspace
+            org.apache.cassandra.dht.Token token = commit.getPartitionUpdate().partitionKey().getToken();
+            mutationId = MutationTrackingService.instance.nextMutationId(keyspaceName, token);
+            
+            // Create commit with proper mutation ID
+            org.apache.cassandra.db.Mutation mutationWithId = commit.makeMutation(mutationId);
+            commitToUse = new Commit.Agreed(commit.ballot, mutationWithId);
+            
+            // Collect remote replicas for tracking service
+            remoteReplicas = new org.agrona.collections.IntHashSet();
+            ClusterMetadata metadata = ClusterMetadata.current();
+            for (int i = 0; i < replicas.size(); i++)
+            {
+                Replica replica = replicas.get(i);
+                if (!replica.isSelf())
+                {
+                    remoteReplicas.add(metadata.directory.peerId(replica.endpoint()).id());
+                }
+            }
+        }
+        
+        this.commit = commitToUse;
         this.allowHints = allowHints;
         this.consistencyForConsensus = consistencyForConsensus;
         this.consistencyForCommit = consistencyForCommit;
-        this.replicas = participants.all;
+        this.replicas = replicas;
         this.onDone = onDone;
-        this.required = participants.requiredFor(consistencyForCommit);
+        this.required = required;
+        this.mutationId = mutationId;
+        this.remoteReplicas = remoteReplicas;
+        
         if (required == 0)
             onDone.accept(status());
     }
@@ -128,14 +172,45 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
     /**
      * Submit the proposal for commit with all replicas, and wait synchronously until at most {@code deadline} for the result
      */
-    static Paxos.Async<Status> commit(Agreed commit, Participants participants, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, /** @deprecated See CASSANDRA-17164 */ @Deprecated(since = "4.1") boolean allowHints)
+    static Paxos.Async<Status> commit(Agreed commit, EndpointsForToken all, EndpointsForToken allLive, EndpointsForToken allDown, int required, boolean isUrgent, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, /** @deprecated See CASSANDRA-17164 */ @Deprecated(since = "4.1") boolean allowHints)
     {
+        // Check if this is a tracked keyspace requiring forwarding to a replica coordinator
+        if (isTrackedKeyspaceRequiringForwarding(commit, all))
+        {
+            // For async version, create a wrapper that handles forwarding
+            Status[] statusHolder = new Status[1];
+            ConditionAsConsumer<Status> condition = newConditionAsConsumer();
+            Consumer<Status> statusCapture = status -> {
+                statusHolder[0] = status;
+                condition.accept(status);
+            };
+            forwardPaxos2Commit(commit, all, allLive, allDown, required, isUrgent, consistencyForConsensus, consistencyForCommit, statusCapture);
+            
+            return new Paxos.Async<Status>()
+            {
+                @Override
+                public Status awaitUntil(long deadline)
+                {
+                    try
+                    {
+                        condition.awaitUntil(deadline);
+                        return statusHolder[0] != null ? statusHolder[0] : new Status(new Paxos.MaybeFailure(true, all.size(), required, 0, emptyMap()));
+                    }
+                    catch (InterruptedException e)
+                    {
+                        Thread.currentThread().interrupt();
+                        return new Status(new Paxos.MaybeFailure(true, all.size(), required, 0, emptyMap()));
+                    }
+                }
+            };
+        }
+
         // to avoid unnecessary object allocations we extend PaxosPropose to implements Paxos.Async
         class Async extends PaxosCommit<ConditionAsConsumer<Status>> implements Paxos.Async<Status>
         {
-            private Async(Agreed commit, boolean allowHints, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, Participants participants)
+            private Async(Agreed commit, boolean allowHints, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, EndpointsForToken all, int required)
             {
-                super(commit, allowHints, consistencyForConsensus, consistencyForCommit, participants, newConditionAsConsumer());
+                super(commit, allowHints, consistencyForConsensus, consistencyForCommit, all, required, newConditionAsConsumer());
             }
 
             public Status awaitUntil(long deadline)
@@ -154,38 +229,65 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
             }
         }
 
-        Async async = new Async(commit, allowHints, consistencyForConsensus, consistencyForCommit, participants);
-        async.start(participants, false);
+        Async async = new Async(commit, allowHints, consistencyForConsensus, consistencyForCommit, all, required);
+        async.start(allLive, allDown, isUrgent, false);
         return async;
     }
 
     /**
      * Submit the proposal for commit with all replicas, and wait synchronously until at most {@code deadline} for the result
      */
+    static <T extends Consumer<Status>> T commit(Agreed commit, EndpointsForToken all, EndpointsForToken allLive, EndpointsForToken allDown, int required, boolean isUrgent, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, /** @deprecated See CASSANDRA-17164 */ @Deprecated(since = "4.1") boolean allowHints, T onDone)
+    {
+        // Check if this is a tracked keyspace requiring forwarding to a replica coordinator
+        if (isTrackedKeyspaceRequiringForwarding(commit, all))
+        {
+            forwardPaxos2Commit(commit, all, allLive, allDown, required, isUrgent, consistencyForConsensus, consistencyForCommit, onDone);
+            return onDone;
+        }
+
+        new PaxosCommit<>(commit, allowHints, consistencyForConsensus, consistencyForCommit, all, required, onDone)
+                .start(allLive, allDown, isUrgent, true);
+        return onDone;
+    }
+
+    static Paxos.Async<Status> commit(Agreed commit, Participants participants, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, /** @deprecated See CASSANDRA-17164 */ @Deprecated(since = "4.1") boolean allowHints)
+    {
+        return commit(commit, participants.all, participants.allLive, participants.allDown, 
+                     participants.requiredFor(consistencyForCommit), participants.isUrgent(),
+                     consistencyForConsensus, consistencyForCommit, allowHints);
+    }
+
     static <T extends Consumer<Status>> T commit(Agreed commit, Participants participants, ConsistencyLevel consistencyForConsensus, ConsistencyLevel consistencyForCommit, /** @deprecated See CASSANDRA-17164 */ @Deprecated(since = "4.1") boolean allowHints, T onDone)
     {
-        new PaxosCommit<>(commit, allowHints, consistencyForConsensus, consistencyForCommit, participants, onDone)
-                .start(participants, true);
-        return onDone;
+        return commit(commit, participants.all, participants.allLive, participants.allDown, 
+                     participants.requiredFor(consistencyForCommit), participants.isUrgent(),
+                     consistencyForConsensus, consistencyForCommit, allowHints, onDone);
     }
 
     /**
      * Send commit messages to peers (or self)
      */
-    void start(Participants participants, boolean async)
+    void start(EndpointsForToken allLive, EndpointsForToken allDown, boolean isUrgent, boolean async)
     {
         boolean executeOnSelf = false;
-        Message<Agreed> commitMessage = Message.out(PAXOS_COMMIT_REQ, commit, participants.isUrgent());
+        Message<Agreed> commitMessage = Message.out(PAXOS_COMMIT_REQ, commit, isUrgent);
 
         Message<Mutation> mutationMessage = null;
         if (ENABLE_DC_LOCAL_COMMIT && consistencyForConsensus.isDatacenterLocal())
-            mutationMessage = Message.out(PAXOS2_COMMIT_REMOTE_REQ, commit.makeMutation(), participants.isUrgent());
+            mutationMessage = Message.out(PAXOS2_COMMIT_REMOTE_REQ, commit.makeMutation(), isUrgent);
 
-        for (int i = 0, mi = participants.allLive.size(); i < mi ; ++i)
-            executeOnSelf |= isSelfOrSend(commitMessage, mutationMessage, participants.allLive.endpoint(i));
+        for (int i = 0, mi = allLive.size(); i < mi ; ++i)
+            executeOnSelf |= isSelfOrSend(commitMessage, mutationMessage, allLive.endpoint(i));
 
-        for (int i = 0, mi = participants.allDown.size(); i < mi ; ++i)
-            onFailure(participants.allDown.endpoint(i), RequestFailure.NODE_DOWN);
+        for (int i = 0, mi = allDown.size(); i < mi ; ++i)
+            onFailure(allDown.endpoint(i), RequestFailure.NODE_DOWN);
+
+        // Register write request with tracking service for tracked keyspaces
+        if (mutationId != null && remoteReplicas != null && !remoteReplicas.isEmpty())
+        {
+            MutationTrackingService.instance.sentWriteRequest(commit.makeMutation(), remoteReplicas);
+        }
 
         if (executeOnSelf)
         {
@@ -227,6 +329,12 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
         if (logger.isTraceEnabled())
             logger.trace("{} {} from {}", commit, reason, from);
 
+        // Track failed response for tracked keyspaces
+        if (mutationId != null)
+        {
+            MutationTrackingService.instance.retryFailedWrite(mutationId, from, reason);
+        }
+
         response(false, from);
         Replica replica = replicas.lookup(from);
 
@@ -240,6 +348,13 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
     public void onResponse(Message<NoPayload> response)
     {
         logger.trace("{} Success from {}", commit, response.from());
+
+        // Track successful response for tracked keyspaces 
+        // (Local mutations are witnessed from Keyspace.applyInternalTracked)
+        if (mutationId != null && response != null)
+        {
+            MutationTrackingService.instance.receivedWriteResponse(mutationId, response.from());
+        }
 
         response(true, response.from());
     }
@@ -255,6 +370,12 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
     @Override
     public void onResponse(NoPayload response, InetAddressAndPort from)
     {
+        // Track successful response for tracked keyspaces
+        if (mutationId != null && response != null)
+        {
+            MutationTrackingService.instance.receivedWriteResponse(mutationId, from);
+        }
+        
         response(response != null, from);
     }
 
@@ -307,7 +428,7 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
         @Override
         public void doVerb(Message<Agreed> message)
         {
-            NoPayload response = execute(message.payload, message.from());
+            NoPayload response = execute(message.payload);
             // NOTE: for correctness, this must be our last action, so that we cannot throw an error and send both a response and a failure response
             if (response == null)
                 MessagingService.instance().respondWithFailure(UNKNOWN, message);
@@ -315,14 +436,97 @@ public class PaxosCommit<OnDone extends Consumer<? super PaxosCommit.Status>> ex
                 MessagingService.instance().respond(response, message);
         }
 
-        private static NoPayload execute(Agreed agreed, InetAddressAndPort from)
+        private static NoPayload execute(Agreed agreed)
         {
-            if (!Paxos.isInRangeAndShouldProcess(from, agreed.update.partitionKey(), agreed.update.metadata(), false))
+            if (!Paxos.isInRangeAndShouldProcess(agreed.getPartitionUpdate().partitionKey(), agreed.getPartitionUpdate().metadata(), false))
                 return null;
 
             PaxosState.commitDirect(agreed);
-            Tracing.trace("Enqueuing acknowledge to {}", from);
+            Tracing.trace("Enqueuing acknowledge to {}", agreed.ballot);
             return NoPayload.noPayload;
+        }
+    }
+
+    /**
+     * Checks if this commit needs to be forwarded to a replica coordinator for tracked keyspace support.
+     */
+    private static boolean isTrackedKeyspaceRequiringForwarding(Agreed commit, EndpointsForToken all)
+    {
+        // Get keyspace metadata from the commit's table metadata
+        String keyspaceName = commit.getPartitionUpdate().metadata().keyspace;
+        org.apache.cassandra.schema.KeyspaceMetadata ksMetadata = org.apache.cassandra.schema.Schema.instance.getKeyspaceMetadata(keyspaceName);
+        
+        if (ksMetadata == null || !ksMetadata.params.replicationType.isTracked())
+            return false;
+            
+        // Check if current coordinator is not a replica
+        InetAddressAndPort localEndpoint = org.apache.cassandra.utils.FBUtilities.getBroadcastAddressAndPort();
+        boolean isLocalReplica = all.endpoints().contains(localEndpoint);
+        return !isLocalReplica;
+    }
+
+    /**
+     * Forwards a Paxos V2 commit operation to a replica coordinator for tracked keyspaces.
+     */
+    private static <T extends Consumer<Status>> void forwardPaxos2Commit(Agreed commit, 
+                                                                         EndpointsForToken all,
+                                                                         EndpointsForToken allLive,
+                                                                         EndpointsForToken allDown,
+                                                                         int required,
+                                                                         boolean isUrgent,
+                                                                         ConsistencyLevel consistencyForConsensus,
+                                                                         ConsistencyLevel consistencyForCommit,
+                                                                         T onDone)
+    {
+        InetAddressAndPort localEndpoint = org.apache.cassandra.utils.FBUtilities.getBroadcastAddressAndPort();
+        
+        // Find first live replica to forward to
+        InetAddressAndPort replicaCoordinator = null;
+        for (InetAddressAndPort endpoint : all.endpoints())
+        {
+            if (!endpoint.equals(localEndpoint) && allLive.contains(endpoint))
+            {
+                replicaCoordinator = endpoint;
+                break;
+            }
+        }
+        
+        if (replicaCoordinator == null)
+        {
+            // No live replica available
+            onDone.accept(new Status(new Paxos.MaybeFailure(false, all.size(), required, 0, emptyMap())));
+            return;
+        }
+        
+        // Create forward request with extracted participant data
+        Paxos2CommitForwardRequest forwardRequest = new Paxos2CommitForwardRequest(commit, consistencyForConsensus, consistencyForCommit, 
+                                                                                   all, allLive, allDown,
+                                                                                   required, isUrgent);
+        org.apache.cassandra.net.Message<Paxos2CommitForwardRequest> message = org.apache.cassandra.net.Message.out(org.apache.cassandra.net.Verb.PAXOS2_COMMIT_FORWARD_REQ, forwardRequest);
+        
+        // Create callback to handle forwarding response
+        org.apache.cassandra.net.RequestCallback<org.apache.cassandra.net.NoPayload> callback = new org.apache.cassandra.net.RequestCallback<org.apache.cassandra.net.NoPayload>()
+        {
+            @Override
+            public void onResponse(org.apache.cassandra.net.Message<org.apache.cassandra.net.NoPayload> response)
+            {
+                onDone.accept(success);
+            }
+
+            @Override
+            public void onFailure(InetAddressAndPort from, org.apache.cassandra.exceptions.RequestFailure reason)
+            {
+                onDone.accept(new Status(new Paxos.MaybeFailure(false, all.size(), required, 0, emptyMap())));
+            }
+        };
+        
+        try
+        {
+            org.apache.cassandra.net.MessagingService.instance().sendWithCallback(message, replicaCoordinator, callback);
+        }
+        catch (Exception e)
+        {
+            onDone.accept(new Status(new Paxos.MaybeFailure(false, all.size(), required, 0, emptyMap())));
         }
     }
 

@@ -116,8 +116,12 @@ import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationSta
 import org.apache.cassandra.service.consensus.migration.ConsensusKeyMigrationState.ConsensusKeyMigrationFinished;
 import org.apache.cassandra.service.paxos.Commit;
 import org.apache.cassandra.service.paxos.Commit.Agreed;
+import org.apache.cassandra.service.paxos.Paxos2CommitForwardHandler;
+import org.apache.cassandra.service.paxos.Paxos2CommitForwardRequest;
 import org.apache.cassandra.service.paxos.PaxosCommit;
 import org.apache.cassandra.service.paxos.PaxosCommitAndPrepare;
+import org.apache.cassandra.service.paxos.PaxosCommitForwardHandler;
+import org.apache.cassandra.service.paxos.PaxosCommitForwardRequest;
 import org.apache.cassandra.service.paxos.PaxosPrepare;
 import org.apache.cassandra.service.paxos.PaxosPrepareRefresh;
 import org.apache.cassandra.service.paxos.PaxosPropose;
@@ -218,6 +222,12 @@ public enum Verb
     PAXOS_PROPOSE_REQ      (34,  P2, writeTimeout,    MUTATION,          () -> Commit.serializer,                    () -> ProposeVerbHandler.instance,         PAXOS_PROPOSE_RSP   ),
     PAXOS_COMMIT_RSP       (95,  P2, writeTimeout,    REQUEST_RESPONSE,  () -> NoPayload.serializer,                 RESPONSE_HANDLER                             ),
     PAXOS_COMMIT_REQ       (35,  P2, writeTimeout,    MUTATION,          () -> Agreed.serializer,                    () -> PaxosCommit.requestHandler,          PAXOS_COMMIT_RSP    ),
+
+    PAXOS_COMMIT_FORWARD_RSP (920, P2, writeTimeout,  REQUEST_RESPONSE,  () -> NoPayload.serializer,                 RESPONSE_HANDLER                             ),
+    PAXOS_COMMIT_FORWARD_REQ (36,  P2, writeTimeout,  MUTATION,          () -> PaxosCommitForwardRequest.serializer, () -> PaxosCommitForwardHandler.instance,  PAXOS_COMMIT_FORWARD_RSP ),
+
+    PAXOS2_COMMIT_FORWARD_RSP (921, P2, writeTimeout, REQUEST_RESPONSE,  () -> NoPayload.serializer,                 RESPONSE_HANDLER                             ),
+    PAXOS2_COMMIT_FORWARD_REQ (68,  P2, writeTimeout, MUTATION,          () -> Paxos2CommitForwardRequest.serializer, () -> Paxos2CommitForwardHandler.instance, PAXOS2_COMMIT_FORWARD_RSP ),
 
     TRUNCATE_RSP           (79,  P0, truncateTimeout, REQUEST_RESPONSE,  () -> TruncateResponse.serializer,          RESPONSE_HANDLER                             ),
     TRUNCATE_REQ           (19,  P0, truncateTimeout, MUTATION,          () -> TruncateRequest.serializer,           () -> TruncateVerbHandler.instance,        TRUNCATE_RSP        ),

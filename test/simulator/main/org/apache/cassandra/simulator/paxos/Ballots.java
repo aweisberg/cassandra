@@ -117,9 +117,9 @@ public class Ballots
             long baseTable = latestBallotFromBaseTable(key, metadata);
             return new LatestBallots(
                 promised.unixMicros(),
-                accepted == null || accepted.update.isEmpty() ? 0L : accepted.ballot.unixMicros(),
-                accepted == null || accepted.update.isEmpty() ? 0L : accepted.update.stats().minTimestamp,
-                latestBallot(committed.update.iterator()),
+                accepted == null || accepted.getPartitionUpdate().isEmpty() ? 0L : accepted.ballot.unixMicros(),
+                accepted == null || accepted.getPartitionUpdate().isEmpty() ? 0L : accepted.getPartitionUpdate().stats().minTimestamp,
+                latestBallot(committed.getPartitionUpdate().iterator()),
                 baseTable
             );
         });
