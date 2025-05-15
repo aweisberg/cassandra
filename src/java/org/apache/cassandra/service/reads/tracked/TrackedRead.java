@@ -33,9 +33,11 @@ import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
 import org.apache.cassandra.locator.*;
+import org.apache.cassandra.locator.InetAddressAndPort.Serializer;
 import org.apache.cassandra.net.*;
 import org.apache.cassandra.replication.MutationSummary;
 import org.apache.cassandra.replication.MutationTrackingService;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.reads.ReadCoordinator;
 import org.apache.cassandra.service.reads.SpeculativeRetryPolicy;
 import org.apache.cassandra.tcm.ClusterMetadata;
@@ -44,6 +46,7 @@ import org.apache.cassandra.utils.Clock;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.concurrent.AsyncPromise;
 import org.apache.cassandra.utils.concurrent.Future;
+import org.apache.cassandra.utils.concurrent.ImmediateFuture;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import java.io.IOException;
@@ -58,6 +61,8 @@ import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.cassandra.db.ISinglePartitionReadCommand.Kind.TRACKED_DATA_READ;
+import static org.apache.cassandra.db.ISinglePartitionReadCommand.Kind.TRACKED_SUMMARY_READ;
 import static org.apache.cassandra.metrics.ClientRequestsMetricsHolder.readMetrics;
 
 public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.ForRead<E, P>> implements RequestCallback<TrackedDataResponse>
@@ -289,11 +294,8 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
         if (summaryNodes.isEmpty())
             return;
 
-        SummaryRequest summaryRequest = new SummaryRequest(readId, command);
-        Message<SummaryRequest> summaryMessage = Message.outWithParam(Verb.TRACKED_SUMMARY_REQ,
-                                                                      summaryRequest,
-                                                                      ParamType.RESPOND_TO,
-                                                                      dataNode.endpoint());
+        SummaryRequest summaryRequest = new SummaryRequest(readId, command, dataNode.endpoint());
+        Message<SummaryRequest> summaryMessage = Message.out(Verb.TRACKED_SUMMARY_REQ, summaryRequest, expiresAt);
         for (Replica replica : summaryNodes)
         {
             if (localReplica == replica)
@@ -405,7 +407,7 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
         };
     }
 
-    public abstract static class Request
+    public abstract static class Request implements ISinglePartitionReadCommand
     {
         protected final Id readId;
         protected final ReadCommand command;
@@ -416,7 +418,24 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
             this.command = command;
         }
 
+        @Override
+        public TableMetadata metadata()
+        {
+            return command.metadata();
+        }
+
+        @Override
+        public DecoratedKey partitionKey()
+        {
+            // The command could be a PartitionRangeRead in which case nothing should call partitionKey
+            // If something does it will generate a ClassCastException which is an acceptable way to signal the error
+            return ((SinglePartitionReadCommand)command).partitionKey();
+        }
+
         public abstract void executeLocally(Message<? extends Request> message, ClusterMetadata metadata);
+
+        public abstract Future<? extends IReadResponse> executeLocally(InetAddressAndPort from, Request request, ClusterMetadata metadata, long expiresAtNanos);
+
     }
 
     public static class DataRequest extends Request
@@ -434,7 +453,7 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
         @Override
         public void executeLocally(Message<? extends Request> message, ClusterMetadata metadata)
         {
-            TrackedLocalReadCoordinator coordinator = MutationTrackingService.instance.localReads().beginRead(readId, metadata, command, consistencyLevel, summaryNodes, message.expiresAtNanos(), null);
+            Future<? extends IReadResponse> coordinator = MutationTrackingService.instance.localReads().beginRead(readId, metadata, command, consistencyLevel, summaryNodes, message.expiresAtNanos(), null).promise();
             coordinator.addCallback((response, error) -> {
                 if (error != null)
                 {
@@ -444,6 +463,12 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
                 }
                 MessagingService.instance().send(message.responseWith(response), message.from());
             });
+        }
+
+        @Override
+        public Future<? extends IReadResponse> executeLocally(InetAddressAndPort from, Request request, ClusterMetadata metadata, long expiresAtNanos)
+        {
+            return MutationTrackingService.instance.localReads().beginRead(readId, metadata, command, consistencyLevel, summaryNodes, expiresAtNanos, null).promise();
         }
 
         public static final IVersionedSerializer<DataRequest> serializer = new IVersionedSerializer<>()
@@ -481,13 +506,22 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
                        ((long) TypeSizes.INT_SIZE * request.summaryNodes.length);
             }
         };
+
+        @Override
+        public Kind kind()
+        {
+            return TRACKED_DATA_READ;
+        }
     }
 
-    public static class SummaryRequest extends Request
+    public static class SummaryRequest extends Request implements ISinglePartitionReadCommand
     {
-        public SummaryRequest(Id readId, ReadCommand command)
+        final InetAddressAndPort respondTo;
+
+        public SummaryRequest(Id readId, ReadCommand command, InetAddressAndPort respondTo)
         {
             super(readId, command);
+            this.respondTo = respondTo;
         }
 
         @Override
@@ -495,7 +529,16 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
         {
             MutationSummary summary = command.createMutationSummary(false);
             TrackedSummaryResponse response = new TrackedSummaryResponse(readId, summary);
-            MessagingService.instance().send(message.responseWith(response), message.respondTo());
+            MessagingService.instance().send(message.responseWith(response), respondTo);
+        }
+
+        @Override
+        public Future<? extends IReadResponse> executeLocally(InetAddressAndPort from, Request request, ClusterMetadata metadata, long expiresAtNanos)
+        {
+            MutationSummary summary = command.createMutationSummary(false);
+            TrackedSummaryResponse response = new TrackedSummaryResponse(readId, summary);
+            MessagingService.instance().send(Message.out(Verb.TRACKED_SUMMARY_RSP, response), respondTo);
+            return ImmediateFuture.success(IReadResponse.TRACKED_DUMMY);
         }
 
         public static final IVersionedSerializer<SummaryRequest> serializer = new IVersionedSerializer<>()
@@ -505,6 +548,7 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
             {
                 Id.serializer.serialize(request.readId, out, version);
                 ReadCommand.serializer.serialize(request.command, out, version);
+                Serializer.inetAddressAndPortSerializer.serialize(request.respondTo, out, version);
             }
 
             @Override
@@ -512,16 +556,24 @@ public abstract class TrackedRead<E extends Endpoints<E>, P extends ReplicaPlan.
             {
                 Id readId = Id.serializer.deserialize(in, version);
                 ReadCommand command = ReadCommand.serializer.deserialize(in, version);
-                return new SummaryRequest(readId, command);
+                InetAddressAndPort respondTo = Serializer.inetAddressAndPortSerializer.deserialize(in, version);
+                return new SummaryRequest(readId, command, respondTo);
             }
 
             @Override
             public long serializedSize(SummaryRequest request, int version)
             {
                 return Id.serializer.serializedSize(request.readId, version) +
-                       ReadCommand.serializer.serializedSize(request.command, version);
+                       ReadCommand.serializer.serializedSize(request.command, version) +
+                       Serializer.inetAddressAndPortSerializer.serializedSize(request.respondTo, version);
             }
         };
+
+        @Override
+        public Kind kind()
+        {
+            return TRACKED_SUMMARY_READ;
+        }
     }
 
     public static final IVerbHandler<Request> verbHandler = new AbstractReadCommandVerbHandler<>()

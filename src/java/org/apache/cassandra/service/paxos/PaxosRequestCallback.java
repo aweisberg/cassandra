@@ -33,9 +33,11 @@ import org.apache.cassandra.net.Message;
 import org.apache.cassandra.service.FailureRecordingCallback;
 import org.apache.cassandra.tcm.ClusterMetadataService;
 import org.apache.cassandra.utils.TriFunction;
+import org.apache.cassandra.utils.concurrent.Future;
 
 import static org.apache.cassandra.exceptions.RequestFailure.TIMEOUT;
 import static org.apache.cassandra.exceptions.RequestFailure.UNKNOWN;
+import static com.google.common.util.concurrent.Futures.getUnchecked;
 import static org.apache.cassandra.utils.FBUtilities.getBroadcastAddressAndPort;
 
 public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T>
@@ -99,6 +101,29 @@ public abstract class PaxosRequestCallback<T> extends FailureRecordingCallback<T
             RequestFailure reason = UNKNOWN;
             if (ex instanceof WriteTimeoutException) reason = TIMEOUT;
             else logger.error("Failed to apply {}, {} locally", parameter1, parameter2, ex);
+
+            onFailure(getBroadcastAddressAndPort(), reason);
+            return;
+        }
+
+        onResponse(response, getBroadcastAddressAndPort());
+    }
+
+    protected <I, J> void executeOnSelfAsync(I parameter1, J parameter2, TriFunction<I, InetAddressAndPort, J, Future<T>> execute)
+    {
+        T response;
+        try
+        {
+            Future<T> responseFuture = execute.apply(parameter1, getBroadcastAddressAndPort(), parameter2);
+            if (responseFuture == null)
+                return;
+            response = getUnchecked(responseFuture);
+        }
+        catch (Exception ex)
+        {
+            RequestFailure reason = UNKNOWN;
+            if (ex instanceof WriteTimeoutException) reason = TIMEOUT;
+            else logger.error("Failed to apply {} locally", parameter1, ex);
 
             onFailure(getBroadcastAddressAndPort(), reason);
             return;

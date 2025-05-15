@@ -23,6 +23,7 @@ import org.apache.cassandra.concurrent.Stage;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.ConsistencyLevel;
+import org.apache.cassandra.db.IReadResponse;
 import org.apache.cassandra.db.Mutation;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
@@ -73,6 +74,11 @@ public class TrackedLocalReadCoordinator
     public AbstractFuture<TrackedDataResponse> addCallback(BiConsumer<TrackedDataResponse, Throwable> callback)
     {
         return promise.addCallback(callback);
+    }
+
+    public Future<? extends IReadResponse> promise()
+    {
+        return promise;
     }
 
     enum Status { INITIALIZED, AWAITING_READ, READING, RECONCILING, ABORTED, COMPLETED }

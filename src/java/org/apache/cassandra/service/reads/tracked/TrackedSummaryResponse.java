@@ -17,6 +17,7 @@
  */
 package org.apache.cassandra.service.reads.tracked;
 
+import org.apache.cassandra.db.IReadResponse;
 import org.apache.cassandra.io.IVersionedSerializer;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -26,8 +27,14 @@ import org.apache.cassandra.replication.MutationTrackingService;
 
 import java.io.IOException;
 
-public class TrackedSummaryResponse
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import static org.apache.cassandra.db.IReadResponse.Kind.TRACKED_SUMMARY;
+
+public class TrackedSummaryResponse implements IReadResponse
 {
+    private static final Logger logger = LoggerFactory.getLogger(TrackedSummaryResponse.class);
     private final TrackedRead.Id readId;
     private final MutationSummary summary;
 
@@ -74,4 +81,10 @@ public class TrackedSummaryResponse
                    MutationSummary.serializer.serializedSize(summary.summary, version);
         }
     };
+
+    @Override
+    public Kind kind()
+    {
+        return TRACKED_SUMMARY;
+    }
 }

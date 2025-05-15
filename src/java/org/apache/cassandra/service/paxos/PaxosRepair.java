@@ -296,7 +296,7 @@ public class PaxosRepair extends AbstractPaxosRepair
                     logger.trace("PaxosRepair of {} found incomplete promise or proposal; preparing stale ballot {}", partitionKey(), Ballot.toString(ballot));
 
                 return prepareWithBallot(ballot, participants, partitionKey(), table, false, false,
-                        new PoisonProposals());
+                        new PoisonProposals(), -1);
             }
             else
             {
