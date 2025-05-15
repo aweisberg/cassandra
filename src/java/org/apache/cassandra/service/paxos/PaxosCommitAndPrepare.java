@@ -20,7 +20,9 @@ package org.apache.cassandra.service.paxos;
 
 import java.io.IOException;
 
+import org.apache.cassandra.db.ConsistencyLevel;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.ISinglePartitionReadCommand;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.io.util.DataInputPlus;
 import org.apache.cassandra.io.util.DataOutputPlus;
@@ -30,8 +32,13 @@ import org.apache.cassandra.net.Message;
 import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.service.paxos.Commit.Agreed;
+import org.apache.cassandra.service.paxos.PaxosPrepare.Response;
+import org.apache.cassandra.service.reads.tracked.TrackedRead;
+import org.apache.cassandra.service.reads.tracked.TrackedRead.Id;
 import org.apache.cassandra.tracing.Tracing;
+import org.apache.cassandra.utils.concurrent.Future;
 
+import static com.google.common.util.concurrent.Futures.getUnchecked;
 import static org.apache.cassandra.exceptions.RequestFailureReason.UNKNOWN;
 import static org.apache.cassandra.net.Verb.PAXOS2_COMMIT_AND_PREPARE_REQ;
 import static org.apache.cassandra.service.paxos.Paxos.newBallot;
@@ -42,14 +49,14 @@ public class PaxosCommitAndPrepare
     public static final RequestSerializer requestSerializer = new RequestSerializer();
     public static final RequestHandler requestHandler = new RequestHandler();
 
-    static PaxosPrepare commitAndPrepare(Agreed commit, Paxos.Participants participants, SinglePartitionReadCommand readCommand, boolean isWrite, boolean acceptEarlyReadSuccess)
+    static PaxosPrepare commitAndPrepare(Agreed commit, Paxos.Participants participants, SinglePartitionReadCommand readCommand, boolean isWrite, boolean acceptEarlyReadSuccess, long deadline)
     {
         Ballot ballot = newBallot(commit.ballot, participants.consistencyForConsensus);
         Request request = new Request(commit, ballot, participants.electorate, readCommand, isWrite);
         PaxosPrepare prepare = new PaxosPrepare(participants, request, acceptEarlyReadSuccess, null);
 
         Tracing.trace("Committing {}; Preparing {}", commit.ballot, ballot);
-        Message<Request> message = Message.out(PAXOS2_COMMIT_AND_PREPARE_REQ, request, participants.isUrgent());
+        Message<Request> message = Message.out(PAXOS2_COMMIT_AND_PREPARE_REQ, request, participants.isUrgent(), deadline);
 
         start(prepare, participants, message, RequestHandler::execute);
         return prepare;
@@ -59,7 +66,7 @@ public class PaxosCommitAndPrepare
     {
         final Agreed commit;
 
-        Request(Agreed commit, Ballot ballot, Paxos.Electorate electorate, SinglePartitionReadCommand read, boolean isWrite)
+        Request(Agreed commit, Ballot ballot, Paxos.Electorate electorate, ISinglePartitionReadCommand read, boolean isWrite)
         {
             super(ballot, electorate, read, isWrite);
             this.commit = commit;
@@ -76,6 +83,18 @@ public class PaxosCommitAndPrepare
             return new Request(commit, ballot, electorate, partitionKey, table, isForWrite);
         }
 
+        @Override
+        public Request asTrackedDataRequest(Id id, ConsistencyLevel consistencyLevel, int[] summaryNodes)
+        {
+            return new Request(commit, ballot, electorate, new TrackedRead.DataRequest(id, (SinglePartitionReadCommand)read, consistencyLevel, summaryNodes), isForWrite);
+        }
+
+        @Override
+        public Request asTrackedSummaryRequest(Id id, InetAddressAndPort respondTo)
+        {
+            return new Request(commit, ballot, electorate, new TrackedRead.SummaryRequest(id, (SinglePartitionReadCommand)read, respondTo), isForWrite);
+        }
+
         public String toString()
         {
             return commit.toString("CommitAndPrepare(") + ", " + Ballot.toString(ballot) + ')';
@@ -84,7 +103,7 @@ public class PaxosCommitAndPrepare
 
     public static class RequestSerializer extends PaxosPrepare.AbstractRequestSerializer<Request, Agreed>
     {
-        Request construct(Agreed param, Ballot ballot, Paxos.Electorate electorate, SinglePartitionReadCommand read, boolean isWrite)
+        Request construct(Agreed param, Ballot ballot, Paxos.Electorate electorate, ISinglePartitionReadCommand read, boolean isWrite)
         {
             return new Request(param, ballot, electorate, read, isWrite);
         }
@@ -121,14 +140,15 @@ public class PaxosCommitAndPrepare
         @Override
         public void doVerb(Message<Request> message)
         {
-            PaxosPrepare.Response response = execute(message.payload, message.from());
+            Future<Response> response = execute(message.payload, message.from(), message.expiresAtNanos());
             if (response == null)
                 MessagingService.instance().respondWithFailure(UNKNOWN, message);
             else
-                MessagingService.instance().respond(response, message);
+                // TODO unwrap error for error handling in the verb
+                MessagingService.instance().respond(getUnchecked(response), message);
         }
 
-        private static PaxosPrepare.Response execute(Request request, InetAddressAndPort from)
+        private static Future<PaxosPrepare.Response> execute(Request request, InetAddressAndPort from, long expiresAtNanos)
         {
             Agreed commit = request.commit;
             if (!Paxos.isInRangeAndShouldProcess(from, commit.update.partitionKey(), commit.update.metadata(), request.read != null))
@@ -137,7 +157,7 @@ public class PaxosCommitAndPrepare
             try (PaxosState state = PaxosState.get(commit))
             {
                 state.commit(commit);
-                return PaxosPrepare.RequestHandler.execute(request, state);
+                return PaxosPrepare.RequestHandler.execute(from, expiresAtNanos, request, state);
             }
         }
     }

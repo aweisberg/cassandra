@@ -172,6 +172,11 @@ public class Util
         return DatabaseDescriptor.getPartitioner();
     }
 
+    public static DecoratedKey dk(int key)
+    {
+        return testPartitioner().decorateKey(ByteBufferUtil.bytes(key));
+    }
+
     public static DecoratedKey dk(String key)
     {
         return testPartitioner().decorateKey(ByteBufferUtil.bytes(key));

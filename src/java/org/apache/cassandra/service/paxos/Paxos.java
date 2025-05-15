@@ -21,6 +21,7 @@ package org.apache.cassandra.service.paxos;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -39,6 +40,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.codahale.metrics.Meter;
+import org.apache.cassandra.db.IReadResponse;
+import org.apache.cassandra.db.IReadResponse.Kind;
+import org.apache.cassandra.db.ReadResponse;
 import org.apache.cassandra.exceptions.CasWriteTimeoutException;
 import org.apache.cassandra.exceptions.ExceptionCode;
 import org.apache.cassandra.gms.FailureDetector;
@@ -51,6 +55,7 @@ import org.apache.cassandra.locator.ReplicaLayout;
 import org.apache.cassandra.locator.ReplicaLayout.ForTokenWrite;
 import org.apache.cassandra.locator.ReplicaPlan.ForRead;
 import org.apache.cassandra.metrics.ClientRequestSizeMetrics;
+import org.apache.cassandra.net.Message;
 import org.apache.cassandra.schema.KeyspaceMetadata;
 import org.apache.cassandra.schema.SchemaConstants;
 import org.apache.cassandra.schema.TableMetadata;
@@ -90,6 +95,7 @@ import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.service.FailureRecordingCallback.AsMap;
 import org.apache.cassandra.service.paxos.Commit.Proposal;
 import org.apache.cassandra.service.paxos.cleanup.PaxosRepairState;
+import org.apache.cassandra.service.reads.tracked.TrackedDataResponse;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.service.reads.DataResolver;
 import org.apache.cassandra.service.reads.repair.NoopReadRepair;
@@ -106,6 +112,8 @@ import org.apache.cassandra.service.paxos.PaxosPrepare.FoundIncompleteAccepted;
 import org.apache.cassandra.service.paxos.PaxosPrepare.FoundIncompleteCommitted;
 import org.apache.cassandra.utils.NoSpamLogger;
 
+import static accord.utils.Invariants.checkState;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptyMap;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -339,7 +347,7 @@ public class Paxos
     /**
      * Encapsulates the peers we will talk to for this operation.
      */
-    static class Participants implements ForRead<EndpointsForToken, Participants>
+    public static class Participants implements ForRead<EndpointsForToken, Participants>
     {
         final Keyspace keyspace;
 
@@ -477,6 +485,11 @@ public class Paxos
         InetAddressAndPort voter(int i)
         {
             return electorateLive.endpoint(i);
+        }
+
+        Replica voterReplica(int i)
+        {
+            return electorateLive.get(i);
         }
 
         void assureSufficientLiveNodes(boolean isWrite) throws UnavailableException
@@ -1041,7 +1054,7 @@ public class Paxos
         boolean acceptEarlyReadPermission = !isWrite; // if we're reading, begin by assuming a read permission is sufficient
         Participants initialParticipants = Participants.get(query.metadata(), query.partitionKey(), consistencyForConsensus);
         initialParticipants.assureSufficientLiveNodes(isWrite);
-        PaxosPrepare preparing = prepare(minimumBallot, initialParticipants, query, isWrite, acceptEarlyReadPermission);
+        PaxosPrepare preparing = prepare(minimumBallot, initialParticipants, query, isWrite, acceptEarlyReadPermission, deadline);
         while (true)
         {
             // prepare
@@ -1056,7 +1069,7 @@ public class Paxos
                 {
                     FoundIncompleteCommitted incomplete = prepare.incompleteCommitted();
                     Tracing.trace("Repairing replicas that missed the most recent commit");
-                    retry = commitAndPrepare(incomplete.committed, incomplete.participants, query, isWrite, acceptEarlyReadPermission);
+                    retry = commitAndPrepare(incomplete.committed, incomplete.participants, query, isWrite, acceptEarlyReadPermission, deadline);
                     break;
                 }
                 case FOUND_INCOMPLETE_ACCEPTED:
@@ -1084,7 +1097,7 @@ public class Paxos
                             throw proposeResult.maybeFailure().markAndThrowAsTimeoutOrFailure(isWrite, consistencyForConsensus, failedAttemptsDueToContention);
 
                         case SUCCESS:
-                            retry = commitAndPrepare(repropose.agreed(), inProgress.participants, query, isWrite, acceptEarlyReadPermission);
+                            retry = commitAndPrepare(repropose.agreed(), inProgress.participants, query, isWrite, acceptEarlyReadPermission, deadline);
                             break retry;
 
                         case SUPERSEDED:
@@ -1101,7 +1114,7 @@ public class Paxos
                     // sleep a random amount to give the other proposer a chance to finish
                     if (!waitForContention(deadline, ++failedAttemptsDueToContention, query.metadata(), query.partitionKey(), consistencyForConsensus, isWrite ? WRITE : READ))
                         throw MaybeFailure.noResponses(prepare.participants).markAndThrowAsTimeoutOrFailure(true, consistencyForConsensus, failedAttemptsDueToContention);
-                    retry = prepare(prepare.retryWithAtLeast(), prepare.participants, query, isWrite, acceptEarlyReadPermission);
+                    retry = prepare(prepare.retryWithAtLeast(), prepare.participants, query, isWrite, acceptEarlyReadPermission, deadline);
                     break;
                 }
                 case PROMISED: isPromised = true;
@@ -1112,15 +1125,46 @@ public class Paxos
                     PaxosPrepare.Success success = prepare.success();
 
                     Supplier<Participants> plan = () -> success.participants;
-                    DataResolver<?, ?> resolver = new DataResolver<>(query, plan, NoopReadRepair.instance, requestTime);
-                    for (int i = 0 ; i < success.responses.size() ; ++i)
-                        resolver.preprocess(success.responses.get(i));
+                    List<Message<IReadResponse>> responses = success.responses;
 
-                    class WasRun implements Runnable { boolean v; public void run() { v = true; } }
-                    WasRun hadShortRead = new WasRun();
-                    PartitionIterator result = resolver.resolve(hadShortRead);
+                    // There should be only a single response from the coordinator that was selected to do the tracked read
+                    Boolean isTracked = responses.get(0).payload.kind().isTracked();
 
-                    if (!isPromised && hadShortRead.v)
+                    // Only enable read repair for PaxosV2 if mutation tracking and witnesses are enabled resulting in non-data responses
+                    PartitionIterator result = null;
+                    boolean hadShortRead = false;
+                    if (isTracked)
+                    {
+                        // Dummy responses are embedded in prepare response so Paxos can count responses like it does with
+                        // non-tracked reads
+                        for (Message<IReadResponse> response : responses)
+                        {
+                            if (response.payload.kind() == Kind.TRACKED_DATA)
+                            {
+                                result = ((TrackedDataResponse) response.payload).makeIterator(query);
+                                break;
+                            }
+                        }
+                        checkState(result != null, "Should have found a data response");
+                    }
+                    else
+                    {
+                        DataResolver<EndpointsForToken, Participants> resolver = new DataResolver<>(query, plan, NoopReadRepair.instance, requestTime);
+
+                        for (int i = 0 ; i < responses.size() ; ++i)
+                        {
+                            Message<IReadResponse> message = responses.get(i);
+                            resolver.preprocess(message.withPayload((ReadResponse)message.payload));
+                        }
+
+                        // SERIAL supports partition range reads which can result in short reads
+                        class WasRun implements Runnable { boolean v; public void run() { v = true; } }
+                        WasRun hadShortReadRunnable = new WasRun();
+                        result = resolver.resolve(hadShortReadRunnable);
+                        hadShortRead = hadShortReadRunnable.v;
+                    }
+
+                    if (!isPromised && hadShortRead)
                     {
                         // we need to propose an empty update to linearize our short read, but only had read success
                         // since we may continue to perform short reads, we ask our prepare not to accept an early
@@ -1130,7 +1174,7 @@ public class Paxos
                         break;
                     }
 
-                    return new BeginResult(success.ballot, success.participants, failedAttemptsDueToContention, result, !hadShortRead.v && success.isReadSafe, isPromised, success.supersededBy);
+                    return new BeginResult(success.ballot, success.participants, failedAttemptsDueToContention, result, !hadShortRead && success.isReadSafe, isPromised, success.supersededBy);
                 }
 
                 case MAYBE_FAILURE:
@@ -1139,7 +1183,7 @@ public class Paxos
                 case ELECTORATE_MISMATCH:
                     Participants participants = Participants.get(query.metadata(), query.partitionKey(), consistencyForConsensus);
                     participants.assureSufficientLiveNodes(isWrite);
-                    retry = prepare(participants, query, isWrite, acceptEarlyReadPermission);
+                    retry = prepare(participants, query, isWrite, acceptEarlyReadPermission, deadline);
                     break;
 
             }
@@ -1150,7 +1194,7 @@ public class Paxos
                 // sleep a random amount to give the other proposer a chance to finish
                 if (!waitForContention(deadline, ++failedAttemptsDueToContention, query.metadata(), query.partitionKey(), consistencyForConsensus, isWrite ? WRITE : READ))
                     throw MaybeFailure.noResponses(prepare.participants).markAndThrowAsTimeoutOrFailure(true, consistencyForConsensus, failedAttemptsDueToContention);
-                retry = prepare(prepare.retryWithAtLeast(), prepare.participants, query, isWrite, acceptEarlyReadPermission);
+                retry = prepare(prepare.retryWithAtLeast(), prepare.participants, query, isWrite, acceptEarlyReadPermission, deadline);
             }
 
             preparing = retry;
@@ -1311,7 +1355,7 @@ public class Paxos
 
     public static void setPaxosVariant(Config.PaxosVariant paxosVariant)
     {
-        Preconditions.checkNotNull(paxosVariant);
+        checkNotNull(paxosVariant);
         PAXOS_VARIANT = paxosVariant;
         DatabaseDescriptor.setPaxosVariant(paxosVariant);
     }
