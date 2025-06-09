@@ -198,8 +198,9 @@ public class ReadCommandVerbHandler implements IVerbHandler<ReadCommand>
                 Keyspace.open(command.metadata().keyspace).metric.outOfRangeTokenReads.inc();
                 throw InvalidRoutingException.forRangeRead(message.from(), range, metadata.epoch, message.payload);
             }
+            logger.info("Checking against local replica {}", maxTokenLocalReplica);
 
-
+            logger.info("Recieved command response type {}", command.responseType());
             // TODO: preexisting issue: we should change the whole range for transient-ness, not just the right token
             if (command.responseType() != ReadCommand.ResponseType.TRACKED_SUMMARY && maxTokenLocalReplica.isTransient())
             {

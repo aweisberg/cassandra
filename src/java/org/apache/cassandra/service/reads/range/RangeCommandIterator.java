@@ -245,7 +245,14 @@ public class RangeCommandIterator extends AbstractIterator<RowIterator> implemen
                     command = rangeCommand.copyAsSummaryQuery();
                 }
                 Message<ReadCommand> message = command.createMessage(false, requestTime);
+                logger.info("Sending command {} to {} for range {}, inclusive left {}, inclusive right {}", message.payload.responseType(), replica, rangeCommand.dataRange().keyRange(), rangeCommand.dataRange().keyRange().inclusiveLeft(), rangeCommand.dataRange().keyRange().inclusiveRight());
                 MessagingService.instance().sendWithCallback(message, replica.endpoint(), handler);
+                try
+                {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
             }
         }
         Preconditions.checkState(dataRequestSent);

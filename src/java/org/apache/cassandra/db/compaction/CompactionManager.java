@@ -1717,10 +1717,14 @@ public class CompactionManager implements CompactionManagerMBean, ICompactionMan
                 //as they should already be synchronized at other full replicas.
                 //So just don't scan the portion of the table containing the repaired transient ranges
                 Collection<Range<Token>> rangesToScan = ranges;
-                if (isRepaired)
-                {
+                // TODO (eventually): How will repair work with transient data going forward? Treat it like regular data?
+                // Should cleanup be allowd to drop unrepaired transient data? This creates a data resurrection risk
+                // If a data read is performed on a transient range at a transient replica they should refuse it, but if
+                // they didn't then they would return really stale data
+//                if (isRepaired)
+//                {
                     rangesToScan = Collections2.filter(ranges, range -> !transientRanges.contains(range));
-                }
+//                }
                 return sstable.getScanner(rangesToScan);
             }
 

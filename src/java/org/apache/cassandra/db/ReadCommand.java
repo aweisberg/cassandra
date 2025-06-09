@@ -1365,6 +1365,15 @@ public abstract class ReadCommand extends AbstractReadQuery
             ResponseType responseType = command.responseType();
             Preconditions.checkArgument(version >= MessagingService.VERSION_52 || !responseType.isTracked(),
                                         "Can't serialize tracked read commands for version " + version);
+            int flags = digestFlag(responseType.isSummary())
+                    | indexFlag(null != command.indexQueryPlan())
+                    | acceptsTransientFlag(false) // Deprecated flag, could be reused?
+                    | needsReconciliationFlag(command.rowFilter().needsReconciliation())
+                    | isTrackedFlag(responseType.isTracked());
+
+            ResponseType responseTypeRoundtripped = ResponseType.fromFlags(isDigest(flags), isTracked(flags));
+            logger.info("Response type is {} roundtripped is {} flags is {}", responseType, responseTypeRoundtripped, flags);
+
             out.writeByte(
             digestFlag(responseType.isSummary())
             | indexFlag(null != command.indexQueryPlan())
@@ -1396,7 +1405,10 @@ public abstract class ReadCommand extends AbstractReadQuery
         {
             Kind kind = Kind.values()[in.readByte()];
             int flags = in.readByte();
+            logger.info("flags received is {}", flags);
             ResponseType responseType = ResponseType.fromFlags(isDigest(flags), isTracked(flags));
+            logger.info("Response type received is {} isDigest {} isTracked {}", responseType, isDigest(flags), isTracked(flags));
+
             // Ignored flag, not used, could be reused?
             //boolean acceptsTransient = acceptsTransient(flags);
             // Shouldn't happen or it's a user error (see comment above) but

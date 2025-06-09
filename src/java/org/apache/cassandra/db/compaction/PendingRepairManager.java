@@ -525,6 +525,7 @@ class PendingRepairManager
                 transaction.abort();
                 if (completed)
                 {
+                    // TODO why doesn't this remove the session?
                     removeSessionIfEmpty(sessionID);
                 }
             }

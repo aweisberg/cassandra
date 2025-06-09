@@ -78,7 +78,7 @@ public class MutationTrackingTest extends TestBaseImpl
         {
 
             cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = " +
-                                              "{'class': 'SimpleStrategy', 'replication_factor': 3} " +
+                                              "; " +
                                               "AND replication_type='tracked';"));
 
             cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (k int primary key, v int);"));
@@ -326,7 +326,7 @@ public class MutationTrackingTest extends TestBaseImpl
             Object[][] result = cluster.coordinator(1).execute(singlePartitionSelectCQL, ConsistencyLevel.ALL);
             assertEquals(1, result.length);
             String partitionRangeSelectCQL = withKeyspace("SELECT * FROM %s.tbl");
-            result = cluster.coordinator(1).execute(partitionRangeSelectCQL, ConsistencyLevel.ALL);
+            result = cluster.coordinator(1).execute(partitionRangeSelectCQL, ConsistencyLevel.ONE);
             assertEquals(1, result.length);
 
             // Read time reconciliation should not propagate the row to the witness node

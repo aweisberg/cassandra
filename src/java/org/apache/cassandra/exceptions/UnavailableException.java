@@ -36,7 +36,7 @@ public class UnavailableException extends RequestExecutionException
         if (required > alive)
             return new UnavailableException(String.format("Cannot achieve consistency level %s. Required %s but only %s alive.", consistency, required, alive),
                                             consistency, required, alive);
-        assert requiredFull < aliveFull;
+        assert requiredFull < aliveFull : consistency.name();
         return new UnavailableException("Insufficient full replicas", consistency, required, alive);
     }
 
