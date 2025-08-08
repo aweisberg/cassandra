@@ -22,8 +22,11 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.inject.Inject;
+
+import com.google.common.base.Throwables;
 
 import org.apache.cassandra.config.Config;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
@@ -37,7 +40,6 @@ import picocli.CommandLine.Option;
 
 @Command(name = "paxos",
          description = "Run a paxos simulation",
-         helpCommand = true,
          subcommands = { CommandLine.HelpCommand.class,
                          PaxosSimulationRunner.Run.class,
                          PaxosSimulationRunner.VersionCommand.class,
@@ -211,6 +213,18 @@ public class PaxosSimulationRunner extends SimulationRunner implements Runnable
         builder.unique(uniqueNum.getAndIncrement());
 
         CommandLine commandLine = new CommandLine(PaxosSimulationRunner.class, new InjectPaxosClusterSimulationFactory(builder));
+        AtomicReference<Exception> exceptionHolder = new AtomicReference<>();
+        commandLine.setExecutionExceptionHandler((exception, cl, parseResult) -> {
+            exceptionHolder.set(exception);
+            return -1;
+        });
         commandLine.execute(args);
+        Exception ex = exceptionHolder.get();
+        if (ex != null)
+        {
+            if (ex instanceof RuntimeException)
+                throw (RuntimeException) ex;
+            throw new RuntimeException(ex);
+        }
     }
 }

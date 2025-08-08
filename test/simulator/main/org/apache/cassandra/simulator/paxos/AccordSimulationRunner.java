@@ -33,7 +33,6 @@ import picocli.CommandLine.Command;
 
 @Command(name = "accord",
          description = "Run an Accord simulation",
-         helpCommand = true,
          subcommands = { CommandLine.HelpCommand.class,
                          AccordSimulationRunner.Run.class,
                          AccordSimulationRunner.Record.class,
