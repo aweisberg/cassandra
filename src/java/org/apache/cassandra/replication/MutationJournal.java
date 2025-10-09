@@ -355,7 +355,7 @@ public class MutationJournal
         public FlushMode flushMode()
         {
             Config.CommitLogSync mode = DatabaseDescriptor.getCommitLogSync();
-            switch (DatabaseDescriptor.getCommitLogSync())
+            switch (mode)
             {
                 case batch:
                     return FlushMode.BATCH;
