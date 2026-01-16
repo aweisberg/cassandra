@@ -740,14 +740,41 @@ public final class FileUtils
         }
     }
 
+    /**
+     * Check if Direct I/O is supported for the given file's filesystem.
+     * Note: blockSize() > 0 check is intentional. Some filesystems (virtual/in-memory/network)
+     * may return 0 for block size, which we treat as "Direct I/O not supported".
+     */
+    public static boolean isDirectIOSupported(File file)
+    {
+        try
+        {
+            return blockSize(file) > 0;
+        }
+        catch (Exception e)
+        {
+            return false;
+        }
+    }
+
+    public static int getFileBlockSize(File file)
+    {
+        try
+        {
+            return blockSize(file);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException("Failed to get file block size in " + file, e);
+        }
+    }
+
     public static int getBlockSize(File directory)
     {
         File f = FileUtils.createTempFile("block-size-test", ".tmp", directory);
         try
         {
-            long bs = Files.getFileStore(f.toPath()).getBlockSize();
-            assert bs >= 0 && bs <= Integer.MAX_VALUE;
-            return (int) bs;
+            return blockSize(f);
         }
         catch (IOException e)
         {
@@ -757,6 +784,13 @@ public final class FileUtils
         {
             f.tryDelete();
         }
+    }
+
+    private static int blockSize(File file) throws IOException
+    {
+        long bs = Files.getFileStore(file.toPath()).getBlockSize();
+        assert bs >= 0 && bs <= Integer.MAX_VALUE;
+        return (int) bs;
     }
 
     public static class DuplicateHardlinkException extends RuntimeException

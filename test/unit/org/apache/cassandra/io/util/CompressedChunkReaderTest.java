@@ -18,114 +18,32 @@
 
 package org.apache.cassandra.io.util;
 
-import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import org.assertj.core.api.Assertions;
-import org.junit.Assert;
-import org.junit.Test;
-
 import accord.utils.Gen;
 import accord.utils.Gens;
 
-import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.db.ClusteringComparator;
-import org.apache.cassandra.io.compress.CompressedSequentialWriter;
-import org.apache.cassandra.io.compress.CompressionMetadata;
-import org.apache.cassandra.io.filesystem.ListenableFileSystem;
-import org.apache.cassandra.io.sstable.metadata.MetadataCollector;
 import org.apache.cassandra.schema.CompressionParams;
-import org.apache.cassandra.utils.memory.MemoryUtil;
 
-import static accord.utils.Property.qt;
-
-public class CompressedChunkReaderTest
+public abstract class CompressedChunkReaderTest
 {
-    static
+
+    static Gen<SequentialWriterOption> writerOptions()
     {
-        DatabaseDescriptor.clientInitialization();
+        Gen<Integer> bufferSizes = Gens.constant(1 << 10);
+        return rs -> writerOption(bufferSizes.next(rs));
     }
 
-    @Test
-    public void scanReaderReadsLessThanRAReader()
+    static SequentialWriterOption writerOption(int bufferSize)
     {
-        var optionGen = options();
-        var paramsGen = params();
-        var lengthGen = Gens.longs().between(1, 1 << 16);
-        qt().withSeed(-1871070464864118891L).forAll(Gens.random(), optionGen, paramsGen).check((rs, option, params) -> {
-            ListenableFileSystem fs = FileSystems.newGlobalInMemoryFileSystem();
-
-            File f = new File("/file.db");
-            AtomicInteger reads = new AtomicInteger();
-            fs.onPostRead(f.path::equals, (p, c, pos, dst, r) -> {
-                reads.incrementAndGet();
-            });
-            long length = lengthGen.nextLong(rs);
-            CompressionMetadata metadata1, metadata2;
-            try (CompressedSequentialWriter writer = new CompressedSequentialWriter(f, new File("/file.offset"), new File("/file.digest"), option, params, new MetadataCollector(new ClusteringComparator())))
-            {
-                for (long i = 0; i < length; i++)
-                    writer.writeLong(i);
-
-                writer.sync();
-                metadata1 = writer.open(0);
-                metadata2 = writer.open(0);
-            }
-
-            doReads(f, metadata1, length, true);
-            int scanReads = reads.getAndSet(0);
-
-            doReads(f, metadata2, length, false);
-            int raReads = reads.getAndSet(0);
-            
-            if (Files.size(f.toPath()) > DatabaseDescriptor.getCompressedReadAheadBufferSize())
-                Assert.assertTrue(scanReads < raReads);
-        });
-    }
-
-    private void doReads(File f, CompressionMetadata metadata, long length, boolean useReadAhead)
-    {
-        ByteBuffer buffer = ByteBuffer.allocateDirect(metadata.chunkLength());
-
-        try (ChannelProxy channel = new ChannelProxy(f);
-             CompressedChunkReader reader = new CompressedChunkReader.Standard(channel, metadata, () -> 1.1);
-             metadata)
-        {
-            if (useReadAhead)
-                reader.forScan();
-
-            long offset = 0;
-            long maxOffset = length * Long.BYTES;
-            do
-            {
-                reader.readChunk(offset, buffer);
-                for (long expected = offset / Long.BYTES; buffer.hasRemaining(); expected++)
-                    Assertions.assertThat(buffer.getLong()).isEqualTo(expected);
-
-                offset += metadata.chunkLength();
-            }
-            while (offset < maxOffset);
-        }
-        finally
-        {
-            MemoryUtil.clean(buffer);
-        }}
-
-    private static Gen<SequentialWriterOption> options()
-    {
-        Gen<Integer> bufferSizes = Gens.constant(1 << 10); //.pickInt(1 << 4, 1 << 10, 1 << 15);
-        return rs -> SequentialWriterOption.newBuilder()
-                                           .finishOnClose(false)
-                                           .bufferSize(bufferSizes.next(rs))
-                                           .build();
+        return SequentialWriterOption.newBuilder()
+                                     .finishOnClose(false)
+                                     .bufferSize(bufferSize)
+                                     .build();
     }
 
     private enum CompressionKind { Noop, Snappy, Deflate, Lz4, Zstd }
 
-    private static Gen<CompressionParams> params()
+    static Gen<CompressionParams> compressionParams(Gen<Integer> chunkLengths)
     {
-        Gen<Integer> chunkLengths = Gens.constant(CompressionParams.DEFAULT_CHUNK_LENGTH);
         Gen<Double> compressionRatio = Gens.pick(1.1D);
         return rs -> {
             CompressionKind kind = rs.pick(CompressionKind.values());

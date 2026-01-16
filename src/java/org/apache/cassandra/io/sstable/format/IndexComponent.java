@@ -30,7 +30,7 @@ public class IndexComponent
     public static FileHandle.Builder fileBuilder(File file, IOOptions ioOptions, ChunkCache chunkCache)
     {
         return new FileHandle.Builder(file).withChunkCache(chunkCache)
-                                           .mmapped(ioOptions.indexDiskAccessMode);
+                                           .withDiskAccessMode(ioOptions.indexDiskAccessMode);
     }
 
     public static FileHandle.Builder fileBuilder(Component component, SSTable ssTable)
