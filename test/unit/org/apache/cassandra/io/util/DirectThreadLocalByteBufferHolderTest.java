@@ -17,150 +17,85 @@
  */
 package org.apache.cassandra.io.util;
 
-import java.lang.management.BufferPoolMXBean;
-import java.lang.management.ManagementFactory;
 import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
 
 import org.junit.Assert;
 import org.junit.Test;
 
 public class DirectThreadLocalByteBufferHolderTest
 {
-
     @Test
     public void testGetBuffer()
     {
         int blockSize = 4096;
-        int alignedBufferSize = blockSize * 4;
-
-        try (DirectThreadLocalByteBufferHolder holder = new DirectThreadLocalByteBufferHolder(blockSize))
-        {
-            // Initial buffer creation
-            ByteBuffer byteBuffer = holder.getBuffer(alignedBufferSize);
-
-            Assert.assertEquals(alignedBufferSize, byteBuffer.limit());
-            Assert.assertEquals(0, byteBuffer.position());
-            Assert.assertEquals(byteBuffer, holder.local.get());
-            byteBuffer.put(new byte[alignedBufferSize]);
-
-            // Re-use buffer of same size
-            byteBuffer = holder.getBuffer(alignedBufferSize);
-            Assert.assertEquals(alignedBufferSize, byteBuffer.limit());
-            Assert.assertEquals(0, byteBuffer.position());
-            byteBuffer.put(new byte[alignedBufferSize]);
-
-            // Get buffer of a different, greater, non-aligned size
-            alignedBufferSize += alignedBufferSize + blockSize;
-            int nonAlignedBufferSize = alignedBufferSize - (blockSize / 2);
-
-            ByteBuffer oldBuffer = byteBuffer;
-            byteBuffer = holder.getBuffer(nonAlignedBufferSize);
-            Assert.assertEquals(alignedBufferSize, byteBuffer.limit());
-            Assert.assertEquals(0, byteBuffer.position());
-            Assert.assertNotEquals(oldBuffer, holder.local.get());
-            Assert.assertEquals(byteBuffer, holder.local.get());
-        }
-    }
-
-    @Test
-    public void testClose()
-    {
-        int blockSize = 4096;
-        int bufferSize = blockSize * 2;
+        int bufferSize = blockSize * 4;
 
         DirectThreadLocalByteBufferHolder holder = new DirectThreadLocalByteBufferHolder(blockSize);
 
-        // Allocate a buffer
+        // Initial buffer creation
         ByteBuffer buffer = holder.getBuffer(bufferSize);
-        Assert.assertNotNull(buffer);
         Assert.assertEquals(bufferSize, buffer.limit());
-        Assert.assertNotNull(holder.local.getIfExists());
+        Assert.assertEquals(0, buffer.position());
+        buffer.put(new byte[bufferSize]);
 
-        // Close should clean up and remove the ThreadLocal
-        holder.close();
-        Assert.assertNull("ThreadLocal should be removed after close", holder.local.getIfExists());
-
-        // Multiple close() calls should be safe
-        holder.close();
-        Assert.assertNull(holder.local.getIfExists());
+        // Reuse same buffer
+        ByteBuffer sameBuffer = holder.getBuffer(bufferSize);
+        Assert.assertSame(buffer, sameBuffer);
+        Assert.assertEquals(0, sameBuffer.position());
     }
 
     @Test
-    public void testCloseWithoutAllocation()
-    {
-        DirectThreadLocalByteBufferHolder holder = new DirectThreadLocalByteBufferHolder(4096);
-
-        // Close without ever allocating should be safe
-        holder.close();
-        Assert.assertNull("ThreadLocal should not exist if never used", holder.local.getIfExists());
-    }
-
-    @Test
-    public void testCloseFreesNativeMemory() throws Exception
+    public void testBufferGrows()
     {
         int blockSize = 4096;
-        // Use a large buffer size to make the memory change measurable
-        int bufferSize = 1024 * 1024; // 1MB
-        int numThreads = 4;
-
-        BufferPoolMXBean directPool = getDirectBufferPool();
-
-        long memoryBefore = directPool.getMemoryUsed();
-
         DirectThreadLocalByteBufferHolder holder = new DirectThreadLocalByteBufferHolder(blockSize);
-        CountDownLatch allAllocated = new CountDownLatch(numThreads);
-        CountDownLatch canExit = new CountDownLatch(1);
 
-        Thread[] threads = new Thread[numThreads];
-        for (int i = 0; i < numThreads; i++)
-        {
-            threads[i] = new Thread(() -> {
-                holder.getBuffer(bufferSize);
-                allAllocated.countDown();
-                try
-                {
-                    canExit.await();
-                }
-                catch (InterruptedException e)
-                {
-                    Thread.currentThread().interrupt();
-                }
-            });
-            threads[i].start();
-        }
+        ByteBuffer small = holder.getBuffer(blockSize);
+        ByteBuffer large = holder.getBuffer(blockSize * 4);
 
-        allAllocated.await();
-
-        long memoryAfterAlloc = directPool.getMemoryUsed();
-        // Each aligned buffer is bufferSize + blockSize (for alignment padding)
-        long expectedIncrease = (long) numThreads * (bufferSize + blockSize);
-        Assert.assertTrue("Memory should increase by ~" + expectedIncrease + " after allocation " +
-                          "(before=" + memoryBefore + ", after=" + memoryAfterAlloc + ")",
-                          memoryAfterAlloc >= memoryBefore + expectedIncrease * 0.9);
-
-        holder.close();
-
-        long memoryAfterClose = directPool.getMemoryUsed();
-        Assert.assertTrue("Memory should decrease after close (before=" + memoryAfterAlloc +
-                          ", after=" + memoryAfterClose + ", expected decrease ~" + expectedIncrease + ")",
-                          memoryAfterClose <= memoryAfterAlloc - expectedIncrease * 0.9);
-
-        canExit.countDown();
-        for (Thread t : threads)
-            t.join();
+        Assert.assertNotSame(small, large);
+        Assert.assertEquals(blockSize * 4, large.capacity());
     }
 
-    private static BufferPoolMXBean getDirectBufferPool()
+    @Test
+    public void testAlignmentRoundsUp()
     {
-        List<BufferPoolMXBean> pools = ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class);
-        for (BufferPoolMXBean pool : pools)
-        {
-            if (pool.getName().equals("direct"))
-                return pool;
-        }
-        throw new IllegalStateException("Direct buffer pool not found");
+        int blockSize = 4096;
+        DirectThreadLocalByteBufferHolder holder = new DirectThreadLocalByteBufferHolder(blockSize);
+
+        // Request non-aligned size
+        ByteBuffer buffer = holder.getBuffer(blockSize + 100);
+
+        // Should be rounded up to next block boundary
+        Assert.assertEquals(blockSize * 2, buffer.capacity());
+        Assert.assertEquals(blockSize * 2, buffer.limit());
+    }
+
+    @Test
+    public void testSharedAcrossHolders()
+    {
+        int blockSize = 4096;
+
+        DirectThreadLocalByteBufferHolder holder1 = new DirectThreadLocalByteBufferHolder(blockSize);
+        ByteBuffer buffer1 = holder1.getBuffer(blockSize);
+
+        DirectThreadLocalByteBufferHolder holder2 = new DirectThreadLocalByteBufferHolder(blockSize);
+        ByteBuffer buffer2 = holder2.getBuffer(blockSize);
+
+        // Same block size = same underlying thread-local = same buffer
+        Assert.assertSame(buffer1, buffer2);
+    }
+
+    @Test
+    public void testDifferentBlockSizesAreSeparate()
+    {
+        DirectThreadLocalByteBufferHolder holder4k = new DirectThreadLocalByteBufferHolder(4096);
+        DirectThreadLocalByteBufferHolder holder8k = new DirectThreadLocalByteBufferHolder(8192);
+
+        ByteBuffer buffer4k = holder4k.getBuffer(4096);
+        ByteBuffer buffer8k = holder8k.getBuffer(8192);
+
+        Assert.assertNotSame(buffer4k, buffer8k);
     }
 
 }

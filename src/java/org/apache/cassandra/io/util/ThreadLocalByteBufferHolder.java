@@ -83,10 +83,4 @@ public final class ThreadLocalByteBufferHolder implements ByteBufferHolder
         buffer.clear().limit(size);
         return buffer;
     }
-
-    @Override
-    public void close()
-    {
-        // No-op: thread-local buffer is shared and will be reused
-    }
 }

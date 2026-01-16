@@ -29,29 +29,31 @@ import org.apache.cassandra.utils.memory.MemoryUtil;
 import io.netty.util.concurrent.FastThreadLocal;
 import sun.nio.ch.DirectBuffer;
 
+/**
+ * Thread-local holder for block-aligned direct ByteBuffers used in Direct I/O operations.
+ * <p>
+ * Buffers are shared across all holders with the same block size and reused per-thread,
+ * growing as needed. This mirrors {@link ThreadLocalByteBufferHolder}'s design.
+ */
 public final class DirectThreadLocalByteBufferHolder implements ByteBufferHolder
 {
-    /**
-     * Tracks all buffers allocated by this holder across all threads. Key is the thread ID, value is the buffer
-     * allocated for that thread. This allows close() to clean up all buffers regardless of which thread calls it.
-     */
-    final ConcurrentHashMap<Long, ByteBuffer> allocatedBuffers = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, FastThreadLocal<ByteBuffer>> buffersByBlockSize = new ConcurrentHashMap<>();
 
-    final FastThreadLocal<ByteBuffer> local = new FastThreadLocal<>();
-
+    private final FastThreadLocal<ByteBuffer> threadLocal;
     private final int blockSize;
 
     public DirectThreadLocalByteBufferHolder(int blockSize)
     {
         this.blockSize = blockSize;
+        this.threadLocal = buffersByBlockSize.computeIfAbsent(blockSize, k -> new FastThreadLocal<>());
     }
 
     @Override
     public ByteBuffer getBuffer(int size)
     {
         int alignedSize = BitUtil.align(size, blockSize);
+        ByteBuffer buffer = threadLocal.get();
 
-        ByteBuffer buffer = local.get();
         if (buffer != null && buffer.capacity() >= alignedSize)
         {
             buffer.clear().limit(alignedSize);
@@ -62,25 +64,16 @@ public final class DirectThreadLocalByteBufferHolder implements ByteBufferHolder
             cleanBuffer(buffer);
 
         buffer = BufferUtil.allocateDirectAligned(alignedSize, blockSize);
-        local.set(buffer);
-        allocatedBuffers.put(Thread.currentThread().getId(), buffer);
+        threadLocal.set(buffer);
         return buffer;
-    }
-
-    @Override
-    public void close()
-    {
-        for (ByteBuffer buffer : allocatedBuffers.values())
-            cleanBuffer(buffer);
-
-        allocatedBuffers.clear();
-        local.remove();
     }
 
     private static void cleanBuffer(ByteBuffer buffer)
     {
-        // Aligned buffers from BufferUtil.allocateDirectAligned are slices, so we need to clean the original buffer
-        MemoryUtil.clean((ByteBuffer) ((DirectBuffer) buffer).attachment());
+        // Aligned buffers are slices; clean the backing buffer (attachment)
+        DirectBuffer db = (DirectBuffer) buffer;
+        ByteBuffer attachment = (ByteBuffer) db.attachment();
+        MemoryUtil.clean(attachment != null ? attachment : buffer);
     }
 
 }

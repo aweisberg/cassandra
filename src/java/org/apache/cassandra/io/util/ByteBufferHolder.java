@@ -19,12 +19,10 @@ package org.apache.cassandra.io.util;
 
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.utils.Closeable;
-
 /**
- * Holder for reusable ByteBuffers. Implementations must properly clean up resources in close().
+ * Holder for reusable thread-local ByteBuffers.
  */
-public interface ByteBufferHolder extends Closeable
+public interface ByteBufferHolder
 {
     ByteBuffer getBuffer(int size);
 }
