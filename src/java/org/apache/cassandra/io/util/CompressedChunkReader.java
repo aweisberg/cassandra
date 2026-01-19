@@ -115,7 +115,9 @@ public abstract class CompressedChunkReader extends AbstractReaderFileProxy impl
 
         }
 
-
+        /**
+         * The returned buffer is only valid until the next call to read(). Callers must consume the data immediately.
+         */
         ByteBuffer read(CompressionMetadata.Chunk chunk, boolean shouldCheckCrc) throws CorruptBlockException;
     }
 
@@ -422,6 +424,7 @@ public abstract class CompressedChunkReader extends AbstractReaderFileProxy impl
                 }
                 else
                 {
+                    // Read directly into destination buffer for zero-copy uncompressed path
                     uncompressed.position(0).limit(chunk.length);
                     if (channel.read(uncompressed, chunk.offset) != chunk.length)
                         throw new CorruptBlockException(channel.filePath(), chunk);

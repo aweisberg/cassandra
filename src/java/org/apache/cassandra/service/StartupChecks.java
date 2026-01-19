@@ -604,7 +604,7 @@ public class StartupChecks
     public static final StartupCheck checkDirectIOSupport = new StartupCheck()
     {
         @Override
-        public void execute(StartupChecksOptions options)
+        public void execute(StartupChecksOptions options) throws StartupException
         {
             if (options.isDisabled(getStartupCheckType()))
                 return;
@@ -617,11 +617,13 @@ public class StartupChecks
 
             if (!unsupportedLocations.isEmpty())
             {
-                logger.warn("Direct I/O is configured for compaction reads (compaction_read_disk_access_mode=direct), " +
-                            "but the following data directories do not appear to support Direct I/O: {}. " +
-                            "Compaction will fall back to buffered I/O for SSTables in these locations. " +
-                            "This may occur on network filesystems (NFS, CIFS) or virtual/in-memory filesystems.",
-                            unsupportedLocations);
+                throw new StartupException(StartupException.ERR_WRONG_DISK_STATE,
+                                           String.format("Direct I/O is configured for compaction reads (compaction_read_disk_access_mode=direct), " +
+                                                         "but the following data directories do not support Direct I/O: %s. " +
+                                                         "Either change compaction_read_disk_access_mode to 'standard' in cassandra.yaml, " +
+                                                         "or ensure all data directories are on filesystems that support Direct I/O. " +
+                                                         "Network filesystems (NFS, CIFS) and some virtual filesystems do not support Direct I/O.",
+                                                         unsupportedLocations));
             }
         }
     };
@@ -637,25 +639,8 @@ public class StartupChecks
             if (!dir.exists())
                 continue; // Directory doesn't exist yet, skip
 
-            File testFile = null;
-            try
-            {
-                testFile = FileUtils.createTempFile("direct-io-check", ".tmp", dir);
-                if (!FileUtils.isDirectIOSupported(testFile))
-                {
-                    unsupportedLocations.add(dataDir);
-                }
-            }
-            catch (Exception e)
-            {
-                logger.debug("Failed to check Direct I/O support for directory {}: {}", dataDir, e.getMessage());
+            if (!FileUtils.isDirectIOSupported(dir))
                 unsupportedLocations.add(dataDir);
-            }
-            finally
-            {
-                if (testFile != null)
-                    testFile.tryDelete();
-            }
         }
 
         return unsupportedLocations;

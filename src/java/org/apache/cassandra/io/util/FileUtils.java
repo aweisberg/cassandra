@@ -47,6 +47,7 @@ import java.util.stream.Stream;
 
 import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.RateLimiter;
+import com.sun.nio.file.ExtendedOpenOption;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -740,20 +741,33 @@ public final class FileUtils
         }
     }
 
-    /**
-     * Check if Direct I/O is supported for the given file's filesystem.
-     * Note: blockSize() > 0 check is intentional. Some filesystems (virtual/in-memory/network)
-     * may return 0 for block size, which we treat as "Direct I/O not supported".
-     */
     public static boolean isDirectIOSupported(File file)
     {
+        File testFile = null;
         try
         {
-            return blockSize(file) > 0;
+            File dir = file.isDirectory() ? file : file.parent();
+            testFile = createTempFile("direct-io-test", ".tmp", dir);
+
+            // Direct IO requires knowing the block size for buffer alignment
+            if (blockSize(testFile) <= 0)
+                return false;
+
+            try (FileChannel channel = FileChannel.open(testFile.toPath(),
+                                                        StandardOpenOption.READ,
+                                                        ExtendedOpenOption.DIRECT))
+            {
+                return true;
+            }
         }
         catch (Exception e)
         {
             return false;
+        }
+        finally
+        {
+            if (testFile != null)
+                testFile.tryDelete();
         }
     }
 

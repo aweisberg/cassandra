@@ -1780,7 +1780,7 @@ public class DatabaseDescriptor
 
                 File commitLogLocationDir = new File(commitLogLocation);
                 PathUtils.createDirectoriesIfNotExists(commitLogLocationDir.toPath());
-                directIOSupported = FileUtils.getBlockSize(commitLogLocationDir) > 0;
+                directIOSupported = FileUtils.isDirectIOSupported(commitLogLocationDir);
             }
             catch (IOError | ConfigurationException ex)
             {
