@@ -458,16 +458,18 @@ public class FileHandle extends SharedCloseableImpl
             {
                 case mmap:
                 case standard:
+                case auto:
+                case legacy:
+                case mmap_index_only:
+                    // For mmap and standard, BUFFERED is the correct mode.
+                    // For auto/legacy/mmap_index_only, these are meta-modes that should normally be resolved
+                    // during DatabaseDescriptor initialization. In client/tool mode where full initialization
+                    // didn't occur, BUFFERED (standard) is the safe default.
                     return ChannelProxy.IOMode.BUFFERED;
                 case direct:
                     return ChannelProxy.IOMode.DIRECT;
                 default:
-                    // By the time this code is reached, 'auto', 'legacy' and 'mmap_index_only' modes should have been
-                    // resolved into one of the specific modes above. Reaching this default block indicates a logic
-                    // error in the configuration startup code.
-                    String expectedModes = String.format("[%s, %s, %s]", DiskAccessMode.mmap, DiskAccessMode.standard, DiskAccessMode.direct);
-                    throw new IllegalStateException(String.format("Unexpected or unresolved diskAccessMode '%s'. Expected one of %s.",
-                                                                  diskAccessMode, expectedModes));
+                    throw new AssertionError("Unhandled diskAccessMode: " + diskAccessMode);
             }
         }
 

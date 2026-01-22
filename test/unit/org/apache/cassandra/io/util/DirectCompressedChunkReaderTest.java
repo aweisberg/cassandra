@@ -55,7 +55,7 @@ import static accord.utils.Property.qt;
 import static org.apache.cassandra.config.CassandraRelevantProperties.JAVA_IO_TMPDIR;
 import static org.apache.cassandra.schema.CompressionParams.DEFAULT_CHUNK_LENGTH;
 
-public class DirectCompressedChunkReaderTest extends CompressedChunkReaderTest
+public class DirectCompressedChunkReaderTest extends CompressedChunkReaderTestBase
 {
     private static final int CHECKSUM_LENGTH = Integer.BYTES; // CRC32 checksum size
 

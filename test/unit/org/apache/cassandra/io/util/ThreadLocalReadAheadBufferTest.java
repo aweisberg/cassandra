@@ -95,9 +95,9 @@ public class ThreadLocalReadAheadBufferTest implements WithQuickTheories
 
     protected void testReads(InputData propertyInputs)
     {
-        try (ChannelProxy channel = new ChannelProxy(propertyInputs.file))
+        try (ChannelProxy channel = new ChannelProxy(propertyInputs.file);
+             ThreadLocalReadAheadBuffer tlrab = new ThreadLocalReadAheadBuffer(channel, new DataStorageSpec.IntKibibytesBound("256KiB").toBytes(), BufferType.OFF_HEAP); )
         {
-            ThreadLocalReadAheadBuffer tlrab = new ThreadLocalReadAheadBuffer(channel, new DataStorageSpec.IntKibibytesBound("256KiB").toBytes(), BufferType.OFF_HEAP);
             for (Pair<Long, Integer> read : propertyInputs.positionsAndLengths)
             {
                 testRead(read, channel, tlrab);

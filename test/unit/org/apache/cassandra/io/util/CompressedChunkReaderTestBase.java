@@ -23,7 +23,7 @@ import accord.utils.Gens;
 
 import org.apache.cassandra.schema.CompressionParams;
 
-public abstract class CompressedChunkReaderTest
+public abstract class CompressedChunkReaderTestBase
 {
 
     static Gen<SequentialWriterOption> writerOptions()

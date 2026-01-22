@@ -39,7 +39,7 @@ import org.apache.cassandra.utils.memory.MemoryUtil;
 
 import static accord.utils.Property.qt;
 
-public class StandardCompressedChunkReaderTest extends CompressedChunkReaderTest
+public class StandardCompressedChunkReaderTest extends CompressedChunkReaderTestBase
 {
     static
     {
