@@ -66,22 +66,13 @@ public abstract class SharedClusterTestBase extends TestBaseImpl
     }
 
     /**
-     * Tears down keyspace and cluster. Called once per test class.
+     * Tears down cluster. Called once per test class.
      */
     @AfterClass
     public static void tearDownClass()
     {
         if (SHARED_CLUSTER != null)
         {
-            try
-            {
-                // Drop the test keyspace
-                SHARED_CLUSTER.schemaChange("DROP KEYSPACE IF EXISTS " + KEYSPACE);
-            }
-            catch (Exception e)
-            {
-                // Ignore errors during cleanup
-            }
             SHARED_CLUSTER.close();
             SHARED_CLUSTER = null;
         }
