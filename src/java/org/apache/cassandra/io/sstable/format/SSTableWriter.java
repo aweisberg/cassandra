@@ -370,7 +370,10 @@ public abstract class SSTableWriter extends SSTable implements Transactional
             if (!inMigrationPendingRange)
             {
                 Preconditions.checkState(Objects.equals(pendingRepair, ActiveRepairService.NO_PENDING_REPAIR));
-                if (MutationTrackingService.instance().isDurablyReconciled(coordinatorLogOffsets))
+                // isDurablyReconciled iterates the offsets, so empty ones report reconciled without evidence
+                if (coordinatorLogOffsets.isEmpty())
+                    logger.warn("Not marking tracked SSTable {} as reconciled, it carries no coordinator log offsets", descriptor);
+                else if (MutationTrackingService.instance().isDurablyReconciled(coordinatorLogOffsets))
                 {
                     repairedAt = Clock.Global.currentTimeMillis();
                     logger.debug("Marking SSTable {} as reconciled with repairedAt {}", descriptor, repairedAt);
