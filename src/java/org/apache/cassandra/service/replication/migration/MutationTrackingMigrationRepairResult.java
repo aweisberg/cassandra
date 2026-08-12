@@ -33,6 +33,8 @@ public class MutationTrackingMigrationRepairResult
         new MutationTrackingMigrationRepairResult(Epoch.EMPTY, false, "dead nodes were excluded from the repair");
     private static final MutationTrackingMigrationRepairResult PREVIEW =
         new MutationTrackingMigrationRepairResult(Epoch.EMPTY, false, "the repair was a preview");
+    private static final MutationTrackingMigrationRepairResult NOT_INCREMENTAL =
+        new MutationTrackingMigrationRepairResult(Epoch.EMPTY, false, "it was a full repair and only incremental repair can migrate ranges");
 
     public final Epoch minEpoch;
     public final boolean eligible;
@@ -48,10 +50,16 @@ public class MutationTrackingMigrationRepairResult
         this.ineligibleReason = ineligibleReason;
     }
 
-    public static MutationTrackingMigrationRepairResult fromRepair(Epoch minEpoch, boolean deadNodesExcluded, boolean isPreview)
+    /**
+     * Only an incremental repair may advance a migration. {@link org.apache.cassandra.repair.RepairCoordinator#create}
+     * selects the mutation tracking path only when the repair is incremental, so a full repair never marks the data
+     * it repaired as repaired.
+     */
+    public static MutationTrackingMigrationRepairResult fromRepair(Epoch minEpoch, boolean deadNodesExcluded, boolean isPreview, boolean isIncremental)
     {
         if (deadNodesExcluded) return DEAD_NODES_EXCLUDED;
         if (isPreview) return PREVIEW;
+        if (!isIncremental) return NOT_INCREMENTAL;
         return new MutationTrackingMigrationRepairResult(minEpoch, true, null);
     }
 }

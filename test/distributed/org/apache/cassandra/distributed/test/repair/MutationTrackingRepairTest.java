@@ -666,6 +666,28 @@ public class MutationTrackingRepairTest extends TestBaseImpl
     }
 
     @Test
+    public void testFullRepairDoesNotAdvanceMigration() throws Exception
+    {
+        setupUntracked();
+        insertDataWithInconsistency("tbl", 0, 50);
+
+        alterKeyspaceToTracked();
+        assertTrue("Migration should be in progress", isMigrationInProgress());
+
+        long logMark = CLUSTER.get(1).logs().mark();
+
+        repairResolvingInconsistency(ksName, "-full");
+
+        assertTrue("Migration should not advance with full repair", isMigrationInProgress());
+        // Rejected explicitly, rather than appearing to have made progress
+        assertFalse("Full repair should be logged as ineligible to advance migration",
+                    CLUSTER.get(1).logs()
+                           .grep(logMark, "ineligible to advance mutation tracking migration because it was a full repair")
+                           .getResult()
+                           .isEmpty());
+    }
+
+    @Test
     public void testSubrangeRepair() throws Exception
     {
         long[] primaryRange = getPrimaryRangeTokens(1);
