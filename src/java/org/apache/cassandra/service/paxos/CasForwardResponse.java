@@ -97,7 +97,14 @@ public class CasForwardResponse
 
         try (PartitionIterator toClose = partitions)
         {
-            return toClose.hasNext() ? materialize(toClose.next()) : null;
+            if (!toClose.hasNext())
+                return null;
+
+            FilteredPartition materialized = materialize(toClose.next());
+            // Serial reads are single partition, enforced in StorageProxy.readWithConsensusInternal.
+            // Asked only after the partition above is drained, per the note in PartitionIterators.
+            assert !toClose.hasNext() : "Forwarded read response cannot carry more than one partition";
+            return materialized;
         }
     }
 

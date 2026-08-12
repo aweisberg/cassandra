@@ -226,19 +226,18 @@ public class CasForwarding
                                                                                                   boolean alreadyForwarded)
     throws UnavailableException, ReadFailureException, ReadTimeoutException
     {
-        if (group.queries.isEmpty())
-            return null;
+        // StorageProxy.readWithConsensusInternal already refused groups of more than one query
+        assert group.queries.size() == 1 : "Consensus read forwarding requires a single partition, got " + group.queries.size();
 
-        // Use the first command to determine keyspace and key for replica planning
-        SinglePartitionReadCommand firstCommand = group.queries.get(0);
-        String keyspaceName = firstCommand.metadata().keyspace;
+        SinglePartitionReadCommand command = group.queries.get(0);
+        String keyspaceName = command.metadata().keyspace;
 
         Keyspace keyspace = Keyspace.openIfExists(keyspaceName);
         if (keyspace == null)
             throw new KeyspaceNotDefinedException("Keyspace " + keyspaceName + " does not exist");
 
         ClusterMetadata cm = ClusterMetadata.current();
-        if (!MigrationRouter.shouldUseTracked(cm, firstCommand))
+        if (!MigrationRouter.shouldUseTracked(cm, command))
             return null; // Not tracked, no forwarding needed
 
         // Property to disable top-level forwarding for testing
@@ -246,7 +245,7 @@ public class CasForwarding
             return null;
 
         // Check if current coordinator is not a replica
-        Token tk = firstCommand.partitionKey().getToken();
+        Token tk = command.partitionKey().getToken();
         EndpointsForToken allReplicas = ReplicaLayout.forTokenWriteLiveAndDown(cm, keyspace, tk)
                                                      .all();
         EndpointsForToken liveReplicas = allReplicas.filter(FailureDetector.isReplicaAlive);
@@ -261,7 +260,7 @@ public class CasForwarding
         if (alreadyForwarded)
         {
             logger.error("Received forwarded consensus read for keyspace {} key {} but local node {} is not a replica. Replicas are: {}",
-                         keyspaceName, firstCommand.partitionKey(), localEndpoint, allReplicas);
+                         keyspaceName, command.partitionKey(), localEndpoint, allReplicas);
             Tracing.trace("ERROR: Received forwarded consensus read but local node is not a replica");
             throw new RuntimeException("Forwarded consensus read received by non-replica node " + localEndpoint);
         }
@@ -274,8 +273,8 @@ public class CasForwarding
         EndpointsForToken sortedReplicas = DatabaseDescriptor.getNodeProximity().sortedByProximity(localEndpoint, liveReplicas);
         InetAddressAndPort replicaCoordinator = sortedReplicas.get(0).endpoint();
 
-        // Create forward request - consensus reads only have a single command
-        ConsensusReadForwardRequest forwardRequest = new ConsensusReadForwardRequest(firstCommand, consistencyLevel);
+        // Create forward request
+        ConsensusReadForwardRequest forwardRequest = new ConsensusReadForwardRequest(command, consistencyLevel);
         Message<ConsensusReadForwardRequest> message = Message.out(CONSENSUS_READ_FORWARD_REQ, forwardRequest);
 
         try
