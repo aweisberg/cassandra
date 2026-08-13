@@ -19,6 +19,7 @@
 package org.apache.cassandra.distributed.test;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
@@ -28,22 +29,28 @@ import org.junit.Test;
 
 import org.apache.cassandra.ServerTestUtils;
 import org.apache.cassandra.config.CassandraRelevantProperties;
+import org.apache.cassandra.db.ColumnFamilyStore;
+import org.apache.cassandra.db.compaction.CompactionManager;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.Feature;
 import org.apache.cassandra.distributed.api.ICoordinator;
+import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.replication.MutationJournal;
 import org.apache.cassandra.schema.KeyspaceMetadata;
+import org.apache.cassandra.service.ActiveRepairService;
 import org.apache.cassandra.service.replication.migration.MutationTrackingMigrationState;
 import org.apache.cassandra.tcm.ClusterMetadata;
 import org.apache.cassandra.tcm.ClusterMetadataService;
 import org.apache.cassandra.tcm.Epoch;
+import org.apache.cassandra.utils.Throwables;
 import org.apache.cassandra.utils.concurrent.UncheckedInterruptedException;
 
 import static java.lang.String.format;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Tests for mutation tracking migration between tracked and untracked replication types.
@@ -274,6 +281,95 @@ public class MutationTrackingMigrationTest extends TestBaseImpl
         Object[][] migrationRecord = coordinator.execute(format("SELECT value FROM %s.%s WHERE pk = 150", testKeyspace, TEST_TABLE),
                                                         ConsistencyLevel.QUORUM);
         assertEquals("migration_150", migrationRecord[0][0]);
+    }
+
+    /**
+     * repairedAt doubles as "durably reconciled by mutation tracking", and is what lets cleanup drop transient
+     * ranges. An SSTable carrying no coordinator log offsets gives mutation tracking nothing to check, so it must
+     * never be treated as reconciled. Empty offsets are legitimate only when compaction purged offsets it proved
+     * reconciled, so anything else offset-less is an illegal state and the write is expected to fail rather than
+     * silently promote data no replica confirmed.
+     * <p>
+     * Data written before the keyspace was tracked is the source of offset-less SSTables. Completing the migration
+     * marks it repaired via incremental repair, so this resets that back to unrepaired - as sstablerepairedset
+     * would - to exercise the reconciliation gate rather than skipping it.
+     */
+    @Test
+    public void offsetlessSSTablesAreNotMarkedReconciled() throws Exception
+    {
+        String testKeyspace = "offsetless_not_reconciled";
+
+        coordinator.execute(format("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3} AND replication_type='untracked'",
+                                   testKeyspace),
+                            ConsistencyLevel.ALL);
+        coordinator.execute(format("CREATE TABLE %s.%s (pk int PRIMARY KEY, value text)", testKeyspace, TEST_TABLE),
+                            ConsistencyLevel.ALL);
+        waitForEpochOf(SHARED_CLUSTER, 1);
+        verifyKeyspaceState(testKeyspace, ExpectedKeyspaceState.UNTRACKED);
+
+        for (int i = 0; i < 20; i++)
+        {
+            coordinator.execute(format("INSERT INTO %s.%s (pk, value) VALUES (%d, 'untracked_%d')",
+                                       testKeyspace, TEST_TABLE, i, i),
+                                ConsistencyLevel.QUORUM);
+        }
+
+        // Get the untracked writes onto disk while the keyspace is still untracked, so they carry no offsets
+        SHARED_CLUSTER.forEach(i -> i.flush(testKeyspace));
+
+        coordinator.execute(format("ALTER KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3} AND replication_type='tracked'",
+                                   testKeyspace),
+                            ConsistencyLevel.ALL);
+        waitForEpochOf(SHARED_CLUSTER, 1);
+
+        // Complete the migration, so no range is pending and the reconciliation gate applies
+        SHARED_CLUSTER.get(1).nodetoolResult("repair", testKeyspace, TEST_TABLE).asserts().success();
+        waitForEpochOf(SHARED_CLUSTER, 1);
+        verifyKeyspaceState(testKeyspace, ExpectedKeyspaceState.TRACKED);
+
+        SHARED_CLUSTER.forEach(i -> i.runOnInstance(() -> {
+            ColumnFamilyStore cfs = ColumnFamilyStore.getIfExists(testKeyspace, TEST_TABLE);
+            try
+            {
+                cfs.getCompactionStrategyManager().mutateRepaired(cfs.getLiveSSTables(),
+                                                                  ActiveRepairService.UNREPAIRED_SSTABLE,
+                                                                  ActiveRepairService.NO_PENDING_REPAIR);
+            }
+            catch (IOException e)
+            {
+                throw new UncheckedIOException(e);
+            }
+
+            boolean sawSSTable = false;
+            for (SSTableReader sstable : cfs.getLiveSSTables())
+            {
+                sawSSTable = true;
+                assertTrue("Expected no offsets on " + sstable.getFilename(),
+                           sstable.getCoordinatorLogOffsets().isEmpty());
+            }
+            assertTrue("No SSTables to check", sawSSTable);
+
+            // An offset-less SSTable that compaction cannot vouch for is an illegal state, so compaction must refuse
+            // it rather than silently promote it to repaired
+            try
+            {
+                CompactionManager.instance.performMaximal(cfs);
+                fail("Compaction accepted an SSTable with no coordinator log offsets in a tracked keyspace");
+            }
+            catch (Throwable t)
+            {
+                assertTrue("Unexpected failure: " + t,
+                           Throwables.anyCauseMatches(t, c -> c instanceof IllegalStateException
+                                                             && c.getMessage() != null
+                                                             && c.getMessage().contains("carries no coordinator log offsets")));
+            }
+
+            for (SSTableReader sstable : cfs.getLiveSSTables())
+            {
+                assertFalse(sstable.getFilename() + " was marked reconciled, but it carries no offsets for mutation "
+                            + "tracking to have confirmed", sstable.isRepaired());
+            }
+        }));
     }
 
     @Test

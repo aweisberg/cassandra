@@ -86,6 +86,10 @@ public abstract class SSTableWriter extends SSTable implements Transactional
     protected long repairedAt;
     protected TimeUUID pendingRepair;
     protected ImmutableCoordinatorLogOffsets coordinatorLogOffsets;
+    /** Set when this SSTable's offsets are empty only because compaction purged reconciled ones. */
+    protected final boolean offsetsPurgedAsReconciled;
+    /** Set when an input to this compaction carried no offsets, so the offsets don't cover every row. */
+    protected final boolean untrackedInputsMixedIn;
     protected long maxDataAge = -1;
     protected final long keyCount;
     public final MetadataCollector metadataCollector;
@@ -115,6 +119,8 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         this.repairedAt = builder.getRepairedAt();
         this.pendingRepair = builder.getPendingRepair();
         this.coordinatorLogOffsets = builder.getCoordinatorLogOffsets();
+        this.offsetsPurgedAsReconciled = builder.getOffsetsPurgedAsReconciled();
+        this.untrackedInputsMixedIn = builder.getUntrackedInputsMixedIn();
         this.metadataCollector = builder.getMetadataCollector();
         this.header = builder.getSerializationHeader();
         this.mmappedRegionsCache = builder.getMmappedRegionsCache();
@@ -370,7 +376,35 @@ public abstract class SSTableWriter extends SSTable implements Transactional
             if (!inMigrationPendingRange)
             {
                 Preconditions.checkState(Objects.equals(pendingRepair, ActiveRepairService.NO_PENDING_REPAIR));
-                if (MutationTrackingService.instance().isDurablyReconciled(coordinatorLogOffsets))
+                // isDurablyReconciled has nothing to check when the offsets are empty, so it vacuously reports
+                // reconciled. Compaction purges offsets once it proves them durably reconciled, so empty offsets
+                // are the legitimate end state for data that earned its repaired status - and are also exactly what
+                // untracked, pre-migration and externally restored SSTables carry. Only compaction can tell the two
+                // apart, because it alone sees the offsets before purging them.
+                boolean reconciled;
+                if (coordinatorLogOffsets.isEmpty())
+                {
+                    // Nothing the system produces itself reaches here with offsets compaction cannot vouch for, so
+                    // this is an illegal state. Stamping it repaired would let cleanup delete transient ranges that
+                    // no replica ever confirmed, which is data loss, so fail the write instead of guessing.
+                    Preconditions.checkState(offsetsPurgedAsReconciled,
+                                             "Tracked SSTable %s is unrepaired and carries no coordinator log offsets, so "
+                                             + "mutation tracking cannot confirm it. This means pre-migration or externally "
+                                             + "restored data was left unrepaired in a tracked keyspace.",
+                                             descriptor);
+                    reconciled = true;
+                }
+                else
+                {
+                    // Surviving offsets say nothing about rows that came from an input carrying none, so a compaction
+                    // that mixed one in cannot claim reconciliation on behalf of the whole output.
+                    if (untrackedInputsMixedIn)
+                        logger.warn("Not marking {} reconciled: it merges rows from an SSTable with no coordinator log " +
+                                    "offsets, which mutation tracking cannot confirm", descriptor);
+                    reconciled = !untrackedInputsMixedIn
+                                 && MutationTrackingService.instance().isDurablyReconciled(coordinatorLogOffsets);
+                }
+                if (reconciled)
                 {
                     repairedAt = Clock.Global.currentTimeMillis();
                     logger.debug("Marking SSTable {} as reconciled with repairedAt {}", descriptor, repairedAt);
@@ -507,6 +541,8 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         @Nullable
         private CompressionDictionaryManager compressionDictionaryManager;
         private ImmutableCoordinatorLogOffsets coordinatorLogOffsets;
+        private boolean offsetsPurgedAsReconciled;
+        private boolean untrackedInputsMixedIn;
 
         public B setMetadataCollector(MetadataCollector metadataCollector)
         {
@@ -535,6 +571,20 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         public B setCoordinatorLogOffsets(ImmutableCoordinatorLogOffsets coordinatorLogOffsets)
         {
             this.coordinatorLogOffsets = coordinatorLogOffsets;
+            return (B) this;
+        }
+
+        /** Only compaction may set this, and only once it has purged every offset as durably reconciled. */
+        public B setOffsetsPurgedAsReconciled(boolean offsetsPurgedAsReconciled)
+        {
+            this.offsetsPurgedAsReconciled = offsetsPurgedAsReconciled;
+            return (B) this;
+        }
+
+        /** Set by compaction when an input carried no offsets, so the output's offsets don't cover all of its rows. */
+        public B setUntrackedInputsMixedIn(boolean untrackedInputsMixedIn)
+        {
+            this.untrackedInputsMixedIn = untrackedInputsMixedIn;
             return (B) this;
         }
 
@@ -620,6 +670,16 @@ public abstract class SSTableWriter extends SSTable implements Transactional
         public ImmutableCoordinatorLogOffsets getCoordinatorLogOffsets()
         {
             return coordinatorLogOffsets;
+        }
+
+        public boolean getOffsetsPurgedAsReconciled()
+        {
+            return offsetsPurgedAsReconciled;
+        }
+
+        public boolean getUntrackedInputsMixedIn()
+        {
+            return untrackedInputsMixedIn;
         }
 
         public SerializationHeader getSerializationHeader()

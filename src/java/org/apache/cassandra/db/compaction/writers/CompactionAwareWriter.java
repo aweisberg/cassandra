@@ -62,6 +62,8 @@ public abstract class CompactionAwareWriter extends Transactional.AbstractTransa
     protected final long minRepairedAt;
     protected final TimeUUID pendingRepair;
     protected final ImmutableCoordinatorLogOffsets coordinatorLogOffsets;
+    protected final boolean offsetsPurgedAsReconciled;
+    protected final boolean untrackedInputsMixedIn;
 
     protected final SSTableRewriter sstableWriter;
     protected final ILifecycleTransaction txn;
@@ -96,7 +98,17 @@ public abstract class CompactionAwareWriter extends Transactional.AbstractTransa
         sstableWriter = SSTableRewriter.construct(cfs, txn, keepOriginals, maxAge, earlyOpenAllowed);
         minRepairedAt = CompactionTask.getMinRepairedAt(nonExpiredSSTables);
         pendingRepair = CompactionTask.getPendingRepair(nonExpiredSSTables);
+        // Must be sampled before getCoordinatorLogOffsets, which purges transfers out of the input sstables'
+        // offsets in place, after which every input looks like it never carried any.
+        boolean allInputsHadOffsets = !nonExpiredSSTables.isEmpty()
+                                      && nonExpiredSSTables.stream().noneMatch(s -> s.getCoordinatorLogOffsets().isEmpty());
         coordinatorLogOffsets = CompactionTask.getCoordinatorLogOffsets(nonExpiredSSTables);
+        // getCoordinatorLogOffsets only drops offsets it proved durably reconciled, so empty output from
+        // non-empty input is evidence of reconciliation. Every input must have carried offsets, otherwise
+        // an untracked input's rows would inherit the repaired status earned by the tracked ones.
+        offsetsPurgedAsReconciled = coordinatorLogOffsets.isEmpty() && allInputsHadOffsets;
+        untrackedInputsMixedIn = !allInputsHadOffsets;
+
         DiskBoundaries db = cfs.getDiskBoundaries();
         diskBoundaries = db.positions;
         locations = db.directories;
@@ -329,6 +341,8 @@ public abstract class CompactionAwareWriter extends Transactional.AbstractTransa
                          .setRepairedAt(minRepairedAt)
                          .setPendingRepair(pendingRepair)
                          .setCoordinatorLogOffsets(coordinatorLogOffsets)
+                         .setOffsetsPurgedAsReconciled(offsetsPurgedAsReconciled)
+                         .setUntrackedInputsMixedIn(untrackedInputsMixedIn)
                          .setSecondaryIndexGroups(cfs.indexManager.listIndexGroups())
                          .addDefaultComponents(cfs.indexManager.listIndexGroups())
                          .setCompressionDictionaryManager(cfs.compressionDictionaryManager());
