@@ -743,6 +743,30 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
                                    (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, FILTER, oracle));
     }
 
+    /**
+     * An indexed range read whose predicate is a partition key column and a static column. A tracked index read is the
+     * only caller of {@link org.apache.cassandra.index.Index.MultiStepSearcher#filterCompletedRead}, and because every
+     * expression the index claims is stripped from the post index query filter, that method is the only thing between
+     * an index false positive and the answer. It filtered rows, so a partition holding a static row and no clustering
+     * rows had nothing to filter and survived whole, even though its static value is not the one asked for.
+     * <p>
+     * (1,'b') is that partition: it satisfies the expression on the partition key column and not the one on the static
+     * column, and it has no rows for a row level filter to reject.
+     */
+    @Test
+    public void testIndexedRangeReadWhereAStaticOnlyPartitionDoesNotMatch()
+    {
+        String[] writes =
+        {
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, s, v) VALUES (1, 'a', 1, 7, 10) USING TIMESTAMP 10",
+            // static only: no clustering row is ever written for this partition
+            "*:UPDATE %s.tbl USING TIMESTAMP 11 SET s = 3 WHERE pk0 = 1 AND pk1 = 'b'"
+        };
+        String select = "SELECT pk0, pk1, ck, s, v FROM %s.tbl WHERE pk0 = 1 AND s = 7";
+        assertTrackedMatchesOracle("g_indexed_static_only", TABLE_WITH_INDEXED_STATIC, writes, select, UNPAGED,
+                                   (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, select, oracle));
+    }
+
     public static String withKeyspace(String replaceIn, String keyspace)
     {
         return String.format(replaceIn, keyspace);
