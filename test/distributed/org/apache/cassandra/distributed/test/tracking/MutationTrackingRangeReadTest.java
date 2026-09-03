@@ -528,6 +528,66 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     }
 
     /**
+     * The same shape as {@link #testFilteredRangeReadWhereEveryLocalPartitionIsFilteredOut}, except that the
+     * mutation reconciliation hands the data replica does satisfy the row filter. That records a follow up key, so
+     * the read takes the FilteredFollowupRead path instead of finishing where it stands.
+     * <p>
+     * FilteredFollowupRead.start asks the nested range read it just started where to resume, through a consumer
+     * that TrackedRead.start never invokes, so the reference is always null:
+     * <pre>
+     * java.lang.NullPointerException: null
+     *     at org.apache.cassandra.service.reads.tracked.FilteredFollowupRead.lambda$start$1(FilteredFollowupRead.java:155)
+     * </pre>
+     * The replica logs it and never answers, so the coordinator fails with a ReadTimeoutException reporting 0
+     * responses. The LIMIT matters: without one the command's limits are unlimited and
+     * ExtendingCompletedRead.followUpReadRequired stops before reaching the nested read at all.
+     */
+    @Test
+    public void testFilteredRangeReadWhereReconciliationRestoresTheOnlyMatch()
+    {
+        String select = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE v > 100 LIMIT 10 ALLOW FILTERING";
+        assertTrackedMatchesOracle("c_reconciled_only_match", TABLE, SOLE_PARTITION_STALE_ON_NODE_1, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * The same follow up path reached with a limit that merely exceeds the reconciled result set rather than
+     * dwarfing it: two rows come back and the limit is three. Reaching the path at all also needs the fix
+     * {@link #testUnlimitedFilteredRangeReadWhereAFlaggedKeySortsLast} covers, because the key reconciliation
+     * flagged here sorts after a partition the read kept.
+     */
+    @Test
+    public void testFilteredRangeReadWithALimitLargerThanTheReconciledResult()
+    {
+        String select = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE v > 100 LIMIT 3 ALLOW FILTERING";
+        assertTrackedMatchesOracle("c_limit_exceeds_result", TABLE, TWO_PARTITIONS_ONE_STALE_ON_NODE_1, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * The control for the two methods above, and the axis that separates them from it: reconciliation contributes to
+     * a partition the data replica kept rather than to one it discarded, so nothing is recorded as a follow up key
+     * and the limit is filled by the merge itself. No follow up read is requested and FilteredFollowupRead is never
+     * constructed. It passed before the fixes and has to keep passing after them.
+     * <p>
+     * Node 2's row is the lowest clustering in the partition, so the two rows the limit admits are not the two the
+     * data replica holds, which is what the probe checks.
+     */
+    @Test
+    public void testFilteredRangeReadWithALimitTheReconciledResultSatisfies()
+    {
+        String[] writes =
+        {
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 2, 500) USING TIMESTAMP 10",
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 3, 600) USING TIMESTAMP 11",
+            "2:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 700) USING TIMESTAMP 12"
+        };
+        String select = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE v > 100 LIMIT 2 ALLOW FILTERING";
+        assertTrackedMatchesOracle("c_limit_satisfied", TABLE, writes, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
      * A filtered range read with no limit at all over two partitions, one of which the data replica
      * discards and reconciliation then shows a match in. The discarded partition is simply dropped and the query
      * returns the other one on its own.
@@ -541,6 +601,9 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
      * <p>
      * With the default Murmur3 partitioner (2,'b') sorts before (1,'a'), so the kept partition is (2,'b') and the
      * discarded one is (1,'a'): not interleaved, and the read reached the end of its range.
+     * {@link #testFilteredRangeReadWithALimitLargerThanTheReconciledResult} is the same defect reached with a LIMIT;
+     * this one shows it does not need one, which is what separates it from the follow up read defect that one also
+     * covers.
      */
     @Test
     public void testUnlimitedFilteredRangeReadWhereAFlaggedKeySortsLast()

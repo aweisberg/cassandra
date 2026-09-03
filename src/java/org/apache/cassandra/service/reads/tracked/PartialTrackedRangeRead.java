@@ -70,6 +70,13 @@ public abstract class PartialTrackedRangeRead extends PartialTrackedRead
 
     protected final PartitionRangeReadCommand command;
 
+    /**
+     * Where a follow up read of this range should resume, recorded off the {@link ShortReadSupport} as soon as it is
+     * built. Kept here rather than read back off the state because {@link #followUpBounds()} is answered for a read
+     * that has already completed, and completing a read closes it. Null once the range has been read to its end.
+     */
+    private volatile AbstractBounds<PartitionPosition> followUpBounds;
+
     private PartialTrackedRangeRead(ReadExecutionController executionController, ColumnFamilyStore cfs, long startTimeNanos, PartitionRangeReadCommand command)
     {
         super(executionController, cfs, startTimeNanos);
@@ -209,6 +216,7 @@ public abstract class PartialTrackedRangeRead extends PartialTrackedRead
         {
             this.data = data;
             this.shortReadSupport = shortReadSupport;
+            PartialTrackedRangeRead.this.followUpBounds = shortReadSupport.followUpBounds;
         }
 
         protected boolean canAcceptUpdate(PartitionUpdate update)
@@ -290,11 +298,6 @@ public abstract class PartialTrackedRangeRead extends PartialTrackedRead
                 return extendRead(iterator);
             return CompletedRead.simple(iterator, command, command.nowInSec());
         }
-
-        AbstractBounds<PartitionPosition> followUpBounds()
-        {
-            return shortReadSupport.followUpBounds;
-        }
     }
 
     abstract Materializer createMaterializer();
@@ -321,8 +324,7 @@ public abstract class PartialTrackedRangeRead extends PartialTrackedRead
 
     public AbstractBounds<PartitionPosition> followUpBounds()
     {
-        RangeCompleted completed = (RangeCompleted) state().asCompleted();
-        return completed.followUpBounds();
+        return followUpBounds;
     }
 
     protected static TrackedRead.Range makeFollowUpRead(PartitionRangeReadCommand command, AbstractBounds<PartitionPosition> followUpBounds, int toQuery, ConsistencyLevel consistencyLevel, Dispatcher.RequestTime requestTime)
