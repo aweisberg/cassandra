@@ -640,6 +640,109 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
                                    (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
     }
 
+    /**
+     * The range scan reaches the tombstoned partition (2,'b') before the matching partition (1,'a'), the first page
+     * comes back empty, and the coordinator treats an empty page as the end of the result set, so (1,'a') is never
+     * looked at. No divergence, no reconciliation, no exception, just a successful wrong answer.
+     * <p>
+     * PartialTrackedRangeRead.Filtered.FilteredMaterializer.filter asked whether the row filter had left anything
+     * behind with UnfilteredRowIterator.isEmpty(), which is false whenever a partition carries a partition level
+     * deletion, however little of the partition can satisfy the filter. So (2,'b') was materialized, its one row
+     * spent the page's whole row budget, and (1,'a') was never reached. The read was not augmented, so it completed
+     * as CompletedRead.simple, which issues no short read follow up, and the coordinator filtered the one partition
+     * it was handed down to nothing.
+     * <p>
+     * The three methods after this one are this one with a single axis changed, and each axis is necessary.
+     */
+    @Test
+    public void testPagedFilteredRangeReadOverATombstonedPartition()
+    {
+        assertTrackedMatchesOracle("d_paged_tombstone", TABLE, TOMBSTONED_PARTITION_BEFORE_THE_MATCH, FILTER, 1,
+                                   (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, FILTER, oracle));
+    }
+
+    /**
+     * {@link #testPagedFilteredRangeReadOverATombstonedPartition} unpaged. The whole range is read in one go, so the
+     * materialization never stops short and nothing has to survive a page boundary.
+     */
+    @Test
+    public void testUnpagedFilteredRangeReadOverATombstonedPartition()
+    {
+        assertTrackedMatchesOracle("d_unpaged_tombstone", TABLE, TOMBSTONED_PARTITION_BEFORE_THE_MATCH, FILTER, UNPAGED,
+                                   (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, FILTER, oracle));
+    }
+
+    /**
+     * {@link #testPagedFilteredRangeReadOverATombstonedPartition} without the partition level tombstone. The same
+     * three partitions in the same order at the same page size, so neither paging nor the filter nor the presence of
+     * non matching partitions is enough on its own. The tombstone is what keeps a partition the filter rejects in the
+     * replica's materialized data, where it spends the page's row budget.
+     */
+    @Test
+    public void testPagedFilteredRangeReadWithoutTheTombstone()
+    {
+        assertTrackedMatchesOracle("d_paged_no_tombstone", TABLE, SAME_PARTITIONS_WITHOUT_THE_TOMBSTONE, FILTER, 1,
+                                   (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, FILTER, oracle));
+    }
+
+    /**
+     * {@link #testPagedFilteredRangeReadOverATombstonedPartition} without the row filter. The same data, tombstone and
+     * page size return every row, so the page only comes back empty once a filter can reject everything on it.
+     */
+    @Test
+    public void testPagedUnfilteredRangeReadOverATombstonedPartition()
+    {
+        String select = "SELECT pk0, pk1, ck, v FROM %s.tbl";
+        assertTrackedMatchesOracle("d_paged_unfiltered_tombstone", TABLE, TOMBSTONED_PARTITION_BEFORE_THE_MATCH, select, 1,
+                                   (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * The other half of the same fix, and the reason the two halves cannot be separated. Filtering on part of the
+     * partition key produces a filter made up entirely of partition level expressions, and a row filter only
+     * evaluates those when it is applied to a partition rather than to a row iterator, so applied to a row iterator
+     * it matches everything and (3,'c') is carried rather than discarded.
+     * <p>
+     * That went unnoticed while the emptiness check was consuming the iterator it was probing: the first surviving
+     * row of every kept partition was swallowed before the limit counter saw it, so (3,'c') was carried but counted
+     * as nothing and (1,'a') was reached anyway. Probing a fresh iterator makes the count honest, at which point
+     * (3,'c') spends the page's whole row budget on a partition the coordinator discards, unless the filter is also
+     * applied where its partition level expressions are evaluated.
+     */
+    @Test
+    public void testPagedRangeReadFilteredOnAPartitionKeyColumn()
+    {
+        // (3,'c') sorts ahead of (1,'a'), and pk0 = 1 is the only thing that rules it out
+        String[] writes =
+        {
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (3, 'c', 1, 9) USING TIMESTAMP 10",
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 500) USING TIMESTAMP 11"
+        };
+        String select = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE pk0 = 1 ALLOW FILTERING";
+        assertTrackedMatchesOracle("d_paged_partition_key_filter", TABLE, writes, select, 1,
+                                   (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * A page's worth of rows is counted on the replica before the row filter has had a say, so rows that cannot be
+     * returned still spend the page. (3,'c') holds one row the filter keeps and one it rejects, which is a full page
+     * of two by the replica's count and one row by the coordinator's, and a page shorter than the page size is how
+     * AbstractQueryPager recognizes the end of a result set, so (1,'a') is never read.
+     */
+    @Test
+    public void testPagedFilteredRangeReadWhereARejectedRowSpendsThePage()
+    {
+        // (3,'c') sorts ahead of (1,'a'), and only one of its two rows can satisfy the filter
+        String[] writes =
+        {
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (3, 'c', 1, 500) USING TIMESTAMP 10",
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (3, 'c', 2, 1) USING TIMESTAMP 11",
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 500) USING TIMESTAMP 12"
+        };
+        assertTrackedMatchesOracle("e_rejected_row_spends_page", TABLE, writes, FILTER, 2,
+                                   (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, FILTER, oracle));
+    }
+
     public static String withKeyspace(String replaceIn, String keyspace)
     {
         return String.format(replaceIn, keyspace);
