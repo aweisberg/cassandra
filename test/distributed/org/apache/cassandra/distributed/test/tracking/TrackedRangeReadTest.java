@@ -21,55 +21,151 @@ package org.apache.cassandra.distributed.test.tracking;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.BiConsumer;
 
 import org.junit.AfterClass;
 import org.junit.Assert;
-import org.junit.BeforeClass;
+import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+import org.apache.cassandra.config.DatabaseDescriptor;
+import org.apache.cassandra.db.Keyspace;
+import org.apache.cassandra.db.marshal.ByteBufferAccessor;
+import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.db.marshal.UTF8Type;
+import org.apache.cassandra.dht.Range;
+import org.apache.cassandra.dht.Token;
 import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.Feature;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
 import org.apache.cassandra.distributed.test.sai.SAIUtil;
+import org.apache.cassandra.locator.AbstractReplicationStrategy;
+import org.apache.cassandra.tcm.ClusterMetadata;
 
 import static org.apache.cassandra.distributed.shared.AssertUtils.assertRows;
 import static org.apache.cassandra.distributed.shared.AssertUtils.row;
 
-public class MutationTrackingRangeReadTest extends TestBaseImpl
+/**
+ * Every case here runs twice, once per {@link Mode}: once with three full replicas of every range, and once with
+ * one of those three turned into a witness. A witness journals a mutation so that it can take part in
+ * reconciliation and never applies it to the table, so it has no data of its own to answer a read with, and a
+ * tracked read takes data from exactly one replica per range - which therefore has to be a full replica of every
+ * token in that range.
+ * <p>
+ * Witnessing changes where the data is, not what the answer is, so no assertion about an answer is conditioned on
+ * the mode: the oracle a case is scored against stays fully replicated in both modes (see
+ * {@link #createKeyspace}), and the cases that write down expected rows expect the same rows either way. What is
+ * mode conditional is the unstressed case checks, which assert where the data sits before the read under test
+ * runs, because that is the thing witnessing does change.
+ */
+@RunWith(Parameterized.class)
+public class TrackedRangeReadTest extends TestBaseImpl
 {
     private static final int REPLICAS = 3;
 
+    /**
+     * The replication the tracked keyspaces are created at. {@link #FULL} is what this suite has always run at.
+     * {@link #WITNESSES} differs from it in exactly two things, both of which are what it takes to have witnesses
+     * at all: the replication factor asks for one of the three replicas of every range to be transient, and the
+     * yaml guard that gates transient replication is turned on.
+     */
+    public enum Mode
+    {
+        /** {@code replication_factor: 3} is written unquoted, exactly as this suite has always written it. */
+        FULL("{'class': 'SimpleStrategy', 'replication_factor': 3}", false),
+        WITNESSES("{'class': 'SimpleStrategy', 'replication_factor': '3/1'}", true);
+
+        final String replication;
+        final boolean transientReplicationEnabled;
+
+        Mode(String replication, boolean transientReplicationEnabled)
+        {
+            this.replication = replication;
+            this.transientReplicationEnabled = transientReplicationEnabled;
+        }
+    }
+
+    @Parameterized.Parameter
+    public Mode parameter;
+
+    @Parameterized.Parameters(name = "{0}")
+    public static Collection<Object[]> modes()
+    {
+        return Arrays.asList(new Object[]{ Mode.FULL }, new Object[]{ Mode.WITNESSES });
+    }
+
+    /**
+     * The mode the cluster that is currently up was built for, so that the static helpers every case is written in
+     * terms of can see it. Null when no cluster is up.
+     */
+    private static Mode mode;
+
     private static Cluster cluster;
 
-    @BeforeClass
-    public static void setup() throws IOException
+    /**
+     * One cluster per mode, built lazily and torn down when the mode changes, because
+     * {@code transient_replication_enabled} is a yaml setting and two in-JVM clusters cannot be up at once - they
+     * bind the same loopback addresses and ports. JUnit's Parameterized runner runs every case of one parameter
+     * before moving to the next, so the mode changes exactly once and each cluster is built exactly once.
+     */
+    @Before
+    public void beforeEach() throws IOException
     {
+        if (mode == parameter)
+            return;
+
+        closeCluster();
         cluster = Cluster.build()
                          .withNodes(REPLICAS)
                          // background reconciliation converges the replicas within a few seconds, which would heal
                          // the divergence these cases are built on before the read under test ever sees it
                          .withConfig(cfg -> cfg.with(Feature.NETWORK, Feature.GOSSIP)
                                                .set("hinted_handoff_enabled", false)
+                                               .set("transient_replication_enabled", parameter.transientReplicationEnabled)
                                                .set("mutation_tracking.background_reconciliation_enabled", false))
                          .start();
+        mode = parameter;
     }
 
     @AfterClass
     public static void teardown()
     {
+        closeCluster();
+    }
+
+    private static void closeCluster()
+    {
+        mode = null;
         if (cluster != null)
+        {
             cluster.close();
+            cluster = null;
+        }
+    }
+
+    /** The tracked keyspace of a case that writes its own schema down rather than going through {@link #createKeyspace}. */
+    private static void createTrackedKeyspace(String keyspace)
+    {
+        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = " + mode.replication + " AND replication_type='tracked'", keyspace));
     }
 
     @Test
     public void testPartialPartitionFilterWithPerPartitionLimit()
     {
         String keyspace = "partial_partition_filter_per_partition_limit";
-        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3} AND replication_type='tracked'", keyspace));
+        createTrackedKeyspace(keyspace);
 
         cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk0 bigint, pk1 text, ck0 bigint, s0 frozen<list<frozen<list<time>>>> static, " +
                                           "v0 'org.apache.cassandra.db.marshal.LexicalUUIDType', PRIMARY KEY ((pk0, pk1), ck0)) WITH CLUSTERING ORDER BY (ck0 DESC) AND read_repair = 'NONE'", keyspace));
@@ -97,7 +193,7 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     public void testTokenRangeOnFullPartitionKeysWithPerPartitionLimitEmpty()
     {
         String keyspace = "token_range_per_partition_limit_empty";
-        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3} AND replication_type='tracked'", keyspace));
+        createTrackedKeyspace(keyspace);
         cluster.schemaChange(withKeyspace("CREATE TYPE IF NOT EXISTS %s.\"6iiPTW_Oe1eyqpNyLtoSbn\" (f0 smallint, f1 uuid)", keyspace));
         cluster.schemaChange(withKeyspace("CREATE TYPE IF NOT EXISTS %s.\"tjQi_gfccLmvemLRbkg\" (f0 uuid)", keyspace));
 
@@ -136,7 +232,7 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     public void testTokenRangeOnFullPartitionKeysWithPerPartitionLimitNonEmpty()
     {
         String keyspace = "token_range_per_partition_limit_non_empty";
-        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3} AND replication_type='tracked'", keyspace));
+        createTrackedKeyspace(keyspace);
         cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk0 smallint, pk1 uuid, ck0 'org.apache.cassandra.db.marshal.LexicalUUIDType', ck1 timeuuid, v0 int, PRIMARY KEY ((pk0, pk1), ck0, ck1)) WITH CLUSTERING ORDER BY (ck0 DESC, ck1 DESC) AND read_repair = 'NONE'", keyspace));
         cluster.forEach(i -> i.nodetoolResult("disableautocompaction", keyspace, "tbl").asserts().success());
         
@@ -157,7 +253,7 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     public void testTextRangeFilterWithHighLimit()
     {
         String keyspace = "text_range_filter_with_high_limit";
-        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3} AND replication_type='tracked'", keyspace));
+        createTrackedKeyspace(keyspace);
         cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk0 bigint, pk1 smallint, ck0 inet, ck1 double, v3 text, PRIMARY KEY ((pk0, pk1), ck0, ck1)) WITH CLUSTERING ORDER BY (ck0 DESC, ck1 ASC) AND read_repair = 'NONE'", keyspace));
         cluster.forEach(i -> i.nodetoolResult("disableautocompaction", keyspace, "tbl").asserts().success());
 
@@ -232,7 +328,7 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     public void testRangeFilterOnFrozenSetNoLimit()
     {
         String keyspace = "range_filter_on_frozen_set_no_limit";
-        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3} AND replication_type='tracked'", keyspace));
+        createTrackedKeyspace(keyspace);
 
         cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk0 int, pk1 boolean, ck0 inet, v1 int, v4 frozen<set<bigint>>, PRIMARY KEY ((pk0, pk1), ck0)) WITH CLUSTERING ORDER BY (ck0 DESC) AND read_repair = 'NONE'", keyspace));
         cluster.forEach(i -> i.nodetoolResult("disableautocompaction", keyspace, "tbl").asserts().success());
@@ -253,6 +349,79 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
         select = withKeyspace("SELECT pk0, pk1 FROM %s.tbl WHERE v4 > {-4237118076428244729, -1815831816430314156} ALLOW FILTERING", keyspace);
         Iterator<Object[]> pagingResult = cluster.coordinator(2).executeWithPaging(select, ConsistencyLevel.ALL, 5000);
         assertRows(pagingResult, row(-1256431887, true));
+    }
+
+    /** Enough partitions that each of the three primary ranges holds a few dozen of them. */
+    private static final int PARTITIONS = 100;
+
+    /**
+     * A full table scan from every coordinator, over a hundred partitions written at ALL. The answer is the whole
+     * table in both modes, and the reason it is interesting differs between them: at {@code replication_factor: 3}
+     * every node is a full replica of the whole ring and every coordinator holds every partition, so a short answer
+     * is rows lost on the read path. Under {@code '3/1'} each node is the witness of one of the three primary
+     * ranges, so the scan covers a range that no one replica is full for, and a tracked read takes data from
+     * exactly one replica per range - whichever node coordinates, and whichever replica each of its range plans
+     * picks, the answer still has to be the whole table.
+     * <p>
+     * ReplicaPlans.maybeMerge merged adjacent range plans by matching their replicas on endpoint alone, so a node
+     * that is full for one range and a witness of the next was described as full for the merged range and the read
+     * asked a witness for data it does not keep. Coordinated on node 1 the scan came back with 68 of the 100
+     * partitions, which is exactly the number node 1 is a full replica of.
+     */
+    @Test
+    public void testFullTableScanFromEveryCoordinator()
+    {
+        String keyspace = "full_table_scan_every_coordinator";
+        createTrackedKeyspace(keyspace);
+        cluster.schemaChange(withKeyspace("CREATE TABLE %s.tbl (pk int PRIMARY KEY, v int) WITH read_repair = 'NONE'", keyspace));
+        cluster.forEach(i -> i.nodetoolResult("disableautocompaction", keyspace, "tbl").asserts().success());
+
+        Map<Integer, Integer> expected = new TreeMap<>();
+        for (int pk = 0; pk < PARTITIONS; pk++)
+        {
+            cluster.coordinator(1).execute(withKeyspace("INSERT INTO %s.tbl (pk, v) VALUES (?, ?)", keyspace), ConsistencyLevel.ALL, pk, pk);
+            expected.put(pk, pk);
+        }
+
+        assertEveryNodeHoldsWhatTheModeSays(keyspace);
+
+        for (int node = 1; node <= REPLICAS; node++)
+        {
+            Object[][] rows = cluster.coordinator(node).execute(withKeyspace("SELECT pk, v FROM %s.tbl", keyspace), ConsistencyLevel.ALL);
+            Map<Integer, Integer> actual = new TreeMap<>();
+            for (Object[] row : rows)
+                Assert.assertNull("partition " + row[0] + " returned twice", actual.put((Integer) row[0], (Integer) row[1]));
+            Assert.assertEquals("full table scan coordinated on node " + node, expected, actual);
+        }
+    }
+
+    /**
+     * The unstressed case check for {@link #testFullTableScanFromEveryCoordinator}, made with
+     * {@code executeInternal} so that it cannot reconcile away the state it is measuring. The two modes want
+     * opposite things of it, and each is the claim that makes a short coordinated answer in that mode a defect:
+     * at {@code replication_factor: 3} every node has to hold every partition, so nothing is missing anywhere and
+     * losing a row is the read path's doing; under {@code '3/1'} no node may hold all of them, because a node that
+     * held the whole table would be witnessing none of it and a scan reading data from one replica would be right
+     * however the range was split. Holding none of them would be just as wrong, and means the node is a full
+     * replica of nothing.
+     */
+    private static void assertEveryNodeHoldsWhatTheModeSays(String keyspace)
+    {
+        for (int node = 1; node <= REPLICAS; node++)
+        {
+            int local = nodeLocal(keyspace, node, "SELECT pk FROM %s.tbl").length;
+            if (mode == Mode.FULL)
+            {
+                Assert.assertEquals("node " + node + " does not hold all " + PARTITIONS + " partitions", PARTITIONS, local);
+            }
+            else
+            {
+                Assert.assertTrue("Not stressed: node " + node + " holds all " + PARTITIONS + " partitions, so it witnesses none of them",
+                                  local < PARTITIONS);
+                Assert.assertTrue("node " + node + " holds no data at all, so it is not a full replica of anything",
+                                  local > 0);
+            }
+        }
     }
 
     /*
@@ -373,8 +542,13 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
 
     private static String createKeyspace(String keyspace, String table, boolean tracked)
     {
-        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3}"
-                                          + (tracked ? " AND replication_type='tracked'" : ""), keyspace));
+        // the oracle is fully replicated in both modes. Witnessing decides where a mutation is applied, not what the
+        // answer to a query over it is, so the keyspace that defines the correct answer is deliberately left at
+        // replication_factor 3 under witnesses too: comparing a witnessed tracked read against a fully replicated
+        // untracked one is the strongest form of the assertion available, not a relaxed one.
+        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = "
+                                          + (tracked ? mode.replication + " AND replication_type='tracked'"
+                                                     : Mode.FULL.replication), keyspace));
         // a table definition may carry index DDL after the CREATE TABLE, one statement per semicolon
         for (String statement : table.split(";"))
             cluster.schemaChange(withKeyspace(statement, keyspace));
@@ -390,6 +564,13 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
      * A statement prefixed with a node number is applied with {@code executeInternal}, which lands it on that node
      * alone and leaves the replicas divergent. One prefixed with {@code *} goes through the coordinator at ALL and
      * leaves them identical.
+     * <p>
+     * Neither prefix escapes witnessing. {@code Keyspace.applyInternalTracked} sits below the coordinator, and when
+     * the strategy has transient replicas and the update's token is in none of the node's full local ranges it
+     * journals the mutation and skips the write to the table. So under {@link Mode#WITNESSES} a write aimed at a node
+     * that merely witnesses its token is invisible to a node local read there and is still available to
+     * reconciliation, and a {@code *} write is materialized only on the two replicas that are full for its token.
+     * That is why the unstressed case checks consult placement rather than assume a write landed where it was sent.
      */
     private static void write(String keyspace, String[] writes)
     {
@@ -425,6 +606,54 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     }
 
     /**
+     * The nodes that are full replicas of the partition {@code (pk0, pk1)}, decided by the same question
+     * {@code Keyspace.applyInternalTracked} asks before it writes: is the token in one of this node's full local
+     * ranges. Every table the harness uses has that partition key, and reading the answer out of the replication
+     * strategy rather than off a hardcoded ring means the model cannot drift from the placement the writes actually
+     * got. Under {@link Mode#FULL} the strategy has no transient replicas, every node's full local ranges cover the
+     * ring, and this is always all three nodes.
+     */
+    private static Set<Integer> fullReplicasFor(String keyspace, int pk0, String pk1)
+    {
+        Set<Integer> full = new TreeSet<>();
+        for (int node = 1; node <= REPLICAS; node++)
+        {
+            boolean isFull = cluster.get(node).callOnInstance(() -> {
+                AbstractReplicationStrategy strategy = Keyspace.open(keyspace).getReplicationStrategy();
+                Token token = DatabaseDescriptor.getPartitioner()
+                                                .getToken(CompositeType.build(ByteBufferAccessor.instance,
+                                                                              Int32Type.instance.decompose(pk0),
+                                                                              UTF8Type.instance.decompose(pk1)));
+                for (Range<Token> range : strategy.getLocalRanges(ClusterMetadata.current()).onlyFull().ranges())
+                    if (range.contains(token))
+                        return true;
+                return false;
+            });
+            if (isFull)
+                full.add(node);
+        }
+        return full;
+    }
+
+    /**
+     * The rows of {@code rows} that node {@code node} can possibly hold in its own memtables and sstables: the ones
+     * whose partition it is a full replica of. Under {@link Mode#FULL} that is every row, so a per node expectation
+     * built with this is the whole set and every assertion made against one says exactly what it said before this
+     * suite had a second mode.
+     * <p>
+     * The first two columns of every row are {@code pk0} and {@code pk1}, which every select the harness hands to a
+     * placement aware check begins with.
+     */
+    private static Object[][] materializedOn(String keyspace, int node, Object[][] rows)
+    {
+        List<Object[]> held = new ArrayList<>();
+        for (Object[] row : rows)
+            if (fullReplicasFor(keyspace, (Integer) row[0], (String) row[1]).contains(node))
+                held.add(row);
+        return held.toArray(new Object[0][]);
+    }
+
+    /**
      * The unstressed case check, for the cases built on divergent replicas. If what the data replica holds on its own
      * already answers the query then the read never has to reconcile anything, and the case would pass with the read
      * path completely broken.
@@ -433,22 +662,79 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
      * node 1, TrackedRead.start prefers the local replica whenever it is a full one, and at RF=3 on three nodes every
      * node is a full replica of every range. So the replica whose materialized data the answer is built from is the
      * one these fixtures leave stale, and it is the same one every run.
+     * <p>
+     * Under {@link Mode#WITNESSES} node 1 is a full replica of two of the three primary ranges rather than all of
+     * them, so it is still the data replica of those two and the third is read from whichever full replica that
+     * range's plan picks. The assertion below is unchanged and still holds - the coordinator's own materialized data
+     * is not the answer either way - but it is no longer the whole story, because node 1 could also be short simply
+     * by witnessing part of the range. {@link #assertWitnessesMaterializedNothing} is what says which of the two it
+     * is, per partition and against placement.
      */
     private static void assertDataReplicaCannotAnswerAlone(String keyspace, String select, Object[][] oracle)
     {
         Assert.assertFalse("Not stressed: the data replica answers this query correctly on its own",
                            Arrays.deepEquals(nodeLocal(keyspace, 1, select), oracle));
+
+        if (mode == Mode.WITNESSES)
+            assertWitnessesMaterializedNothing(keyspace);
+    }
+
+    /**
+     * The witness half of {@link #assertDataReplicaCannotAnswerAlone}: every partition any node holds is one that
+     * node is a full replica of, and at least one partition is held somewhere, so at least one node is missing a
+     * partition for no reason other than witnessing its token. That is the layout the mode exists to test, asserted
+     * where it can still be seen: a witness journals a mutation and skips the table, so a partition it witnesses can
+     * only reach the read through reconciliation, whoever the plan asks for data.
+     * <p>
+     * Asserting it here rather than trusting it is what keeps the mode conditional above honest. If witnesses ever
+     * started materializing what they journal, these fixtures would quietly stop being divergent under {@code '3/1'}
+     * and every case would pass for the wrong reason.
+     */
+    private static void assertWitnessesMaterializedNothing(String keyspace)
+    {
+        Set<List<Object>> anywhere = new HashSet<>();
+        for (int node = 1; node <= REPLICAS; node++)
+        {
+            for (Object[] partition : nodeLocal(keyspace, node, "SELECT DISTINCT pk0, pk1 FROM %s.tbl"))
+            {
+                Assert.assertTrue("node " + node + " materialized (" + partition[0] + ",'" + partition[1] + "') and is only a witness of it",
+                                  fullReplicasFor(keyspace, (Integer) partition[0], (String) partition[1]).contains(node));
+                anywhere.add(Arrays.asList(partition));
+            }
+        }
+        // every token has exactly one witness among three nodes under '3/1', so one materialized partition anywhere
+        // is one partition that some node is missing because it witnesses it
+        Assert.assertFalse("Not stressed: no node materialized any partition, so nothing is being witnessed",
+                           anywhere.isEmpty());
     }
 
     /**
      * The converse, for the cases that write through the coordinator and so have no divergence in them: every
      * replica already holds everything the answer needs, which is what makes a short coordinator answer a defect
      * in the read path rather than data that was never there.
+     * <p>
+     * Under {@link Mode#WITNESSES} "everything the answer needs" is per node rather than global, because a write at
+     * ALL is applied only on the two replicas that are full for its token. So each node is held to the part of the
+     * answer it is a full replica of, which is the same assertion with the mode's placement substituted into it
+     * rather than a weaker one: no node may be missing a row it is responsible for, and no node may return a row it
+     * has no business holding. Their union is still the whole answer, since every token has two full replicas.
+     * <p>
+     * The last assertion is the unstressed case check, and it is the same claim read in each mode's direction. At
+     * {@code replication_factor: 3} no node may be short, or the fixture did not converge. Under {@code '3/1'} some
+     * node must be short, or nothing is being witnessed and the case is the other mode over again.
      */
     private static void assertEveryReplicaCanAnswerAlone(String keyspace, String select, Object[][] oracle)
     {
+        boolean someNodeShort = false;
         for (int node = 1; node <= REPLICAS; node++)
-            assertRows(nodeLocal(keyspace, node, select), oracle);
+        {
+            Object[][] expected = materializedOn(keyspace, node, oracle);
+            assertRows(nodeLocal(keyspace, node, select), expected);
+            someNodeShort |= expected.length < oracle.length;
+        }
+        Assert.assertEquals(mode == Mode.FULL ? "A replica is missing part of the answer, so the fixture did not converge"
+                                              : "Not stressed: every replica holds the whole answer, so nothing is being witnessed",
+                            mode == Mode.WITNESSES, someNodeShort);
     }
 
     /**
@@ -467,7 +753,11 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
      *     at org.apache.cassandra.service.reads.tracked.PartialTrackedRangeRead$RangeCompleted.createResult(PartialTrackedRangeRead.java:290)
      * </pre>
      * The oracle's answer is empty, which the data replica also answers on its own, so the unstressed case check
-     * cannot tell this case apart from a vacuous one and the probe asserts the divergence directly instead.
+     * cannot tell this case apart from a vacuous one and the probe asserts the divergence directly instead. That
+     * makes it the one probe that names the rows a node holds, so it is also the one that has to ask where a row
+     * is allowed to be: node 2 is a witness of (1,'a') under {@link Mode#WITNESSES}, and journals the newer value
+     * without applying it, so its copy of the row is present in one mode and absent in the other while the
+     * divergence the case needs - node 1 stale, the newer value only reachable by reconciling - is identical.
      */
     @Test
     public void testFilteredRangeReadWhereEveryLocalPartitionIsFilteredOut()
@@ -481,8 +771,12 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
         };
 
         String tracked = assertTrackedMatchesOracle("b_all_locals_filtered", TABLE, writes, FILTER, UNPAGED, (keyspace, oracle) -> {
+            // the defect is in the branch taken when the filter empties a non empty local map, so the data replica
+            // has to have materialized the partition in the first place
+            Assert.assertTrue("(1,'a') is only witnessed by the data replica, so its local map is empty for another reason",
+                              fullReplicasFor(keyspace, 1, "a").contains(1));
             assertRows(nodeLocal(keyspace, 1, everything), row(1, "a", 1, 1));
-            assertRows(nodeLocal(keyspace, 2, everything), row(1, "a", 1, 2));
+            assertRows(nodeLocal(keyspace, 2, everything), materializedOn(keyspace, 2, new Object[][]{ row(1, "a", 1, 2) }));
             assertRows(nodeLocal(keyspace, 3, everything));
         });
 
