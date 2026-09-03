@@ -641,6 +641,54 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     }
 
     /**
+     * A flagged key that sorts ahead of the partitions the read kept, with a limit the initial result already fills.
+     * The row it contributes belongs in front of a row that was counted, so it displaces that row rather than
+     * extending the result past the limit, and the correct answer is the row the tracked read cannot see.
+     * <p>
+     * FilteredFollowupRead asks each flagged key for {@code command.limits().forShortReadRetry(toQuery)} rows, where
+     * {@code toQuery} is what is left of the limit. Here nothing is left of it, so every flagged key was read with a
+     * limit of zero: reached before its first row, so the partition came back empty and the answer reconciliation had
+     * just contradicted stood. The key was queried - it interleaves, which is the one reason this path queries a key
+     * with no budget left - and then asked for nothing.
+     */
+    @Test
+    public void testFilteredRangeReadWhereAnInterleavingKeyDisplacesTheRowTheLimitAdmits()
+    {
+        String select = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE v > 100 LIMIT 1 ALLOW FILTERING";
+        assertTrackedMatchesOracle("l_interleaving_key_unpaged", TABLE, INTERLEAVING_STALE_PARTITION_ON_NODE_1, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * The same defect without a LIMIT in the query at all: a page is a limit, and a page the initial result fills
+     * leaves the flagged key nothing to be read with. The row is not merely returned on the wrong page, it is lost -
+     * the next page resumes past the partition the first page returned, which sorts after the flagged key.
+     */
+    @Test
+    public void testPagedFilteredRangeReadWhereAnInterleavingKeyDisplacesTheRowOnThePage()
+    {
+        assertTrackedMatchesOracle("l_interleaving_key_paged", TABLE, INTERLEAVING_STALE_PARTITION_ON_NODE_1, FILTER, 1,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, FILTER, oracle));
+    }
+
+    /**
+     * The same shape under GROUP BY, which is the case that also needs the limits' continuation state dropped. A
+     * grouping state names the clustering the range read left off at in some other partition, and the flagged key's
+     * read would resume that group against a partition it has nothing to do with.
+     * <p>
+     * Before this commit the query does not merely answer wrongly, it does not answer: the flagged key is asked for
+     * zero rows, comes back empty, and the follow up round that produced it asks for another one on the same
+     * unchanged bounds, which recurses until the request times out.
+     */
+    @Test
+    public void testPagedGroupByRangeReadWhereAKeyIsFlagged()
+    {
+        String select = "SELECT pk0, pk1, count(*) FROM %s.tbl WHERE v > 100 GROUP BY pk0, pk1 ALLOW FILTERING";
+        assertTrackedMatchesOracle("m_group_by_flagged_key", TABLE, INTERLEAVING_STALE_PARTITION_ON_NODE_1, select, 1,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
      * The range scan reaches the tombstoned partition (2,'b') before the matching partition (1,'a'), the first page
      * comes back empty, and the coordinator treats an empty page as the end of the result set, so (1,'a') is never
      * looked at. No divergence, no reconciliation, no exception, just a successful wrong answer.
