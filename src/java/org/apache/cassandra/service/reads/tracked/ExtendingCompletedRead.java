@@ -52,10 +52,15 @@ public abstract class ExtendingCompletedRead implements PartialTrackedRead.Compl
 
     public ExtendingCompletedRead(ReadCommand command, boolean partitionsFetched, boolean initialIteratorExhausted)
     {
+        // onlyCount: the limit is already enforced by ReadCommand.completeRead, which pairs its counter with an
+        // RTBoundCloser because a counter that stops in the middle of an open range tombstone drops the closing
+        // bound. A second stopping counter here sits above that closer and above the PROCESSED RTBoundValidator, so
+        // when it stops it cuts the stream before the closer can append the bound the validator is waiting for. All
+        // this counter is needed for is short read protection's view of how much the merged result holds.
         this.mergedResultCounter = command.limits().newCounter(command.nowInSec(),
                                                                true,
                                                                command.selectsFullPartition(),
-                                                               command.metadata().enforceStrictLiveness());
+                                                               command.metadata().enforceStrictLiveness()).onlyCount();
         this.partitionsFetched = partitionsFetched;
         this.initialIteratorExhausted = initialIteratorExhausted;
     }
