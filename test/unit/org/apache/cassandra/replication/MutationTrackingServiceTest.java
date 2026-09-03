@@ -49,6 +49,7 @@ import org.apache.cassandra.utils.TimeUUID;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class MutationTrackingServiceTest
@@ -238,6 +239,26 @@ public class MutationTrackingServiceTest
 
         // All resulting tasks should be the same type as the input
         result.apply((shardedTask) -> assertTrue("Task should be SymmetricRemoteSyncTask", shardedTask.task instanceof SymmetricRemoteSyncTask));
+    }
+
+    /**
+     * Offsets can arrive for a keyspace this node no longer has: they were broadcast, or the reconciled snapshot they
+     * came from was taken, before the DROP KEYSPACE that removed it was enacted here. A dropped keyspace has no shards
+     * to record anything against, and asking for them threw, killing the stage the offsets arrived on.
+     */
+    @Test
+    public void testOffsetsForAKeyspaceThatNoLongerExistsAreDropped()
+    {
+        MutationTrackingService service = MutationTrackingService.TestAccess.create();
+        String dropped = "keyspace_this_node_does_not_have";
+        CoordinatorLogId logId = CoordinatorLogId.fromLong(CoordinatorLogId.asLong(1, 1));
+        Offsets.Immutable offsets = new Offsets.Immutable(logId, new int[]{ 1, 1 });
+        Range<Token> range = range("a", "z");
+
+        service.updateReplicatedOffsets(dropped, range, Collections.singletonList(offsets), true, REMOTE);
+        service.recordFullyReconciledOffsets(ReconciledLogSnapshot.builder().put(dropped, logId, offsets, range).build());
+
+        assertNull(MutationTrackingService.TestAccess.getKeyspaceShards(service, dropped));
     }
 
     private static Token tk(String key)

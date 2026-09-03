@@ -462,7 +462,11 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
         shardLock.readLock().lock();
         try
         {
-            getOrCreateShards(keyspace).updateReplicatedOffsets(range, offsets, durable, onHost);
+            KeyspaceShards shards = maybeGetOrCreateShards(keyspace);
+            // offsets broadcast for a keyspace this node has since dropped: there is nothing left to update, and the
+            // sender cannot have known the drop was enacted at the time it sent them
+            if (shards != null)
+                shards.updateReplicatedOffsets(range, offsets, durable, onHost);
         }
         finally
         {
@@ -489,7 +493,9 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
         try
         {
             reconciledSnapshot.forEach((keyspace, keyspaceOffsets) -> {
-                KeyspaceShards ksShards = getOrCreateShards(keyspace);
+                // a snapshot naming a keyspace this node has since dropped: there are no shards left to record
+                // against, and the snapshot was taken before the drop was enacted
+                KeyspaceShards ksShards = maybeGetOrCreateShards(keyspace);
                 if (ksShards != null)
                     ksShards.recordFullyReconciledOffsets(keyspaceOffsets);
             });
@@ -832,12 +838,23 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
 
     private KeyspaceShards getOrCreateShards(String keyspace)
     {
+        KeyspaceShards shards = maybeGetOrCreateShards(keyspace);
+        Preconditions.checkArgument(shards != null, "Unknown keyspace %s", keyspace);
+        return shards;
+    }
+
+    /** As {@link #getOrCreateShards(String)}, but null rather than throwing if the keyspace no longer exists. */
+    private KeyspaceShards maybeGetOrCreateShards(String keyspace)
+    {
         KeyspaceShards ks = keyspaceShards.get(keyspace);
         if (ks != null)
             return ks;
 
         ClusterMetadata csm = ClusterMetadata.current();
-        KeyspaceMetadata ksm = csm.schema.getKeyspaceMetadata(keyspace);
+        KeyspaceMetadata ksm = csm.schema.maybeGetKeyspaceMetadata(keyspace).orElse(null);
+        if (ksm == null)
+            return null;
+
         return keyspaceShards.computeIfAbsent(keyspace, ignore -> KeyspaceShards.make(ksm, csm, this::nextLogId, this::onNewLog));
     }
 
