@@ -52,10 +52,15 @@ public abstract class ExtendingCompletedRead implements PartialTrackedRead.Compl
 
     public ExtendingCompletedRead(ReadCommand command, boolean partitionsFetched, boolean initialIteratorExhausted)
     {
+        // onlyCount: the limit is already enforced by ReadCommand.completeRead, which pairs its counter with an
+        // RTBoundCloser because a counter that stops in the middle of an open range tombstone drops the closing
+        // bound. A second stopping counter here sits above that closer and above the PROCESSED RTBoundValidator, so
+        // when it stops it cuts the stream before the closer can append the bound the validator is waiting for. All
+        // this counter is needed for is short read protection's view of how much the merged result holds.
         this.mergedResultCounter = command.limits().newCounter(command.nowInSec(),
                                                                true,
                                                                command.selectsFullPartition(),
-                                                               command.metadata().enforceStrictLiveness());
+                                                               command.metadata().enforceStrictLiveness()).onlyCount();
         this.partitionsFetched = partitionsFetched;
         this.initialIteratorExhausted = initialIteratorExhausted;
     }
@@ -110,9 +115,14 @@ public abstract class ExtendingCompletedRead implements PartialTrackedRead.Compl
          * The row limit will either be set to the per partition limit - if the command has no total row limit set, or
          * the total # of rows remaining - if it has some. If we don't grab enough rows in some of the partitions,
          * then future ShortReadRowsProtection.moreContents() calls will fetch the missing ones.
+         *
+         * The subtraction is clamped because its two halves are not always in the same unit: under GROUP BY,
+         * count() is a group limit and rowsCounted() is rows, so a query that has read more rows than it is allowed
+         * groups asks for a negative number of rows. Counting stops the read either way, and zero is the answer that
+         * says so without handing a negative limit to the follow up.
          */
         return command.limits().count() != DataLimits.NO_LIMIT
-               ? command.limits().count() - mergedResultCounter.rowsCounted()
+               ? Math.max(0, command.limits().count() - mergedResultCounter.rowsCounted())
                : command.limits().perPartitionCount();
     }
 
