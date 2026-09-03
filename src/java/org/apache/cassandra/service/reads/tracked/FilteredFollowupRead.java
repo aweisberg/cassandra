@@ -108,7 +108,15 @@ class FilteredFollowupRead extends AsyncPromise<TrackedDataResponse>
             DecoratedKey key = followUpKeys.next();
             FollowUpReadInfo info = followUpReadInfo.get(key);
             remaining -= info.potentialMatches;
-            SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fromRangeRead(key, command, command.limits().forShortReadRetry(toQuery));
+            // These keys sit inside the range the read this follows up on already scanned, so no later range read
+            // will revisit them: what they contribute has to come back from here. Their rows displace rows the
+            // initial result already counted rather than extending past it, so what one of them may return is
+            // bounded by the command's own limit and not by what is left of it. Handing them what is left is how a
+            // read whose limit is exactly filled asks each of them for nothing at all: the leftover is zero, and a
+            // limit of zero is already reached before the first row, so the partition comes back empty and the
+            // answer reconciliation just contradicted stands. Reading more than the answer can hold is safe, since
+            // the merged result below is counted and truncated again.
+            SinglePartitionReadCommand cmd = SinglePartitionReadCommand.fromRangeRead(key, command, command.limits());
             TrackedRead.Partition read = TrackedRead.Partition.create(metadata, cmd, consistencyLevel, requestTime);
             read.start(requestTime);
             futures.add(read.future());
