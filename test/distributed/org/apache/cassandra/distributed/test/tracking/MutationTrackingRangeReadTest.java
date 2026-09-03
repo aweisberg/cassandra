@@ -19,9 +19,14 @@
 package org.apache.cassandra.distributed.test.tracking;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
+import java.util.function.BiConsumer;
 
 import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -30,6 +35,7 @@ import org.apache.cassandra.distributed.Cluster;
 import org.apache.cassandra.distributed.api.ConsistencyLevel;
 import org.apache.cassandra.distributed.api.Feature;
 import org.apache.cassandra.distributed.test.TestBaseImpl;
+import org.apache.cassandra.distributed.test.sai.SAIUtil;
 
 import static org.apache.cassandra.distributed.shared.AssertUtils.assertRows;
 import static org.apache.cassandra.distributed.shared.AssertUtils.row;
@@ -46,7 +52,11 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
     {
         cluster = Cluster.build()
                          .withNodes(REPLICAS)
-                         .withConfig(cfg -> cfg.with(Feature.NETWORK, Feature.GOSSIP).set("hinted_handoff_enabled", false))
+                         // background reconciliation converges the replicas within a few seconds, which would heal
+                         // the divergence these cases are built on before the read under test ever sees it
+                         .withConfig(cfg -> cfg.with(Feature.NETWORK, Feature.GOSSIP)
+                                               .set("hinted_handoff_enabled", false)
+                                               .set("mutation_tracking.background_reconciliation_enabled", false))
                          .start();
     }
 
@@ -245,6 +255,202 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
         select = withKeyspace("SELECT pk0, pk1 FROM %s.tbl WHERE v4 > {-4237118076428244729, -1815831816430314156} ALLOW FILTERING", keyspace);
         Iterator<Object[]> pagingResult = cluster.coordinator(2).executeWithPaging(select, ConsistencyLevel.ALL, 5000);
         assertRows(pagingResult, row(-1256431887, true));
+    }
+
+    /*
+     * Everything below shares one harness. Each case runs its query twice, against two keyspaces that differ
+     * only in replication_type, over identical data written the identical way, and asserts the tracked answer
+     * equals the untracked one. No expected result is written down anywhere, so a mismatch is attributable to
+     * mutation tracking and nothing else, and no case can be scored wrong because the expectation was guessed.
+     *
+     * Each case also has to earn its place, which is what the probe argument is for. It runs on the tracked
+     * keyspace after the writes and before the read under test, and every assertion in it is a node local
+     * executeInternal that never enters StorageProxy and so cannot reconcile away the state it is measuring.
+     * A case built on divergent replicas proves there that the divergence is still present and that the data
+     * replica could not have answered on its own; a case built on convergent ones proves that every replica
+     * already holds everything the answer needs, which is what separates a wrong answer from absent data.
+     */
+
+    /** {@code (pk0, pk1)} is the partition key and {@code v} the filtered non primary key column. */
+    private static final String TABLE =
+        "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, v int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE'";
+
+    private static final String TABLE_WITH_STATIC =
+        "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, s int static, v int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE'";
+
+    private static final String TABLE_WITH_FROZEN_SET =
+        "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, fs frozen<set<int>>, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE'";
+
+    private static final String TABLE_WITH_INDEXED_STATIC =
+        "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, s int static, v int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE';" +
+        "CREATE INDEX tbl_pk0 ON %s.tbl(pk0) USING 'SAI';" +
+        "CREATE INDEX tbl_s ON %s.tbl(s) USING 'SAI'";
+
+    /** {@code v} is indexed and {@code w} is not, so a filter on {@code w} is left for the read to apply itself. */
+    private static final String TABLE_WITH_INDEXED_VALUE =
+        "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, v int, w int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE';" +
+        "CREATE INDEX tbl_v ON %s.tbl(v) USING 'SAI'";
+
+    private static final String FILTER = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE v > 100 ALLOW FILTERING";
+
+    /** Passed as a page size to read the whole range in one request. */
+    private static final int UNPAGED = 0;
+
+    /**
+     * Node 1 holds (1,'a') with the value the filter rejects and node 2 the newer value it accepts; node 3 holds
+     * neither. Node 1 coordinates, so it is the data replica for its own stale view, and reconciliation has to
+     * deliver a mutation for a key that replica has already materialized and thrown away.
+     */
+    private static final String[] SOLE_PARTITION_STALE_ON_NODE_1 =
+    {
+        "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 1) USING TIMESTAMP 10",
+        "2:UPDATE %s.tbl USING TIMESTAMP 20 SET v = 500 WHERE pk0 = 1 AND pk1 = 'a' AND ck = 1"
+    };
+
+    /**
+     * As {@link #SOLE_PARTITION_STALE_ON_NODE_1}, plus a partition (2,'b') that node 1 already holds a matching
+     * row for, so the data replica's materialized data is not empty and the reconciled result set is two rows.
+     */
+    private static final String[] TWO_PARTITIONS_ONE_STALE_ON_NODE_1 =
+    {
+        "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 1) USING TIMESTAMP 10",
+        "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (2, 'b', 1, 900) USING TIMESTAMP 11",
+        "2:UPDATE %s.tbl USING TIMESTAMP 20 SET v = 500 WHERE pk0 = 1 AND pk1 = 'a' AND ck = 1"
+    };
+
+    /**
+     * Three partitions written through the coordinator at ALL, so every replica holds identical data and
+     * reconciliation has nothing to do, plus a partition level tombstone on (2,'b') older than the row that
+     * partition contains. With the default Murmur3 partitioner a range scan visits (3,'c'), then (2,'b'), then
+     * (1,'a'), so the tombstoned partition is reached before the only one satisfying {@code v > 100}.
+     */
+    private static final String[] TOMBSTONED_PARTITION_BEFORE_THE_MATCH =
+    {
+        "*:DELETE FROM %s.tbl USING TIMESTAMP 5 WHERE pk0 = 2 AND pk1 = 'b'",
+        "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 500) USING TIMESTAMP 10",
+        "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (2, 'b', 1, 1) USING TIMESTAMP 11",
+        "*:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (3, 'c', 1, 2) USING TIMESTAMP 12"
+    };
+
+    /** {@link #TOMBSTONED_PARTITION_BEFORE_THE_MATCH} with the tombstone left out and nothing else changed. */
+    private static final String[] SAME_PARTITIONS_WITHOUT_THE_TOMBSTONE =
+        Arrays.copyOfRange(TOMBSTONED_PARTITION_BEFORE_THE_MATCH, 1, TOMBSTONED_PARTITION_BEFORE_THE_MATCH.length);
+
+    /**
+     * Node 1 holds a match in (1,'a') and a row in (2,'b') that the filter rejects; node 2 holds the newer value that
+     * makes (2,'b') match. With the default Murmur3 partitioner (2,'b') sorts before (1,'a'), so the key
+     * reconciliation flags sorts ahead of the one partition the read kept, and the row it contributes belongs in
+     * front of the row already counted rather than after it.
+     */
+    private static final String[] INTERLEAVING_STALE_PARTITION_ON_NODE_1 =
+    {
+        "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 900) USING TIMESTAMP 10",
+        "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (2, 'b', 1, 1) USING TIMESTAMP 11",
+        "2:UPDATE %s.tbl USING TIMESTAMP 20 SET v = 500 WHERE pk0 = 2 AND pk1 = 'b' AND ck = 1"
+    };
+
+    /**
+     * Writes the same data to a tracked keyspace and to an otherwise identical untracked one, reads the untracked
+     * one for the expected answer, runs {@code probe} against the tracked one, and asserts the tracked read
+     * returns what the untracked read did.
+     *
+     * @param pageSize the page size to read at, or {@link #UNPAGED}
+     * @param probe    given the tracked keyspace and the oracle's answer, run after the writes and before the read
+     * @return the tracked keyspace, for any assertion a case wants to make about what the read left behind
+     */
+    private static String assertTrackedMatchesOracle(String name, String table, String[] writes, String select,
+                                                     int pageSize, BiConsumer<String, Object[][]> probe)
+    {
+        String untracked = createKeyspace(name + "_oracle", table, false);
+        write(untracked, writes);
+        Object[][] expected = read(untracked, select, pageSize);
+
+        String tracked = createKeyspace(name, table, true);
+        write(tracked, writes);
+        probe.accept(tracked, expected);
+
+        assertRows(read(tracked, select, pageSize), expected);
+        return tracked;
+    }
+
+    private static String createKeyspace(String keyspace, String table, boolean tracked)
+    {
+        cluster.schemaChange(withKeyspace("CREATE KEYSPACE %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3}"
+                                          + (tracked ? " AND replication_type='tracked'" : ""), keyspace));
+        // a table definition may carry index DDL after the CREATE TABLE, one statement per semicolon
+        for (String statement : table.split(";"))
+            cluster.schemaChange(withKeyspace(statement, keyspace));
+        // an index is not queryable until every replica has finished building it, and a read that reaches one that
+        // has not fails with INDEX_BUILD_IN_PROGRESS rather than waiting for it; for a keyspace with no index at all
+        // this finds nothing to wait for and returns
+        SAIUtil.waitForIndexQueryable(cluster, keyspace);
+        cluster.forEach(i -> i.nodetoolResult("disableautocompaction", keyspace, "tbl").asserts().success());
+        return keyspace;
+    }
+
+    /**
+     * A statement prefixed with a node number is applied with {@code executeInternal}, which lands it on that node
+     * alone and leaves the replicas divergent. One prefixed with {@code *} goes through the coordinator at ALL and
+     * leaves them identical.
+     */
+    private static void write(String keyspace, String[] writes)
+    {
+        for (String write : writes)
+        {
+            int colon = write.indexOf(':');
+            String target = write.substring(0, colon);
+            String cql = withKeyspace(write.substring(colon + 1), keyspace);
+            if (target.equals("*"))
+                cluster.coordinator(1).execute(cql, ConsistencyLevel.ALL);
+            else
+                cluster.get(Integer.parseInt(target)).executeInternal(cql);
+        }
+    }
+
+    private static Object[][] read(String keyspace, String select, int pageSize)
+    {
+        String cql = withKeyspace(select, keyspace);
+        if (pageSize == UNPAGED)
+            return cluster.coordinator(1).execute(cql, ConsistencyLevel.ALL);
+
+        List<Object[]> rows = new ArrayList<>();
+        Iterator<Object[]> paged = cluster.coordinator(1).executeWithPaging(cql, ConsistencyLevel.ALL, pageSize);
+        while (paged.hasNext())
+            rows.add(paged.next());
+        return rows.toArray(new Object[0][]);
+    }
+
+    /** What one node answers on its own, off its own memtables and sstables, reconciling nothing. */
+    private static Object[][] nodeLocal(String keyspace, int node, String select)
+    {
+        return cluster.get(node).executeInternal(withKeyspace(select, keyspace));
+    }
+
+    /**
+     * The unstressed case check, for the cases built on divergent replicas. If what the data replica holds on its own
+     * already answers the query then the read never has to reconcile anything, and the case would pass with the read
+     * path completely broken.
+     * <p>
+     * Node 1 is the data replica of every one of these reads, and deterministically so: {@link #read} coordinates on
+     * node 1, TrackedRead.start prefers the local replica whenever it is a full one, and at RF=3 on three nodes every
+     * node is a full replica of every range. So the replica whose materialized data the answer is built from is the
+     * one these fixtures leave stale, and it is the same one every run.
+     */
+    private static void assertDataReplicaCannotAnswerAlone(String keyspace, String select, Object[][] oracle)
+    {
+        Assert.assertFalse("Not stressed: the data replica answers this query correctly on its own",
+                           Arrays.deepEquals(nodeLocal(keyspace, 1, select), oracle));
+    }
+
+    /**
+     * The converse, for the cases that write through the coordinator and so have no divergence in them: every
+     * replica already holds everything the answer needs, which is what makes a short coordinator answer a defect
+     * in the read path rather than data that was never there.
+     */
+    private static void assertEveryReplicaCanAnswerAlone(String keyspace, String select, Object[][] oracle)
+    {
+        for (int node = 1; node <= REPLICAS; node++)
+            assertRows(nodeLocal(keyspace, node, select), oracle);
     }
 
     public static String withKeyspace(String replaceIn, String keyspace)
