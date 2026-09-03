@@ -64,6 +64,7 @@ import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.AbstractUnfilteredRowIterator;
+import org.apache.cassandra.db.rows.RangeTombstoneMarker;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.rows.Unfiltered;
@@ -1108,7 +1109,27 @@ public class StorageAttachedIndexSearcher implements Index.MultiStepSearcher<Pri
                     return null;
                 }
 
-                return Transformation.apply(partition, this);
+                UnfilteredRowIterator filtered = Transformation.apply(partition, this);
+
+                // We may not have any non-static row data to filter, either because the augmented partition never had
+                // any or because every row was just filtered out. Such a partition is only a hit if its static row
+                // satisfies the expressions on its own, and dropping it here is the only thing standing between a
+                // false positive and the result, because a partition still carrying a static row is not empty.
+                if (filtered.hasNext() || strictFilterTree.isSatisfiedBy(partition.partitionKey(), staticRow, staticRow))
+                    return filtered;
+
+                filtered.close();
+                return null;
+            }
+
+            @Override
+            protected RangeTombstoneMarker applyToMarker(RangeTombstoneMarker marker)
+            {
+                // hasNext() above asks whether anything survived filtering, and a marker would answer yes without
+                // being a match. Nothing produces one here: the partitions this sees are rebuilt by filterPartition
+                // out of rows and a static row alone. Assert rather than handle it, because a marker arriving means
+                // the emptiness question above is being asked of a stream it was not written for.
+                throw new AssertionError("A range tombstone marker reached the completed read filter: " + marker);
             }
 
             @Override
