@@ -451,6 +451,132 @@ public class MutationTrackingRangeReadTest extends TestBaseImpl
             assertRows(nodeLocal(keyspace, node, select), oracle);
     }
 
+    /**
+     * A row filtered range read where the data replica filters out every partition it can see locally, and
+     * reconciliation then hands it a mutation for one of those filtered partitions. The mutation does not satisfy
+     * the row filter either, so no follow up read is needed, but the read was still augmented and therefore still
+     * takes the extending path.
+     * <p>
+     * PartialTrackedRangeRead.Filtered.FilteredCompleted.extendRead read the last matching key out of the empty
+     * branch of its ternary, so it called TreeMap.lastKey() on the map it had just tested for emptiness:
+     * <pre>
+     * java.util.NoSuchElementException: null
+     *     at java.base/java.util.TreeMap.key(TreeMap.java:1324)
+     *     at java.base/java.util.TreeMap.lastKey(TreeMap.java:296)
+     *     at org.apache.cassandra.service.reads.tracked.PartialTrackedRangeRead$Filtered$FilteredCompleted.extendRead(PartialTrackedRangeRead.java:561)
+     *     at org.apache.cassandra.service.reads.tracked.PartialTrackedRangeRead$RangeCompleted.createResult(PartialTrackedRangeRead.java:290)
+     * </pre>
+     * The oracle's answer is empty, which the data replica also answers on its own, so the unstressed case check
+     * cannot tell this case apart from a vacuous one and the probe asserts the divergence directly instead.
+     */
+    @Test
+    public void testFilteredRangeReadWhereEveryLocalPartitionIsFilteredOut()
+    {
+        String everything = "SELECT pk0, pk1, ck, v FROM %s.tbl";
+        String[] writes =
+        {
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, v) VALUES (1, 'a', 1, 1) USING TIMESTAMP 10",
+            // reconciliation delivers this to node 1, which augments the read even though the update is filtered out too
+            "2:UPDATE %s.tbl USING TIMESTAMP 20 SET v = 2 WHERE pk0 = 1 AND pk1 = 'a' AND ck = 1"
+        };
+
+        String tracked = assertTrackedMatchesOracle("b_all_locals_filtered", TABLE, writes, FILTER, UNPAGED, (keyspace, oracle) -> {
+            assertRows(nodeLocal(keyspace, 1, everything), row(1, "a", 1, 1));
+            assertRows(nodeLocal(keyspace, 2, everything), row(1, "a", 1, 2));
+            assertRows(nodeLocal(keyspace, 3, everything));
+        });
+
+        // and the read did reconcile: node 1 now holds the value node 2 had, so the empty answer is not vacuous
+        assertRows(nodeLocal(tracked, 1, everything), row(1, "a", 1, 2));
+    }
+
+    /**
+     * A static value on the diverged partition makes the otherwise identical failing case pass, because the
+     * partition is no longer dropped from the materialized map. Worth keeping because it means a schema with
+     * static columns hides the defect above, so a fix must not be validated only against tables without one.
+     */
+    @Test
+    public void testFilteredRangeReadWithAStaticColumn()
+    {
+        String[] writes =
+        {
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, s, v) VALUES (1, 'a', 1, 7, 1) USING TIMESTAMP 10",
+            "2:UPDATE %s.tbl USING TIMESTAMP 20 SET v = 500 WHERE pk0 = 1 AND pk1 = 'a' AND ck = 1"
+        };
+        String select = "SELECT pk0, pk1, ck, s, v FROM %s.tbl WHERE v > 100 ALLOW FILTERING";
+        assertTrackedMatchesOracle("b_static_column", TABLE_WITH_STATIC, writes, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * The direction of a frozen collection predicate decides whether the same shape is broken. Here node 1's local
+     * row satisfies {@code fs > {1, 2}} and the row reconciliation delivers does not, so the data replica
+     * materializes a matching partition and reconciliation takes it away again — the opposite of the case above,
+     * and the direction that has always worked. A fix for one direction must not break the other.
+     */
+    @Test
+    public void testFilteredRangeReadOnAFrozenSetInTheDirectionThatWorks()
+    {
+        String[] writes =
+        {
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, fs) VALUES (1, 'a', 1, {3}) USING TIMESTAMP 10",
+            "2:UPDATE %s.tbl USING TIMESTAMP 20 SET fs = {1} WHERE pk0 = 1 AND pk1 = 'a' AND ck = 1"
+        };
+        String select = "SELECT pk0, pk1, ck, fs FROM %s.tbl WHERE fs > {1, 2} ALLOW FILTERING";
+        assertTrackedMatchesOracle("b_frozen_set_other_direction", TABLE_WITH_FROZEN_SET, writes, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * A filtered range read with no limit at all over two partitions, one of which the data replica
+     * discards and reconciliation then shows a match in. The discarded partition is simply dropped and the query
+     * returns the other one on its own.
+     * <p>
+     * A key the row filter dropped is inside the range the read already scanned, so a follow up read that resumes
+     * the scan past the last key it saw can never revisit it: PartialTrackedRangeRead.Filtered.FilteredCompletedRead
+     * is the only thing that will ever ask for it. It asked only when the key interleaved with the partitions the
+     * read kept, or when short read protection independently wanted another round - and short read protection has no
+     * reason to want one here, because this read did not stop early, it threw a partition away. So a flagged key
+     * that sorts after everything the read kept was flagged and then forgotten.
+     * <p>
+     * With the default Murmur3 partitioner (2,'b') sorts before (1,'a'), so the kept partition is (2,'b') and the
+     * discarded one is (1,'a'): not interleaved, and the read reached the end of its range.
+     */
+    @Test
+    public void testUnlimitedFilteredRangeReadWhereAFlaggedKeySortsLast()
+    {
+        assertTrackedMatchesOracle("f_flagged_key_sorts_last", TABLE, TWO_PARTITIONS_ONE_STALE_ON_NODE_1, FILTER, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, FILTER, oracle));
+    }
+
+    /**
+     * The control for reading a discarded partition back: what a follow up read fetches still has to survive the row
+     * filter. Reconciliation decides which discarded keys to chase by asking the row filter how many matches an update
+     * could contain, and that count is deliberately optimistic - it stops at the first expression the update satisfies,
+     * so with two partition level expressions any update satisfying either one is chased. Here (1,'b') satisfies
+     * {@code pk0 = 1} and not {@code s = 7} and is fetched in full, and only the filter standing between the follow up
+     * read and the answer keeps it out of the result.
+     * <p>
+     * That matters more once a flagged key that sorts last is chased at all, because chasing them is no longer the
+     * rare case.
+     */
+    @Test
+    public void testFilteredRangeReadWhereAFollowUpKeyDoesNotMatchTheFilter()
+    {
+        String[] writes =
+        {
+            // (1,'a') matches only once reconciliation has delivered node 2's static value
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, s, v) VALUES (1, 'a', 1, 1, 10) USING TIMESTAMP 10",
+            "2:UPDATE %s.tbl USING TIMESTAMP 20 SET s = 7 WHERE pk0 = 1 AND pk1 = 'a'",
+            // (1,'b') matches neither before nor after, but its update does satisfy the partition key expression
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, s, v) VALUES (1, 'b', 1, 2, 20) USING TIMESTAMP 11",
+            "2:UPDATE %s.tbl USING TIMESTAMP 21 SET s = 3 WHERE pk0 = 1 AND pk1 = 'b'"
+        };
+        String select = "SELECT pk0, pk1, ck, s, v FROM %s.tbl WHERE pk0 = 1 AND s = 7 LIMIT 10 ALLOW FILTERING";
+        assertTrackedMatchesOracle("f_followup_key_not_matching", TABLE_WITH_STATIC, writes, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
     public static String withKeyspace(String replaceIn, String keyspace)
     {
         return String.format(replaceIn, keyspace);
