@@ -201,7 +201,8 @@ public class PartialTrackedIndexRead<Match extends IndexMatch, Searcher extends 
             for (Future<FollowUpRead<Match, Searcher>> future : followUpReads.values())
             {
                 future.addCallback((followup, failure) -> {
-                    if (failure != null)
+                    // a failed future has no read to close, and a successful one is exactly the read that has to be
+                    if (failure == null)
                         followup.close();
                 });
             }
