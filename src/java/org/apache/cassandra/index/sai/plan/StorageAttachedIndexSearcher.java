@@ -1099,7 +1099,14 @@ public class StorageAttachedIndexSearcher implements Index.MultiStepSearcher<Pri
             {
                 this.staticRow = partition.staticRow();
                 if (!strictFilterTree.restrictsNonStaticRow())
-                    return strictFilterTree.isSatisfiedBy(partition.partitionKey(), staticRow, staticRow) ? partition : null;
+                {
+                    if (strictFilterTree.isSatisfiedBy(partition.partitionKey(), staticRow, staticRow))
+                        return partition;
+
+                    // dropping a partition from a Transformation does not close it, the transformation has to
+                    partition.close();
+                    return null;
+                }
 
                 return Transformation.apply(partition, this);
             }
