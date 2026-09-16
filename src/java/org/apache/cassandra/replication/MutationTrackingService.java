@@ -531,7 +531,14 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
         try
         {
             Preconditions.checkArgument(!mutation.id().isNone());
-            return getOrCreateShards(mutation.getKeyspaceName()).startWriting(mutation);
+            boolean started = getOrCreateShards(mutation.getKeyspaceName()).startWriting(mutation);
+            // If this is a duplicate mutation (already witnessed), notify any pending read
+            // reconciliation listeners. A listener can be registered between the first write's
+            // invokeListeners() call (which found no listeners) and this duplicate's arrival,
+            // causing the listener to never fire and the read to hang.
+            if (!started)
+                incomingMutations.invokeListeners(mutation.id());
+            return started;
         }
         finally
         {
@@ -552,7 +559,10 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
      * gone there is nothing left to reconcile it against, and the only thing that still has to happen is for the
      * record to reach the memtable so the data is not lost.
      *
-     * @return true if the record was registered with a shard, false if no shard covers it
+     * A replayed record can also be a duplicate, and a duplicate has to notify read reconciliation for the same reason
+     * {@link #startWriting} does: the copy that landed first invoked the listeners for the id while there were none.
+     *
+     * @return true if the record was registered with a shard, false if no shard covers it or it was already witnessed
      */
     public boolean startWritingForReplay(Mutation mutation)
     {
@@ -567,7 +577,7 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
                                   mutation.getKeyspaceName());
                 return false;
             }
-            return shards.startWritingIfShardPresent(mutation);
+            return shards.startWritingIfShardPresent(mutation, () -> incomingMutations.invokeListeners(mutation.id()));
         }
         finally
         {
@@ -1438,8 +1448,12 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
         /**
          * Register a replayed mutation, returning false rather than throwing when no shard covers its token.
          * See {@link MutationTrackingService#startWritingForReplay}.
+         * <p>
+         * {@code onDuplicate} runs when a shard was found and rejected the mutation as already witnessed. That is the
+         * only false return whose data is already in the table, so it is the only one that may notify listeners; the
+         * two no shard returns above are notified by the apply that follows them, not here.
          */
-        boolean startWritingIfShardPresent(Mutation mutation)
+        boolean startWritingIfShardPresent(Mutation mutation, Runnable onDuplicate)
         {
             VersionedEndpoints.ForRange forRange = groups.matchToken(mutation.key().getToken());
             Shard shard = forRange == null ? null : shards.get(forRange.range());
@@ -1449,7 +1463,10 @@ public class MutationTrackingService implements MutationTrackingServiceMBean
                                   keyspace, mutation.key().getToken());
                 return false;
             }
-            return shard.startWriting(mutation);
+            boolean started = shard.startWriting(mutation);
+            if (!started)
+                onDuplicate.run();
+            return started;
         }
 
         void finishWriting(Mutation mutation)
