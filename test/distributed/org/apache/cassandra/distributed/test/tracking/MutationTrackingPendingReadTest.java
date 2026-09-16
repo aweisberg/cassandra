@@ -18,6 +18,7 @@
 package org.apache.cassandra.distributed.test.tracking;
 
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.Iterables;
 
@@ -259,6 +260,68 @@ public class MutationTrackingPendingReadTest
 //                    // the in flight read should be aware of the racing write
 //                    Assert.assertEquals(Set.of(mutation.id()), pendingRead.mutationIds());
 //                }
+            });
+        }
+    }
+
+    /**
+     * Read reconciliation pulls the mutations a remote summary reported and this node is missing, and completes once a
+     * listener has fired for each of them. The write path can land one of those mutations in the window between
+     * ReadReconciliation.acceptRemoteSummary deciding it is missing and pull registering the listener for it: that
+     * copy's finishWriting invoked the listeners for the id while there were none, and the pulled copy then arrives as
+     * a duplicate. Keyspace.applyInternalTracked skips the apply and finishWriting for a duplicate, since the data is
+     * already there, so nothing invoked the listener registered in between. ReadReconciliation.remaining never reached
+     * zero, and the read waited out its timeout instead - the callback ReadReconciliations registers implements only
+     * onSuccess, so listener expiry does not fail the read either.
+     *
+     * A duplicate has to notify the listeners that the copy landing first could not have notified.
+     */
+    @Test
+    public void testDuplicateWriteNotifiesMutationListeners() throws Throwable
+    {
+        try (Cluster cluster = Cluster.build(3)
+                                      .withConfig(cfg -> cfg.with(Feature.NETWORK)
+                                                            .with(Feature.GOSSIP)
+                                                            .set("mutation_tracking.enabled", true)
+                                                            .set("write_request_timeout", "1000ms"))
+                                      .start())
+        {
+            String keyspaceName = "duplicate_write_notification_test";
+            String tableName = "tbl";
+            cluster.schemaChange(format("CREATE KEYSPACE %s WITH replication = " +
+                                        "{'class': 'SimpleStrategy', 'replication_factor': 3} " +
+                                        "AND replication_type='tracked';", keyspaceName));
+
+            cluster.schemaChange(format("CREATE TABLE %s.%s (k int, c int, v int, primary key (k, c));", keyspaceName, tableName));
+
+            cluster.get(1).runOnInstance(() -> {
+                TableMetadata metadata = Schema.instance.getTableMetadata(keyspaceName, tableName);
+                DecoratedKey dk = metadata.partitioner.decorateKey(bytes(1));
+
+                MutationId id = MutationTrackingService.instance().nextMutationId(keyspaceName, dk.getToken());
+                SimpleBuilders.MutationBuilder builder = new SimpleBuilders.MutationBuilder(id, keyspaceName, dk);
+                builder.update(metadata).row(bytes(1)).add("v", 1);
+                Mutation mutation = builder.build();
+
+                // the copy that lands first witnesses the id, and finds no listener to notify
+                mutation.apply();
+
+                // so a re-delivery of it is a duplicate, which is what makes the rest of this test mean anything:
+                // were it applied as a new mutation below, its own finishWriting would notify and prove nothing.
+                // No listener is registered yet, exactly as when the first copy landed, so this probe notifies nobody.
+                Assert.assertFalse("An already witnessed mutation was not recognized as a duplicate",
+                                   MutationTrackingService.instance().startWriting(mutation));
+
+                // a read that decided it was missing this id before the write above landed registers its listener now
+                AtomicInteger notified = new AtomicInteger();
+                Assert.assertTrue("Expected to be the first listener registered for this id",
+                                  MutationTrackingService.instance().registerMutationCallback(mutation.id(), notifiedId -> notified.incrementAndGet()));
+
+                // the pulled copy arrives, and is a duplicate of what already landed
+                mutation.apply();
+
+                Assert.assertEquals("A duplicate mutation left a read reconciliation listener waiting",
+                                    1, notified.get());
             });
         }
     }
