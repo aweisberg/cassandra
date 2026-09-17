@@ -458,6 +458,15 @@ public class TrackedRangeReadTest extends TestBaseImpl
         "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, v int, w int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE';" +
         "CREATE INDEX tbl_v ON %s.tbl(v) USING 'SAI'";
 
+    /**
+     * A clustering column index over a table that also has a static column, so an update setting both carries a static
+     * row that an expression on a clustering column can not be evaluated against. Legacy 2i because SAI indexes a
+     * static column and a clustering column with separate index terms and never asks one about the other.
+     */
+    private static final String TABLE_WITH_INDEXED_CLUSTERING_AND_STATIC =
+        "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, s int static, v int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE';" +
+        "CREATE INDEX tbl_ck ON %s.tbl(ck) USING 'legacy_local_table'";
+
     private static final String FILTER = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE v > 100 ALLOW FILTERING";
 
     /** Passed as a page size to read the whole range in one request. */
@@ -1163,6 +1172,29 @@ public class TrackedRangeReadTest extends TestBaseImpl
         String select = "SELECT pk0, pk1, ck, s, v FROM %s.tbl WHERE pk0 = 1 AND s = 7 LIMIT 1";
         assertTrackedMatchesOracle("g_indexed_static_only_limited", TABLE_WITH_INDEXED_STATIC, STATIC_ONLY_PARTITIONS, select, UNPAGED,
                                    (keyspace, oracle) -> assertEveryReplicaCanAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * A tracked index read decides which of the mutations reconciliation delivers the index expression matches by
+     * indexing them itself, and an update that sets a static column carries a static row. Only an index on a static
+     * column, or on a partition key column, indexes that row; asking an index on a clustering column about it read a
+     * clustering value out of a clustering that has none and threw ArrayIndexOutOfBoundsException. It threw inside the
+     * read's completion, where no failure response is sent, so the query hung until the coordinator gave up rather
+     * than returning a wrong answer.
+     */
+    @Test
+    public void testIndexedRangeReadWhereAReconciledUpdateCarriesAStaticRow()
+    {
+        String[] writes =
+        {
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, s, v) VALUES (1, 'a', 1, 7, 10) USING TIMESTAMP 10",
+            // node 1 coordinates, so this is the update reconciliation delivers, static row and all
+            "2:UPDATE %s.tbl USING TIMESTAMP 20 SET s = 8, v = 500 WHERE pk0 = 1 AND pk1 = 'a' AND ck = 2"
+        };
+        String select = "SELECT pk0, pk1, ck, s, v FROM %s.tbl WHERE ck = 2 ALLOW FILTERING";
+        assertTrackedMatchesOracle("g_indexed_clustering_with_static", TABLE_WITH_INDEXED_CLUSTERING_AND_STATIC,
+                                   writes, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
     }
 
     /**
