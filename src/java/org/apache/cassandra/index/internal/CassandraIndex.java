@@ -594,7 +594,26 @@ public abstract class CassandraIndex implements Index
                                                                clustering,
                                                                cell));
         Clustering<?> indexClustering = buildIndexClustering(rowKey.getKey(), clustering, cell);
-        return new IndexEntry(indexKey, indexClustering, info.timestamp(), rowKey, clustering);
+        return new IndexEntry(indexKey, indexClustering, info.timestamp(), rowKey, baseClustering(clustering));
+    }
+
+    /**
+     * The base clustering an entry read back out of the index decodes to, which is what the searchers expect of an
+     * entry, however it was obtained.
+     * <p>
+     * A static row contributes no clustering values to its index clustering, so decoding such an entry yields a
+     * clustering whose components are all null rather than the static clustering itself (see the decodeEntry
+     * implementations, whose builders are handed the missing values as nulls). The searchers read an entry with no
+     * clustering values as saying the partition exists and holds only static data, and they compare an entry's
+     * clustering with ClusteringComparator#compare, which requires a clustering with a value, null or not, for every
+     * clustering column.
+     */
+    private Clustering<?> baseClustering(Clustering<?> clustering)
+    {
+        if (clustering.kind() != ClusteringPrefix.Kind.STATIC_CLUSTERING)
+            return clustering;
+
+        return Clustering.make(new ByteBuffer[baseCfs.getComparator().size()]);
     }
 
     /**
