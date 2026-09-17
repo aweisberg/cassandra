@@ -467,6 +467,14 @@ public class TrackedRangeReadTest extends TestBaseImpl
         "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, s int static, v int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE';" +
         "CREATE INDEX tbl_ck ON %s.tbl(ck) USING 'legacy_local_table'";
 
+    /**
+     * A partition key column index over a table that also has a static column. Legacy 2i indexes the static row for
+     * such an index deliberately, so that a partition holding nothing but static data is still discoverable.
+     */
+    private static final String TABLE_WITH_INDEXED_PARTITION_KEY_AND_STATIC =
+        "CREATE TABLE %s.tbl (pk0 int, pk1 text, ck int, s int static, v int, PRIMARY KEY ((pk0, pk1), ck)) WITH read_repair = 'NONE';" +
+        "CREATE INDEX tbl_pk0 ON %s.tbl(pk0) USING 'legacy_local_table'";
+
     private static final String FILTER = "SELECT pk0, pk1, ck, v FROM %s.tbl WHERE v > 100 ALLOW FILTERING";
 
     /** Passed as a page size to read the whole range in one request. */
@@ -1193,6 +1201,32 @@ public class TrackedRangeReadTest extends TestBaseImpl
         };
         String select = "SELECT pk0, pk1, ck, s, v FROM %s.tbl WHERE ck = 2 ALLOW FILTERING";
         assertTrackedMatchesOracle("g_indexed_clustering_with_static", TABLE_WITH_INDEXED_CLUSTERING_AND_STATIC,
+                                   writes, select, UNPAGED,
+                                   (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
+    }
+
+    /**
+     * As {@link #testIndexedRangeReadWhereAReconciledUpdateCarriesAStaticRow}, for an index on a partition key column,
+     * which does index the static row: legacy 2i keys that entry on nothing but the base partition key, so that a
+     * partition holding only static data is still discoverable. The tracked matcher hands the searcher the row's own
+     * clustering, so the entry arrived as {@code Clustering.STATIC_CLUSTERING} and tripped the assertion in
+     * ClusteringIndexNamesFilter, again inside the read's completion where no failure response is sent.
+     * <p>
+     * (1,'a') reaches the searcher with a static entry alongside a row entry, and (1,'b') with a static entry alone,
+     * which is the case that leaves the names filter with no row to name at all.
+     */
+    @Test
+    public void testIndexedPartitionKeyRangeReadWhereAReconciledUpdateCarriesAStaticRow()
+    {
+        String[] writes =
+        {
+            "1:INSERT INTO %s.tbl (pk0, pk1, ck, s, v) VALUES (1, 'a', 1, 7, 10) USING TIMESTAMP 10",
+            // node 1 coordinates, so these are the updates reconciliation delivers, static rows and all
+            "2:UPDATE %s.tbl USING TIMESTAMP 20 SET s = 8, v = 500 WHERE pk0 = 1 AND pk1 = 'a' AND ck = 2",
+            "2:UPDATE %s.tbl USING TIMESTAMP 30 SET s = 9 WHERE pk0 = 1 AND pk1 = 'b'"
+        };
+        String select = "SELECT pk0, pk1, ck, s, v FROM %s.tbl WHERE pk0 = 1 ALLOW FILTERING";
+        assertTrackedMatchesOracle("g_indexed_pk_with_static", TABLE_WITH_INDEXED_PARTITION_KEY_AND_STATIC,
                                    writes, select, UNPAGED,
                                    (keyspace, oracle) -> assertDataReplicaCannotAnswerAlone(keyspace, select, oracle));
     }
