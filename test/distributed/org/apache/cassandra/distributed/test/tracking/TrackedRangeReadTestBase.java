@@ -387,6 +387,54 @@ public abstract class TrackedRangeReadTestBase extends TestBaseImpl
         });
     }
 
+    /**
+     * Node 1 lacks (1,'z') and gets it through reconciliation. (1,'z') sorts between the last key node 1's index scan
+     * reached and the next index match the scan did not read, so the read returns (1,'z') and then stops for a short
+     * read, and the short read must not return (1,'z') a second time.
+     * <p>
+     * Murmur3 orders the keys (1,'n'), (1,'u'), (1,'z'), (1,'a'); all match the index on {@code v}. With a page size of
+     * two, node 1's index scan stops after (1,'u'), leaving (1,'a') an index match it has not read. (1,'n') and (1,'u')
+     * fail the {@code w = 1} filter, so after (1,'z') the page is not full and the read goes on to (1,'a').
+     */
+    protected static void indexedRangeReadHandedAKeyBeforeTheNextUnreadMatch(String name, String table)
+    {
+        String[] writes =
+        {
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'n', 1, 100, 0) USING TIMESTAMP 10",
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'u', 1, 100, 0) USING TIMESTAMP 11",
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'a', 1, 100, 1) USING TIMESTAMP 12",
+            "!1:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'z', 1, 100, 1) USING TIMESTAMP 13"
+        };
+        String select = "SELECT pk0, pk1, ck, v, w FROM %s.tbl WHERE v = 100 AND w = 1 ALLOW FILTERING";
+        assertTrackedMatchesOracle(name, table, writes, select, 2, (keyspace, oracle) -> {
+            assertReadTogetherFromNode1(keyspace, row(1, "n"), row(1, "u"), row(1, "z"), row(1, "a"));
+            assertDataReplicaCannotAnswerAlone(keyspace, select, oracle);
+        });
+    }
+
+    /**
+     * The same shape as {@link #indexedRangeReadHandedAKeyBeforeTheNextUnreadMatch} with no ALLOW FILTERING: (1,'n')
+     * and (1,'u') are rejected because node 1 missed the updates that moved their {@code v} off 100, so node 1's index
+     * still returns them and reconciliation delivers the updates.
+     */
+    protected static void indexedRangeReadWithStaleEntriesHandedAKeyBeforeTheNextUnreadMatch(String name, String table)
+    {
+        String[] writes =
+        {
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'n', 1, 100, 1) USING TIMESTAMP 10",
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'u', 1, 100, 1) USING TIMESTAMP 11",
+            "*:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'a', 1, 100, 1) USING TIMESTAMP 12",
+            "!1:INSERT INTO %s.tbl (pk0, pk1, ck, v, w) VALUES (1, 'z', 1, 100, 1) USING TIMESTAMP 13",
+            "!1:UPDATE %s.tbl USING TIMESTAMP 14 SET v = 200 WHERE pk0 = 1 AND pk1 = 'n' AND ck = 1",
+            "!1:UPDATE %s.tbl USING TIMESTAMP 15 SET v = 200 WHERE pk0 = 1 AND pk1 = 'u' AND ck = 1"
+        };
+        String select = "SELECT pk0, pk1, ck, v, w FROM %s.tbl WHERE v = 100";
+        assertTrackedMatchesOracle(name, table, writes, select, 2, (keyspace, oracle) -> {
+            assertReadTogetherFromNode1(keyspace, row(1, "n"), row(1, "u"), row(1, "z"), row(1, "a"));
+            assertDataReplicaCannotAnswerAlone(keyspace, select, oracle);
+        });
+    }
+
     public static String withKeyspace(String replaceIn, String keyspace)
     {
         return String.format(replaceIn, keyspace);
